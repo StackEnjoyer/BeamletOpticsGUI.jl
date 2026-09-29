@@ -1,15 +1,14 @@
 module TestLiveProgress
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
 using LinearAlgebra: normalize, cross, norm
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 @testset "Live progress window" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     fig = Figure()
     ax = LScene(fig[1, 1])
@@ -17,14 +16,14 @@ const BMO = BeamletOptics
     n0 = length(ax.scene.plots)
 
     @testset "construction" begin
-        o = Ext._ProgressOverlay(ax)
+        o = GUI._ProgressOverlay(ax)
         # In a child scene, drawn after all plots of the 3D scene
         @test length(ax.scene.plots) == n0
         @test o.hud in ax.scene.children && length(o.hud.plots) == length(o.plots) == 4
         # GLMakie sorts the plots by the z translation before drawing, which also puts them in front
         # of the 3D scene; `overdraw` would put transparent plots over them
-        @test all(p -> Makie.transformationmatrix(p)[][3, 4] > Ext._PROGRESS_Z, o.plots)
-        @test all(p -> Makie.transformationmatrix(p)[][3, 4] < Ext._CARD_Z, o.plots)
+        @test all(p -> Makie.transformationmatrix(p)[][3, 4] > GUI._PROGRESS_Z, o.plots)
+        @test all(p -> Makie.transformationmatrix(p)[][3, 4] < GUI._CARD_Z, o.plots)
         @test all(p -> !p.visible[], o.plots)
         @test all(p -> !p.overdraw[], o.plots)
         @test all(p -> !p.inspectable[], o.plots)
@@ -35,15 +34,15 @@ const BMO = BeamletOptics
     end
 
     @testset "show and hide" begin
-        o = Ext._ProgressOverlay(ax)
+        o = GUI._ProgressOverlay(ax)
         n = length(ax.scene.plots)
-        track = Ext._PROGRESS_TRACK[1]
-        left = Ext._PROGRESS_BAR_X
+        track = GUI._PROGRESS_TRACK[1]
+        left = GUI._PROGRESS_BAR_X
 
-        Ext._show_progress!(o, [0.1, 0.2, 0.3], 0.5, "Tracing beams 50 %")
+        GUI._show_progress!(o, [0.1, 0.2, 0.3], 0.5, "Tracing beams 50 %")
         @test length(ax.scene.plots) == n
         @test all(p -> p.visible[], o.plots)
-        @test o.anchor[] == Ext._screen_anchor(ax.scene, [0.1, 0.2, 0.3])
+        @test o.anchor[] == GUI._screen_anchor(ax.scene, [0.1, 0.2, 0.3])
         @test o.label[] == "Tracing beams 50 %"
         @test only(vcat(o.plots[4].text[])) == "Tracing beams 50 %"
         @test o.fill_size[][1] ≈ 0.5 * track
@@ -52,14 +51,14 @@ const BMO = BeamletOptics
         @test o.plots[3].markersize[] == o.fill_size[]
 
         for (fraction, expected) in ((-0.1, 0.0), (1.3, 1.0), (0.5, 0.5))
-            Ext._show_progress!(o, [0.1, 0.2, 0.3], fraction, "x")
+            GUI._show_progress!(o, [0.1, 0.2, 0.3], fraction, "x")
             @test o.fill_size[][1] ≈ expected * track
             @test o.fill_offset[][1] - o.fill_size[][1] / 2 ≈ left
         end
 
         # Anchor update, integer points are accepted
-        Ext._show_progress!(o, [1, 2, 3], 0.5, "Detector field 50 %")
-        @test o.anchor[] == Ext._screen_anchor(ax.scene, Point3f(1, 2, 3))
+        GUI._show_progress!(o, [1, 2, 3], 0.5, "Detector field 50 %")
+        @test o.anchor[] == GUI._screen_anchor(ax.scene, Point3f(1, 2, 3))
         @test all(p -> o.anchor[] in vcat(p[1][]), o.plots)
         @test o.label[] == "Detector field 50 %"
 
@@ -68,15 +67,15 @@ const BMO = BeamletOptics
         on(_ -> count[] += 1, o.anchor)
         on(_ -> count[] += 1, o.fill_size)
         on(_ -> count[] += 1, o.label)
-        Ext._show_progress!(o, [1, 2, 3], 0.5, "Detector field 50 %")
+        GUI._show_progress!(o, [1, 2, 3], 0.5, "Detector field 50 %")
         @test count[] == 0
 
-        Ext._hide_progress!(o)
+        GUI._hide_progress!(o)
         @test all(p -> !p.visible[], o.plots)
         @test length(ax.scene.plots) == n
-        Ext._hide_progress!(o)
+        GUI._hide_progress!(o)
         @test all(p -> !p.visible[], o.plots)
-        Ext._show_progress!(o, [1, 2, 3], 0.25, "y")
+        GUI._show_progress!(o, [1, 2, 3], 0.25, "y")
         @test all(p -> p.visible[], o.plots)
         @test length(ax.scene.plots) == n
     end
@@ -88,22 +87,22 @@ const BMO = BeamletOptics
         eye, look = Vector(cam.eyeposition[]), Vector(cam.lookat[])
         v = normalize(look - eye)
         right = normalize(cross(v, Vector(cam.upvector[])))
-        gap, margin, panel = Ext._PROGRESS_GAP, Ext._PROGRESS_MARGIN, Ext._PROGRESS_PANEL
+        gap, margin, panel = GUI._PROGRESS_GAP, GUI._PROGRESS_MARGIN, GUI._PROGRESS_PANEL
         # The whole panel (from `gap` beyond the anchor on) lies inside the view with the margin
         inside(a) = all(a .+ gap .>= margin - 1e-3) &&
                     all(a .+ gap .+ panel .<= Vec2f(w, h) .- margin .+ 1e-3)
         # A point in the view: its projection
-        a = Ext._screen_anchor(scene, look)
+        a = GUI._screen_anchor(scene, look)
         q = Makie.project(scene, :data, :pixel, Point3f(look))
         @test a ≈ Point2f(q[1], q[2]) && inside(a)
         # Far to the right: at the right edge
-        a = Ext._screen_anchor(scene, look + 1e3 * norm(look - eye) * right)
+        a = GUI._screen_anchor(scene, look + 1e3 * norm(look - eye) * right)
         @test inside(a) && a[1] ≈ w - margin - gap - panel[1]
         # Behind the camera, to the right: at the right edge (its projection is mirrored)
-        a = Ext._screen_anchor(scene, eye - v + 0.5 * right)
+        a = GUI._screen_anchor(scene, eye - v + 0.5 * right)
         @test inside(a) && a[1] ≈ w - margin - gap - panel[1]
         # No position (NaN): at the bottom edge
-        a = Ext._screen_anchor(scene, Point3f(NaN))
+        a = GUI._screen_anchor(scene, Point3f(NaN))
         @test inside(a) && a[2] ≈ margin - gap
     end
 end

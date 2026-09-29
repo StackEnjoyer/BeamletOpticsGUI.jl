@@ -224,7 +224,7 @@ moments along x and z and the peak intensity. The centroid and the radii are `Na
 intensity.
 """
 function _intensity_metrics(x, z, I)
-    P = BMO.trapz((x, z), I)
+    P = trapz((x, z), I)
     peak = maximum(I)
     S = sum(I)
     S > 0 || return (; P, cx = NaN, cz = NaN, wx = NaN, wz = NaN, peak)
@@ -382,7 +382,7 @@ Computes what the panel `p` shows after a solve, without changing any plot, such
 in a background task (see `_solve!`): `nothing` without hits, `_SpotField()` for a spot diagram,
 the intensity `(x, z, I)` on the grid of the panel (coarse: see `_panel_n`), or the exception of a
 failed computation, which `_update_panel!` reports. A cancelled solve is rethrown, see
-`BMO._is_cancelled`.
+`BMO.is_cancelled`.
 """
 function _panel_field(p::DetectorPanel, coarse::Bool)
     try
@@ -391,7 +391,7 @@ function _panel_field(p::DetectorPanel, coarse::Bool)
         _resolve_mode(p.mode, h) == :intensity || return _SpotField()
         return _intensity_field(p, h, coarse)
     catch e
-        BMO._is_cancelled(e) && rethrow()
+        BMO.is_cancelled(e) && rethrow()
         return e
     end
 end
@@ -405,7 +405,7 @@ function _intensity_field(p::DetectorPanel, h::AbstractVector{<:BMO.AstigmaticGa
     try
         return invoke(_intensity_field, Tuple{DetectorPanel, Any, Bool}, p, h, coarse)
     catch e
-        (BMO._is_cancelled(e) || p.mode != :auto) && rethrow()
+        (BMO.is_cancelled(e) || p.mode != :auto) && rethrow()
         return _SpotField()
     end
 end

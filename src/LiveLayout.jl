@@ -150,19 +150,19 @@ _beam_style(layout::AbstractLiveLayout, ::Union{BMO.AbstractRay, Beam, BMO.Abstr
 _beam_style(::AbstractLiveLayout, ::BMO.AstigmaticBeamGroup) = (;)
 
 """
-    _theme_render!(layout, h::SystemRenderHandle)
+    _theme_render!(layout, h::AbstractSystemRenderHandle)
 
 Replaces the colors of the material classes of the render look by the `materials` of the theme
 of the `layout` (see `_APP_THEMES`) in the plots of all objects of `h`, e.g. the dark detectors of
 the `:modern` look on a dark background. Only plots in the color of the look are changed, i.e. not
 the colors given by the user via `system_kwargs`.
 """
-function _theme_render!(layout::AbstractLiveLayout, h::SystemRenderHandle)
+function _theme_render!(layout::AbstractLiveLayout, h::AbstractSystemRenderHandle)
     materials = layout.theme.materials
     isempty(materials) && return nothing
-    look = _materials()
-    replace = Dict{RGBf, RGBf}(look[class].color => c for (class, c) in materials)
-    for oh in h.handles, p in oh.plots
+    look = look_colors()
+    replace = Dict{RGBf, RGBf}(look[class] => c for (class, c) in materials)
+    for p in render_plots(h)
         haskey(p.attributes, :color) && _replace_color!(p, p.color[], replace)
     end
     return nothing

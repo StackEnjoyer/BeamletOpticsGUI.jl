@@ -1,15 +1,18 @@
 module TestLiveView
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics: render_children, render_plots, rendered
 using Makie
 using LinearAlgebra: normalize, dot, norm
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
+
+# The ray segments drawn by the beam handle `h`, a single `linesegments` plot
+_points(h) = only(render_plots(h))[1][]
 
 @testset "Live view" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     # Beam along +y, mirror at 45° reflects it along +x onto the detector
     function _fixture()
@@ -46,7 +49,7 @@ const BMO = BeamletOptics
         sys = System([m, pd])
         gauss = _gauss()
         gui = _live_view(sys, gauss)
-        @test gui isa Ext.LiveView
+        @test gui isa GUI.LiveView
         @test length(gui.panels) == 1
         @test occursin("Detector 1: P =", gui.panels[1].ax.title[])
         @test occursin("mW", gui.panels[1].ax.title[])
@@ -96,7 +99,7 @@ const BMO = BeamletOptics
         @test length(gui.panels) == 1 # deduplicated
         @test sprint(show, gui) == "LiveView(2 systems, 1 detector panels)"
         # both systems and the markers of both sources are handled by one controller
-        @test length(gui.controls.h.handles) == 5
+        @test length(render_children(gui.controls.h)) == 5
         @test length(BMO.hits(pd)) == 2
         gui.controls.selected[] = m
         _key!(gui, Keyboard.left)
@@ -121,9 +124,9 @@ const BMO = BeamletOptics
         n_calls = Ref(0)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(sys, beam; throttle = false, mode = :rotate, fine_angle = 1e-2,
-            on_change = (g, obj) -> (n_calls[] += 1), pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+            on_change = (g, obj) -> (n_calls[] += 1), pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
-        @test gui.controls.h.handles[1].obj === m
+        @test render_children(gui.controls.h)[1].obj === m
         n0 = n_calls[]
         _select!(gui)
         @test gui.controls.selected[] === m
@@ -234,7 +237,7 @@ const BMO = BeamletOptics
         events(scene).mouseposition[] = (vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2)
         # the ray through the center passes the eye, starts at the near plane behind it and
         # points to lookat
-        origin, dir = Ext._cursor_ray(scene)
+        origin, dir = GUI._cursor_ray(scene)
         eye = collect(cam.eyeposition[])
         @test isapprox(dir, normalize(collect(cam.lookat[]) .- eye); atol = 1e-6)
         @test isapprox(origin, eye .+ cam.near[] .* dir; atol = 1e-6)
@@ -251,14 +254,14 @@ const BMO = BeamletOptics
     end
 
     @testset "movable sources" begin
-        _marker(gui, src) = gui.controls.h.handles[findfirst(oh -> oh.obj === src, gui.controls.h.handles)]
+        _marker(gui, src) = render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === src, render_children(gui.controls.h))]
 
         # Beam: select the marker, move the source along its direction
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), beam; throttle = false, fine_step = 1e-3,
-            pick = ax -> (_marker(gui_ref[], beam).plots[1], 0))
+            pick = ax -> (render_plots(_marker(gui_ref[], beam))[1], 0))
         gui_ref[] = gui
         marker = _marker(gui, beam)
         @test beam in gui.controls.movable
@@ -269,7 +272,7 @@ const BMO = BeamletOptics
         @test marker.P ≈ [0, 1e-3, 0]
         # solved again from the new start point
         @test length(BMO.hits(pd)) == 1
-        @test gui.beam_handles[1].points[][1] ≈ Point3f(0, 1e-3, 0)
+        @test _points(gui.beam_handles[1])[1] ≈ Point3f(0, 1e-3, 0)
         @test startswith(gui.status.text[], "Beam 1 at (")
         # rotate the source, the spot moves on the detector
         x0 = _mean_x(gui.panels[1].xy[])
@@ -286,7 +289,7 @@ const BMO = BeamletOptics
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]) => cs; throttle = false, fine_step = 1e-3, preview = false,
-            pick = ax -> (_marker(gui_ref[], cs).plots[1], 0))
+            pick = ax -> (render_plots(_marker(gui_ref[], cs))[1], 0))
         gui_ref[] = gui
         _select!(gui)
         @test gui.controls.selected[] === cs
@@ -303,38 +306,38 @@ const BMO = BeamletOptics
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), beam; throttle = false,
-            pick = ax -> (_marker(gui_ref[], beam).plots[1], 0))
+            pick = ax -> (render_plots(_marker(gui_ref[], beam))[1], 0))
         gui_ref[] = gui
         marker = _marker(gui, beam)
         @test gui.widgets.sources_toggle.active[]
-        @test all(p -> p.visible[], marker.plots)
+        @test all(p -> p.visible[], render_plots(marker))
         _select!(gui)
         @test gui.controls.selected[] === beam
         _key!(gui, Keyboard.s)
         @test gui.widgets.sources_toggle.active[]
         _key!(gui, Keyboard._1)
         @test !gui.widgets.sources_toggle.active[]
-        @test !any(p -> p.visible[], marker.plots)
+        @test !any(p -> p.visible[], render_plots(marker))
         @test isnothing(gui.controls.selected[])
         @test startswith(gui.status.text[], "sources hidden")
         # "show all" keeps the markers hidden, the mirror stays visible
-        Ext._show_all!(gui)
-        @test !any(p -> p.visible[], marker.plots)
+        GUI._show_all!(gui)
+        @test !any(p -> p.visible[], render_plots(marker))
         gui.widgets.sources_toggle.active[] = true
-        @test all(p -> p.visible[], marker.plots)
+        @test all(p -> p.visible[], render_plots(marker))
         close(gui)
         # initially hidden
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_view(System([m, pd]), beam; show_sources = false)
-        @test !any(p -> p.visible[], _marker(gui, beam).plots)
+        @test !any(p -> p.visible[], render_plots(_marker(gui, beam)))
         close(gui)
 
         # no markers
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_view(System([m, pd]), beam; movable_sources = false)
-        @test !any(oh -> oh.obj === beam, gui.controls.h.handles)
+        @test !any(oh -> rendered(oh) === beam, render_children(gui.controls.h))
         @test !(beam in gui.controls.movable)
         close(gui)
     end
@@ -344,7 +347,7 @@ const BMO = BeamletOptics
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             fine_step = 1e-3, labels = Dict(m => "Mirror 1", pd => "PD"),
-            pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test startswith(gui.panels[1].ax.title[], "PD: ")
         _select!(gui)
@@ -374,21 +377,21 @@ const BMO = BeamletOptics
         @test Matrix{Float64}(BMO.orientation(m)) ≈ BMO.rotate3d([0, 0, 1], 50e-6) * R0
         close(gui)
 
-        @test Ext._length_string(0.9999999e-3) == "1 mm"
-        @test Ext._length_string(2.5e-7) == "250 nm"
-        @test Ext._length_string(12.0) == "12000 mm"
-        @test Ext._angle_string(5e-5) == "50 µrad"
-        @test Ext._angle_string(0.1) == "100 mrad"
-        @test Ext._angle_string(deg2rad(90)) == "90 °"
-        @test Ext._parse_step("250 nm")[1] == :move
-        @test Ext._parse_step("250 nm")[2] ≈ 250e-9
-        @test Ext._parse_step("0.5um")[2] ≈ 0.5e-6
-        @test Ext._parse_step("1e-3 m")[2] ≈ 1e-3
-        @test Ext._parse_step("2 deg")[2] ≈ deg2rad(2)
-        @test Ext._parse_step("3 mrad")[1] == :rotate
-        @test isnothing(Ext._parse_step("10"))
-        @test isnothing(Ext._parse_step("-1 nm"))
-        @test isnothing(Ext._parse_step("1 inch"))
+        @test GUI._length_string(0.9999999e-3) == "1 mm"
+        @test GUI._length_string(2.5e-7) == "250 nm"
+        @test GUI._length_string(12.0) == "12000 mm"
+        @test GUI._angle_string(5e-5) == "50 µrad"
+        @test GUI._angle_string(0.1) == "100 mrad"
+        @test GUI._angle_string(deg2rad(90)) == "90 °"
+        @test GUI._parse_step("250 nm")[1] == :move
+        @test GUI._parse_step("250 nm")[2] ≈ 250e-9
+        @test GUI._parse_step("0.5um")[2] ≈ 0.5e-6
+        @test GUI._parse_step("1e-3 m")[2] ≈ 1e-3
+        @test GUI._parse_step("2 deg")[2] ≈ deg2rad(2)
+        @test GUI._parse_step("3 mrad")[1] == :rotate
+        @test isnothing(GUI._parse_step("10"))
+        @test isnothing(GUI._parse_step("-1 nm"))
+        @test isnothing(GUI._parse_step("1 inch"))
     end
 
     @testset "adaptive tracing" begin
@@ -397,15 +400,15 @@ const BMO = BeamletOptics
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             mode = :rotate, fine_angle = 1e-2, trace_budget = 0.0, idle_delay = 0.1,
-            pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         gui.trace.solve_time = 1.0 # pretend that the solve is slow, independent of the machine
         _select!(gui)
-        pts0 = copy(gui.beam_handles[1].points[])
+        pts0 = copy(_points(gui.beam_handles[1]))
         _key!(gui, Keyboard.left)
         @test gui.trace.pending
         @test gui.trace.stale
-        @test gui.beam_handles[1].points[] == pts0
+        @test _points(gui.beam_handles[1]) == pts0
         @test occursin("tracing when the movement pauses", gui.status.text[])
         # still moving
         notify(events(gui.ax.scene).tick)
@@ -414,7 +417,7 @@ const BMO = BeamletOptics
         notify(events(gui.ax.scene).tick)
         @test !gui.trace.pending
         @test !gui.trace.stale
-        @test gui.beam_handles[1].points[] != pts0
+        @test _points(gui.beam_handles[1]) != pts0
         close(gui)
 
         # slow panels: a coarse preview while moving, refined once the movement pauses
@@ -422,7 +425,7 @@ const BMO = BeamletOptics
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), _gauss(); throttle = false, mode = :rotate,
             fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; n = 40))],
-            trace_budget = 0.5, pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+            trace_budget = 0.5, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test size(gui.panels[1].heat_I[]) == (40, 40)
         # pretend that the solve is fast and the panels are slow, independent of the machine
@@ -446,7 +449,7 @@ const BMO = BeamletOptics
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), src; throttle = false, mode = :move,
-            progress_delay = 0.2, pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+            progress_delay = 0.2, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         scene = gui.ax.scene
         tick!() = notify(events(scene).tick)
@@ -456,11 +459,13 @@ const BMO = BeamletOptics
         gate = Channel{Nothing}(100)
         applied = Ref(0)
         anchor = Point3f(0.1, 0.2, 0.3)
+        # the progress loop of BeamletOptics (`_with_progress`, `_tick!` are internal), which
+        # reports to the sink of the developer API
         function slow_job(n = 10)
-            sink = BMO._ProgressSink()
+            sink = BMO.ProgressSink()
             done = Base.Event()
             task = Threads.@spawn try
-                Base.ScopedValues.with(BMO._PROGRESS_SINK => sink) do
+                Base.ScopedValues.with(BMO.PROGRESS_SINK => sink) do
                     BMO._with_progress(true, n, "Tracing beams: ") do p
                         for _ in 1:n
                             while !isready(gate) && !sink.cancel[]
@@ -474,24 +479,24 @@ const BMO = BeamletOptics
             finally
                 notify(done)
             end
-            return Ext._SolveJob(task, done, [sink], [anchor], r -> (applied[] += 1), nothing,
+            return GUI._SolveJob(task, done, [sink], [anchor], r -> (applied[] += 1), nothing,
                 :solve_time, time(), (; k = 0, t0 = NaN, t = NaN, count = 0))
         end
-        items(job) = something(BMO._progress_state(job.sinks[1]), (; count = -1)).count
+        items(job) = something(BMO.progress_state(job.sinks[1]), (; count = -1)).count
 
         job = slow_job()
         # no window while the loop has run shorter than `progress_delay`
         @test waitfor(() -> items(job) == 0)
-        Ext._poll!(gui, job)
+        GUI._poll!(gui, job)
         @test !gui.trace.progress.visible[]
         # A solve longer than `progress_delay` continues in the background, where its loop, which
         # has run that long, shows its window at once
-        @test !Ext._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, "tracing, Esc cancels")
         @test gui.trace.job === job
         @test gui.status.text[] == "tracing, Esc cancels"
         tick!()
         @test gui.trace.progress.visible[]
-        @test gui.trace.progress.anchor[] == Ext._screen_anchor(scene, anchor)
+        @test gui.trace.progress.anchor[] == GUI._screen_anchor(scene, anchor)
         @test gui.trace.progress.label[] == "Tracing beams 0 %"
         # the remaining time follows from the rate since the window appeared
         foreach(_ -> put!(gate, nothing), 1:3)
@@ -508,13 +513,13 @@ const BMO = BeamletOptics
 
         # `t` starts no second solve, Esc cancels after the current item
         job = slow_job()
-        @test !Ext._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, "tracing, Esc cancels")
         _key!(gui, Keyboard.t)
         @test gui.trace.job === job
         _key!(gui, Keyboard.escape)
         @test isnothing(gui.trace.job)
         @test istaskfailed(job.task)
-        @test BMO._is_cancelled(TaskFailedException(job.task))
+        @test BMO.is_cancelled(TaskFailedException(job.task))
         @test applied[] == 1
         @test gui.trace.stale
         @test startswith(gui.status.text[], "trace cancelled")
@@ -525,7 +530,7 @@ const BMO = BeamletOptics
         _select!(gui)
         @test gui.controls.selected[] === m
         job = slow_job()
-        @test !Ext._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, "tracing, Esc cancels")
         hook = gui.controls.before_change
         done_before_change = Ref(false)
         gui.controls.before_change = () -> (hook(); done_before_change[] = istaskdone(job.task))
@@ -535,27 +540,27 @@ const BMO = BeamletOptics
         @test Vector(position(m)) != P0
         @test gui.trace.job !== job
         gui.controls.before_change = hook
-        @test waitfor(() -> (tick!(); !Ext._running(gui)))
+        @test waitfor(() -> (tick!(); !GUI._running(gui)))
 
         # a real solve: the sinks trace the source, then compute the field of the panel, and the
         # result is shown once the job is done (at once or in the background)
-        job = Ext._start_job(gui, r -> nothing, nothing, gui.pairs, gui.beam_handles;
+        job = GUI._start_job(gui, r -> nothing, nothing, gui.pairs, gui.beam_handles;
             timing = :solve_time)
         r = fetch(job.task)
         @test job.anchors == [Point3f(position(src)), Point3f(position(pd))]
         @test length(r.fields) == 1
         gui.trace.progress_delay = 0.0
-        Ext._trace!(gui)
-        @test waitfor(() -> (tick!(); !Ext._running(gui)))
+        GUI._trace!(gui)
+        @test waitfor(() -> (tick!(); !GUI._running(gui)))
         @test !gui.trace.stale
         @test occursin("Detector 1", gui.panels[1].ax.title[])
         close(gui)
 
-        @test Ext._progress_label((; desc = "Tracing beams", count = 42, n = 100, t0 = 0.0),
+        @test GUI._progress_label((; desc = "Tracing beams", count = 42, n = 100, t0 = 0.0),
             (; k = 1, t0 = 0.0, t = 1.0, count = 0), 2.0) == "Tracing beams 42 % · 1 s"
-        @test Ext._progress_label((; desc = "Detector field", count = 0, n = 10, t0 = 0.0),
+        @test GUI._progress_label((; desc = "Detector field", count = 0, n = 10, t0 = 0.0),
             (; k = 1, t0 = 0.0, t = 1.0, count = 0), 2.0) == "Detector field 0 %"
-        @test Ext._duration_string(125) == "2:05"
+        @test GUI._duration_string(125) == "2:05"
     end
 
     @testset "panel power matches optical_power" begin
@@ -564,7 +569,7 @@ const BMO = BeamletOptics
         area = (; n = 5, x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, area)])
         P = optical_power(pd; area...)
-        @test gui.panels[1].ax.title[] == "Detector 1: P = $(Ext._fmt3(1e3 * P)) mW"
+        @test gui.panels[1].ax.title[] == "Detector 1: P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)
     end
 
@@ -575,7 +580,7 @@ const BMO = BeamletOptics
         @test !gui.trace.stale
         # solve_system! fails for this beam
         gui.pairs[1] = gui.pairs[1].first => nothing
-        @test_logs (:error, r"solving the systems") Ext._trace!(gui)
+        @test_logs (:error, r"solving the systems") GUI._trace!(gui)
         @test gui.trace.stale
         @test occursin("failed", gui.status.text[])
         close(gui)
@@ -589,8 +594,8 @@ const BMO = BeamletOptics
             b = Beam([0.0, 0, 0], [0.0, 1, 0])
             empty!(pd)
             solve_system!(sys, b)
-            pts = Point3f[]
-            Ext._collect_segments!(pts, b; flen = 1.0, render_every = 5)
+            pts = Point3f[p for s in GUI._beam_segments!(GUI._BeamSegment[], b; flen = 1.0)
+                          for p in (Point3f(s.a), Point3f(s.b))]
             return pts, length(BMO.hits(pd)), _spot(pd)
         end
 
@@ -613,27 +618,30 @@ const BMO = BeamletOptics
             gui.controls.selected[] = m
             R0 = Matrix{Float64}(BMO.orientation(m))
             n_hits = length(BMO.hits(pd))
-            pts0 = copy(bh.points[])
+            pts0 = copy(_points(bh))
             xy0 = copy(gui.panels[1].xy[])
             _key!(gui, Keyboard.left)
             # the object moves, but nothing is solved
             @test Matrix{Float64}(BMO.orientation(m)) ≈ BMO.rotate3d([0, 0, 1], 1e-2) * R0
-            @test gui.system_handles[1].handles[1].R ≈ Matrix{Float64}(BMO.orientation(m))
+            # the model matrix of the plots of m is the rotation
+            m_plot = first(render_plots(render_children(gui.system_handles[1])[1]))
+            model = Makie.transformationmatrix(m_plot)[]
+            @test isapprox(model[1:3, 1:3], BMO.rotate3d([0, 0, 1], 1e-2); atol = 1e-6)
             @test n_calls[] == 1
             @test length(BMO.hits(pd)) == n_hits
-            @test bh.points[] == pts0
+            @test _points(bh) == pts0
             @test gui.panels[1].xy[] == xy0
             @test gui.trace.stale
             @test occursin("outdated, press t to trace", gui.status.text[])
             @test startswith(gui.status.text[], "$(nameof(typeof(m))) 1 at (")
-            @test bh.plot.alpha[] ≈ 0.3
+            @test only(render_plots(bh)).alpha[] ≈ 0.3
 
             # t solves the system
             _key!(gui, Keyboard.t)
             @test n_calls[] == 2
             @test !gui.trace.stale
-            @test bh.plot.alpha[] ≈ 1.0
-            pts_gui, n_gui, xy_gui = copy(bh.points[]), length(BMO.hits(pd)), copy(gui.panels[1].xy[])
+            @test only(render_plots(bh)).alpha[] ≈ 1.0
+            pts_gui, n_gui, xy_gui = copy(_points(bh)), length(BMO.hits(pd)), copy(gui.panels[1].xy[])
             spot_gui = _spot(pd)
             @test xy_gui != xy0
             pts, n, spot = _fresh(sys, pd)
@@ -648,7 +656,7 @@ const BMO = BeamletOptics
             notify(gui.widgets.trace_button.clicks)
             @test n_calls[] == 3
             @test !gui.trace.stale
-            pts_gui, xy_gui2 = copy(bh.points[]), copy(gui.panels[1].xy[])
+            pts_gui, xy_gui2 = copy(_points(bh)), copy(gui.panels[1].xy[])
             @test xy_gui2 != xy_gui
             pts, n, spot = _fresh(sys, pd)
             @test n == 1
@@ -676,11 +684,14 @@ const BMO = BeamletOptics
                 on_change = (g, obj) -> (n_calls[] += 1))
             @test n_calls[] == 1
             xy0 = copy(gui.panels[1].xy[])
+            p0 = Vector{Float64}(BMO.position(pd))
             gui.sliders.sliders[1].value[] = 1.0
             notify(events(gui.ax.scene).tick)
             # the callback and update_render! run, but no solve
             @test called == [1.0]
-            @test gui.system_handles[1].handles[2].P ≈ BMO.position(pd)
+            pd_plot = first(render_plots(render_children(gui.system_handles[1])[2]))
+            shift = Vector{Float64}(Makie.translation(pd_plot)[])
+            @test isapprox(shift, BMO.position(pd) - p0; atol = 1e-9)
             @test n_calls[] == 1
             @test gui.panels[1].xy[] == xy0
             @test gui.trace.stale
@@ -723,15 +734,15 @@ const BMO = BeamletOptics
     end
 
     @testset "clip planes" begin
-        _handle(gui, obj) = gui.controls.h.handles[findfirst(oh -> oh.obj === obj, gui.controls.h.handles)]
+        _handle(gui, obj) = render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, render_children(gui.controls.h))]
         # all plots of the system objects, including the nested plots of recipes
         _nested(p) = AbstractPlot[p; reduce(vcat, _nested.(p.plots); init = AbstractPlot[])]
-        _optics_plots(gui) = reduce(vcat, (_nested(p) for h in gui.system_handles for oh in h.handles
-                                           for p in oh.plots); init = AbstractPlot[])
+        _optics_plots(gui) = reduce(vcat, (_nested(p) for h in gui.system_handles for oh in render_children(h)
+                                           for p in render_plots(oh)); init = AbstractPlot[])
         # markers of the sources and clip planes
-        _marker_plots(gui) = reduce(vcat, (_nested(p) for oh in gui.controls.h.handles
-                                           if !(oh.obj isa BMO.AbstractObject) for p in oh.plots); init = AbstractPlot[])
-        _beam_plots(gui) = reduce(vcat, (_nested(p) for h in gui.beam_handles for p in Ext._beam_plots(h)))
+        _marker_plots(gui) = reduce(vcat, (_nested(p) for oh in render_children(gui.controls.h)
+                                           if !(rendered(oh) isa BMO.AbstractObject) for p in render_plots(oh)); init = AbstractPlot[])
+        _beam_plots(gui) = reduce(vcat, (_nested(p) for h in gui.beam_handles for p in GUI._beam_plots(h)))
         _control_plots(gui) = reduce(vcat, (_nested(p) for p in gui.controls.plots[1:4]))
         _planes(gui) = only(unique(p.clip_planes[] for p in _optics_plots(gui)))
         _shift_key!(gui, key) = (push!(events(gui.ax.scene).keyboardstate, Keyboard.left_shift);
@@ -761,20 +772,19 @@ const BMO = BeamletOptics
             end
 
             # a plot added later gets the planes, also after a move
-            added = Ext._capture_new_plots(gui.ax) do
-                cube = BMO.CubeMesh(0.01)
-                render!(gui.ax, NonInteractableObject(cube))
-            end
+            before = Set(objectid.(gui.ax.scene.plots))
+            render!(gui.ax, NonInteractableObject(BMO.CubeMesh(0.01)))
+            added = [p for p in gui.ax.scene.plots if objectid(p) ∉ before]
             @test !isempty(added)
             @test all(p -> p.clip_planes[] == P1, reduce(vcat, _nested.(added)))
 
             # the outline does not select the plane, the handle does
             marker = _handle(gui, plane)
-            pick_plot[] = marker.plots[1]
-            @test marker.plots[1] isa Makie.Lines
+            pick_plot[] = render_plots(marker)[1]
+            @test render_plots(marker)[1] isa Makie.Lines
             _select!(gui)
             @test isnothing(gui.controls.selected[])
-            pick_plot[] = marker.plots[2]
+            pick_plot[] = render_plots(marker)[2]
             _select!(gui)
             @test gui.controls.selected[] === plane
             @test all(isfinite, reduce(vcat, collect.(gui.controls.box_obs[])))
@@ -785,7 +795,7 @@ const BMO = BeamletOptics
             _key!(gui, Keyboard.up)
             @test collect(position(plane)) ≈ [0, 0.101, 0]
             @test abs(_planes(gui)[1].distance - P1[1].distance - 1e-3) < 1e-6
-            @test _planes(gui) == [Ext._plane3f(plane)]
+            @test _planes(gui) == [GUI._plane3f(plane)]
             @test all(p -> p.clip_planes[] == _planes(gui), reduce(vcat, _nested.(added)))
             @test marker.P ≈ position(plane)
             @test n_calls[] == n0
@@ -795,7 +805,7 @@ const BMO = BeamletOptics
 
             # shift+c flips the selected plane, c switches clipping off and on
             _shift_key!(gui, Keyboard.c)
-            @test Ext._normal(plane) ≈ [0, -1, 0]
+            @test GUI._normal(plane) ≈ [0, -1, 0]
             @test _planes(gui)[1].normal ≈ Vec3f(0, -1, 0)
             @test collect(position(plane)) ≈ [0, 0.101, 0]
             @test gui.clip.enabled
@@ -859,7 +869,7 @@ const BMO = BeamletOptics
             @test_throws ArgumentError _live_view(System([m, pd]), _beam();
                 clip_planes = [[0, 0, i] => [0, 0, 1] for i in 1:9])
             @test_throws ArgumentError _live_view(System([m, pd]), _beam(); clip_planes = [[0, 0, 0] => [0, 0, 0]])
-            @test_throws ArgumentError Ext.LiveClipPlane([0, 0, 0], [0, 0, 0], 1.0)
+            @test_throws ArgumentError GUI.LiveClipPlane([0, 0, 0], [0, 0, 0], 1.0)
         end
 
         @testset "drag of a plane with its normal along the rotation axis" begin
@@ -870,7 +880,7 @@ const BMO = BeamletOptics
             gui = _live_view(System([m, pd]), _beam(); throttle = false,
                 clip_planes = [[0, 0.1, 0] => [0, 0, 1]], pick = ax -> (pick_plot[], 0))
             plane = gui.clip.planes[1]
-            pick_plot[] = _handle(gui, plane).plots[2]
+            pick_plot[] = render_plots(_handle(gui, plane))[2]
             scene = gui.ax.scene
             events(scene).mouseposition[] = (100.0, 100.0)
             _select!(gui)
@@ -891,9 +901,9 @@ const BMO = BeamletOptics
             # everything below y = 0.5 is clipped, i.e. all objects
             gui = _live_view(System([m, pd]), _beam(); throttle = false,
                 clip_planes = [[0, 0.5, 0] => [0, 1, 0]])
-            @test Makie.boundingbox(gui.system_handles[1].handles[1].plots[1]) == Makie.Rect3d()
+            @test Makie.boundingbox(render_plots(render_children(gui.system_handles[1])[1])[1]) == Makie.Rect3d()
             gui.controls.selected[] = m
-            Ext._update_selection_box!(gui.controls)
+            GUI._update_selection_box!(gui.controls)
             pts = gui.controls.box_obs[]
             @test !isempty(pts)
             @test all(p -> all(isfinite, p), pts)
@@ -909,9 +919,9 @@ const BMO = BeamletOptics
             @test isempty(gui.clip.planes)
             # no clip planes: nothing is written
             @test all(p -> p.clip_planes[] == Plane3f[], _optics_plots(gui))
-            @test occursin("p: add clip plane", Ext._help_text(:move, 1e-9, 1e-6) * "\n" * gui.controls.help_extra)
+            @test occursin("p: add clip plane", GUI._help_text(:move, 1e-9, 1e-6) * "\n" * gui.controls.help_extra)
             gui.controls.help_shown = true
-            Ext._update_help!(gui.controls)
+            GUI._update_help!(gui.controls)
             @test occursin("shift+c: flip", gui.controls.help_obs[])
             n0 = n_calls[]
 
@@ -926,8 +936,8 @@ const BMO = BeamletOptics
             plane = gui.clip.planes[1]
             @test gui.controls.selected[] === plane
             @test collect(position(plane)) ≈ lookat
-            @test maximum(abs.(Ext._normal(plane) - view_dir)) < 1e-6
-            @test all(p -> p.clip_planes[] == [Ext._plane3f(plane)], _optics_plots(gui))
+            @test maximum(abs.(GUI._normal(plane) - view_dir)) < 1e-6
+            @test all(p -> p.clip_planes[] == [GUI._plane3f(plane)], _optics_plots(gui))
             @test all(p -> p.clip_planes[] == Plane3f[], _marker_plots(gui))
 
             # moved and rotated with keys like a component
@@ -936,8 +946,8 @@ const BMO = BeamletOptics
             x_axis = plane.dir[:, 1]
             _key!(gui, Keyboard.m)
             _key!(gui, Keyboard.up)
-            @test Ext._normal(plane) ≈ BMO.rotate3d(x_axis, 1e-2) * view_dir
-            @test all(p -> p.clip_planes[] == [Ext._plane3f(plane)], _optics_plots(gui))
+            @test GUI._normal(plane) ≈ BMO.rotate3d(x_axis, 1e-2) * view_dir
+            @test all(p -> p.clip_planes[] == [GUI._plane3f(plane)], _optics_plots(gui))
             _key!(gui, Keyboard.m)
             @test n_calls[] == n0
 
@@ -948,8 +958,8 @@ const BMO = BeamletOptics
             plane2 = gui.clip.planes[2]
             @test gui.controls.selected[] === plane2
             @test collect(position(plane2)) ≈ collect(position(m))
-            @test maximum(abs.(Ext._normal(plane2) - view_dir)) < 1e-6
-            @test _planes(gui) == Ext._plane3f.([plane, plane2])
+            @test maximum(abs.(GUI._normal(plane2) - view_dir)) < 1e-6
+            @test _planes(gui) == GUI._plane3f.([plane, plane2])
 
             # Delete with a component selected does nothing
             gui.controls.selected[] = m
@@ -958,16 +968,16 @@ const BMO = BeamletOptics
             @test gui.controls.selected[] === m
 
             # Delete removes the marker and the plane
-            marker_plots = copy(_handle(gui, plane2).plots)
+            marker_plots = copy(render_plots(_handle(gui, plane2)))
             gui.controls.selected[] = plane2
             _key!(gui, Keyboard.delete)
             @test gui.clip.planes == [plane]
             @test isnothing(gui.controls.selected[])
             @test !(plane2 in gui.controls.movable)
             @test !haskey(gui.controls.init_poses, plane2)
-            @test !any(oh -> oh.obj === plane2, gui.controls.h.handles)
+            @test !any(oh -> rendered(oh) === plane2, render_children(gui.controls.h))
             @test !any(p -> any(q -> q === p, gui.ax.scene.plots), marker_plots)
-            @test _planes(gui) == [Ext._plane3f(plane)]
+            @test _planes(gui) == [GUI._plane3f(plane)]
             # the undo history of the removed plane is dropped, undo still works
             @test all(e -> e.obj !== plane2, gui.controls.undo_stack)
             gui.controls.selected[] = plane
@@ -1093,7 +1103,7 @@ const BMO = BeamletOptics
 
         # Only the degenerate axis is padded, by half the extent of the other axis
         ax = Axis(Figure()[1, 1])
-        Ext._pad_degenerate_limits!(ax, [Point2f(1, 0), Point2f(1, 2)])
+        GUI._pad_degenerate_limits!(ax, [Point2f(1, 0), Point2f(1, 2)])
         lims = ax.targetlimits[]
         @test lims.origin ≈ [0.0, 1 - 1.05] && lims.widths ≈ [2.0, 2 * 1.05]
     end
@@ -1120,7 +1130,7 @@ const BMO = BeamletOptics
         gui_ref = Ref{Any}(nothing)
         @test_logs (:error, r"on_change") begin
             gui_ref[] = _live_view(sys, beam; throttle = false, on_change = (g, obj) -> error("boom"),
-                pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+                pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
             gui = gui_ref[]
             _select!(gui)
             _key!(gui, Keyboard.up)
@@ -1134,7 +1144,7 @@ const BMO = BeamletOptics
                      delete!(events(gui.ax.scene).keyboardstate, Keyboard.left_control))
 
     # Angle between the rotation matrices R1 and R2
-    _angle(R1, R2) = Ext._rotation_axis_angle(R1 * R2')[2]
+    _angle(R1, R2) = GUI._rotation_axis_angle(R1 * R2')[2]
 
     @testset "export changes" begin
         m, pd = _fixture()
@@ -1154,7 +1164,7 @@ const BMO = BeamletOptics
         gui = _live_view(sys => beam, sys => cs; throttle = false, detectors = [],
             labels = Dict(m => "m1", lens => "the lens", g => "end", pd => "PD"))
         gui.export_clipboard = false
-        entries = Ext._menu_entries(gui.controls)
+        entries = GUI._menu_entries(gui.controls)
         @test all(first.(entries) .=== objs)
         @test last.(entries) == [0, 0, 0, 0, 1, 1, 0, 0, 0]
 
@@ -1181,13 +1191,13 @@ const BMO = BeamletOptics
         translate3d!(cs, [0, 0, 2e-3])
         rotate3d!(cs, [1.0, 0, 0], 0.02)
         # clip planes are not exported
-        plane = Ext._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
+        plane = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
         translate3d!(plane, [0, 0.01, 0])
 
         buf = IOBuffer()
         code = export_changes(gui; io = buf)
         @test String(take!(buf)) == code
-        names = Ext._export_names(gui, objs)
+        names = GUI._export_names(gui, objs)
         @test names[m] == "m1"
         @test names[lens] == "obj7" && names[g] == "obj4" && names[pd] == "PD" && names[m2] == "obj3"
         @test occursin("# m1 (Mirror)\nrotate3d!(m1, [", code)
@@ -1209,8 +1219,8 @@ const BMO = BeamletOptics
         end
         include_string(mod, code)
         for (obj, f) in zip(objs, fresh)
-            P, R = Ext._pose(obj)
-            Pf, Rf = Ext._pose(f)
+            P, R = GUI._pose(obj)
+            Pf, Rf = GUI._pose(f)
             @test maximum(abs, P - Pf) < 1e-12
             @test _angle(R, Rf) < 1e-12
         end
@@ -1231,11 +1241,11 @@ const BMO = BeamletOptics
         for (axis, angle) in (([1.0, 2, 3], 1e-9), ([0.0, 0, 1], 0.3), ([1.0, -1, 0.5], π - 1e-9),
                 ([0.3, 0.2, -1], 2.5), ([0.0, 1, 0], π))
             R = BMO.rotate3d(axis, angle)
-            a, θ = Ext._rotation_axis_angle(R)
+            a, θ = GUI._rotation_axis_angle(R)
             @test θ ≈ angle rtol = 1e-12
             @test maximum(abs, BMO.rotate3d(a, θ) - R) < 1e-14
         end
-        @test Ext._rotation_axis_angle([1.0 0 0; 0 1 0; 0 0 1])[2] == 0
+        @test GUI._rotation_axis_angle([1.0 0 0; 0 1 0; 0 0 1])[2] == 0
     end
 
     @testset "pose inspector" begin
@@ -1244,15 +1254,15 @@ const BMO = BeamletOptics
         translate3d!(lens, [0.01, 0.05, 0.002])
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            fine_angle = 1e-3, fine_step = 1e-3, pick = ax -> (gui_ref[].controls.h.handles[2].plots[1], 0))
+            fine_angle = 1e-3, fine_step = 1e-3, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[2])[1], 0))
         gui_ref[] = gui
-        box(k) = Ext._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[k])
+        box(k) = GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[k])
         texts() = [isnothing(box(k)) ? "" : box(k).displayed_string[] for k in 1:6]
         @test texts() == fill("", 6)
 
         # nothing selected: the card has no widgets yet, `_apply_pose_input!` ignores the input
         @test isnothing(box(1))
-        Ext._apply_pose_input!(gui, nothing, 1, "5")
+        GUI._apply_pose_input!(gui, nothing, 1, "5")
         @test collect(BMO.position(lens)) == [0.01, 0.05, 0.002]
 
         # the boxes follow the selection
@@ -1279,14 +1289,14 @@ const BMO = BeamletOptics
         ref = deepcopy(lens)
         _key!(gui, Keyboard.m)
         @test gui.controls.mode[] == :rotate
-        @test Ext._key_step!(gui.controls, ref, Keyboard.left, 1)
+        @test GUI._key_step!(gui.controls, ref, Keyboard.left, 1)
         box(6).stored_string[] = "1"
         @test BMO.orientation(lens) == BMO.orientation(ref)
         @test collect(BMO.position(lens)) == P
         @test texts() == ["12.5", "50.0", "2.0", "", "", ""]
         # red and green axes, like the keys up and page up
         for (k, key) in ((4, Keyboard.up), (5, Keyboard.page_up))
-            Ext._key_step!(gui.controls, ref, key, 1)
+            GUI._key_step!(gui.controls, ref, key, 1)
             box(k).stored_string[] = "1"
             @test BMO.orientation(lens) ≈ BMO.orientation(ref) atol = 1e-15
         end
@@ -1317,7 +1327,7 @@ const BMO = BeamletOptics
         @test gui.controls.mode[] == :move
         @test collect(BMO.position(lens)) ≈ P0 atol = 1e-15
         translate3d!(lens, [0, 0, 1e-3])
-        Ext._request_update!(gui.controls)
+        GUI._request_update!(gui.controls)
         @test texts()[1:3] == ["3", "50.0", "3.0"]
         box(1).focused[] = false
         # the boxes follow key steps
@@ -1336,11 +1346,11 @@ const BMO = BeamletOptics
             constraints = Dict(m => (; move = (:v,), rotate = ())))
         gui.widgets.menu.i_selected[] = findfirst(o -> o === m, gui.objects.menu)
         P0, R0 = collect(BMO.position(m)), Matrix(BMO.orientation(m))
-        Ext._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[1]).stored_string[] = "5"
-        Ext._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[6]).stored_string[] = "5"
+        GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[1]).stored_string[] = "5"
+        GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[6]).stored_string[] = "5"
         @test collect(BMO.position(m)) == P0
         @test BMO.orientation(m) == R0
-        Ext._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[3]).stored_string[] = "5"
+        GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[3]).stored_string[] = "5"
         @test collect(BMO.position(m)) ≈ [0, 0.1, 0.005]
         close(gui)
     end
@@ -1367,7 +1377,7 @@ const BMO = BeamletOptics
         @test length(BMO.hits(pd)) == 8
         @test endswith(gui.panels[1].ax.title[], "8 rays (preview)")
         @test n_calls[] == n0
-        pts = copy(gui.beam_handles[1].points[])
+        pts = copy(_points(gui.beam_handles[1]))
         # still moving
         _tick!(gui)
         @test gui.trace.preview
@@ -1380,7 +1390,7 @@ const BMO = BeamletOptics
         @test gui.panels[1].ax.title[] == "Detector 1: 40 rays"
         @test n_calls[] == n0 + 1
         # the beam plot shows the same rendered subset
-        @test gui.beam_handles[1].points[] == pts
+        @test _points(gui.beam_handles[1]) == pts
         # t solves fully as well
         _key!(gui, Keyboard.up)
         @test gui.trace.preview
@@ -1429,7 +1439,7 @@ const BMO = BeamletOptics
         # synthetic spot
         c = (0.3e-3, -0.2e-3)
         pts = [Point2(c[1] + dx, c[2] + dz) for (dx, dz) in ((1e-3, 0), (-1e-3, 0), (0, 2e-3), (0, -2e-3))]
-        mt = Ext._spot_metrics(pts)
+        mt = GUI._spot_metrics(pts)
         @test mt.n == 4
         @test abs(mt.cx - c[1]) < 1e-9 && abs(mt.cz - c[2]) < 1e-9
         @test abs(mt.rms - sqrt(2.5) * 1e-3) < 1e-9
@@ -1499,7 +1509,7 @@ const BMO = BeamletOptics
         @test last(p.history_cx[]) ≈ Point2f(3, 1e3 * p.metrics.cx)
         @test p.history_axes[1].ylabel[] == "N"
         for _ in 1:310
-            Ext._resolve!(gui, nothing)
+            GUI._resolve!(gui, nothing)
         end
         @test length(p.history_value[]) == 300
         @test length(p.history_cz[]) == 300
@@ -1614,7 +1624,7 @@ const BMO = BeamletOptics
         pick_plot = Ref{Any}(nothing)
         gui = _live_view(System([m1, m2]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             labels = Dict(m1 => "M1", m2 => "M2"), pick = ax -> (pick_plot[], 0))
-        _plot(obj) = gui.controls.h.handles[findfirst(oh -> oh.obj === obj, gui.controls.h.handles)].plots[1]
+        _plot(obj) = render_plots(render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, render_children(gui.controls.h))])[1]
         gui.widgets.measure_toggle.active[] = true
         @test startswith(gui.status.text[], "measure:")
         pick_plot[] = _plot(m1)
@@ -1641,7 +1651,7 @@ const BMO = BeamletOptics
 
     @testset "theme and info label" begin
         _rgb(c) = RGBf(Makie.to_color(c))
-        _plots(gui, obj) = only(oh for oh in gui.controls.h.handles if oh.obj === obj).plots
+        _plots(gui, obj) = render_plots(only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj))
         _detector_color(gui, pd) = _rgb(first(p for p in _plots(gui, pd) if p isa Makie.Mesh).color[])
         _help(gui) = only(p for p in gui.controls.plots if p isa Makie.Text && p.parent === gui.ax.blockscene)
         _strokes(gui, objs...) = [_rgb(p.strokecolor[]) for o in objs for p in _plots(gui, o) if p isa Makie.Scatter]
@@ -1654,16 +1664,16 @@ const BMO = BeamletOptics
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_view(System([m, pd]), beam; clip_planes = planes)
-        t = Ext._APP_THEMES[:light]
-        @test gui.layout isa Ext.CompactLayout
+        t = GUI._APP_THEMES[:light]
+        @test gui.layout isa GUI.CompactLayout
         @test gui.fig.scene.backgroundcolor[] == t.background
         @test gui.ax.scene.backgroundcolor[] == t.view
-        @test _rgb(gui.beam_handles[1].plot.color[]) == _rgb(:blue)
+        @test _rgb(only(render_plots(gui.beam_handles[1])).color[]) == _rgb(:blue)
         plane = only(gui.clip.planes)
         @test _plane_color(gui, plane) == _rgb(:purple)
         @test all(==(_rgb(:black)), _strokes(gui, plane, beam))
         @test length(_strokes(gui, plane, beam)) >= 2
-        @test _detector_color(gui, pd) == Ext._materials()[:detector].color
+        @test _detector_color(gui, pd) == BMO.look_colors()[:detector]
         @test _rgb(_help(gui).color[]) == _rgb(:gray40)
         # the info label at the right of the status line: last solve, rays, projection
         info = gui.widgets.info
@@ -1681,7 +1691,7 @@ const BMO = BeamletOptics
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         dark = _live_view(System([m, pd]), beam; theme = :dark, clip_planes = planes)
-        t = Ext._APP_THEMES[:dark]
+        t = GUI._APP_THEMES[:dark]
         @test dark.fig.scene.backgroundcolor[] == t.background
         @test dark.ax.scene.backgroundcolor[] == t.view
         @test dark.status.color[] == t.text
@@ -1689,7 +1699,7 @@ const BMO = BeamletOptics
         @test _rgb(dark.widgets.measure_toggle.framecolor_inactive[]) == _rgb(t.muted)
         @test _rgb(dark.widgets.trace_button.buttoncolor[]) == _rgb(t.field)
         @test _rgb(dark.panels[1].ax.backgroundcolor[]) == _rgb(t.view)
-        @test dark.beam_handles[1].plot.color[] == t.rays
+        @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
         @test all(==(_rgb(t.marker_stroke)), _strokes(dark, only(dark.clip.planes), beam))
         @test _detector_color(dark, pd) == t.materials[:detector]
@@ -1704,7 +1714,7 @@ const BMO = BeamletOptics
             clip_beams = true, orthographic = true, show_sources = false)
         w = gui.widgets
         # the tools of the shared logic, text buttons and toggles initialized from the kwargs
-        @test [s.role for s in Ext._tools(gui.layout)] == [:trace_button, :auto_trace_toggle,
+        @test [s.role for s in GUI._tools(gui.layout)] == [:trace_button, :auto_trace_toggle,
             :show_all_button, :home_button, :save_view_button, :orthographic_toggle,
             :clip_beams_toggle, :sources_toggle, :measure_toggle, :export_button]
         @test w.trace_button isa Makie.Button && w.trace_button.label[] == "Trace (t)"
@@ -1732,7 +1742,7 @@ const BMO = BeamletOptics
         views = ["top" => ([0.0, 0.05, 0.5], [0.0, 0.05, 0.0], [0.0, 1.0, 0.0])]
         gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false, views)
         cam = cameracontrols(gui.ax.scene)
-        _view() = Ext._current_view(gui)
+        _view() = GUI._current_view(gui)
         # the home view is taken at the first tick, e.g. after `set_view` before `display`
         set_view(gui.ax, [0.3, -0.2, 0.25], [0.0, 0.05, 0.0], [0.0, 0.0, 1.0])
         _tick!(gui)
@@ -1745,7 +1755,7 @@ const BMO = BeamletOptics
         gui.controls.selected[] = lens
         _key!(gui, Keyboard.g)
         _tick!(gui)
-        bb = Ext._selection_bbox(gui.controls, lens, Ext._object_plots(gui.controls.h, lens))
+        bb = GUI._selection_bbox(gui.controls, lens, GUI._object_plots(gui.controls.h, lens))
         center = collect(minimum(bb) .+ Makie.widths(bb) ./ 2)
         d = norm(collect(Makie.widths(bb)))
         eye, lookat, _ = _view()
@@ -1760,8 +1770,8 @@ const BMO = BeamletOptics
         _tick!(gui)
         @test isnothing(gui.camera.animation)
         eye, lookat, _ = _view()
-        bbs = [Makie.boundingbox(p) for h in gui.system_handles for oh in h.handles for p in oh.plots]
-        bb = reduce(Ext.GeometryBasics.union, bbs)
+        bbs = [Makie.boundingbox(p) for h in gui.system_handles for oh in render_children(h) for p in render_plots(oh)]
+        bb = reduce(GUI.GeometryBasics.union, bbs)
         @test lookat ≈ collect(minimum(bb) .+ Makie.widths(bb) ./ 2) atol = 1e-6
 
         # home
@@ -1798,6 +1808,62 @@ const BMO = BeamletOptics
         close(gui)
 
         @test_throws ArgumentError _live_view(System([lens]), Beam([0.0, 0, 0], [0.0, 1, 0]); views = ["a" => [1, 2, 3]])
+    end
+end
+
+
+# from the lighting tests of the render look of BeamletOptics
+@testset "Live view lighting and edges" begin
+    default_lights = copy(Makie.get_lights(LScene(Figure()[1, 1]).scene))
+    edge_plots(plots) = filter(p -> p isa Makie.Lines, plots)
+    m = RoundPlanoMirror(25e-3, 5e-3)
+    beam = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
+    gui = live_view(System([m]), beam; detectors = [], lighting = :none)
+    @test Makie.get_lights(gui.ax.scene) == default_lights
+    close(gui)
+    # GLMakie: the full studio rig, see `studio_lighting!`
+    gui = live_view(System([m]), beam; detectors = [])
+    @test length(Makie.get_lights(gui.ax.scene)) == 3
+    close(gui)
+    # edges of a mirror in the `:cad` look on by default, off via `edges = false`
+    set_render_look(:cad)
+    gui = live_view(System([m]), beam; detectors = [])
+    @test length(edge_plots(render_plots(only(render_children(gui.system_handles[1]))))) == 1
+    close(gui)
+    gui = live_view(System([m]), beam; detectors = [], edges = false)
+    @test isempty(edge_plots(render_plots(only(render_children(gui.system_handles[1])))))
+    close(gui)
+    set_render_look(:modern)
+end
+
+# from the live beam tests of BeamletOptics
+@testset "Live view solves by brute force" begin
+    # Start points of the rays of a beam, of the chief ray of a beamlet, of all beams of a group
+    path(b::Beam) = [Vector{Float64}(position(r)) for r in BMO.rays(b)]
+    path(g::GaussianBeamlet) = path(g.chief)
+    path(bg::BMO.AbstractBeamGroup) = reduce(vcat, map(path, BMO.beams(bg)))
+    m = RoundPlanoMirror(25e-3, 5e-3)
+    zrotate3d!(m, deg2rad(45))
+    translate3d!(m, [0, 0.1, 0])
+    sys = System([m])
+    for make in (() -> Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6),
+            () -> GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3),
+            () -> CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40))
+        b = make()
+        GUI._solve_from_start!(sys, b)
+        p = path(b)
+        @test length(p) > 1
+        # Solved again, the path is the same, nothing is appended
+        GUI._solve_from_start!(sys, b)
+        @test path(b) == p
+        # After a change of the system, the path is that of a new beam solved from its start
+        translate3d!(m, [0, 0.05, 0])
+        GUI._solve_from_start!(sys, b)
+        ref = make()
+        solve_system!(sys, ref)
+        @test length(path(b)) == length(path(ref)) && all(path(b) .≈ path(ref))
+        @test !(path(b) == p)
+        translate3d!(m, [0, -0.05, 0])
     end
 end
 

@@ -3,8 +3,8 @@ Tracing of the live view: preview and full solves, background jobs, stale beams,
 step and the sliders
 =#
 
-_render_every(h::BeamRenderHandle) = h.render_every
-_render_every(h::AstigmaticGroupRenderHandle) = h.render_every
+# Every how many beams of a beam group are drawn, see `BeamletOptics.render_settings`
+_render_every(h::AbstractBeamRenderHandle) = render_settings(h).render_every
 _render_every(_) = 1
 
 """Returns `true` if the `beam` with the render handle `h` is solved as a preview while moving."""
@@ -59,7 +59,7 @@ Empties all `Detector`s of the systems of the `pairs`, solves the systems and co
 of the detector `panels` (see `_panel_field`), without changing any plot, such that it can run in
 a background task, see `_solve!`. `handles` are the render handles of the beams of the `pairs`.
 Each source is traced, and each field computed, with its progress output `sinks[k]` (see
-`BMO._PROGRESS_SINK`, `nothing` for the terminal): first one per pair, then one per panel.
+`BMO.PROGRESS_SINK`, `nothing` for the terminal): first one per pair, then one per panel.
 
 With `preview`, beam groups rendered with `render_every > 1` are solved only for their rendered
 beams, see `_solve_preview!`. Returns `(; previewed, panels, fields, solve_time, field_time)`:
@@ -73,7 +73,7 @@ function _compute(pairs, handles, panels, sinks; coarse = false, preview = false
     previewed = preview && any(i -> _previewable(pairs[i].second, handles[i]), eachindex(pairs))
     for (i, (sys, beam)) in enumerate(pairs)
         h = handles[i]
-        Base.ScopedValues.with(BMO._PROGRESS_SINK => sinks[i]) do
+        Base.ScopedValues.with(BMO.PROGRESS_SINK => sinks[i]) do
             if preview && _previewable(beam, h)
                 _solve_preview!(sys, beam, _render_every(h))
             else
@@ -83,7 +83,7 @@ function _compute(pairs, handles, panels, sinks; coarse = false, preview = false
     end
     t1 = time_ns()
     n = length(pairs)
-    fields = Any[Base.ScopedValues.with(() -> _panel_field(p, coarse), BMO._PROGRESS_SINK => sinks[n + k])
+    fields = Any[Base.ScopedValues.with(() -> _panel_field(p, coarse), BMO.PROGRESS_SINK => sinks[n + k])
                  for (k, p) in enumerate(panels)]
     return (; previewed, panels, fields, solve_time = 1e-9 * (t1 - t0),
         field_time = 1e-9 * (time_ns() - t1))
@@ -171,7 +171,7 @@ function _start_job(gui::LiveView, apply, obj, pairs, handles, panels; coarse = 
     isempty(pairs) || _on_solve_started!(gui)
     # The task works on its own copies of the lists, the objects are protected by `_change!`
     pairs, handles, panels = copy(pairs), copy(handles), copy(panels)
-    sinks = [BMO._ProgressSink() for _ in 1:(length(pairs) + length(panels))]
+    sinks = [BMO.ProgressSink() for _ in 1:(length(pairs) + length(panels))]
     anchors = Point3f[_progress_anchor.(last.(pairs)); _progress_anchor.(getfield.(panels, :pd))]
     done = Base.Event()
     task = Threads.@spawn try
@@ -228,7 +228,7 @@ _running(::_SolveJob) = true
     _cancel_solve!(gui::LiveView)
 
 Cancels the solve of the `gui` that runs in the background, if any: its loops stop after their
-current item, see `BMO._ProgressSink`. Waits for the task, discards its result, marks the beams and
+current item, see `BMO.ProgressSink`. Waits for the task, discards its result, marks the beams and
 detector panels as outdated and counts the elapsed time as the duration of the solve, such that
 further changes defer the solve until the movement pauses, see `_on_change!`. A deferred solve,
 preview or coarse panel is not completed afterwards, the next change or `t` solves again.
@@ -282,7 +282,7 @@ _solves(job::_SolveJob) = job.timing !== :panel_time
 
 """Marks the beams and detector panels of the `gui` as outdated after the solve failed with `e`."""
 function _fail!(gui::LiveView, e)
-    if BMO._is_cancelled(e)
+    if BMO.is_cancelled(e)
         _mark_stale!(gui, nothing; msg = _CANCELLED)
         return nothing
     end
@@ -310,7 +310,7 @@ function _poll!(gui::LiveView, job::_SolveJob)
         _finish!(gui, job) && isnothing(job.obj) && (gui.status.text[] = "traced")
         return nothing
     end
-    shown = any(k -> _show_loop!(gui, job, k, BMO._progress_state(job.sinks[k])),
+    shown = any(k -> _show_loop!(gui, job, k, BMO.progress_state(job.sinks[k])),
         eachindex(job.sinks))
     shown || _hide_progress!(gui.trace.progress)
     return nothing
@@ -320,7 +320,7 @@ end
     _show_loop!(gui, job, k, state)
 
 Shows the progress window of the loop of the sink `k` of the `job` with the `state` of
-`BMO._progress_state`, at the position of its source or detector, once the loop has run for
+`BMO.progress_state`, at the position of its source or detector, once the loop has run for
 `gui.trace.progress_delay`, like the terminal bars after `get_progress_threshold()`. Returns `true` if
 the window is shown.
 """
@@ -339,7 +339,7 @@ end
 """
     _progress_label(state, shown, t)
 
-Label of the progress window of a loop with the `state` of `BMO._progress_state`, e.g.
+Label of the progress window of a loop with the `state` of `BMO.progress_state`, e.g.
 "Tracing beams 42 % · 3 s" with the remaining time. It uses the rate since the window appeared
 (`shown`, see `_SolveJob`), like the terminal bars, and is left out until that rate is known.
 """
@@ -361,9 +361,7 @@ end
 
 const _STALE_ALPHA = 0.3
 
-_beam_plots(h::BeamRenderHandle) = AbstractPlot[h.plot]
-_beam_plots(h::GaussianRenderHandle) = AbstractPlot[h.mesh_plot; h.beam_plots]
-_beam_plots(h::AstigmaticGroupRenderHandle) = AbstractPlot[h.mesh_plot]
+_beam_plots(h::AbstractBeamRenderHandle) = render_plots(h)
 _beam_plots(h) = AbstractPlot[]
 
 """Dims all beam plots of the `gui` to indicate outdated beams, stores the original `alpha`."""

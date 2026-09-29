@@ -67,7 +67,7 @@ end
     _menu_entries(gui)
 
 Returns `(key, depth)` of the entries of the component menu of the `gui`: per system its
-`SystemRenderHandle` (depth 0), which inspects the system (see `_inspect!`), followed by its movable
+system handle (depth 0), which inspects the system (see `_inspect!`), followed by its movable
 objects (see `_menu_entries(ctrl)`) one level deeper, then the other movable objects, e.g. the
 sources and the extras.
 """
@@ -141,13 +141,13 @@ end
 
 """
     _select!(gui, obj)
-    _select!(gui, h::SystemRenderHandle)
+    _select!(gui, h::AbstractSystemRenderHandle)
 
 Selects the movable `obj` like a click in the 3D view, e.g. from the component menu or the object
 tree, and shows its pose in the status line. Nothing is selected in the spectator mode. The entry
 `h` of a system inspects the system instead, see `_inspect!`.
 """
-_select!(gui::LiveView, h::SystemRenderHandle) = _inspect!(gui, h)
+_select!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, h)
 function _select!(gui::LiveView, obj)
     ctrl = gui.controls
     ctrl.selected[] === obj && return nothing
@@ -207,7 +207,7 @@ end
 
 """
     _inspect!(gui, obj)
-    _inspect!(gui, h::SystemRenderHandle)
+    _inspect!(gui, h::AbstractSystemRenderHandle)
 
 Shows `obj` on the card of the selection of the `gui` (floating next to it, or in the inspector of
 the app layout) without selecting it for moving, i.e. without gizmo and selection box: a system
@@ -217,7 +217,7 @@ is not movable. The selection of the controls is cleared, since `gui.objects.ins
 of the 3D view or a new selection, see `_end_inspection!` and `_on_select!`. The pose boxes of an
 inspected object that is not movable reject inputs, see `_apply_pose_input!`.
 """
-_inspect!(gui::LiveView, h::SystemRenderHandle) = _inspect!(gui, h.sys)
+_inspect!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, rendered(h))
 function _inspect!(gui::LiveView, obj)
     gui.objects.inspected === obj && return nothing
     ctrl = gui.controls
@@ -245,12 +245,12 @@ end
     _row_key(gui, obj)
 
 The key of `obj` in the component menu and in the object tree: the object itself, the
-`SystemRenderHandle` of a system (or of the extras).
+`AbstractSystemRenderHandle` of a system (or of the extras).
 """
 _row_key(::LiveView, obj) = obj
 function _row_key(gui::LiveView, sys::BMO.AbstractSystem)
     for h in (gui.system_handles..., gui.extras)
-        h.sys === sys && return h
+        rendered(h) === sys && return h
     end
     return sys
 end
@@ -295,10 +295,10 @@ again whose opacity was set to 0 gets its initial opacity back, see `_set_opacit
 function _set_hidden!(gui::LiveView, obj, hide::Bool)
     for leaf in _leaves(obj)
         hide ? push!(gui.objects.hidden, leaf) : delete!(gui.objects.hidden, leaf)
-        i = findfirst(oh -> oh.obj === leaf, gui.controls.h.handles)
-        isnothing(i) && continue
+        oh = _child_handle(gui.controls.h, leaf)
+        isnothing(oh) && continue
         visible = !hide && (gui.widgets.sources_toggle.active[] || !_is_source(leaf))
-        for plot in gui.controls.h.handles[i].plots
+        for plot in render_plots(oh)
             plot.visible[] == visible || (plot.visible[] = visible)
         end
         hide || _restore_opacity!(gui, leaf, get(gui.objects.opacity, leaf, nothing))
@@ -317,10 +317,10 @@ Sources hidden via the "hide" button stay hidden.
 """
 function _set_show_sources!(gui::LiveView, show::Bool)
     ctrl = gui.controls
-    for oh in ctrl.h.handles
-        _is_source(oh.obj) || continue
-        visible = show && !(oh.obj in gui.objects.hidden)
-        for plot in oh.plots
+    for oh in render_children(ctrl.h)
+        _is_source(rendered(oh)) || continue
+        visible = show && !(rendered(oh) in gui.objects.hidden)
+        for plot in render_plots(oh)
             plot.visible[] == visible || (plot.visible[] = visible)
         end
     end

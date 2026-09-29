@@ -1,24 +1,23 @@
 module TestLiveCardRows
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 @testset "Live card rows" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     _live_view(args...; kwargs...) =
         live_view(args...; merge((; trace_budget = Inf, throttle = false), kwargs)...)
     function _select!(gui, obj)
         gui.controls.selected[] = obj
-        Ext._update_selection_box!(gui.controls)
+        GUI._update_selection_box!(gui.controls)
         return nothing
     end
     # Text of the declared label `name` on the card of the selection
-    _text(gui, name) = Ext._card_widget(gui.cards.selection, name).text[]
+    _text(gui, name) = GUI._card_widget(gui.cards.selection, name).text[]
 
     # Beam along +y, mirror at 45° reflects it along +x onto the detector
     function _fixture()
@@ -46,7 +45,7 @@ const BMO = BeamletOptics
         @test _text(gui, :signal) == "N = 1"
         # refreshed after the solve of a change: the mirror rotated by 1° about z
         _select!(gui, m)
-        Ext._card_widget(gui.cards.selection, :rv).stored_string[] = string(1e3 * deg2rad(1))
+        GUI._card_widget(gui.cards.selection, :rv).stored_string[] = string(1e3 * deg2rad(1))
         @test _text(gui, :beam) in ("1 ray, AOI 44.0°", "1 ray, AOI 46.0°")
         close(gui)
     end
@@ -78,7 +77,7 @@ const BMO = BeamletOptics
         _select!(gui, pol)
         @test _text(gui, :axis) == "0.0° from horizontal"
         rotate3d!(pol, [0.0, 1, 0], deg2rad(30))
-        Ext._update_inspector!(gui; force = true)
+        GUI._update_inspector!(gui; force = true)
         @test _text(gui, :axis) in ("30.0° from horizontal", "150.0° from horizontal")
         close(gui)
     end
@@ -88,7 +87,7 @@ const BMO = BeamletOptics
         g = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
         gui = _live_view(System([m, pd]), g)
         _select!(gui, g)
-        @test _text(gui, :gauss) == "1000 nm, w0 500 µm, zR $(Ext._length_string(rayleigh_range(g)))"
+        @test _text(gui, :gauss) == "1000 nm, w0 500 µm, zR $(GUI._length_string(rayleigh_range(g)))"
         # the power of the intensity panel of the detector
         _select!(gui, pd)
         @test startswith(_text(gui, :signal), "P = ") && endswith(_text(gui, :signal), " mW")
@@ -116,13 +115,13 @@ const BMO = BeamletOptics
         sys = System([m, pd])
         gui = _live_view(sys => src, sys => Beam([0.0, 0, 0], [0.0, 1, 0]); preview = false)
         # no pose rows, the number of objects, the rays of both sources and the last solve
-        rows = BMO.card_rows(sys)
+        rows = BeamletOpticsGUI.card_rows(sys)
         @test length(rows) == 3
-        Ext._inspect!(gui, sys)
+        GUI._inspect!(gui, sys)
         @test _text(gui, :objects) == "2"
         @test _text(gui, :rays) == "41"
-        @test _text(gui, :solve) == Ext._ms_string(gui.trace.solve_time)
-        @test isnothing(Ext._card_widget(gui.cards.selection, :x))
+        @test _text(gui, :solve) == GUI._ms_string(gui.trace.solve_time)
+        @test isnothing(GUI._card_widget(gui.cards.selection, :x))
         close(gui)
     end
 
@@ -132,8 +131,8 @@ const BMO = BeamletOptics
         gui = _live_view(System([m, pd]), src; preview = false)
         _select!(gui, m)
         @test startswith(_text(gui, :beam), "1000 rays")
-        Ext._update_inspector!(gui)
-        t = @elapsed Ext._update_inspector!(gui)
+        GUI._update_inspector!(gui)
+        t = @elapsed GUI._update_inspector!(gui)
         @test t < 5e-3
         close(gui)
     end

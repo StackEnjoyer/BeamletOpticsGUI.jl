@@ -108,11 +108,11 @@ end
 """
     _visible_bbox(handles) -> Union{Rect3d, Nothing}
 
-Returns the bounding box of the visible plots of the objects of the `handles` (`SystemRenderHandle`s,
+Returns the bounding box of the visible plots of the objects of the `handles` (system handles,
 e.g. of the systems and the extras of a live view), or `nothing` if there are none.
 """
 function _visible_bbox(handles)
-    bbs = [Makie.boundingbox(p) for h in handles for oh in h.handles for p in oh.plots if p.visible[]]
+    bbs = [Makie.boundingbox(p) for h in handles for p in render_plots(h) if p.visible[]]
     filter!(_is_finite_box, bbs)
     return isempty(bbs) ? nothing : reduce(GeometryBasics.union, bbs)
 end

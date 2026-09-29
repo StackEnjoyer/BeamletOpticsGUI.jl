@@ -214,8 +214,8 @@ Returned by [`kinematic_controls!`](@ref). The currently selected object is stor
 `selected` `Observable`, the current mode (`:move` or `:rotate`) in the `mode` `Observable`. Use
 `close` to remove the controls.
 """
-mutable struct KinematicController{H <: SystemRenderHandle}
-    ax::_RenderEnv
+mutable struct KinematicController{H <: AbstractSystemRenderHandle}
+    ax::_Axis
     h::H
     movable::Vector{_LiveMovable}
     init_poses::IdDict{_LiveMovable, Tuple{Point3{Float64}, Matrix{Float64}}}
@@ -313,8 +313,10 @@ end
 """Returns the chain `[leaf, parent of leaf, …, top-level object]` of the hierarchy of `ctrl.h`."""
 function _chain(ctrl, leaf)
     chain = _LiveMovable[leaf]
-    while haskey(ctrl.h.parent, last(chain))
-        push!(chain, ctrl.h.parent[last(chain)])
+    parent = render_parent(ctrl.h, leaf)
+    while !isnothing(parent)
+        push!(chain, parent)
+        parent = render_parent(ctrl.h, parent)
     end
     return chain
 end
@@ -325,11 +327,11 @@ function _is_movable(ctrl::KinematicController, obj)
     return any(o -> o === top, ctrl.movable)
 end
 
-function _object_plots(h::SystemRenderHandle, obj)
+function _object_plots(h::AbstractSystemRenderHandle, obj)
     plots = AbstractPlot[]
     for leaf in _leaves(obj)
-        i = findfirst(oh -> oh.obj === leaf, h.handles)
-        isnothing(i) || append!(plots, _pickable_plots(h.handles[i]))
+        oh = _child_handle(h, leaf)
+        isnothing(oh) || append!(plots, _pickable_plots(oh))
     end
     return plots
 end
@@ -454,7 +456,7 @@ of `obj` is returned, with the edge length of a source marker (8 % of the visibl
 function _selection_bbox(ctrl::KinematicController, obj, plots)
     bbs = filter(_is_finite_box, [Makie.boundingbox(p) for p in plots])
     isempty(bbs) || return reduce(GeometryBasics.union, bbs)
-    all_plots = reduce(vcat, (oh.plots for oh in ctrl.h.handles); init = AbstractPlot[])
+    all_plots = render_plots(ctrl.h)
     scene_bbs = filter(_is_finite_box, [Makie.boundingbox(p) for p in all_plots])
     w = isempty(scene_bbs) ? 1e-2 :
         0.08 * maximum(GeometryBasics.widths(reduce(GeometryBasics.union, scene_bbs)))
@@ -476,8 +478,8 @@ typical size are not affected, nor are the objects of a scene with one or two ob
 """
 function _gizmo_cap(ctrl::KinematicController)
     sizes = Float64[]
-    for oh in ctrl.h.handles
-        bbs = filter(_is_finite_box, [Makie.boundingbox(p) for p in oh.plots if p.visible[]])
+    for oh in render_children(ctrl.h)
+        bbs = filter(_is_finite_box, [Makie.boundingbox(p) for p in render_plots(oh) if p.visible[]])
         isempty(bbs) || push!(sizes, maximum(GeometryBasics.widths(reduce(GeometryBasics.union, bbs))))
     end
     isempty(sizes) && return Inf
@@ -828,7 +830,7 @@ function _ray_pick(ctrl::KinematicController, scene)
 end
 
 """
-    kinematic_controls!(ax, h::SystemRenderHandle; kwargs...)
+    kinematic_controls!(ax, h::AbstractSystemRenderHandle; kwargs...)
 
 Enables mouse and keyboard controls for the objects of the live-rendered system `h`, see
 [`live_render!`](@ref). Objects can be grabbed with the mouse and moved or rotated, while the
@@ -936,8 +938,8 @@ the object (or subgroup) that is currently selected apply.
   elsewhere in the figure is focused
 """
 function kinematic_controls!(
-        ax::_RenderEnv,
-        h::SystemRenderHandle;
+        ax::_Axis,
+        h::AbstractSystemRenderHandle;
         objects = nothing,
         on_change = obj -> nothing,
         plane_normal = [0, 0, 1],
@@ -964,9 +966,9 @@ function kinematic_controls!(
     movable = _LiveMovable[]
     if isnothing(objects)
         # Top-level objects, since the handles of groups belong to the objects of the group
-        for oh in h.handles
-            top = _top_level(h, oh.obj)
-            BMO._is_static(top) && continue
+        for oh in render_children(h)
+            top = _top_level(h, rendered(oh))
+            BMO.is_static(top) && continue
             any(o -> o === top, movable) || push!(movable, top)
         end
     else
@@ -979,7 +981,7 @@ function kinematic_controls!(
     # Selection box and gizmo, updated via Observables. The hidden gizmo is placed in the center of
     # the system with a negligible size, since it counts towards the limits of the scene.
     box_obs = Observable(Point3f[])
-    obj_plots = reduce(vcat, (oh.plots for oh in h.handles); init = AbstractPlot[])
+    obj_plots = render_plots(h)
     bb = isempty(obj_plots) ? GeometryBasics.Rect3d(zeros(3), ones(3)) :
          mapreduce(Makie.boundingbox, GeometryBasics.union, obj_plots)
     center = Vector{Float64}(minimum(bb) + GeometryBasics.widths(bb) / 2)
@@ -1198,7 +1200,7 @@ function kinematic_controls!(
         isnothing(obj) && return Consume(false)
         if event.key == Keyboard.escape
             # One level up in the hierarchy of groups, deselect at the top level
-            ctrl.selected[] = get(ctrl.h.parent, obj, nothing)
+            ctrl.selected[] = render_parent(ctrl.h, obj)
             _update_selection_box!(ctrl)
         elseif event.key == Keyboard.backspace
             P0, R0 = _pose(obj)

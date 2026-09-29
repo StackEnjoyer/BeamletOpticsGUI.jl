@@ -423,19 +423,19 @@ Widget protocol of the cards (see `card_input` and `card_show!`) for the blocks 
 without methods takes no input and shows nothing
 =#
 
-BMO.card_input(_) = nothing
-BMO.card_input(b::Slider) = b.value
-BMO.card_input(b::Toggle) = b.active
-BMO.card_input(b::Textbox) = b.stored_string
-BMO.card_input(b::Button) = b.clicks
-BMO.card_input(b::Menu) = b.selection
+card_input(_) = nothing
+card_input(b::Slider) = b.value
+card_input(b::Toggle) = b.active
+card_input(b::Textbox) = b.stored_string
+card_input(b::Button) = b.clicks
+card_input(b::Menu) = b.selection
 
-BMO.card_show!(_, _) = nothing
-BMO.card_show!(b::Label, v) = (_update!(b.text, string(v)); nothing)
-BMO.card_show!(b::Button, v) = (_update!(b.label, string(v)); nothing)
-BMO.card_show!(b::Textbox, v; force::Bool = false) = ((b.focused[] && !force) || _set_box!(b, string(v)); nothing)
-BMO.card_show!(b::Slider, v) = (b.value[] == v || Makie.set_close_to!(b, v); nothing)
-BMO.card_show!(b::Toggle, v) = (_update!(b.active, Bool(v)); nothing)
+card_show!(_, _) = nothing
+card_show!(b::Label, v) = (_update!(b.text, string(v)); nothing)
+card_show!(b::Button, v) = (_update!(b.label, string(v)); nothing)
+card_show!(b::Textbox, v; force::Bool = false) = ((b.focused[] && !force) || _set_box!(b, string(v)); nothing)
+card_show!(b::Slider, v) = (b.value[] == v || Makie.set_close_to!(b, v); nothing)
+card_show!(b::Toggle, v) = (_update!(b.active, Bool(v)); nothing)
 
 """
     _show_value!(block, v, force::Bool)
@@ -443,8 +443,8 @@ BMO.card_show!(b::Toggle, v) = (_update!(b.active, Bool(v)); nothing)
 Shows the value `v` of a declared widget in its `block` via [`card_show!`](@ref); `force` also
 overwrites a focused `Textbox`, see `_refresh_card!`.
 """
-_show_value!(b, v, ::Bool) = BMO.card_show!(b, v)
-_show_value!(b::Textbox, v, force::Bool) = BMO.card_show!(b, v; force)
+_show_value!(b, v, ::Bool) = card_show!(b, v)
+_show_value!(b::Textbox, v, force::Bool) = card_show!(b, v; force)
 
 # The layout of declarations, independent of the functions `value` and `on`, see `_build_content!`
 _layout_key(rows) = map(_layout_key, rows)

@@ -36,27 +36,21 @@ end
 _extra_specs(extras, _) = throw(ArgumentError("extras must be a vector of `obj` or `obj => (; kwargs...)`, got $(repr(extras))"))
 
 """
-    _live_render_extras!(ax, specs) -> SystemRenderHandle
+    _live_render_extras!(ax, specs) -> LiveSystemHandle
 
 Live-renders the extras `specs` (see `_extra_specs`), each object with its own kwargs, like the
 objects of a system (groups per object, see `live_render!`). The handle holds a `System` of the
 extras, which is never solved, and is listed in the object tree of the app layout as "Extras".
 """
-function _live_render_extras!(ax::_RenderEnv, specs)
-    handles = ObjectRenderHandle[]
-    parent = IdDict{BMO.AbstractObject, BMO.AbstractObject}()
-    for (obj, kw) in specs
-        h = live_render!(ax, BMO.System(obj); kw...)
-        append!(handles, h.handles)
-        merge!(parent, h.parent)
-    end
-    return SystemRenderHandle(ax, BMO.System(BMO.AbstractObject[first.(specs)...]), handles, parent)
+function _live_render_extras!(ax::_Axis, specs)
+    handles = [live_render!(ax, BMO.System(obj); kw...) for (obj, kw) in specs]
+    return LiveSystemHandle(BMO.System(BMO.AbstractObject[first.(specs)...]), handles)
 end
 
 """Returns `true` if `obj` is an extra of the `gui` or belongs to one, see `_live_render_extras!`."""
 function _is_extra(gui::LiveView, obj)
     top = _top_level(gui.extras, obj)
-    return any(o -> o === top, gui.extras.sys.objects)
+    return any(o -> o === top, rendered(gui.extras).objects)
 end
 
 """

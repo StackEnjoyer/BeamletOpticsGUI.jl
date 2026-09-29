@@ -1,10 +1,11 @@
 module TestLiveCard
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 # A component with its own card rows, see `card_rows`: its height as a text and a slider that lifts
 # it, which changes the optics (`solve = true`); no actions in the head
@@ -14,15 +15,13 @@ end
 BMO.intersect3d(::CardTestObject, ::BMO.AbstractRay) = nothing
 BMO.interact3d(::BMO.AbstractSystem, ::CardTestObject, ::BMO.AbstractBeam, ::BMO.AbstractRay) = nothing
 _height(o) = round(Int, 1e3 * BMO.position(o)[3])
-BMO.card_rows(o::CardTestObject) = (pose_card_rows(o)...,
+BeamletOpticsGUI.card_rows(o::CardTestObject) = (pose_card_rows(o)...,
     CardRow("height", CardWidget(Label; name = :height, value = (gui, o) -> "$(_height(o)) mm")),
     CardRow("lift", CardWidget(Slider; name = :lift, range = 0:5, width = 120, solve = true,
         value = (gui, o) -> _height(o), on = (gui, o, v) -> translate3d!(o, [0, 0, 1e-3 * (v - _height(o))]))))
-BMO.card_actions(::CardTestObject) = ()
+BeamletOpticsGUI.card_actions(::CardTestObject) = ()
 
 @testset "Live component card" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     # Beam along +y, mirror at 45° reflects it along +x onto the detector
     function _fixture()
@@ -42,7 +41,7 @@ BMO.card_actions(::CardTestObject) = ()
 
     _rect(x) = x.layoutobservables.computedbbox[]
     _center(r) = Point2f(minimum(r) .+ Makie.widths(r) ./ 2)
-    _away(x) = x.layoutobservables.suggestedbbox[] == Ext._CARD_AWAY
+    _away(x) = x.layoutobservables.suggestedbbox[] == GUI._CARD_AWAY
     _move!(gui, xy) = (events(gui.ax.scene).mouseposition[] = (Float64(xy[1]), Float64(xy[2])))
     _press!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
     _release!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
@@ -59,16 +58,16 @@ BMO.card_actions(::CardTestObject) = ()
     # The card lies inside the 3D view, with the margin
     function _inside(gui)
         r, v = _rect(gui.cards.selection.background), Rect2f(gui.ax.scene.viewport[])
-        return all(minimum(r) .>= minimum(v) .+ Ext._CARD_MARGIN .- 1.0f-3) &&
-               all(maximum(r) .<= maximum(v) .- Ext._CARD_MARGIN .+ 1.0f-3)
+        return all(minimum(r) .>= minimum(v) .+ GUI._CARD_MARGIN .- 1.0f-3) &&
+               all(maximum(r) .<= maximum(v) .- GUI._CARD_MARGIN .+ 1.0f-3)
     end
     function _select!(gui, obj)
         gui.controls.selected[] = obj
-        Ext._update_selection_box!(gui.controls)
+        GUI._update_selection_box!(gui.controls)
         return nothing
     end
     # Declared widgets by name, the pose boxes by their index
-    _w(c, name) = Ext._card_widget(c, name)
+    _w(c, name) = GUI._card_widget(c, name)
     _pose(c, k) = _w(c, (:x, :y, :z, :rx, :ry, :rv)[k])
 
     @testset "widgets in the card" begin
@@ -80,7 +79,7 @@ BMO.card_actions(::CardTestObject) = ()
         @test !any(b -> b isa Textbox, gui.fig.content)
         @test !any(b -> b isa Button && b.label[] == "hide", gui.fig.content)
         # drawn after the 3D scene
-        @test c.scene.transformation.translation[][3] == Ext._card_z(1)
+        @test c.scene.transformation.translation[][3] == GUI._card_z(1)
         # hidden without a selection, without widgets and with all parts away
         @test !c.scene.visible[] && isempty(c.widgets)
         @test all(_away, (c.head, c.rows, c.step, c.actions, c.background))
@@ -103,14 +102,14 @@ BMO.card_actions(::CardTestObject) = ()
         # at the bounding box of the object (not at the gizmo), at one of its sides, see "placement"
         set_view(gui.ax, [0.3, -0.2, 0.3], [0.0, 0.1, 0.0], [0.0, 0, 1])
         _tick!(gui)
-        sel = Ext._screen_rect(gui.ax.scene, gui.controls.box_obs[], m)
+        sel = GUI._screen_rect(gui.ax.scene, gui.controls.box_obs[], m)
         r = _rect(c.background)
-        gap = Ext._CARD_GAP
+        gap = GUI._CARD_GAP
         @test minimum(r)[1] ≈ maximum(sel)[1] + gap || maximum(r)[1] ≈ minimum(sel)[1] - gap ||
               maximum(r)[2] ≈ minimum(sel)[2] - gap || minimum(r)[2] ≈ maximum(sel)[2] + gap
         # the line from the center of the bounding box to the card, which covers its end
         a, b = c.link[]
-        @test a ≈ Ext._link_anchor(gui.ax.scene, gui.controls.box_obs[], m)
+        @test a ≈ GUI._link_anchor(gui.ax.scene, gui.controls.box_obs[], m)
         @test all(minimum(sel) .<= a .<= maximum(sel)) && b in r
 
         # follows the camera
@@ -122,7 +121,7 @@ BMO.card_actions(::CardTestObject) = ()
         # a selection behind the camera: at the edge of the view
         set_view(gui.ax, [0.0, 0.3, 0.0], [0.0, 0.6, 0.0], [0.0, 0, 1])
         _tick!(gui)
-        @test all(iszero, Makie.widths(Ext._screen_rect(gui.ax.scene, gui.controls.box_obs[], m)))
+        @test all(iszero, Makie.widths(GUI._screen_rect(gui.ax.scene, gui.controls.box_obs[], m)))
         @test c.scene.visible[] && _inside(gui)
 
         # an open menu would be covered
@@ -136,11 +135,11 @@ BMO.card_actions(::CardTestObject) = ()
         # collapsed to the head and the actions
         h0 = Makie.widths(_rect(c.background))[2]
         notify(c.collapse_button.clicks)
-        @test c.collapsed && c.collapse_button.icon[] === Ext._icon(:expand)
+        @test c.collapsed && c.collapse_button.icon[] === GUI._icon(:expand)
         @test _away(c.rows) && _away(c.step) && !_away(c.actions)
         @test Makie.widths(_rect(c.background))[2] < h0 / 2
         notify(c.collapse_button.clicks)
-        @test !c.collapsed && c.collapse_button.icon[] === Ext._icon(:collapse)
+        @test !c.collapsed && c.collapse_button.icon[] === GUI._icon(:collapse)
         @test !_away(c.rows)
 
         # deselected: hidden
@@ -162,12 +161,12 @@ BMO.card_actions(::CardTestObject) = ()
         # step and mode below the rows, the properties collapsed by default
         @test c.mode.selected[] == :move && c.mode.keys == [:move, :rotate]
         @test !_away(c.step) && !c.properties_shown && _away(c.properties)
-        @test c.properties_button.icon[] === Ext._icon(:expand)
+        @test c.properties_button.icon[] === GUI._icon(:expand)
         h0 = Makie.widths(_rect(c.background))[2]
         # expanded: the rows of the inspector below the step, the card grows
         notify(c.properties_button.clicks)
-        @test c.properties_shown && !_away(c.properties) && c.properties_button.icon[] === Ext._icon(:collapse)
-        @test c.list.rows == Ext._inspector_rows(gui, m) && !isempty(c.list.rows)
+        @test c.properties_shown && !_away(c.properties) && c.properties_button.icon[] === GUI._icon(:collapse)
+        @test c.list.rows == GUI._inspector_rows(gui, m) && !isempty(c.list.rows)
         @test maximum(_rect(c.list.box))[2] < minimum(_rect(c.step))[2]
         @test Makie.widths(_rect(c.background))[2] > h0
         # the list fills the card, which contains it
@@ -178,7 +177,7 @@ BMO.card_actions(::CardTestObject) = ()
         _select!(gui, pd)
         _tick!(gui)
         @test gui.cards.selection === c && c.properties_shown
-        @test c.list.rows == Ext._inspector_rows(gui, pd)
+        @test c.list.rows == GUI._inspector_rows(gui, pd)
         # a click on "Rotate" sets the mode of the controls, the key `m` sets it back
         _click!(gui, _center(_rect(c.mode.buttons[2])))
         @test ctrl.mode[] == :rotate && c.mode.selected[] == :rotate
@@ -210,19 +209,19 @@ BMO.card_actions(::CardTestObject) = ()
     @testset "placement" begin
         view = Rect2f(0, 0, 800, 600)
         size = Vec2f(300, 150)
-        margin, gap = Ext._CARD_MARGIN, Ext._CARD_GAP
+        margin, gap = GUI._CARD_MARGIN, GUI._CARD_GAP
         # right of the selection, top-aligned
-        @test Ext._card_position(Rect2f(100, 200, 50, 80), size, view) == Point2f(150 + gap, 280)
+        @test GUI._card_position(Rect2f(100, 200, 50, 80), size, view) == Point2f(150 + gap, 280)
         # left of it if the right side has no room
-        @test Ext._card_position(Rect2f(600, 200, 50, 80), size, view) == Point2f(600 - gap - 300, 280)
+        @test GUI._card_position(Rect2f(600, 200, 50, 80), size, view) == Point2f(600 - gap - 300, 280)
         # inside the view: below its top edge, at the edges for a selection outside of the view
-        @test Ext._card_position(Rect2f(100, 500, 50, 200), size, view)[2] == 600 - margin
-        @test Ext._card_position(Rect2f(-500, -400, 10, 10), size, view) == Point2f(margin, margin + 150)
+        @test GUI._card_position(Rect2f(100, 500, 50, 200), size, view)[2] == 600 - margin
+        @test GUI._card_position(Rect2f(-500, -400, 10, 10), size, view) == Point2f(margin, margin + 150)
         # neither side has room: below, left-aligned, or above
-        @test Ext._card_position(Rect2f(50, 200, 700, 80), size, view) == Point2f(50, 200 - gap)
-        @test Ext._card_position(Rect2f(50, 100, 700, 80), size, view) == Point2f(50, 180 + gap + 150)
+        @test GUI._card_position(Rect2f(50, 200, 700, 80), size, view) == Point2f(50, 200 - gap)
+        @test GUI._card_position(Rect2f(50, 100, 700, 80), size, view) == Point2f(50, 180 + gap + 150)
         # no room at all, e.g. an object that fills the view: right, moved into the view
-        @test Ext._card_position(Rect2f(0, 0, 800, 600), size, view) == Point2f(800 - margin - 300, 600 - margin)
+        @test GUI._card_position(Rect2f(0, 0, 800, 600), size, view) == Point2f(800 - margin - 300, 600 - margin)
 
         # off the view cube
         m, pd = _fixture()
@@ -231,16 +230,16 @@ BMO.card_actions(::CardTestObject) = ()
         C = Rect2f(Makie.viewport(cube.scene)[])
         view = Rect2f(gui.ax.scene.viewport[])
         p = Point2f(minimum(C)[1] - 50, maximum(C)[2])
-        @test Ext._overlaps(Ext._card_rect(p, size), C)
-        q = Ext._avoid(p, size, view, Ext._obstacles(cube))
-        r = Ext._card_rect(q, size)
-        @test !Ext._overlaps(r, C)
+        @test GUI._overlaps(GUI._card_rect(p, size), C)
+        q = GUI._avoid(p, size, view, GUI._obstacles(cube))
+        r = GUI._card_rect(q, size)
+        @test !GUI._overlaps(r, C)
         @test all(minimum(r) .>= minimum(view) .+ margin) && all(maximum(r) .<= maximum(view) .- margin)
         # beside or below the cube, at the margin
         @test minimum(C)[2] - maximum(r)[2] ≈ margin || minimum(C)[1] - maximum(r)[1] ≈ margin
         far = Point2f(minimum(view)[1] + 20, minimum(view)[2] + 200)
-        @test Ext._avoid(far, size, view, Ext._obstacles(cube)) == far
-        @test Ext._avoid(p, size, view, Rect2f[]) == p
+        @test GUI._avoid(far, size, view, GUI._obstacles(cube)) == far
+        @test GUI._avoid(p, size, view, Rect2f[]) == p
         close(gui)
     end
 
@@ -255,9 +254,9 @@ BMO.card_actions(::CardTestObject) = ()
         # a point of the 3D view beside the card and the objects
         beside = Point2f(minimum(vp) .+ 30)
         _move!(gui, beside)
-        @test !Ext._over_card(c, ev)
+        @test !GUI._over_card(c, ev)
         _move!(gui, _center(_rect(c.title)))
-        @test Ext._over_card(c, ev) && ctrl.ignore_mouse()
+        @test GUI._over_card(c, ev) && ctrl.ignore_mouse()
 
         # a click on the card keeps the selection
         _click!(gui, _center(_rect(c.title)))
@@ -293,12 +292,12 @@ BMO.card_actions(::CardTestObject) = ()
         # a textbox gets the keyboard, a press elsewhere ends the input
         box = _pose(c, 1)
         _click!(gui, _center(_rect(box)))
-        @test box.focused[] && Ext._typing(gui)
+        @test box.focused[] && GUI._typing(gui)
         P0 = Vector{Float64}(BMO.position(m))
         ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
         @test Vector{Float64}(BMO.position(m)) == P0
         _click!(gui, beside)
-        @test !box.focused[] && !Ext._typing(gui)
+        @test !box.focused[] && !GUI._typing(gui)
         close(gui)
     end
 
@@ -306,7 +305,7 @@ BMO.card_actions(::CardTestObject) = ()
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss())
         c, ctrl = gui.cards.selection, gui.controls
-        plane = Ext._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
+        plane = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
         @test ctrl.selected[] === plane
         @test c.title.text[] == "Clip plane 1"
         @test isnothing(_w(c, :hide)) && !isnothing(_w(c, :flip))
@@ -320,7 +319,7 @@ BMO.card_actions(::CardTestObject) = ()
         _select!(gui, m)
         @test isnothing(_w(c, :flip)) && !isnothing(_w(c, :hide))
         # a pinned plane is unpinned when it is removed
-        plane = Ext._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
+        plane = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
         pinned = gui.cards.selection
         _pin!(pinned)
         @test pinned.pinned && pinned.obj === plane
@@ -376,9 +375,9 @@ BMO.card_actions(::CardTestObject) = ()
         notify(_w(c1, :hide).clicks)
         @test !(m in gui.objects.hidden) && _w(c1, :hide).label[] == "hide"
         _pose(c1, 1).focused[] = true
-        @test Ext._typing(gui)
+        @test GUI._typing(gui)
         _pose(c1, 1).focused[] = false
-        @test !Ext._typing(gui)
+        @test !GUI._typing(gui)
 
         # a second pinned card; the widgets of the newest card take the clicks
         _pin!(gui.cards.selection)
@@ -388,7 +387,7 @@ BMO.card_actions(::CardTestObject) = ()
         @test c3 === gui.cards.all[3] && c3.scene.visible[]
         # no card covers another
         rects = [_rect(c.background) for c in gui.cards.all]
-        @test !any(Ext._overlaps(rects[i], rects[j]) for i in 1:3 for j in (i + 1):3)
+        @test !any(GUI._overlaps(rects[i], rects[j]) for i in 1:3 for j in (i + 1):3)
         _click!(gui, _center(_rect(c3.collapse_button.box)))
         @test c3.collapsed
         sleep(0.3)  # later than a double click
@@ -414,14 +413,14 @@ BMO.card_actions(::CardTestObject) = ()
     @testset "cards moved by the mouse" begin
         # the spot of a card is relative to the nearest corner of the view, inside the view
         view, size = Rect2f(0, 0, 1000, 800), Vec2f(200, 100)
-        spot = Ext._card_spot(Point2f(780, 750), size, view)
+        spot = GUI._card_spot(Point2f(780, 750), size, view)
         @test spot == (true, true, Vec2f(20, 50))
-        @test Ext._spot_position(spot, size, view) == Point2f(780, 750)
-        @test Ext._spot_position(spot, size, Rect2f(0, 0, 1200, 600)) == Point2f(980, 550)
-        @test Ext._spot_position(spot, size, Rect2f(0, 0, 150, 90)) == Point2f(8, 82)
-        spot = Ext._card_spot(Point2f(30, 140), size, view)
+        @test GUI._spot_position(spot, size, view) == Point2f(780, 750)
+        @test GUI._spot_position(spot, size, Rect2f(0, 0, 1200, 600)) == Point2f(980, 550)
+        @test GUI._spot_position(spot, size, Rect2f(0, 0, 150, 90)) == Point2f(8, 82)
+        spot = GUI._card_spot(Point2f(30, 140), size, view)
         @test spot == (false, false, Vec2f(30, 40))
-        @test Ext._spot_position(spot, Vec2f(200, 30), view) == Point2f(30, 70)
+        @test GUI._spot_position(spot, Vec2f(200, 30), view) == Point2f(30, 70)
 
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss(); size = (1400, 900))
@@ -458,8 +457,8 @@ BMO.card_actions(::CardTestObject) = ()
         a = _center(_rect(c.title))
         _drag!(gui, a, a .+ Point2f(-500, 500))
         r = _rect(c.background)
-        @test minimum(r)[1] ≈ minimum(vp)[1] + Ext._CARD_MARGIN
-        @test maximum(r)[2] ≈ maximum(vp)[2] - Ext._CARD_MARGIN
+        @test minimum(r)[1] ≈ minimum(vp)[1] + GUI._CARD_MARGIN
+        @test maximum(r)[2] ≈ maximum(vp)[2] - GUI._CARD_MARGIN
         _drag!(gui, _center(_rect(c.title)), _center(_rect(c.title)) .+ (target - top_left(c)))
         @test top_left(c) ≈ target
 
@@ -470,7 +469,7 @@ BMO.card_actions(::CardTestObject) = ()
         _tick!(gui)
         s = gui.cards.selection
         @test s !== c && isnothing(s.spot) && s.scene.visible[]
-        @test !Ext._overlaps(_rect(s.background), _rect(c.background))
+        @test !GUI._overlaps(_rect(s.background), _rect(c.background))
         # a double click at the head places the card next to its object again
         a = _center(_rect(c.title))
         _click!(gui, a)
@@ -483,7 +482,7 @@ BMO.card_actions(::CardTestObject) = ()
         @test !isnothing(c.spot)
         a = _center(_rect(c.title))
         _click!(gui, a)
-        sleep(1.2 * Ext._CARD_DOUBLE_CLICK)
+        sleep(1.2 * GUI._CARD_DOUBLE_CLICK)
         _click!(gui, a)
         @test !isnothing(c.spot)
         # the buttons at the head are no handle: a click on the collapse button collapses the card
@@ -505,12 +504,12 @@ BMO.card_actions(::CardTestObject) = ()
         _tick!(gui)
         @test c.pinned && c.scene.visible[] && isnothing(c.dock_button)
         @test all(c -> isnothing(c.dock_button), gui.cards.all)
-        @test Ext._is_floating(gui, m) && Ext._is_pinned(gui, m)
+        @test GUI._is_floating(gui, m) && GUI._is_pinned(gui, m)
         # the head holds the pin and the chevron only
         @test length(c.tools.content) == 2
         # floating and docking do nothing
-        Ext._dock!(gui, m)
-        Ext._float!(gui, m)
+        GUI._dock!(gui, m)
+        GUI._float!(gui, m)
         _tick!(gui)
         @test c.pinned && c.obj === m && c.scene.visible[] && count(c -> c.pinned, gui.cards.all) == 1
         close(gui)
@@ -592,23 +591,23 @@ BMO.card_actions(::CardTestObject) = ()
         for layout in (:compact, :app), theme in (:light, :dark)
             m, pd = _fixture()
             gui = _live_view(System([m, pd]), _gauss(); layout, theme, labels = Dict(m => "M1"))
-            t = Ext._app_theme(theme)
+            t = GUI._app_theme(theme)
             @test gui.layout.theme === t
             # a pinned card: floating in the compact layout, docked below the inspector in the app
             # layout, whose floating cards keep the colors of the theme
-            Ext._toggle_pin!(gui, m)
+            GUI._toggle_pin!(gui, m)
             @test _rgba(gui.cards.selection.background.color[]) == _rgba(t.sidebar)
             @test _rgba(gui.cards.selection.background.strokecolor[]) == _rgba(t.border)
             if layout === :app
                 c = only(gui.layout.inspector.pinned)
                 @test c.theme === t && !any(c -> c.scene.visible[], gui.cards.all)
                 @test _rgba(c.head.title.color[]) == _rgba(t.text) && c.head.title.text[] == "M1"
-                @test c.head.pin.active[] && c.head.icon[] === Ext._icon(:mirror)
+                @test c.head.pin.active[] && c.head.icon[] === GUI._icon(:mirror)
             else
                 c = only(filter(c -> c.pinned, gui.cards.all))
                 @test c.theme === t && c.scene.visible[]
                 @test _rgba(c.title.color[]) == _rgba(t.text) && c.title.text[] == "M1"
-                @test c.pin_button.active[] && c.icon[] === Ext._icon(:mirror)
+                @test c.pin_button.active[] && c.icon[] === GUI._icon(:mirror)
                 # the line to the object
                 @test _rgba(c.scene.plots[1].color[]) == _rgba(t.accent)
             end
@@ -620,7 +619,7 @@ BMO.card_actions(::CardTestObject) = ()
             # the progress window: panel and text from the theme, the bar orange
             panel, track, bar, text = gui.trace.progress.plots
             @test _rgba(panel.color[]) == _rgba(t.sidebar) && _rgba(text.color[]) == _rgba(t.text)
-            @test _rgba(track.color[]) == _rgba(t.border) && bar.color[] == Ext._PROGRESS_FILL_COLOR
+            @test _rgba(track.color[]) == _rgba(t.border) && bar.color[] == GUI._PROGRESS_FILL_COLOR
             close(gui)
         end
         # the icon toggle pins the card of the selection with a click
@@ -674,29 +673,29 @@ BMO.card_actions(::CardTestObject) = ()
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss(); labels = Dict(m => "M1", pd => "PD"))
         # an inspected point: a transient card at the point, its pin off, no step box
-        Ext._show_inspection!(gui, _info(0.05))
-        c = Ext._info_card(gui)
-        @test c.transient && c.obj isa Ext._BeamPoint && c.scene.visible[] && !c.pin_button.active[]
-        @test c.title.text[] == "Beam" && c.icon[] === Ext._icon(:trace)
+        GUI._show_inspection!(gui, _info(0.05))
+        c = GUI._info_card(gui)
+        @test c.transient && c.obj isa GUI._BeamPoint && c.scene.visible[] && !c.pin_button.active[]
+        @test c.title.text[] == "Beam" && c.icon[] === GUI._icon(:trace)
         @test _text(c, :at) == "(0.000, 50.000, 0.000) mm" && _text(c, :path) == "50.000 mm"
         @test isnothing(_w(c, :w)) && isnothing(_w(c, :hide)) && _away(c.step)
         @test length(c.link[]) == 2
         # the next inspection replaces it, with the rows of a Gaussian beamlet
-        Ext._show_inspection!(gui, _info(0.06; w = 1e-3, R = 0.0))
-        @test Ext._info_card(gui) === c && _text(c, :at) == "(0.000, 60.000, 0.000) mm"
+        GUI._show_inspection!(gui, _info(0.06; w = 1e-3, R = 0.0))
+        @test GUI._info_card(gui) === c && _text(c, :at) == "(0.000, 60.000, 0.000) mm"
         @test _text(c, :w) == "1 mm" && _text(c, :R) == "∞"
         # its pin keeps it, the next inspection gets another card
         c.pin_button.active[] = true
-        @test !c.transient && c.pinned && isnothing(Ext._info_card(gui))
+        @test !c.transient && c.pinned && isnothing(GUI._info_card(gui))
         # the card keeps the marker of the point, which the next inspection does not remove
         marker = only(c.obj.plots)
         @test isnothing(gui.measure.inspection_plot) && marker in gui.ax.scene.plots
-        Ext._show_inspection!(gui, _info(0.07))
-        c2 = Ext._info_card(gui)
+        GUI._show_inspection!(gui, _info(0.07))
+        c2 = GUI._info_card(gui)
         @test c2 !== c && c.scene.visible[] && c2.scene.visible[]
         # clearing the inspection (a click elsewhere, Esc) removes the transient card only
-        Ext._clear_inspection!(gui)
-        @test isnothing(Ext._info_card(gui)) && !c2.scene.visible[] && c.scene.visible[]
+        GUI._clear_inspection!(gui)
+        @test isnothing(GUI._info_card(gui)) && !c2.scene.visible[] && c.scene.visible[]
         # unpinned: removed
         c.pin_button.active[] = false
         @test !c.pinned && !c.scene.visible[]
@@ -704,12 +703,12 @@ BMO.card_actions(::CardTestObject) = ()
 
         # a measurement: the first point, then the distance, its components and the angle
         gui.widgets.measure_toggle.active[] = true
-        Ext._add_measure_point!(gui, BMO.position(m), m)
-        c = Ext._info_card(gui)
-        @test c.obj isa Ext._Measurement && c.title.text[] == "Measurement"
+        GUI._add_measure_point!(gui, BMO.position(m), m)
+        c = GUI._info_card(gui)
+        @test c.obj isa GUI._Measurement && c.title.text[] == "Measurement"
         @test _text(c, :at) == "M1, (0.000, 100.000, 0.000) mm"
-        Ext._add_measure_point!(gui, BMO.position(pd), pd)
-        @test Ext._info_card(gui) === c
+        GUI._add_measure_point!(gui, BMO.position(pd), pd)
+        @test GUI._info_card(gui) === c
         @test _text(c, :from) == "M1" && _text(c, :to) == "PD"
         @test _text(c, :distance) == "100.0 mm" && _text(c, :delta) == "(100.000, 0.000, 0.000) mm"
         @test _text(c, :angle) == "785 mrad"
@@ -718,52 +717,52 @@ BMO.card_actions(::CardTestObject) = ()
         c.pin_button.active[] = true
         kept = copy(c.obj.plots)
         @test length(kept) == 2 && isempty(gui.measure.plots)
-        Ext._add_measure_point!(gui, BMO.position(m), m)
-        c3 = Ext._info_card(gui)
+        GUI._add_measure_point!(gui, BMO.position(m), m)
+        c3 = GUI._info_card(gui)
         @test c3 !== c && all(p -> p in gui.ax.scene.plots, kept)
         # unpinned: its plots are removed
         c.pin_button.active[] = false
         @test !c.pinned && !any(p -> p in gui.ax.scene.plots, kept)
         c = c3
         gui.widgets.measure_toggle.active[] = false
-        @test isnothing(Ext._info_card(gui)) && !c.scene.visible[]
+        @test isnothing(GUI._info_card(gui)) && !c.scene.visible[]
         close(gui)
 
         # app layout: the transient card floats at the point, its pin docks the item below the
         # inspector
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss(); layout = :app)
-        Ext._show_inspection!(gui, _info(0.05))
-        c = Ext._info_card(gui)
+        GUI._show_inspection!(gui, _info(0.05))
+        c = GUI._info_card(gui)
         @test c.scene.visible[]
         c.pin_button.active[] = true
         d = only(gui.layout.inspector.pinned)
-        @test d.obj isa Ext._BeamPoint && d.head.title.text[] == "Beam"
-        @test Ext._card_widget(d, :at).text[] == "(0.000, 50.000, 0.000) mm"
-        @test isnothing(Ext._info_card(gui)) && !c.scene.visible[]
+        @test d.obj isa GUI._BeamPoint && d.head.title.text[] == "Beam"
+        @test GUI._card_widget(d, :at).text[] == "(0.000, 50.000, 0.000) mm"
+        @test isnothing(GUI._info_card(gui)) && !c.scene.visible[]
         # the kept marker moves with the card between the sidebar and the 3D view
         x = d.obj
         marker = only(x.plots)
-        Ext._float!(gui, x)
-        f = only(Ext._floating_cards(gui, x))
+        GUI._float!(gui, x)
+        f = only(GUI._floating_cards(gui, x))
         @test !f.transient && isempty(gui.layout.inspector.pinned) && marker in gui.ax.scene.plots
-        Ext._dock!(gui, x)
-        @test Ext._is_docked(gui, x) && isempty(Ext._floating_cards(gui, x))
+        GUI._dock!(gui, x)
+        @test GUI._is_docked(gui, x) && isempty(GUI._floating_cards(gui, x))
         @test marker in gui.ax.scene.plots
         # the dock button of a transient card keeps it, docked once
-        Ext._show_inspection!(gui, _info(0.06))
-        c = Ext._info_card(gui)
+        GUI._show_inspection!(gui, _info(0.06))
+        c = GUI._info_card(gui)
         notify(c.dock_button.clicks)
-        @test length(gui.layout.inspector.pinned) == 2 && isnothing(Ext._info_card(gui))
+        @test length(gui.layout.inspector.pinned) == 2 && isnothing(GUI._info_card(gui))
         # unpinned: its marker is removed
-        Ext._unpin!(gui, x)
-        @test !Ext._is_pinned(gui, x) && !(marker in gui.ax.scene.plots)
+        GUI._unpin!(gui, x)
+        @test !GUI._is_pinned(gui, x) && !(marker in gui.ax.scene.plots)
         close(gui)
     end
 
     @testset "widget protocol of the blocks of Makie" begin
         # the cards use the public verbs only, see `card_input` and `card_show!`
-        @test !isdefined(Ext, :_widget_input) && !isdefined(Ext, :_show!)
+        @test !isdefined(GUI, :_widget_input) && !isdefined(GUI, :_show!)
         fig = Figure()
         slider = Slider(fig[1, 1]; range = 0:10)
         toggle = Toggle(fig[2, 1])
@@ -771,36 +770,36 @@ BMO.card_actions(::CardTestObject) = ()
         button = Button(fig[4, 1])
         menu = Menu(fig[5, 1]; options = ["a", "b"])
         label = Label(fig[6, 1], "")
-        @test BMO.card_input(slider) === slider.value
-        @test BMO.card_input(toggle) === toggle.active
-        @test BMO.card_input(box) === box.stored_string
-        @test BMO.card_input(button) === button.clicks
-        @test BMO.card_input(menu) === menu.selection
+        @test BeamletOpticsGUI.card_input(slider) === slider.value
+        @test BeamletOpticsGUI.card_input(toggle) === toggle.active
+        @test BeamletOpticsGUI.card_input(box) === box.stored_string
+        @test BeamletOpticsGUI.card_input(button) === button.clicks
+        @test BeamletOpticsGUI.card_input(menu) === menu.selection
         # no input: labels and any other type
-        @test isnothing(BMO.card_input(label))
-        @test isnothing(BMO.card_input(42))
-        BMO.card_show!(slider, 7)
+        @test isnothing(BeamletOpticsGUI.card_input(label))
+        @test isnothing(BeamletOpticsGUI.card_input(42))
+        BeamletOpticsGUI.card_show!(slider, 7)
         @test slider.value[] == 7
-        BMO.card_show!(toggle, true)
+        BeamletOpticsGUI.card_show!(toggle, true)
         @test toggle.active[]
-        BMO.card_show!(button, "hide")
+        BeamletOpticsGUI.card_show!(button, "hide")
         @test button.label[] == "hide"
-        BMO.card_show!(label, 1.5)
+        BeamletOpticsGUI.card_show!(label, 1.5)
         @test label.text[] == "1.5"
         # a textbox shows the value without an input, but keeps what is typed, unless `force`
         n = Ref(0)
         on(_ -> (n[] += 1), box.stored_string)
-        BMO.card_show!(box, 12)
+        BeamletOpticsGUI.card_show!(box, 12)
         @test box.displayed_string[] == "12" && box.stored_string[] == "12"
         box.focused[] = true
-        BMO.card_show!(box, 13)
+        BeamletOpticsGUI.card_show!(box, 13)
         @test box.displayed_string[] == "12"
-        BMO.card_show!(box, 13; force = true)
+        BeamletOpticsGUI.card_show!(box, 13; force = true)
         @test box.displayed_string[] == "13"
         @test n[] == 0
         # shows nothing for any other type
-        @test isnothing(BMO.card_show!(menu, "b"))
-        @test isnothing(BMO.card_show!(42, 1))
+        @test isnothing(BeamletOpticsGUI.card_show!(menu, "b"))
+        @test isnothing(BeamletOpticsGUI.card_show!(42, 1))
     end
 end
 

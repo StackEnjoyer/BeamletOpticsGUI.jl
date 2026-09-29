@@ -289,7 +289,7 @@ function _add_cell!(gui::LiveView, c::_AbstractCard, pos, w::CardWidget)
     i = length(c.widgets)
     _fix_caret!(c, b)
     _track_textbox!(gui, c, b)
-    _listen_input!(gui, c, i, BMO.card_input(b))
+    _listen_input!(gui, c, i, card_input(b))
     return nothing
 end
 
@@ -639,7 +639,7 @@ end
 
 """Summary of the live view, shown without a selection, e.g. in the inspector of the app layout."""
 function _inspector_rows(gui::LiveView, ::Nothing)
-    objects = sum(h -> length(h.handles), gui.system_handles; init = 0)
+    objects = sum(h -> length(render_children(h)), gui.system_handles; init = 0)
     rows = Tuple{String, String}[
         ("Systems", string(length(gui.system_handles))), ("Objects", string(objects)),
         ("Sources", string(length(_sources(gui)))), ("Detector panels", string(length(gui.panels))),

@@ -1,13 +1,13 @@
 module TestLiveTree
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
 using Test
 
+const GUI = BeamletOpticsGUI
+
 @testset "Live object tree" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
-    Row = Ext._TreeRow
+    Row = GUI._TreeRow
 
     # A system with a group of objects, a source and a clip plane; keys are strings
     function _rows(n = 4)
@@ -22,7 +22,7 @@ using Test
 
     function _fixture(; size = (300, 400))
         fig = Figure(; size)
-        tree = Ext._ObjectTree(fig[1, 1])
+        tree = GUI._ObjectTree(fig[1, 1])
         return fig, tree
     end
 
@@ -36,10 +36,10 @@ using Test
 
     # Clicks the part (:label, :eye or :expander) of the i-th row
     function _click!(tree, i, part)
-        c = Ext._row_columns(tree, tree.rows[i])
+        c = GUI._row_columns(tree, tree.rows[i])
         x = part === :label ? c.label + 5 : getfield(c, part)
         vp = tree.scene.viewport[]
-        y = Makie.widths(vp)[2] - Ext._row_y(tree, i)
+        y = Makie.widths(vp)[2] - GUI._row_y(tree, i)
         _mouse!(tree, x, y)
         ev = events(tree.scene)
         ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
@@ -53,7 +53,7 @@ using Test
         fig, tree = _fixture()
         @test isempty(_labels(tree))
         rows = _rows()
-        Ext._set_rows!(tree, rows)
+        GUI._set_rows!(tree, rows)
         @test _labels(tree) == [r.label for r in rows]
         # expanders for the system and the group, eyes for all but the system
         @test length(tree.plots.expanders[1][]) == 2
@@ -71,17 +71,17 @@ using Test
         @test !tree.plots.scrollbar.visible[]
         # long labels are ellipsized to the width
         long = Row("long", "A very long name of an object " ^ 5, 0, :lens, false, false, true)
-        Ext._set_rows!(tree, [long])
+        GUI._set_rows!(tree, [long])
         label = only(_labels(tree))
         @test endswith(label, "…")
         @test length(label) < length(long.label)
         w = Makie.widths(tree.scene.viewport[])[1]
-        @test Ext._row_columns(tree, long).label + Ext._label_width(tree, label) <= w
+        @test GUI._row_columns(tree, long).label + GUI._label_width(tree, label) <= w
     end
 
     @testset "clicks" begin
         fig, tree = _fixture()
-        Ext._set_rows!(tree, _rows())
+        GUI._set_rows!(tree, _rows())
         hits = Dict(:clicked => Any[], :eye => Any[], :expand => Any[])
         on(k -> push!(hits[:clicked], k), tree.clicked)
         on(k -> push!(hits[:eye], k), tree.eye_clicked)
@@ -106,11 +106,11 @@ using Test
         events(tree.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
         @test length(hits[:clicked]) == 4
         # press on one row, release on another: nothing
-        c = Ext._row_columns(tree, tree.rows[3])
+        c = GUI._row_columns(tree, tree.rows[3])
         h = Makie.widths(tree.scene.viewport[])[2]
-        _mouse!(tree, c.label + 5, h - Ext._row_y(tree, 3))
+        _mouse!(tree, c.label + 5, h - GUI._row_y(tree, 3))
         events(tree.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
-        _mouse!(tree, c.label + 5, h - Ext._row_y(tree, 5))
+        _mouse!(tree, c.label + 5, h - GUI._row_y(tree, 5))
         events(tree.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
         @test length(hits[:clicked]) == 4
         # presses outside of the tree are not consumed
@@ -130,7 +130,7 @@ using Test
     @testset "selection and scrolling" begin
         fig, tree = _fixture()
         rows = _rows(100)
-        Ext._set_rows!(tree, rows)
+        GUI._set_rows!(tree, rows)
         h = Makie.widths(tree.scene.viewport[])[2]
         @test tree.plots.scrollbar.visible[]
         # only the rows in view are drawn
@@ -139,20 +139,20 @@ using Test
         @test first(_labels(tree)) == "System 1"
         @test !tree.plots.selection.visible[]
         # select a row far down: it is scrolled into view and highlighted
-        Ext._set_selected!(tree, "obj80")
+        GUI._set_selected!(tree, "obj80")
         @test tree.plots.selection.visible[]
-        y = Ext._row_y(tree, 82)
+        y = GUI._row_y(tree, 82)
         @test tree.row_height / 2 <= y <= h - tree.row_height / 2
         @test "Lens L80" in _labels(tree)
         rect = first(tree.plots.selection[1][])
         @test Makie.origin(rect)[2] ≈ y - tree.row_height / 2
         # the selection survives new rows, and is cleared by nothing
-        Ext._set_rows!(tree, rows)
+        GUI._set_rows!(tree, rows)
         @test tree.plots.selection.visible[]
-        Ext._set_selected!(tree, nothing)
+        GUI._set_selected!(tree, nothing)
         @test !tree.plots.selection.visible[]
         # a key that is not shown highlights nothing
-        Ext._set_selected!(tree, "missing")
+        GUI._set_selected!(tree, "missing")
         @test !tree.plots.selection.visible[]
 
         # the wheel scrolls while the mouse is over the tree and clamps at the ends
@@ -173,10 +173,10 @@ using Test
         for _ in 1:100
             ev.scroll[] = (0.0, -1.0)
         end
-        @test tree.offset == Ext._max_offset(tree)
+        @test tree.offset == GUI._max_offset(tree)
         @test last(_labels(tree)) == "Source 1"
         # the last row ends above the bottom padding
-        @test Ext._row_y(tree, length(rows)) ≈ Ext._TREE_PAD + tree.row_height / 2
+        @test GUI._row_y(tree, length(rows)) ≈ GUI._TREE_PAD + tree.row_height / 2
         @test other[] == 0
         # outside of the tree, the wheel is not consumed and does not scroll
         offset = tree.offset
@@ -185,20 +185,20 @@ using Test
         @test other[] == 1
         @test tree.offset == offset
         # fewer rows clamp the offset
-        Ext._set_rows!(tree, _rows())
+        GUI._set_rows!(tree, _rows())
         @test tree.offset == 0
         @test !tree.plots.scrollbar.visible[]
     end
 
     @testset "constant number of plots" begin
         _, small = _fixture()
-        Ext._set_rows!(small, _rows(10))
+        GUI._set_rows!(small, _rows(10))
         _, large = _fixture()
-        Ext._set_rows!(large, _rows(5000))
+        GUI._set_rows!(large, _rows(5000))
         @test length(small.scene.plots) == length(large.scene.plots)
         h = Makie.widths(large.scene.viewport[])[2]
         @test length(_labels(large)) <= ceil(Int, h / large.row_height) + 1
-        Ext._set_selected!(large, "obj4000")
+        GUI._set_selected!(large, "obj4000")
         @test length(small.scene.plots) == length(large.scene.plots)
         @test "Lens L4000" in _labels(large)
         @test length(_labels(large)) <= 20
@@ -206,10 +206,10 @@ using Test
 
     @testset "follows the layout" begin
         fig = Figure(; size = (400, 300))
-        tree = Ext._ObjectTree(fig[1, 1])
+        tree = GUI._ObjectTree(fig[1, 1])
         Box(fig[1, 2])
         colsize!(fig.layout, 1, Fixed(150))
-        Ext._set_rows!(tree, _rows(40))
+        GUI._set_rows!(tree, _rows(40))
         vp = tree.scene.viewport[]
         @test Makie.widths(vp)[1] == 150
         n = length(_labels(tree))
@@ -221,7 +221,7 @@ using Test
         @test Makie.widths(tree.scene.viewport[])[1] == 200
         # requested width
         fig = Figure(; size = (400, 300))
-        tree = Ext._ObjectTree(fig[1, 1]; width = 120)
+        tree = GUI._ObjectTree(fig[1, 1]; width = 120)
         Box(fig[1, 2])
         @test Makie.widths(tree.scene.viewport[])[1] == 120
         close(tree)
@@ -231,14 +231,14 @@ using Test
     @testset "timings" begin
         _, tree = _fixture()
         rows = _rows(5000)
-        Ext._set_rows!(tree, rows)
-        Ext._set_selected!(tree, "obj2500")
+        GUI._set_rows!(tree, rows)
+        GUI._set_selected!(tree, "obj2500")
         _mouse!(tree, 50, 50)
         t_rows = @elapsed for _ in 1:20
-            Ext._set_rows!(tree, rows)
+            GUI._set_rows!(tree, rows)
         end
         t_select = @elapsed for i in 1:20
-            Ext._set_selected!(tree, "obj$(250 * i)")
+            GUI._set_selected!(tree, "obj$(250 * i)")
         end
         t_scroll = @elapsed for i in 1:100
             events(tree.scene).scroll[] = (0.0, isodd(i ÷ 10) ? 1.0 : -1.0)

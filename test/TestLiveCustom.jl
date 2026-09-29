@@ -1,14 +1,13 @@
 module TestLiveCustom
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 @testset "Live view customization" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
     GLB = Makie.GridLayoutBase
 
     # Rays along +y, the mirror at 45° reflects them along +x onto the detector. The source is a
@@ -111,7 +110,7 @@ const BMO = BeamletOptics
         _key!(gui, Keyboard.t)
         @test n[] == 0
         # updated once its tab is opened
-        Ext._activate_tab!(gui, 2)
+        GUI._activate_tab!(gui, 2)
         @test n[] == 1
         @test !(tabs.panels[2] in tabs.stale)
         # shown: after full solves only
@@ -120,10 +119,10 @@ const BMO = BeamletOptics
         _pause!(gui)
         @test n[] == 2
         # hidden again: stale after a solve, updated when the tab is opened
-        Ext._activate_tab!(gui, 1)
+        GUI._activate_tab!(gui, 1)
         _key!(gui, Keyboard.t)
         @test n[] == 2
-        Ext._activate_tab!(gui, 2)
+        GUI._activate_tab!(gui, 2)
         @test n[] == 3
         # a collapsed dock updates nothing, the active panel once it is expanded
         gui.layout.collapse.dock.active[] = false
@@ -171,9 +170,9 @@ const BMO = BeamletOptics
         # a focused textbox of the controls takes the keyboard
         @test gui.custom.boxes == [tb[]]
         cam = cameracontrols(gui.ax.scene)
-        @test !Ext._typing(gui)
+        @test !GUI._typing(gui)
         tb[].focused[] = true
-        @test Ext._typing(gui)
+        @test GUI._typing(gui)
         @test gui.controls.ignore_keys()
         @test !cam.selected[]
         pos = position(m)
@@ -181,7 +180,7 @@ const BMO = BeamletOptics
         _key!(gui, Keyboard.up)
         @test position(m) == pos
         tb[].focused[] = false
-        @test !Ext._typing(gui)
+        @test !GUI._typing(gui)
         @test cam.selected[]
         # retrace! with auto tracing off: the change is made, the beams are outdated
         hits0 = length(BMO.hits(pd))
@@ -287,9 +286,9 @@ const BMO = BeamletOptics
             @test own isa Button && own.label[] == "Own"
         else
             # icon buttons in the toolbar group `:user` before "Help"
-            @test b isa Ext._IconButton
+            @test b isa GUI._IconButton
             @test b.tooltip[] == "My tool (2)"
-            @test t isa Ext._IconToggle
+            @test t isa GUI._IconToggle
             @test first.(gui.layout.groups)[(end - 1):end] == [:user, :help]
             # the own icon in the toolbar, also on a toggle, on and off
             @test own.icon[] === path

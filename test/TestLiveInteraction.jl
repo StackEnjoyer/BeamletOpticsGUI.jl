@@ -1,12 +1,14 @@
 module TestLiveInteraction
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics: render_children, render_plots, rendered
 using Makie
 using GeometryBasics
 using Test
 using LinearAlgebra
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 # Object that can not be moved, see `kinematic_trait_of`
 struct FixedMirror{T, S <: BMO.AbstractShape{T}} <: BMO.AbstractObject{T}
@@ -15,23 +17,21 @@ end
 BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
 @testset "Kinematic controls" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     @testset "_ray_plane_intersect" begin
         # Straight down the -z axis onto the z=0 plane
-        p = Ext._ray_plane_intersect([0.0, 0, 5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1])
+        p = GUI._ray_plane_intersect([0.0, 0, 5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1])
         @test p ≈ [0.0, 0, 0]
 
         # Off-axis ray/plane
-        p = Ext._ray_plane_intersect([1.0, 2, 5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1])
+        p = GUI._ray_plane_intersect([1.0, 2, 5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1])
         @test p ≈ [1.0, 2, 0]
 
         # Parallel to the plane: no intersection
-        @test isnothing(Ext._ray_plane_intersect([0.0, 0, 5], [1.0, 0, 0], [0.0, 0, 0], [0.0, 0, 1]))
+        @test isnothing(GUI._ray_plane_intersect([0.0, 0, 5], [1.0, 0, 0], [0.0, 0, 0], [0.0, 0, 1]))
 
         # Intersection behind the ray origin
-        @test isnothing(Ext._ray_plane_intersect([0.0, 0, -5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1]))
+        @test isnothing(GUI._ray_plane_intersect([0.0, 0, -5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1]))
     end
 
     @testset "_axis_angle_from_rotmatrix round-trips through rotate3d" begin
@@ -44,7 +44,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         ]
         for (axis, θ) in cases
             R = BMO.rotate3d(axis, θ)
-            got_axis, got_angle = Ext._axis_angle_from_rotmatrix(R)
+            got_axis, got_angle = GUI._axis_angle_from_rotmatrix(R)
             R2 = BMO.rotate3d(got_axis, got_angle)
             @test isapprox(R2, R; atol = 1e-6)
         end
@@ -60,7 +60,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         R = Matrix{Float64}(BMO.orientation(mir))
         Rd = R0 * R'
-        axis, angle = Ext._axis_angle_from_rotmatrix(Rd)
+        axis, angle = GUI._axis_angle_from_rotmatrix(Rd)
         angle > 1e-12 && rotate3d!(mir, axis, angle)
         translate_to3d!(mir, P0)
 
@@ -70,7 +70,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
     @testset "_bbox_wireframe" begin
         bb = GeometryBasics.Rect3d(GeometryBasics.Point3d(0, 0, 0), GeometryBasics.Vec3d(1, 2, 3))
-        pts = Ext._bbox_wireframe(bb)
+        pts = GUI._bbox_wireframe(bb)
         @test length(pts) == 24 # 12 segments
         xs = [p[1] for p in pts]
         @test isapprox(minimum(xs), 0.0; atol = 1e-6)
@@ -87,28 +87,28 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             translate3d!(cube, [0.0, -0.5, 0.0]) # in front of the mirror, on the ray
             occluder = NonInteractableObject(cube) # not part of any system
             mir = RoundPlanoMirror(0.025, 0.005) # at the origin, behind the occluder
-            @test Ext._ray_pick([occluder, mir], origin, dir)[1] === mir
+            @test GUI._ray_pick([occluder, mir], origin, dir)[1] === mir
         end
 
         @testset "nearest of two movables on the ray is picked" begin
             near = RoundPlanoMirror(0.025, 0.005)
             far = RoundPlanoMirror(0.025, 0.005)
             translate3d!(far, [0.0, 2.0, 0.0])
-            @test Ext._ray_pick([far, near], origin, dir)[1] === near
-            @test Ext._ray_pick([near, far], origin, dir)[1] === near
+            @test GUI._ray_pick([far, near], origin, dir)[1] === near
+            @test GUI._ray_pick([near, far], origin, dir)[1] === near
         end
 
         @testset "ray misses all movables" begin
             m1 = RoundPlanoMirror(0.025, 0.005)
             m2 = RoundPlanoMirror(0.025, 0.005)
             translate3d!(m2, [0.0, 2.0, 0.0])
-            @test isnothing(Ext._ray_pick([m1, m2], [0.1, -1.0, 0.0], dir)[1])
+            @test isnothing(GUI._ray_pick([m1, m2], [0.1, -1.0, 0.0], dir)[1])
         end
 
         @testset "objects whose intersect3d errors are skipped, not rethrown" begin
             struct _BrokenRayPickObject <: BMO.AbstractObject{Float64} end
             mir = RoundPlanoMirror(0.025, 0.005)
-            @test Ext._ray_pick([_BrokenRayPickObject(), mir], origin, dir)[1] === mir
+            @test GUI._ray_pick([_BrokenRayPickObject(), mir], origin, dir)[1] === mir
         end
     end
 
@@ -130,7 +130,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # Default camera looks at [0,0,0] (m1's position) from the center of the viewport
         vp = scene.viewport[]
         cx, cy = vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false) # no pick kwarg: ray picking
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false) # no pick kwarg: ray picking
         events(scene).mouseposition[] = (cx, cy)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -141,11 +141,11 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "ray miss falls back to Makie.pick" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false)
         # Mouse position at the corner: the ray misses both mirrors, the fallback finds no plot
         # without a backend
         events(scene).mouseposition[] = (1.0, 1.0)
-        @test isnothing(Ext._ray_pick(ctrl, scene)[1])
+        @test isnothing(GUI._ray_pick(ctrl, scene)[1])
         @test_logs events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         @test ctrl.selected[] === nothing
         @test !ctrl.dragging
@@ -157,9 +157,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         scene = ax.scene
         P0 = collect(Float64.(BMO.position(m1)))
 
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
-        @test ctrl isa Ext.KinematicController
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+        @test ctrl isa GUI.KinematicController
 
         # a click selects, but does not move the object
         events(scene).mouseposition[] = (100.0, 100.0)
@@ -173,7 +173,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         events(scene).mouseposition[] = (140.0, 160.0)
         @test ctrl.dragging
         @test collect(Float64.(BMO.position(m1))) != P0 # object followed the drag
-        @test length(h.handles[1].plots) > 0 # no plot churn
+        @test length(render_plots(render_children(h)[1])) > 0 # no plot churn
 
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
         @test !ctrl.dragging
@@ -187,10 +187,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # axes of the drag are linearly dependent
         fig, ax, h, m1, m2 = _fixture()
         BMO.yrotate3d!(m1, π / 2)
-        Ext.update_render!(h)
+        GUI.update_render!(h)
         scene = ax.scene
         P0 = collect(Float64.(BMO.position(m1)))
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = ax2 -> (h.handles[1].plots[1], 0))
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = ax2 -> (render_plots(render_children(h)[1])[1], 0))
         events(scene).mouseposition[] = (100.0, 100.0)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -208,8 +208,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "grab consumes the press once the object is selected" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
 
         probe = Ref(0)
         on(events(scene).mousebutton, priority = -1000) do event
@@ -235,7 +235,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
         pick_none = ax2 -> (nothing, 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_none)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_none)
         ctrl.selected[] = m1 # pretend something was already selected
 
         events(scene).mouseposition[] = (50.0, 50.0)
@@ -250,8 +250,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "keyboard fine controls" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3, fine_angle = 1e-3)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3, fine_angle = 1e-3)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
         @test ctrl.selected[] === m1
@@ -306,9 +306,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "on_change and update_render! are called" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
         changed = Ref{Any}(nothing)
-        ctrl = Ext.kinematic_controls!(
+        ctrl = GUI.kinematic_controls!(
             ax, h; throttle = false, pick = pick_m1, on_change = o -> (changed[] = o)
         )
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
@@ -321,8 +321,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "errors in on_change are logged once, not rethrown" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(
             ax, h; throttle = false, pick = pick_m1, on_change = o -> error("no hits")
         )
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
@@ -336,9 +336,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "throttle coalesces updates to one per tick" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
         n_updates = Ref(0)
-        ctrl = Ext.kinematic_controls!(
+        ctrl = GUI.kinematic_controls!(
             ax, h; throttle = true, pick = pick_m1, on_change = o -> (n_updates[] += 1)
         )
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
@@ -357,8 +357,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "left-drag rotates in the rotate mode" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
             rotate_speed = 1e-2)
         P0 = collect(Float64.(BMO.position(m1)))
         R0 = Matrix{Float64}(BMO.orientation(m1))
@@ -374,14 +374,14 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # rings are shown instead of arrows
         @test ctrl.plots[3].visible[]
         close(ctrl)
-        @test_throws ArgumentError Ext.kinematic_controls!(ax, h; mode = :fly)
+        @test_throws ArgumentError GUI.kinematic_controls!(ax, h; mode = :fly)
     end
 
     @testset "h toggles the controls overlay" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, fine_step = 20e-9)
-        hint = Ext._help_hint(:move, 20e-9, 10e-6)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, fine_step = 20e-9)
+        hint = GUI._help_hint(:move, 20e-9, 10e-6)
         @test ctrl.help_obs[] == hint
         # works without a selected object
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
@@ -390,16 +390,16 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
         @test ctrl.help_obs[] == hint
         close(ctrl)
-        ctrl = Ext.kinematic_controls!(ax, h; show_help = true)
-        @test ctrl.help_obs[] != Ext._help_hint(:move, 10e-9, 10e-6)
+        ctrl = GUI.kinematic_controls!(ax, h; show_help = true)
+        @test ctrl.help_obs[] != GUI._help_hint(:move, 10e-9, 10e-6)
         close(ctrl)
     end
 
     @testset "spectator mode" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
         @test ctrl.selected[] === m1
@@ -408,7 +408,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.v, Keyboard.press)
         @test ctrl.spectator[]
         @test ctrl.selected[] === nothing
-        @test ctrl.help_obs[] == Ext._SPECTATOR_HINT
+        @test ctrl.help_obs[] == GUI._SPECTATOR_HINT
         P0 = collect(Float64.(BMO.position(m1)))
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -418,7 +418,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         events(scene).unicode_input[] = '+'
         @test ctrl.fine_step ≈ 10e-9
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
-        @test ctrl.help_obs[] == Ext._SPECTATOR_HELP
+        @test ctrl.help_obs[] == GUI._SPECTATOR_HELP
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
 
         # v again switches back to the edit mode
@@ -430,9 +430,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test collect(Float64.(BMO.position(m1))) == P0
         close(ctrl)
 
-        ctrl = Ext.kinematic_controls!(ax, h; spectator = true)
+        ctrl = GUI.kinematic_controls!(ax, h; spectator = true)
         @test ctrl.spectator[]
-        @test ctrl.help_obs[] == Ext._SPECTATOR_HINT
+        @test ctrl.help_obs[] == GUI._SPECTATOR_HINT
         close(ctrl)
     end
 
@@ -443,23 +443,23 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         fig = Figure()
         ax = LScene(fig[1, 1])
         h = live_render!(ax, System([m1, fixed]))
-        @test length(h.handles) == 2
-        ctrl = Ext.kinematic_controls!(ax, h)
+        @test length(render_children(h)) == 2
+        ctrl = GUI.kinematic_controls!(ax, h)
         @test ctrl.movable == [m1]
         close(ctrl)
     end
 
     @testset "step size keys" begin
-        @test Ext._next_step(3e-8, 1) ≈ 5e-8
-        @test Ext._next_step(3e-8, -1) ≈ 2e-8
-        @test Ext._next_step(1e-8, 1) ≈ 2e-8
-        @test Ext._next_step(5e-8, 1) ≈ 1e-7
-        @test Ext._next_step(1e-7, -1) ≈ 5e-8
-        @test Ext._next_step(1.0, -1) ≈ 0.5
+        @test GUI._next_step(3e-8, 1) ≈ 5e-8
+        @test GUI._next_step(3e-8, -1) ≈ 2e-8
+        @test GUI._next_step(1e-8, 1) ≈ 2e-8
+        @test GUI._next_step(5e-8, 1) ≈ 1e-7
+        @test GUI._next_step(1e-7, -1) ≈ 5e-8
+        @test GUI._next_step(1.0, -1) ≈ 0.5
 
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, fine_step = 10e-9, fine_angle = 10e-6)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, fine_step = 10e-9, fine_angle = 10e-6)
         @test ctrl.help_obs[] == "move mode, step 10 nm, +/-: step, m: switch mode, v: spectator, h: show controls"
 
         # move mode, no object selected: 1-2-5 sequence on fine_step only
@@ -555,21 +555,21 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "group drill-down" begin
         @testset "_drill_select reproduces the trace table" begin
             f = _group_fixture()
-            ctrl = Ext.kinematic_controls!(f.ax, f.h; throttle = false)
+            ctrl = GUI.kinematic_controls!(f.ax, f.h; throttle = false)
             @test length(ctrl.movable) == 2
             @test ctrl.movable[1] === f.G && ctrl.movable[2] === f.M
-            @test Ext._chain(ctrl, f.lens) == [f.lens, f.H, f.G]
-            @test Ext._drill_select(ctrl, f.lens) === f.G
+            @test GUI._chain(ctrl, f.lens) == [f.lens, f.H, f.G]
+            @test GUI._drill_select(ctrl, f.lens) === f.G
             ctrl.selected[] = f.G
-            @test Ext._drill_select(ctrl, f.lens) === f.H
+            @test GUI._drill_select(ctrl, f.lens) === f.H
             ctrl.selected[] = f.H
-            @test Ext._drill_select(ctrl, f.lens) === f.lens
+            @test GUI._drill_select(ctrl, f.lens) === f.lens
             ctrl.selected[] = f.lens
-            @test Ext._drill_select(ctrl, f.lens) === f.lens
-            @test Ext._drill_select(ctrl, f.m) === f.M
+            @test GUI._drill_select(ctrl, f.lens) === f.lens
+            @test GUI._drill_select(ctrl, f.m) === f.M
             # clicking on a sibling of the selected sub-object selects the top level again
-            @test Ext._drill_select(ctrl, f.h1) === f.G
-            @test Ext._is_movable(ctrl, f.lens)
+            @test GUI._drill_select(ctrl, f.h1) === f.G
+            @test GUI._is_movable(ctrl, f.lens)
             close(ctrl)
         end
 
@@ -577,8 +577,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             f = _group_fixture()
             scene = f.ax.scene
             target = Ref{Any}(f.lens)
-            plot_of(obj) = only(oh for oh in f.h.handles if oh.obj === obj).plots[1]
-            ctrl = Ext.kinematic_controls!(f.ax, f.h; throttle = false,
+            plot_of(obj) = render_plots(only(oh for oh in render_children(f.h) if rendered(oh) === obj))[1]
+            ctrl = GUI.kinematic_controls!(f.ax, f.h; throttle = false,
                 pick = ax2 -> (plot_of(target[]), 0))
             selections = Any[]
             for _ in 1:4
@@ -609,10 +609,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             scene = f.ax.scene
             vp = scene.viewport[]
             cx, cy = vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2
-            ctrl = Ext.kinematic_controls!(f.ax, f.h; throttle = false)
+            ctrl = GUI.kinematic_controls!(f.ax, f.h; throttle = false)
             events(scene).mouseposition[] = (cx, cy)
             # the ray pick returns the leaf, the click logic decides the level
-            @test Ext._ray_pick(ctrl, scene)[1] === f.lens
+            @test GUI._ray_pick(ctrl, scene)[1] === f.lens
             _click!(scene)
             @test ctrl.selected[] === f.G
             _click!(scene)
@@ -626,9 +626,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             f = _group_fixture()
             scene = f.ax.scene
             # handles in render order: g1, lens, h1, m
-            @test [oh.obj for oh in f.h.handles] == [f.g1, f.lens, f.h1, f.m]
-            ctrl = Ext.kinematic_controls!(f.ax, f.h; throttle = false, fine_step = 1e-3,
-                pick = ax2 -> (f.h.handles[2].plots[1], 0))
+            @test [rendered(oh) for oh in render_children(f.h)] == [f.g1, f.lens, f.h1, f.m]
+            ctrl = GUI.kinematic_controls!(f.ax, f.h; throttle = false, fine_step = 1e-3,
+                pick = ax2 -> (render_plots(render_children(f.h)[2])[1], 0))
             key!(k) = (events(scene).keyboardbutton[] = Makie.KeyEvent(k, Keyboard.press))
             init = Dict(n => _pos(getfield(f, n)) for n in (:lens, :h1, :g1, :m, :H, :G, :M))
             siblings = (:h1, :g1, :m, :H, :G, :M)
@@ -646,9 +646,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             for n in siblings
                 @test isapprox(_pos(getfield(f, n)), init[n]; atol = 1e-12)
             end
-            # the plots of the lens follow, the others do not
-            @test f.h.handles[2].P == BMO.position(f.lens)
-            @test f.h.handles[3].P == BMO.position(f.h1)
+            # the plots of the lens follow, the others do not (their model matrix is the move)
+            shift(oh) = Vector{Float64}(Makie.translation(first(render_plots(oh)))[])
+            @test isapprox(shift(render_children(f.h)[2]), _pos(f.lens) - init[:lens]; atol = 1e-9)
+            @test isapprox(shift(render_children(f.h)[3]), zeros(3); atol = 1e-12)
 
             # backspace resets the sub-object only
             key!(Keyboard.backspace)
@@ -684,8 +685,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         @testset "selection box of a group spans all leaves" begin
             f = _group_fixture()
-            ctrl = Ext.kinematic_controls!(f.ax, f.h; throttle = false)
-            leaf_plots(objs) = reduce(vcat, [oh.plots for oh in f.h.handles if any(o -> o === oh.obj, objs)])
+            ctrl = GUI.kinematic_controls!(f.ax, f.h; throttle = false)
+            leaf_plots(objs) = reduce(vcat, [render_plots(oh) for oh in render_children(f.h) if any(o -> o === rendered(oh), objs)])
             function check_box(objs)
                 bb = mapreduce(Makie.boundingbox, GeometryBasics.union, leaf_plots(objs))
                 pts = ctrl.box_obs[]
@@ -696,19 +697,19 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
                 @test isapprox(hi, collect(maximum(bb)); atol = 1e-5)
             end
             ctrl.selected[] = f.G
-            Ext._update_selection_box!(ctrl)
+            GUI._update_selection_box!(ctrl)
             check_box((f.lens, f.h1, f.g1))
             ctrl.selected[] = f.H
-            Ext._update_selection_box!(ctrl)
+            GUI._update_selection_box!(ctrl)
             check_box((f.lens, f.h1))
             ctrl.selected[] = f.lens
-            Ext._update_selection_box!(ctrl)
+            GUI._update_selection_box!(ctrl)
             check_box((f.lens,))
             close(ctrl)
         end
 
         @testset "help text" begin
-            help = Ext._help_text(:move, 10e-9, 10e-6)
+            help = GUI._help_text(:move, 10e-9, 10e-6)
             @test occursin("again: part of a group", help)
             @test occursin("esc: enclosing group or deselect", help)
         end
@@ -717,11 +718,11 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "close disconnects listeners and removes the selection box" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
         n0 = length(ax.scene.plots)
         nb = length(ax.blockscene.plots)
         limits = Makie.data_limits(ax.scene)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
         @test length(ax.scene.plots) == n0 + 4 # selection box and gizmo
         @test length(ax.blockscene.plots) == nb + 1 # controls overlay
         # the hidden gizmo and the overlay must not change the limits of the scene
@@ -751,7 +752,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             h = live_render!(ax, sys)
             return (; fig, ax, h, lens, m, G, M)
         end
-        _plot_of(f, obj) = only(oh for oh in f.h.handles if oh.obj === obj).plots[1]
+        _plot_of(f, obj) = render_plots(only(oh for oh in render_children(f.h) if rendered(oh) === obj))[1]
 
         _press!(scene, pos) = (events(scene).mouseposition[] = pos;
                                 events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
@@ -764,7 +765,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             f = _cvd_fixture()
             scene = f.ax.scene
             target = Ref{Any}(f.lens)
-            ctrl = Ext.kinematic_controls!(f.ax, f.h; throttle = false,
+            ctrl = GUI.kinematic_controls!(f.ax, f.h; throttle = false,
                 pick = ax2 -> (isnothing(target[]) ? nothing : _plot_of(f, target[]), 0))
 
             # drag starting on lens, 50 px; nothing selected before -> camera rotates, nothing selected
@@ -801,8 +802,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "drag on an unselected object does not block the camera" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
             P0 = collect(Float64.(BMO.position(m1)))
 
             probe = Ref(0)
@@ -826,8 +827,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "drag on the selected object blocks the camera and moves it" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
             _click_at!(scene, (100.0, 100.0))
             @test ctrl.selected[] === m1
 
@@ -849,8 +850,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "press+release with 2 px movement does not change the pose" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
             _click_at!(scene, (100.0, 100.0))
             @test ctrl.selected[] === m1
 
@@ -866,8 +867,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "select_modifier gates clicks and drags" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
                 select_modifier = Keyboard.left_shift)
 
             probe = Ref(0)
@@ -896,8 +897,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "keyboard controls unchanged except backspace reset" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
         @test ctrl.selected[] === m1
@@ -979,8 +980,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "undo/redo of a drag" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
             events(scene).mouseposition[] = (100.0, 100.0)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -1011,8 +1012,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "consecutive key steps merge into one entry" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             @test ctrl.selected[] === m1
@@ -1032,8 +1033,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "key steps more than 1 s apart do not merge" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.up, Keyboard.press)
@@ -1049,8 +1050,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "undo/redo of a reset" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             P0 = collect(Float64.(BMO.position(m1)))
@@ -1070,8 +1071,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "a new gesture clears the redo stack" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.up, Keyboard.press)
@@ -1085,8 +1086,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "spectator mode ignores undo" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.up, Keyboard.press)
@@ -1102,9 +1103,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         @testset "_undo!/_redo! return whether something happened" begin
             fig, ax, h, m1, m2 = _fixture()
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false)
-            @test Ext._undo!(ctrl) == false
-            @test Ext._redo!(ctrl) == false
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false)
+            @test GUI._undo!(ctrl) == false
+            @test GUI._redo!(ctrl) == false
             close(ctrl)
         end
     end
@@ -1112,18 +1113,18 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "constraints" begin
         @testset "validates axis and field names" begin
             fig, ax, h, m1, m2 = _fixture()
-            @test_throws ArgumentError Ext.kinematic_controls!(
+            @test_throws ArgumentError GUI.kinematic_controls!(
                 ax, h; constraints = Dict(m1 => (; move = (:q,))))
-            @test_throws ArgumentError Ext.kinematic_controls!(
+            @test_throws ArgumentError GUI.kinematic_controls!(
                 ax, h; constraints = Dict(m1 => (; spin = (:x,))))
-            close(Ext.kinematic_controls!(ax, h; constraints = Dict(m1 => (; move = (:x, :y)))))
+            close(GUI.kinematic_controls!(ax, h; constraints = Dict(m1 => (; move = (:x, :y)))))
         end
 
         @testset "locked keys are consumed without moving" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3,
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3,
                 constraints = Dict(m1 => (; move = (:x,))))
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -1142,8 +1143,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "mouse drag projects onto the allowed move axis" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
                 constraints = Dict(m1 => (; move = (:x,))))
             events(scene).mouseposition[] = (100.0, 100.0)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
@@ -1163,8 +1164,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "no allowed move axis: drag does not move the object" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
                 constraints = Dict(m1 => (; move = ())))
             events(scene).mouseposition[] = (100.0, 100.0)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
@@ -1180,8 +1181,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "rotate drag is blocked when :v is locked" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
                 rotate_speed = 1e-2, constraints = Dict(m1 => (; rotate = (:x,))))
             R0 = Matrix{Float64}(BMO.orientation(m1))
             events(scene).mouseposition[] = (100.0, 100.0)
@@ -1198,15 +1199,15 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "gizmo colors fade for locked axes" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
                 constraints = Dict(m1 => (; move = (:x,))))
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             # order is [y, x, v]: y locked, x allowed, v locked
-            @test ctrl.arrow_color[][1].alpha ≈ Ext._GIZMO_FADE_ALPHA
+            @test ctrl.arrow_color[][1].alpha ≈ GUI._GIZMO_FADE_ALPHA
             @test ctrl.arrow_color[][2].alpha ≈ 1.0
-            @test ctrl.arrow_color[][3].alpha ≈ Ext._GIZMO_FADE_ALPHA
+            @test ctrl.arrow_color[][3].alpha ≈ GUI._GIZMO_FADE_ALPHA
             close(ctrl)
         end
     end
@@ -1217,14 +1218,14 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             scene = ax.scene
             vp = scene.viewport[]
             cx, cy = vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false) # default ray picking: t is known
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false) # default ray picking: t is known
             events(scene).mouseposition[] = (cx, cy)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             @test ctrl.selected[] === m1
 
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
-            leaf, t = Ext._ray_pick(ctrl, scene)
+            leaf, t = GUI._ray_pick(ctrl, scene)
             @test leaf === m1
             @test !isnothing(t)
             r0 = Makie.ray_at_cursor(scene)
@@ -1235,7 +1236,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
             events(scene).mouseposition[] = (cx + 30, cy + 15)
             r1 = Makie.ray_at_cursor(scene)
-            hit1 = Ext._ray_plane_intersect(Vector{Float64}(r1.origin), Vector{Float64}(r1.direction),
+            hit1 = GUI._ray_plane_intersect(Vector{Float64}(r1.origin), Vector{Float64}(r1.direction),
                 ctrl.plane_point, ctrl.plane_normal)
             # the grabbed point (position - grab_offset) is still exactly the new plane hit
             @test isapprox(collect(Float64.(BMO.position(m1))) .- grab_offset, hit1; atol = 1e-9)
@@ -1246,8 +1247,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @testset "custom pick falls back to the pivot" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
-            pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
-            ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
             events(scene).mouseposition[] = (100.0, 100.0)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -1262,9 +1263,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
         beam = Beam([0.0, -1.0, 2.0], [0.0, 1.0, 0.0]) # away from m1/m2
-        src_handle = Ext._live_render_source!(ax, beam; size = 1e-3) # tiny marker
-        push!(h.handles, src_handle)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false)
+        src_handle = GUI._live_render_source!(ax, beam; size = 1e-3) # tiny marker
+        push!(h, src_handle)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false)
         @test any(o -> o === beam, ctrl.movable)
 
         p = Vector{Float64}(BMO.position(beam))
@@ -1273,13 +1274,13 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         # a few pixels off the tiny marker: within source_pick_radius, but outside its 3D bbox
         events(scene).mouseposition[] = (px[1] + vp.origin[1] + 10, px[2] + vp.origin[2] + 10)
-        leaf, t = Ext._ray_pick(ctrl, scene)
+        leaf, t = GUI._ray_pick(ctrl, scene)
         @test leaf === beam
         @test !isnothing(t)
 
         # far outside source_pick_radius: no longer picked
         events(scene).mouseposition[] = (px[1] + vp.origin[1] + 100, px[2] + vp.origin[2] + 100)
-        leaf2, _ = Ext._ray_pick(ctrl, scene)
+        leaf2, _ = GUI._ray_pick(ctrl, scene)
         @test leaf2 !== beam
         close(ctrl)
     end
@@ -1287,9 +1288,9 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     @testset "ignore_keys disables all key handling" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
-        pick_m1 = ax2 -> (h.handles[1].plots[1], 0)
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
         ignore = Ref(false)
-        ctrl = Ext.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3,
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, fine_step = 1e-3,
             ignore_keys = () -> ignore[])
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)

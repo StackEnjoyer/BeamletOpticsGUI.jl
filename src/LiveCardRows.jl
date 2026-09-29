@@ -54,7 +54,7 @@ card_rows(pd::BMO.Detector) = (pose_card_rows(pd)..., _beam_row(), _text_row("si
     _panel_row())
 # Sources whose rays can be regenerated: wavelength, size and a slider for the number of rays
 card_rows(src::Union{BMO.CollimatedSource, BMO.PointSource}) = (pose_card_rows(src)...,
-    _text_row("λ", :source, _source_text), _ray_rows(src.sampling, length(src))...)
+    _text_row("λ", :source, _source_text), _ray_rows(BMO.min_num_rays(src), length(src))...)
 # Gaussian beamlets: wavelength, waist and Rayleigh range
 card_rows(g::BMO.GaussianBeamlet) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text))
 # Systems (inspected, see `_inspect!`): no pose, the number of objects, the rays of their sources and
@@ -190,13 +190,13 @@ end
 """The power (intensity panels) or the number of rays (spot panels) of the detector panel of `pd`."""
 function _panel_text(gui::LiveView, pd)
     i = findfirst(p -> p.pd === pd, gui.panels)
-    isnothing(i) && return "no panel, $(BMO._hit_count(pd)) hits"
+    isnothing(i) && return "no panel, $(BMO.hit_count(pd)) hits"
     return _metrics_text(gui.panels[i].metrics)
 end
 _metrics_text(m::NamedTuple) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW" : "N = $(get(m, :n, 0))"
 _metrics_text(_) = "no hits"
 
-_source_text(gui::LiveView, src) = "$(_wavelength_string(BMO._source_wavelength(src))), $(_size_text(src))"
+_source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.source_wavelength(src))), $(_size_text(src))"
 _size_text(cs::BMO.CollimatedSource) = "⌀ $(_length_string(cs.diameter))"
 _size_text(ps::BMO.PointSource) = "NA $(round(BMO.numerical_aperture(ps); digits = 3))"
 
@@ -214,15 +214,13 @@ _gauss_text(gui::LiveView, g) ="$(_wavelength_string(BMO.wavelength(_first_ray(g
 Ray count slider of the sources
 =#
 
-_ray_rows(::BMO._NoSampling, ::Int) = ()
-_ray_rows(s::BMO._AbstractSampling, n::Int) = (CardRow(
+# A source whose rays can not be regenerated has no slider, see `BMO.min_num_rays`
+_ray_rows(::Nothing, ::Int) = ()
+# The slider starts at the fewest rays of the source, at least 10
+_ray_rows(lo::Int, n::Int) = (CardRow(
     CardWidget(Label; name = :ray_count, width = 80, halign = :left, value = (gui, src) -> "$(length(src)) rays"),
-    CardWidget(Slider; name = :rays, range = _ray_steps(_min_rays(s), n), width = 200,
+    CardWidget(Slider; name = :rays, range = _ray_steps(max(lo, 10), n), width = 200,
         value = (gui, src) -> length(src), on = (gui, src, n) -> _set_num_rays!(gui, src, n))),)
-
-# Fewest rays of a sampling, see `set_num_rays!`
-_min_rays(s::Union{BMO._DiscRings, BMO._ConeRings}) = 20 * s.num_rings
-_min_rays(::BMO._AbstractSampling) = 10
 
 """Values of the ray slider: the steps 1-2-5 from `lo` up to 20 000, `lo` itself and the current count `n`."""
 function _ray_steps(lo::Int, n::Int)

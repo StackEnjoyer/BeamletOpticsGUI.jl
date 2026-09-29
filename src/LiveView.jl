@@ -13,7 +13,7 @@ task, see `_solve!` and `_run!`.
 
 - `task`: runs `_compute` and returns its result
 - `done`: notified when `task` ends (or the wait of `_run!` times out)
-- `sinks`: the progress outputs of `task`, see `BMO._ProgressSink`: one per source, then one per
+- `sinks`: the progress outputs of `task`, see `BMO.ProgressSink`: one per source, then one per
   detector panel
 - `anchors`: the position of the progress window of each sink, i.e. of its source or detector
 - `apply`: shows the result of `task` in the live view, called on the render task
@@ -26,7 +26,7 @@ task, see `_solve!` and `_run!`.
 mutable struct _SolveJob
     task::Task
     done::Base.Event
-    sinks::Vector{BMO._ProgressSink}
+    sinks::Vector{BMO.ProgressSink}
     anchors::Vector{Point3f}
     apply::Function
     obj::Any
@@ -345,8 +345,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     fig::Figure
     ax::LScene
     pairs::Vector{Pair{BMO.AbstractSystem, Any}}
-    system_handles::Vector{SystemRenderHandle}
-    beam_handles::Vector{AbstractRenderHandle}
+    system_handles::Vector{AbstractSystemRenderHandle}
+    beam_handles::Vector{AbstractBeamRenderHandle}
     controls::KinematicController
     panels::Vector{Any}
     status::Label
@@ -355,7 +355,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     last_error::Union{Nothing, String} = nothing
     labels::IdDict{Any, String}
     export_clipboard::Bool = true
-    extras::SystemRenderHandle
+    extras::LiveSystemHandle
     custom::_UserParts = _UserParts()
     trace::_TraceState
     clip::_ClipState
@@ -763,8 +763,8 @@ function live_view(
     # `edges` is only passed if given, i.e. custom `render!` methods of user objects do not need to
     # accept it
     sys_kw = isnothing(edges) ? system_kwargs : (; edges, system_kwargs...)
-    system_handles = SystemRenderHandle[live_render!(ax, sys; sys_kw...) for sys in systems]
-    beam_handles = AbstractRenderHandle[]
+    system_handles = AbstractSystemRenderHandle[live_render!(ax, sys; sys_kw...) for sys in systems]
+    beam_handles = AbstractBeamRenderHandle[]
     for beam in last.(ps)
         default = beam isa BMO.AbstractBeamGroup ? (; render_every = 5) : (;)
         kw = get(beam_kwargs, beam, default)
@@ -773,25 +773,27 @@ function live_view(
             clip_planes = Plane3f[]))
     end
 
-    # A single controller for all systems, otherwise several controllers would compete for events
-    handles = reduce(vcat, [h.handles for h in system_handles]; init = ObjectRenderHandle[])
     # The extras are moved and selected like the objects of the systems, but never traced
     extras_handle = _live_render_extras!(ax, extra_specs)
     # Size of the scene (the systems and the visible extras), before any clip plane shrinks the
     # bounding boxes
     extent = _scene_extent((system_handles..., extras_handle))
+    markers = AbstractObjectRenderHandle[]
     if movable_sources
         # Markers of the sources, scaled to the size of the systems
         marker_size = 0.08 * extent
         for src in unique(objectid, last.(ps))
-            BMO._is_static(src) || push!(handles,
+            BMO.is_static(src) || push!(markers,
                 _live_render_source!(ax, src; size = marker_size, strokecolor = _marker_stroke(lay)))
         end
     end
-    append!(handles, extras_handle.handles)
-    parent = IdDict{BMO.AbstractObject, BMO.AbstractObject}()
-    foreach(h -> merge!(parent, h.parent), (system_handles..., extras_handle))
-    combined = SystemRenderHandle(ax, first(systems), handles, parent)
+    # A single controller for all systems, otherwise several controllers would compete for events,
+    # hence one handle of the objects of all systems, the source markers and the extras; the clip
+    # planes are added later
+    combined = LiveSystemHandle(first(systems), AbstractObjectRenderHandle[
+            (c for h in system_handles for c in render_children(h))..., markers...,
+            render_children(extras_handle)...],
+        AbstractSystemRenderHandle[system_handles..., extras_handle])
     # Colors of the render look that the theme of the layout replaces, e.g. of dark detectors
     _theme_render!(lay, combined)
     gui_ref = Ref{LiveView}()

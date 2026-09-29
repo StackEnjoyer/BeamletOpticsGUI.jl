@@ -1,16 +1,14 @@
 module TestLiveWidgetRecipe
 
 #=
-The code examples of the recipe for the widgets of the live view (the docs page "Live view widgets"
-and `skills/beamletoptics/WIDGETS.md`), run as tests. Each recipe is a block of definitions between
+The code examples of the recipe for the widgets of the live view (the docs page `widgets.md` and
+`skills/beamletopticsgui/WIDGETS.md`), run as tests. Each recipe is a block of definitions between
 two `# ---` lines, which the docs copy unchanged, followed by the tests of what the recipe promises.
 =#
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
 using Test
-# exported with the release of the recipe; imported explicitly until then
-using BeamletOptics: card_input, card_show!
 
 #=
 Shared by the tests: a beam along +y, a mirror at 45° that reflects it along +x onto a detector
@@ -51,7 +49,7 @@ end
 
 # The card: the pose, a slider for the transmission with its value in %, and an action "block"
 # next to the default ones ("hide")
-BeamletOptics.card_rows(a::MyAttenuator) = (pose_card_rows(a)...,
+BeamletOpticsGUI.card_rows(a::MyAttenuator) = (pose_card_rows(a)...,
     CardRow("T",
         CardWidget(Slider; name = :transmission, range = 0:0.01:1, width = 150,
             value = (gui, a) -> a.transmission,
@@ -59,8 +57,8 @@ BeamletOptics.card_rows(a::MyAttenuator) = (pose_card_rows(a)...,
         CardWidget(Label; name = :percent,
             value = (gui, a) -> "$(round(Int, 100 * a.transmission)) %")))
 
-BeamletOptics.card_actions(a::MyAttenuator) = (
-    invoke(BeamletOptics.card_actions, Tuple{BeamletOptics.AbstractObject}, a)...,
+BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
+    invoke(BeamletOpticsGUI.card_actions, Tuple{BeamletOptics.AbstractObject}, a)...,
     CardWidget(Button; name = :block, label = "block",
         on = (gui, a, _) -> (a.transmission = 0.0), solve = true))
 
@@ -77,8 +75,8 @@ end
 BeamletOptics.objects(b::MyBench) = b.objects
 
 # The default rows of a system (objects, rays, solve) and the name of the bench
-BeamletOptics.card_rows(b::MyBench) = (
-    invoke(BeamletOptics.card_rows, Tuple{BeamletOptics.AbstractSystem}, b)...,
+BeamletOpticsGUI.card_rows(b::MyBench) = (
+    invoke(BeamletOpticsGUI.card_rows, Tuple{BeamletOptics.AbstractSystem}, b)...,
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))
 
 # ---
@@ -128,8 +126,8 @@ function Makie.initialize_block!(s::Stepper)
 end
 
 # The protocol of the widgets of the cards: the inputs, and showing a value (not an input)
-BeamletOptics.card_input(s::Stepper) = s.input
-BeamletOptics.card_show!(s::Stepper, v) = (s.value[] = v; nothing)
+BeamletOpticsGUI.card_input(s::Stepper) = s.input
+BeamletOpticsGUI.card_show!(s::Stepper, v) = (s.value[] = v; nothing)
 
 # A beam block, which its card moves up and down (along z) in steps
 struct MyBeamBlock{T} <: BeamletOptics.AbstractObject{T}
@@ -141,7 +139,7 @@ MyBeamBlock(width, thickness) = MyBeamBlock(BeamletOptics.PlanoSurfaceSDF(thickn
 # Absorbs the rays that hit it
 BeamletOptics.interact3d(::BeamletOptics.AbstractSystem, ::MyBeamBlock, ::Beam, ::Ray) = nothing
 
-BeamletOptics.card_rows(b::MyBeamBlock) = (CardRow("z [mm]",
+BeamletOpticsGUI.card_rows(b::MyBeamBlock) = (CardRow("z [mm]",
     CardWidget(Stepper; name = :height, step = 15.0,
         value = (gui, b) -> 1e3 * position(b)[3],
         on = (gui, b, z) -> translate_to3d!(b, [position(b)[1], position(b)[2], 1e-3 * z]),
@@ -196,7 +194,7 @@ end
 Tests
 =#
 
-const Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
+const GUI = BeamletOpticsGUI
 
 # A live view whose changes are solved at once; `on_change` counts the full solves
 function _live_view(pairs...; kwargs...)
@@ -209,11 +207,10 @@ end
 # The widget `name` on the card of the object of the card of the selection: floating (compact) or
 # docked in the inspector (app)
 _card(gui) = gui.cards.selection
-_card(gui::Ext.LiveView{Ext.AppLayout}) = gui.layout.inspector.card
-_widget(gui, name) = Ext._card_widget(_card(gui), name)
+_card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
+_widget(gui, name) = GUI._card_widget(_card(gui), name)
 
 @testset "Live view widget recipes" begin
-    @test !isnothing(Ext)
 
     @testset "a card for your type ($layout)" for layout in (:compact, :app)
         mirror, pd = _bench()
@@ -282,7 +279,7 @@ _widget(gui, name) = Ext._card_widget(_card(gui), name)
         @test _hits(pd) == 1
         # in a controls section: shows the position right away and after each solve
         layout_ = add_block_controls!(gui, block)
-        stepper = only(b for b in Ext._blocks!(Any[], layout_) if b isa Stepper)
+        stepper = only(b for b in GUI._blocks!(Any[], layout_) if b isa Stepper)
         @test stepper.value[] ≈ 15
         notify(stepper.plus.clicks)
         @test position(block)[3] ≈ 0.03
@@ -311,7 +308,7 @@ _widget(gui, name) = Ext._card_widget(_card(gui), name)
         gui, solves = _live_view(System([mirror, pd]) => Beam([0.0, 0, 0], [0.0, 1, 0]); layout)
         R0 = copy(orientation(mirror))
         controls = add_tilt_controls!(gui, mirror)
-        blocks = Ext._blocks!(Any[], controls)
+        blocks = GUI._blocks!(Any[], controls)
         box = only(b for b in blocks if b isa Textbox)
         toggle = only(b for b in blocks if b isa Toggle)
         # the textbox takes the keyboard

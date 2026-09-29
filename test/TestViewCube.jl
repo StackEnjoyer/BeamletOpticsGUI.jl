@@ -1,15 +1,15 @@
 module TestViewCube
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics: render_children, render_plots
 using Makie
 using Test
 using LinearAlgebra: normalize, norm, dot
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 @testset "View cube" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     # All 26 regions: 6 faces, 12 edges and 8 corners
     regions = [s for s in Iterators.product(-1:1, -1:1, -1:1) if s != (0, 0, 0)]
@@ -17,21 +17,21 @@ const BMO = BeamletOptics
 
     @testset "ray/cube intersection" begin
         # hit from outside, nearest face
-        p = Ext._ray_cube_hit([0.2, -0.3, 5.0], [0.0, 0.0, -1.0])
+        p = GUI._ray_cube_hit([0.2, -0.3, 5.0], [0.0, 0.0, -1.0])
         @test p ≈ [0.2, -0.3, 1.0]
-        p = Ext._ray_cube_hit([-5.0, 0.5, 0.5], normalize([1.0, 0.0, 0.0]))
+        p = GUI._ray_cube_hit([-5.0, 0.5, 0.5], normalize([1.0, 0.0, 0.0]))
         @test p ≈ [-1.0, 0.5, 0.5]
         # oblique hit on an edge
-        p = Ext._ray_cube_hit([3.0, 0.0, 3.0], normalize([-1.0, 0.0, -1.0]))
+        p = GUI._ray_cube_hit([3.0, 0.0, 3.0], normalize([-1.0, 0.0, -1.0]))
         @test p ≈ [1.0, 0.0, 1.0]
         # miss: parallel outside, beside, pointing away
-        @test isnothing(Ext._ray_cube_hit([0.0, 2.0, 5.0], [0.0, 0.0, -1.0]))
-        @test isnothing(Ext._ray_cube_hit([0.0, 0.0, 5.0], normalize([1.0, 0.0, -0.1])))
-        @test isnothing(Ext._ray_cube_hit([0.0, 0.0, 5.0], [0.0, 0.0, 1.0]))
+        @test isnothing(GUI._ray_cube_hit([0.0, 2.0, 5.0], [0.0, 0.0, -1.0]))
+        @test isnothing(GUI._ray_cube_hit([0.0, 0.0, 5.0], normalize([1.0, 0.0, -0.1])))
+        @test isnothing(GUI._ray_cube_hit([0.0, 0.0, 5.0], [0.0, 0.0, 1.0]))
         # from inside: the exit point
-        p = Ext._ray_cube_hit([0.0, 0.0, 0.0], [0.0, 1.0, 0.0])
+        p = GUI._ray_cube_hit([0.0, 0.0, 0.0], [0.0, 1.0, 0.0])
         @test p ≈ [0.0, 1.0, 0.0]
-        p = Ext._ray_cube_hit([0.5, 0.0, 0.0], [-1.0, 0.0, 0.0])
+        p = GUI._ray_cube_hit([0.5, 0.0, 0.0], [-1.0, 0.0, 0.0])
         @test p ≈ [-1.0, 0.0, 0.0]
     end
 
@@ -42,24 +42,24 @@ const BMO = BeamletOptics
         @test count(s -> nnz(s) == 3, regions) == 8
         # the center of each region on the surface of the cube is the region itself
         for s in regions
-            @test Ext._cube_region(Float64.(collect(s))) == s
+            @test GUI._cube_region(Float64.(collect(s))) == s
         end
         # within the margin of a face, but close to an edge
-        @test Ext._cube_region([0.65, 0.0, 1.0]) == (0, 0, 1)
-        @test Ext._cube_region([0.75, 0.0, 1.0]) == (1, 0, 1)
-        @test Ext._cube_region([-0.8, -0.9, -1.0]) == (-1, -1, -1)
+        @test GUI._cube_region([0.65, 0.0, 1.0]) == (0, 0, 1)
+        @test GUI._cube_region([0.75, 0.0, 1.0]) == (1, 0, 1)
+        @test GUI._cube_region([-0.8, -0.9, -1.0]) == (-1, -1, -1)
     end
 
     @testset "view per region" begin
         faces = Dict((0, 0, 1) => [0, 1, 0], (0, 0, -1) => [0, 1, 0], (0, -1, 0) => [0, 0, 1],
             (0, 1, 0) => [0, 0, 1], (1, 0, 0) => [0, 0, 1], (-1, 0, 0) => [0, 0, 1])
         for (s, up) in faces
-            o, u = Ext._region_view(s)
+            o, u = GUI._region_view(s)
             @test o ≈ collect(s)
             @test u ≈ up
         end
         for s in regions
-            o, u = Ext._region_view(s)
+            o, u = GUI._region_view(s)
             @test o ≈ normalize(Float64.(collect(s)))
             @test norm(u) ≈ 1
             @test abs(dot(u, o)) < 1e-12
@@ -70,18 +70,18 @@ const BMO = BeamletOptics
 
     @testset "rotation between directions" begin
         a, b = [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]
-        k, θ = Ext._rotation_between(a, b, [0.0, 0.0, 1.0])
+        k, θ = GUI._rotation_between(a, b, [0.0, 0.0, 1.0])
         @test k ≈ [0, 0, 1]
         @test θ ≈ π / 2
-        @test Ext._rotate(a, k, θ / 2) ≈ normalize([1.0, 1.0, 0.0])
-        @test Ext._rotate(a, k, θ) ≈ b atol = 1e-12
+        @test GUI._rotate(a, k, θ / 2) ≈ normalize([1.0, 1.0, 0.0])
+        @test GUI._rotate(a, k, θ) ≈ b atol = 1e-12
         # antiparallel: about the fallback axis, made perpendicular to `a`
-        k, θ = Ext._rotation_between(a, -a, [1.0, 0.0, 1.0])
+        k, θ = GUI._rotation_between(a, -a, [1.0, 0.0, 1.0])
         @test k ≈ [0, 0, 1]
         @test θ ≈ π
-        @test Ext._rotate(a, k, θ) ≈ -a atol = 1e-12
+        @test GUI._rotate(a, k, θ) ≈ -a atol = 1e-12
         # fallback parallel to `a`: any perpendicular axis
-        k, _ = Ext._rotation_between(a, -a, a)
+        k, _ = GUI._rotation_between(a, -a, a)
         @test abs(dot(k, a)) < 1e-12 && norm(k) ≈ 1
     end
 
@@ -103,7 +103,7 @@ const BMO = BeamletOptics
     @testset "construction and corners" begin
         fig, ax = _scene()
         cube = view_cube!(ax)
-        @test cube isa Ext.ViewCube
+        @test cube isa GUI.ViewCube
         @test sprint(show, cube) == "ViewCube(top_right, 110 px)"
         vp, cvp = ax.scene.viewport[], cube.scene.viewport[]
         @test widths(cvp) == Vec(110, 110)
@@ -146,7 +146,7 @@ const BMO = BeamletOptics
         lookat = Vector{Float64}(_cam(ax).lookat[])
         dist = norm(Vector{Float64}(_cam(ax).eyeposition[]) .- lookat)
         events(ax.scene).mouseposition[] = _px(cube, (0, 0, 1))
-        @test Ext._region_at_cursor(cube) == (0, 0, 1)
+        @test GUI._region_at_cursor(cube) == (0, 0, 1)
         # hovering highlights the region
         @test cube.hovered == (0, 0, 1)
         @test cube.highlight.visible[]
@@ -180,10 +180,10 @@ const BMO = BeamletOptics
         cube = view_cube!(ax; duration = 0)
         for s in regions
             # a view from the side of the region, such that it is visible on the cube
-            o, u = Ext._region_view(s)
+            o, u = GUI._region_view(s)
             set_view(ax, 5 .* normalize(o .+ 0.2 .* u), [0, 0, 0], [0, 0, 1])
             events(ax.scene).mouseposition[] = _px(cube, s)
-            @test Ext._region_at_cursor(cube) == s
+            @test GUI._region_at_cursor(cube) == s
             _press!(ax)
             _release!(ax)
             @test _dir(ax) ≈ o atol = 1e-6
@@ -193,7 +193,7 @@ const BMO = BeamletOptics
         close(cube)
         cube = view_cube!(ax; duration = 0.2)
         set_view(ax, [0, 0, -5], [0, 0, 0], [0, 1, 0])
-        Ext._set_region_view!(cube, (0, 0, 1))
+        GUI._set_region_view!(cube, (0, 0, 1))
         _tick!(ax, 0.1)
         d = _dir(ax)
         @test abs(d[3]) < 1e-6
@@ -220,7 +220,7 @@ const BMO = BeamletOptics
         # click in the cube viewport, but beside the cube
         vp = cube.scene.viewport[]
         events(ax.scene).mouseposition[] = Tuple(Float64.(minimum(vp) .+ 1))
-        @test isnothing(Ext._region_at_cursor(cube))
+        @test isnothing(GUI._region_at_cursor(cube))
         _press!(ax)
         _release!(ax)
         @test probe[] == 2
@@ -264,7 +264,7 @@ const BMO = BeamletOptics
         gui = live_view(System([m, pd]), beam; throttle = false, trace_budget = Inf,
             pick = ax -> (pick_plot[], 0))
         cube = gui.widgets.view_cube
-        @test cube isa Ext.ViewCube
+        @test cube isa GUI.ViewCube
         @test cube.scene in gui.ax.scene.children
         cube.duration = 0
         ax = gui.ax
@@ -273,7 +273,7 @@ const BMO = BeamletOptics
         beside = Tuple(Float64.(minimum(scene.viewport[]) .+ 20))
 
         # a click on the cube neither selects ...
-        pick_plot[] = gui.controls.h.handles[1].plots[1]
+        pick_plot[] = render_plots(render_children(gui.controls.h)[1])[1]
         events(scene).mouseposition[] = _px(cube, (0, 0, 1))
         _click!()
         @test isnothing(gui.controls.selected[])
@@ -294,7 +294,7 @@ const BMO = BeamletOptics
         @test isnothing(gui.controls.selected[])
 
         # the clip planes of the live view do not affect the cube
-        Ext._add_clip_plane!(gui, [0, 0.1, 0], [0, 1, 0]; select = false)
+        GUI._add_clip_plane!(gui, [0, 0.1, 0], [0, 1, 0]; select = false)
         @test !isempty(scene.theme.clip_planes[])
         @test all(p -> isempty(p.clip_planes[]), [cube.faces; cube.highlight])
 

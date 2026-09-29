@@ -1,4 +1,7 @@
-using Makie: translate!, rotate!, Quaternion, AbstractPlot, Plane3f
+#=
+Markers of the live view that `render!` does not draw: the clip planes and the markers of the
+sources, live-rendered via `live_render!(draw, ax, x)`
+=#
 
 """
     LiveClipPlane
@@ -51,10 +54,11 @@ const _LiveMovable = Union{BMO.AbstractObject, BMO.AbstractBeam, BMO.AbstractBea
     _live_render_source!(ax, src; size, color = :orange, strokecolor = :black)
 
 Renders a marker of the source `src` (a beam or beam group), i.e. an arrow of length `size` along
-its direction and a sphere at its position, and returns an `ObjectRenderHandle`. The marker allows
-selecting and moving the source with the [`kinematic_controls!`](@ref).
+its direction and a sphere at its position, and returns its object render handle, see
+`live_render!(draw, ax, x)`. The marker allows selecting and moving the source with the
+[`kinematic_controls!`](@ref).
 """
-function _live_render_source!(ax::_RenderEnv, src; size::Real, color = :orange, strokecolor = :black)
+function _live_render_source!(ax::_Axis, src; size::Real, color = :orange, strokecolor = :black)
     draw = function ()
         p, d = Point3f(position(src)), Vec3f(size * normalize(BMO.direction(src)))
         # Markers are never clipped, see the clip planes of `live_view`
@@ -65,17 +69,18 @@ function _live_render_source!(ax::_RenderEnv, src; size::Real, color = :orange, 
         scatter!(ax, [p]; color, markersize = 12, strokecolor, strokewidth = 1,
             clip_planes = Plane3f[])
     end
-    return _live_render_movable!(ax, src, draw)
+    return live_render!(draw, ax, src)
 end
 
 """
     _live_render_clip_plane!(ax, plane::LiveClipPlane; color = :purple, strokecolor = :black)
 
 Renders the marker of the clip `plane`, i.e. its outline of edge length `plane.size` and a handle
-(sphere and scatter) at its position, and returns an `ObjectRenderHandle`. The marker is never
-clipped. Only the handle selects the plane, see `_pickable_plots`.
+(sphere and scatter) at its position, and returns its object render handle, see
+`live_render!(draw, ax, x)`. The marker is never clipped. Only the handle selects the plane, see
+`pickable_plots`.
 """
-function _live_render_clip_plane!(ax::_RenderEnv, plane::LiveClipPlane; color = :purple,
+function _live_render_clip_plane!(ax::_Axis, plane::LiveClipPlane; color = :purple,
         strokecolor = :black)
     draw = function ()
         p = Vector{Float64}(plane.pos)
@@ -90,12 +95,9 @@ function _live_render_clip_plane!(ax::_RenderEnv, plane::LiveClipPlane; color = 
         scatter!(ax, [Point3f(p)]; color, markersize = 12, strokecolor, strokewidth = 1,
             clip_planes = Plane3f[])
     end
-    return _live_render_movable!(ax, plane, draw)
+    return live_render!(draw, ax, plane)
 end
 
-"""Returns the plots of `oh` that select its object, i.e. all but the outline of a clip plane."""
-function _pickable_plots(oh::ObjectRenderHandle)
-    oh.obj isa LiveClipPlane || return oh.plots
-    return AbstractPlot[p for p in oh.plots if !(p isa Makie.Lines)]
-end
+"""The plots of the marker of a clip plane that select it, i.e. all but its outline."""
+pickable_plots(::LiveClipPlane, plots) = AbstractPlot[p for p in plots if !(p isa Makie.Lines)]
 

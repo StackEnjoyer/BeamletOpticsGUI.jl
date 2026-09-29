@@ -1,14 +1,14 @@
 module TestLiveApp
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics: render_children, render_plots, rendered
 using Makie
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 @testset "Live view app layout" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     # Beam along +y, mirror at 45° reflects it along +x onto the detector
     function _fixture()
@@ -29,15 +29,15 @@ const BMO = BeamletOptics
 
     _width(block) = widths(block.layoutobservables.computedbbox[])[1]
     _height(block) = widths(block.layoutobservables.computedbbox[])[2]
-    _marker(gui, src) = only(oh for oh in gui.controls.h.handles if oh.obj === src)
+    _marker(gui, src) = only(oh for oh in render_children(gui.controls.h) if rendered(oh) === src)
 
     @testset "construction" begin
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
             sliders = ["a" => (0:0.1:1, v -> nothing)])
-        @test gui isa Ext.AppView
-        @test gui isa Ext.LiveView
-        @test gui.layout isa Ext.AppLayout
+        @test gui isa GUI.AppView
+        @test gui isa GUI.LiveView
+        @test gui.layout isa GUI.AppLayout
         @test Tuple(gui.fig.scene.viewport[].widths) == (1600, 950)
         @test length(gui.panels) == 1
         @test gui.layout.dock.shown
@@ -66,7 +66,7 @@ const BMO = BeamletOptics
 
         # the compact layout is the default
         gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
-        @test gui isa Ext.CompactView
+        @test gui isa GUI.CompactView
         @test gui.widgets.menu isa Makie.Menu
         close(gui)
 
@@ -81,7 +81,7 @@ const BMO = BeamletOptics
     @testset "dark theme" begin
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); theme = :dark)
-        t = Ext._APP_THEMES[:dark]
+        t = GUI._APP_THEMES[:dark]
         @test gui.layout.theme == t
         @test gui.fig.scene.backgroundcolor[] == t.background
         @test gui.ax.scene.backgroundcolor[] == t.view
@@ -90,16 +90,16 @@ const BMO = BeamletOptics
 
         # the colors of the 3D view and of the panels follow the theme
         _rgb(c) = RGBf(Makie.to_color(c))
-        _plots(gui, obj) = only(oh for oh in gui.controls.h.handles if oh.obj === obj).plots
+        _plots(gui, obj) = render_plots(only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj))
         _detector_color(gui, pd) = _rgb(first(p for p in _plots(gui, pd) if p isa Makie.Mesh).color[])
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         dark = _live_app(System([m, pd]), beam; theme = :dark,
             clip_planes = [[0, 0.05, 0] => [0, 1, 0]], detectors = [pd => (:intensity, (; profiles = true))])
-        @test dark.beam_handles[1].plot.color[] == t.rays
+        @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
         @test _detector_color(dark, pd) == t.materials[:detector]
         # the mirror keeps the color of the look
-        @test _rgb(first(_plots(dark, m)).color[]) == Ext._materials()[:reflective].color
+        @test _rgb(first(_plots(dark, m)).color[]) == BMO.look_colors()[:reflective]
         plane = only(dark.clip.planes)
         @test only(p for p in _plots(dark, plane) if p isa Makie.Lines).color[] == t.clip_plane
         @test all(p -> p.strokecolor[] == t.marker_stroke,
@@ -116,10 +116,10 @@ const BMO = BeamletOptics
         # the light theme keeps the colors of the compact layout
         m, pd = _fixture()
         light = _live_app(System([m, pd]), beam)
-        @test _detector_color(light, pd) == Ext._materials()[:detector].color
-        @test _rgb(light.beam_handles[1].plot.color[]) == _rgb(:blue)
+        @test _detector_color(light, pd) == BMO.look_colors()[:detector]
+        @test _rgb(only(render_plots(light.beam_handles[1])).color[]) == _rgb(:blue)
         # the cards in the light colors, with a border
-        @test light.cards.selection.background.color[] == Ext._app_theme(:light).sidebar
+        @test light.cards.selection.background.color[] == GUI._app_theme(:light).sidebar
         close(light)
     end
 
@@ -128,11 +128,11 @@ const BMO = BeamletOptics
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_app(System([m, pd]), beam; throttle = false, clip_planes = [[0, 0.1, 0] => [0, 1, 0]])
         # flat icon buttons and toggles
-        @test gui.widgets.trace_button isa Ext._IconButton
-        @test gui.widgets.auto_trace_toggle isa Ext._IconToggle
-        @test gui.layout.clip_toggle isa Ext._IconToggle
-        @test gui.layout.fit_button isa Ext._IconButton
-        @test all(t -> t isa Ext._IconToggle, gui.layout.collapse)
+        @test gui.widgets.trace_button isa GUI._IconButton
+        @test gui.widgets.auto_trace_toggle isa GUI._IconToggle
+        @test gui.layout.clip_toggle isa GUI._IconToggle
+        @test gui.layout.fit_button isa GUI._IconButton
+        @test all(t -> t isa GUI._IconToggle, gui.layout.collapse)
         @test gui.widgets.orthographic_toggle.tooltip[] == "Orthographic"
         @test gui.layout.clip_toggle.tooltip[] == "Clipping (c)"
         # orthographic, via a click on the toggle
@@ -181,9 +181,9 @@ const BMO = BeamletOptics
         # sources
         marker = _marker(gui, beam)
         gui.widgets.sources_toggle.active[] = false
-        @test !any(p -> p.visible[], marker.plots)
+        @test !any(p -> p.visible[], render_plots(marker))
         gui.widgets.sources_toggle.active[] = true
-        @test all(p -> p.visible[], marker.plots)
+        @test all(p -> p.visible[], render_plots(marker))
         # measure
         gui.widgets.measure_toggle.active[] = true
         @test startswith(gui.status.text[], "measure:")
@@ -212,8 +212,8 @@ const BMO = BeamletOptics
         @test gui.layout.inspector.type.text[] == string(nameof(typeof(m)))
         # the pose rows of the card, docked in the inspector
         card = gui.layout.inspector.card
-        @test Ext._card_widget(card, :y).displayed_string[] == "100.0"
-        Ext._card_widget(card, :x).stored_string[] = "5"
+        @test GUI._card_widget(card, :y).displayed_string[] == "100.0"
+        GUI._card_widget(card, :x).stored_string[] = "5"
         @test BMO.position(m)[1] ≈ 5e-3
         @test gui.layout.inspector.mode.selected[] == :move
         gui.widgets.step_box.stored_string[] = "1 mrad"
@@ -221,7 +221,7 @@ const BMO = BeamletOptics
         # the step box is in the inspector, not on a card
         @test gui.widgets.step_box !== gui.cards.selection.step_box
         # no component menu, the eyes of the tree and "show all" in its title replace it
-        @test gui.widgets.show_all_button isa Ext._IconButton
+        @test gui.widgets.show_all_button isa GUI._IconButton
         close(gui)
     end
 
@@ -249,7 +249,7 @@ const BMO = BeamletOptics
     @testset "object tree rows" begin
         gui, o = _tree_fixture()
         tree = gui.layout.tree
-        @test tree isa Ext._ObjectTree
+        @test tree isa GUI._ObjectTree
         # systems expanded, groups collapsed; sources and clip planes after the systems
         @test _labels(gui) == ["System 1", "ObjectGroup 1", "Mirror 1", "PD1",
             "NonInteractableObject 1", "Beam 1", "Clip plane 1"]
@@ -262,20 +262,20 @@ const BMO = BeamletOptics
         @test all(r -> r.visible === true, _rows(gui)[1:6])
         @test isnothing(_row(gui, gui.clip.planes[1]).visible)
         # the names are used in the status line and the inspector
-        @test Ext._label(gui, o.m) == "Mirror 1"
+        @test GUI._label(gui, o.m) == "Mirror 1"
         # the kinds of the tree, by dispatch
-        @test Ext._tree_kind(o.l1) == :lens
-        @test Ext._tree_kind(o.pd) == :detector
-        @test Ext._tree_kind(gui.system_handles[1]) == :system
-        @test Ext._tree_kind(RoundThinBeamsplitter(0.01)) == :beamsplitter
+        @test GUI._tree_kind(o.l1) == :lens
+        @test GUI._tree_kind(o.pd) == :detector
+        @test GUI._tree_kind(gui.system_handles[1]) == :system
+        @test GUI._tree_kind(RoundThinBeamsplitter(0.01)) == :beamsplitter
         # one plot per part, independent of the number of rows
         @test length(tree.scene.plots) == 7
         # the compact layout has no tree and its hooks do nothing
         close(gui)
         gui = live_view(System([o.m, o.pd]), o.beam; trace_budget = Inf)
         @test !hasproperty(gui.layout, :tree)
-        @test isnothing(Ext._on_clip_planes_changed!(gui))
-        @test Ext._label(gui, o.m) == "Mirror 1"
+        @test isnothing(GUI._on_clip_planes_changed!(gui))
+        @test GUI._label(gui, o.m) == "Mirror 1"
         _key!(gui, Keyboard.p)
         @test gui.labels[gui.clip.planes[1]] == "Clip plane 1"
         close(gui)
@@ -314,15 +314,15 @@ const BMO = BeamletOptics
         tree.expand_clicked[] = gui.system_handles[1]
         @test length(_rows(gui)) == 7
         # the eye hides and shows, the row is muted
-        handle(obj) = only(oh for oh in ctrl.h.handles if oh.obj === obj)
+        handle(obj) = only(oh for oh in render_children(ctrl.h) if rendered(oh) === obj)
         tree.eye_clicked[] = o.housing
         @test o.housing in gui.objects.hidden
-        @test !any(p -> p.visible[], handle(o.housing).plots)
+        @test !any(p -> p.visible[], render_plots(handle(o.housing)))
         @test _row(gui, o.housing).visible === false
         @test tree.plots.labels.color[][5] == tree.muted_color
         tree.eye_clicked[] = o.housing
         @test isempty(gui.objects.hidden)
-        @test all(p -> p.visible[], handle(o.housing).plots)
+        @test all(p -> p.visible[], render_plots(handle(o.housing)))
         @test _row(gui, o.housing).visible === true
         # hiding a group hides its objects and clears a selection within it
         ctrl.selected[] = o.l1
@@ -338,9 +338,9 @@ const BMO = BeamletOptics
         @test all(r -> r.visible !== false, _rows(gui))
         # the source marker
         tree.eye_clicked[] = o.beam
-        @test !any(p -> p.visible[], handle(o.beam).plots)
+        @test !any(p -> p.visible[], render_plots(handle(o.beam)))
         tree.eye_clicked[] = o.beam
-        @test all(p -> p.visible[], handle(o.beam).plots)
+        @test all(p -> p.visible[], render_plots(handle(o.beam)))
         close(gui)
     end
 
@@ -402,20 +402,20 @@ const BMO = BeamletOptics
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [])
         # a new toolbar group after the built-in ones, but before "Help", which stays last
-        b = Button(Ext._add_toolbar_entry!(gui, :custom); label = "Mine")
+        b = Button(GUI._add_toolbar_entry!(gui, :custom); label = "Mine")
         @test first.(gui.layout.groups[(end - 1):end]) == [:custom, :help]
         @test b in contents(gui.layout.groups[end - 1].second)
         # the groups and separators alternate in the columns of the toolbar
         cols(x) = Makie.GridLayoutBase.gridcontent(x).span.cols
         @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11, 13:13]
         # a sidebar section below the built-in ones
-        g = Ext._add_sidebar_section!(gui, :right, "Extra")
+        g = GUI._add_sidebar_section!(gui, :right, "Extra")
         @test g isa GridLayout
         @test first.(gui.layout.sections[:right]) == ["Properties", "Extra"]
-        @test_throws ArgumentError Ext._add_sidebar_section!(gui, :top, "Extra")
+        @test_throws ArgumentError GUI._add_sidebar_section!(gui, :top, "Extra")
         # the first dock panel shows the dock
         @test !gui.layout.dock.shown
-        d = Ext._add_dock_panel!(gui, "Mine")
+        d = GUI._add_dock_panel!(gui, "Mine")
         Axis(d[1, 1])
         @test gui.layout.dock.shown
         @test gui.layout.collapse.dock.active[]
@@ -423,9 +423,9 @@ const BMO = BeamletOptics
 
         # the compact layout has no slots yet
         gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
-        @test_throws ArgumentError Ext._add_toolbar_entry!(gui, :custom)
-        @test_throws ArgumentError Ext._add_sidebar_section!(gui, :left, "Extra")
-        @test_throws ArgumentError Ext._add_dock_panel!(gui, "Mine")
+        @test_throws ArgumentError GUI._add_toolbar_entry!(gui, :custom)
+        @test_throws ArgumentError GUI._add_sidebar_section!(gui, :left, "Extra")
+        @test_throws ArgumentError GUI._add_dock_panel!(gui, "Mine")
         close(gui)
     end
 end

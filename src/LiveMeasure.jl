@@ -25,7 +25,7 @@ end
     _push_beam_segments!(segs, rays, l0, opl0, flen; beamlet = nothing)
 
 Appends the segments of the consecutive `rays` of one beam, starting at the path lengths `l0` and
-`opl0` [m], like `_push_ray_segment!`: a ray without intersection has the length `flen`.
+`opl0` [m], like the live rendering of the beams: a ray without intersection has the length `flen`.
 """
 function _push_beam_segments!(segs, rays, l0, opl0, flen; beamlet = nothing)
     l, opl = Float64(l0), Float64(opl0)
@@ -79,18 +79,14 @@ function _beam_segments!(segs, bg::BMO.AbstractBeamGroup; flen, render_every = 1
 end
 
 """Returns the rendered segments of the beam of the render handle `h`, see `_BeamSegment`."""
-function _beam_segments(h::BeamRenderHandle)
-    segs = _BeamSegment[]
-    if h.thing isa BMO.AbstractBeamGroup
-        return _beam_segments!(segs, h.thing; flen = h.flen, render_every = h.render_every)
-    end
-    return _beam_segments!(segs, h.thing; flen = h.flen)
-end
-_beam_segments(h::GaussianRenderHandle) = _beam_segments!(_BeamSegment[], h.thing; flen = h.flen)
-function _beam_segments(h::AstigmaticGroupRenderHandle)
-    return _beam_segments!(_BeamSegment[], h.thing; flen = h.flen, render_every = h.render_every)
-end
+_beam_segments(h::AbstractBeamRenderHandle) =
+    _beam_segments!(_BeamSegment[], rendered(h), render_settings(h))
 _beam_segments(_) = _BeamSegment[]
+
+# The segments with the `settings` of a beam handle, see `BeamletOptics.render_settings`
+_beam_segments!(segs, beam, settings::NamedTuple) = _beam_segments!(segs, beam; settings.flen)
+_beam_segments!(segs, bg::BMO.AbstractBeamGroup, settings::NamedTuple) =
+    _beam_segments!(segs, bg; settings.flen, settings.render_every)
 
 """Returns the distance of the point `p` from the segment `a`-`b` in 2D."""
 function _point_segment_distance(p, a, b)

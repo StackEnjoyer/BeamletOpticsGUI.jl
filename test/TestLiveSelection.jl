@@ -1,14 +1,14 @@
 module TestLiveSelection
 
-using BeamletOptics
+using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics: render_children, render_plots, rendered
 using Makie
 using Test
 
 const BMO = BeamletOptics
+const GUI = BeamletOpticsGUI
 
 @testset "Live view selection" begin
-    Ext = Base.get_extension(BeamletOptics, :BeamletOpticsMakieExt)
-    @test !isnothing(Ext)
 
     # Beam along +y, mirror at 45° reflects it along +x onto the detector
     function _fixture()
@@ -43,7 +43,7 @@ const BMO = BeamletOptics
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd, g]), beam; throttle = false,
             labels = Dict(m => "M1", g.objects[1] => "G1"),
-            pick = ax -> (gui_ref[].controls.h.handles[1].plots[1], 0))
+            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         # the system, then every movable object once, the objects of the group after the group,
         # indented
@@ -74,45 +74,45 @@ const BMO = BeamletOptics
         scene = gui.ax.scene
         vp = scene.viewport[]
         events(scene).mouseposition[] = (vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2)
-        @test first(Ext._ray_pick(gui.controls, scene)) === m
+        @test first(GUI._ray_pick(gui.controls, scene)) === m
 
         # hide
-        Ext._toggle_hidden!(gui, nothing)
+        GUI._toggle_hidden!(gui, nothing)
         @test startswith(gui.status.text[], "select a component")
         gui.widgets.menu.i_selected[] = 2
-        notify(Ext._card_widget(gui.cards.selection, :hide).clicks)
+        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
         @test isnothing(gui.controls.selected[])
         @test gui.widgets.menu.i_selected[] == 0
         @test m in gui.objects.hidden
-        @test all(p -> !p.visible[], gui.controls.h.handles[1].plots)
-        @test isnothing(first(Ext._ray_pick(gui.controls, scene)))
+        @test all(p -> !p.visible[], render_plots(render_children(gui.controls.h)[1]))
+        @test isnothing(first(GUI._ray_pick(gui.controls, scene)))
         # also not via the `pick` function
         _select!(gui)
         @test isnothing(gui.controls.selected[])
         # still traced
-        Ext._trace!(gui)
+        GUI._trace!(gui)
         @test length(BMO.hits(pd)) == 1
 
         # a hidden object can be selected in the menu and shown again
         gui.widgets.menu.i_selected[] = 2
         @test gui.controls.selected[] === m
-        notify(Ext._card_widget(gui.cards.selection, :hide).clicks)
+        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
         @test !(m in gui.objects.hidden)
-        @test all(p -> p.visible[], gui.controls.h.handles[1].plots)
+        @test all(p -> p.visible[], render_plots(render_children(gui.controls.h)[1]))
         @test gui.controls.selected[] === m
 
         # groups: all objects, show all
         gui.widgets.menu.i_selected[] = 4
-        notify(Ext._card_widget(gui.cards.selection, :hide).clicks)
+        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
         gui.widgets.menu.i_selected[] = 2
-        notify(Ext._card_widget(gui.cards.selection, :hide).clicks)
+        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
         @test length(gui.objects.hidden) == 3
-        leaf_plots = [p for oh in gui.controls.h.handles if oh.obj in (m, g.objects...) for p in oh.plots]
+        leaf_plots = [p for oh in render_children(gui.controls.h) if rendered(oh) in (m, g.objects...) for p in render_plots(oh)]
         @test all(p -> !p.visible[], leaf_plots)
         notify(gui.widgets.show_all_button.clicks)
         @test isempty(gui.objects.hidden)
         @test all(p -> p.visible[], leaf_plots)
-        @test first(Ext._ray_pick(gui.controls, scene)) === m
+        @test first(GUI._ray_pick(gui.controls, scene)) === m
         close(gui)
     end
 
@@ -125,23 +125,23 @@ const BMO = BeamletOptics
             labels = Dict(m2 => "Own name"), detectors = [])
         gui.export_clipboard = false
         # objects without a label get "Type i" like in the tree of the app, labelled ones keep it
-        @test Ext._label(gui, m1) == "Mirror 1"
-        @test Ext._label(gui, m2) == "Own name"
+        @test GUI._label(gui, m1) == "Mirror 1"
+        @test GUI._label(gui, m2) == "Own name"
         @test first.(gui.widgets.menu.options[]) == ["System 1", "  Mirror 1", "  Own name", "  Detector 1", "Beam 1"]
         app = _live_view(System([m1, m2, pd]), beam; throttle = false, layout = :app,
             labels = Dict(m2 => "Own name"), detectors = [])
-        @test [Ext._label(app, o) for o in (m1, m2, pd, beam)] == ["Mirror 1", "Own name", "Detector 1", "Beam 1"]
+        @test [GUI._label(app, o) for o in (m1, m2, pd, beam)] == ["Mirror 1", "Own name", "Detector 1", "Beam 1"]
         close(app)
 
         # clip planes are numbered
-        p1 = Ext._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
-        p2 = Ext._add_clip_plane!(gui, [0, 0.06, 0], [0, 1, 0])
-        @test Ext._label(gui, p1) == "Clip plane 1"
-        @test Ext._label(gui, p2) == "Clip plane 2"
+        p1 = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
+        p2 = GUI._add_clip_plane!(gui, [0, 0.06, 0], [0, 1, 0])
+        @test GUI._label(gui, p1) == "Clip plane 1"
+        @test GUI._label(gui, p2) == "Clip plane 2"
 
         # automatic names are no variable names in the export
         translate3d!(m1, [0, 1e-3, 0])
-        names = Ext._export_names(gui, Any[m1, m2])
+        names = GUI._export_names(gui, Any[m1, m2])
         @test names[m1] == "obj1" && names[m2] == "obj2"
         code = export_changes(gui; io = devnull)
         @test occursin("# Mirror\n", code) || occursin("(Mirror)", code)
@@ -153,7 +153,7 @@ const BMO = BeamletOptics
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_view(System([m, pd]), beam; throttle = false)
-        sys = gui.system_handles[1].sys
+        sys = rendered(gui.system_handles[1])
         card = gui.cards.selection
         # the entry of the system in the menu inspects it: its card, but no selection and no gizmo
         gui.widgets.menu.i_selected[] = 1
@@ -164,27 +164,27 @@ const BMO = BeamletOptics
         @test startswith(gui.status.text[], "System 1 inspected")
         @test card.scene.visible[]
         @test card.title.text[] == "System 1"
-        @test Ext._card_object(gui, card) === sys
+        @test GUI._card_object(gui, card) === sys
         # the rows of a system, see `card_rows(::AbstractSystem)`, and the default action
-        @test Ext._card_widget(card, :objects).text[] == "2"
-        @test Ext._card_widget(card, :rays).text[] == "1"
-        @test endswith(Ext._card_widget(card, :solve).text[], "ms")
-        @test Ext._card_widget(card, :hide).label[] == "hide"
-        @test isnothing(Ext._card_widget(card, :x))
+        @test GUI._card_widget(card, :objects).text[] == "2"
+        @test GUI._card_widget(card, :rays).text[] == "1"
+        @test endswith(GUI._card_widget(card, :solve).text[], "ms")
+        @test GUI._card_widget(card, :hide).label[] == "hide"
+        @test isnothing(GUI._card_widget(card, :x))
         # the properties of the card show a summary of the system
-        Ext._toggle_properties!(gui, card)
+        GUI._toggle_properties!(gui, card)
         @test ("Objects", "2") in card.list.rows
-        Ext._toggle_properties!(gui, card)
+        GUI._toggle_properties!(gui, card)
         # the card lies next to the bounding box of the objects of the system
-        corners = Ext._card_corners(gui, card, sys)
+        corners = GUI._card_corners(gui, card, sys)
         lo, hi = extrema(p -> p[1], corners)
         @test lo < 0.0 && hi > 0.1
         # the hide action hides all objects of the system, but keeps the inspection
-        notify(Ext._card_widget(card, :hide).clicks)
+        notify(GUI._card_widget(card, :hide).clicks)
         @test m in gui.objects.hidden && pd in gui.objects.hidden
         @test gui.objects.inspected === sys
-        @test Ext._card_widget(card, :hide).label[] == "show"
-        notify(Ext._card_widget(card, :hide).clicks)
+        @test GUI._card_widget(card, :hide).label[] == "show"
+        notify(GUI._card_widget(card, :hide).clicks)
         @test isempty(gui.objects.hidden)
         # Esc ends the inspection
         _key!(gui, Keyboard.escape)
@@ -218,11 +218,11 @@ const BMO = BeamletOptics
         ctrl.selected[] = m
         # a click on the name of a system row shows its card in the inspector
         tree.clicked[] = h
-        @test gui.objects.inspected === h.sys
+        @test gui.objects.inspected === rendered(h)
         @test isnothing(ctrl.selected[])
         @test insp.name.text[] == "System 1"
         @test tree.selected === h
-        @test Ext._card_widget(insp.card, :objects).text[] == "3"
+        @test GUI._card_widget(insp.card, :objects).text[] == "3"
         @test ("Sources", "1") in insp.list.rows
         # no card floats in the 3D view
         @test !gui.cards.selection.scene.visible[]
@@ -240,7 +240,7 @@ const BMO = BeamletOptics
         @test insp.name.text[] == "NonInteractableObject 1"
         @test tree.selected === housing
         # its pose inputs are rejected with a message
-        box = Ext._card_widget(insp.card, :x)
+        box = GUI._card_widget(insp.card, :x)
         P = position(housing)
         box.stored_string[] = "1"
         @test position(housing) == P

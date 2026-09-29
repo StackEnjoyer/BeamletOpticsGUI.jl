@@ -80,7 +80,7 @@ it as a movable object of the controls and applies the planes. Selects the plane
 function _add_clip_plane!(gui::LiveView, point, normal; select::Bool = true)
     ctrl = gui.controls
     plane = LiveClipPlane(point, normal, gui.clip.size)
-    push!(ctrl.h.handles, _live_render_clip_plane!(gui.ax, plane;
+    push!(ctrl.h, _live_render_clip_plane!(gui.ax, plane;
         color = _clip_plane_color(gui.layout), strokecolor = _marker_stroke(gui.layout)))
     push!(ctrl.movable, plane)
     ctrl.init_poses[plane] = _pose(plane)
@@ -104,10 +104,10 @@ its entries of the undo history, deselects it and applies the remaining planes.
 """
 function _remove_clip_plane!(gui::LiveView, plane::LiveClipPlane)
     ctrl = gui.controls
-    i = findfirst(oh -> oh.obj === plane, ctrl.h.handles)
-    if !isnothing(i)
-        remove_render!(ctrl.h.handles[i])
-        deleteat!(ctrl.h.handles, i)
+    oh = _child_handle(ctrl.h, plane)
+    if !isnothing(oh)
+        remove_render!(oh)
+        delete!(ctrl.h, oh)
     end
     filter!(o -> o !== plane, ctrl.movable)
     delete!(ctrl.init_poses, plane)
