@@ -3,6 +3,9 @@ uuid = "d62ba671-5e61-47cc-8a7f-19d21d414e61"
 version = "0.1.0"
 authors = ["Hugo Uittenbosch <hugo.uittenbosch@dlr.de>, Oliver Kliebisch <oliver.kliebisch@dlr.de> and Thomas Dekorsy <thomas.dekorsy@dlr.de>"]
 
+[workspace]
+projects = ["test", "docs"]
+
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 BeamletOptics = "c387492b-ffec-4e51-9a46-bd230226031c"
@@ -12,9 +15,6 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
-
-[sources]
-BeamletOptics = {url = "https://github.com/JuliaPhysics/BeamletOptics.jl", rev = "master"}
 
 [compat]
 AbstractTrees = "0.4"
@@ -26,6 +26,3 @@ Makie = "0.24"
 PrecompileTools = "1"
 Trapz = "2"
 julia = "1.12"
-
-[workspace]
-projects = ["test", "docs"]

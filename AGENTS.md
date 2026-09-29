@@ -67,10 +67,11 @@ describe it as available in docs or the skill.
 
 ## Running Julia and tests
 
-- Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`). `Project.toml` takes
-  BeamletOptics from `[sources]` (BMO `master` until BMO 0.13.11 is registered, then remove the entry) in
-  `Project.toml`, `test/Project.toml` and `docs/Project.toml`. To work against a local BMO
-  checkout, set these to `{path = "..."}` locally and do not commit that change.
+- Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`). BeamletOptics comes from
+  the General registry. To work against a local BMO checkout, add `BeamletOptics = {path = "..."}`
+  under `[sources]` in `Project.toml`, `test/Project.toml` and `docs/Project.toml` locally and do
+  not commit that change. A feature that needs unreleased BMO code waits for the BMO release and
+  raises the compat entry.
 - GLMakie is the backend of the tests; on headless Linux run under `xvfb-run -a`.
 - Single test module: `julia --project=test -e 'using Pkg; Pkg.instantiate()'` once, then
   `julia --project=test test/<file>.jl`.
