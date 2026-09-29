@@ -32,7 +32,7 @@ Main keyword arguments: `detectors` (`:auto`, a vector of `pd`, `pd => mode` or
 `pd => (mode, kwargs)`, or `[]`, with the panel options `colorscale`, `colorrange`, `history`
 and `profiles`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
-`views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see [`studio_lighting!`](@ref)),
+`views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects that are rendered,
 selected, moved and hidden like the components, but never traced, e.g. a housing from an STL file
 (`MeshDummy`); the card of such mechanics has an opacity slider. `layout = :app` arranges the window like an application, with a toolbar,
@@ -245,7 +245,7 @@ _card_cell(w::CardWidget) = w
 
 Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s, chosen by multiple
 dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); a source whose rays can
-be regenerated (see [`set_num_rays!`](@ref)) adds a slider for the number of rays, a `Detector`
+be regenerated (see `BeamletOptics.set_num_rays!`) adds a slider for the number of rays, a `Detector`
 the mode and the color scale of its detector panel, mechanics (`NonInteractableObject`, e.g. a
 `MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
 (`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)

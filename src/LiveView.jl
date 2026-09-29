@@ -700,7 +700,7 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   face, edge or corner switches to the corresponding standard view, see [`view_cube!`](@ref)
 - `orthographic = false`: starts the 3D view with orthographic instead of perspective projection,
   can be switched with the "orthographic" toggle below the 3D view
-- `lighting = :studio`: lighting rig of the 3D view, see [`studio_lighting!`](@ref), `:none`
+- `lighting = :studio`: lighting rig of the 3D view, see `BeamletOptics.studio_lighting!`, `:none`
   keeps the default lights of Makie
 - `edges = nothing`: draws the feature edges of the components, by default depending on the look,
   see [`set_render_look`](@ref) and [`render!`](@ref). An `edges` entry of `system_kwargs` takes

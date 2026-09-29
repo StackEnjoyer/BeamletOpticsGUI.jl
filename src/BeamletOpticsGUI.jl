@@ -64,6 +64,8 @@ include("LiveDock.jl")
 include("LiveInspector.jl")
 include("LiveInfo.jl")
 include("LiveCustom.jl")
+# agent skill of the package
+include("AgentSkill.jl")
 # precompiles the live view and the interaction call paths, must come last
 include("LivePrecompile.jl")
 

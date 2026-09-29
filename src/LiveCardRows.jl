@@ -231,7 +231,7 @@ end
 """
     _set_num_rays!(gui, src, n)
 
-Regenerates the rays of the source `src` of the `gui` with `n` rays (see [`set_num_rays!`](@ref)),
+Regenerates the rays of the source `src` of the `gui` with `n` rays (see `BeamletOptics.set_num_rays!`),
 a change of the source (a running solve is cancelled first, see `_change!`), and solves again or
 marks the beams as outdated like after a move, via the `on_change` of the controls. The slider
 snaps to its steps, hence `n` may be the current count.
