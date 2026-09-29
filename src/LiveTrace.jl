@@ -12,7 +12,8 @@ _previewable(beam, h) = beam isa BMO.AbstractBeamGroup && _render_every(h) > 1
 
 """Returns `true` if the `gui` solves any of its beams as a preview while moving, see `_resolve!`."""
 _has_preview(gui::LiveView) = gui.trace.preview_enabled &&
-                              any(i -> _previewable(gui.pairs[i].second, gui.beam_handles[i]), eachindex(gui.pairs))
+                              any(i -> _beam_on(gui, gui.pairs[i].second) &&
+                                  _previewable(gui.pairs[i].second, gui.beam_handles[i]), eachindex(gui.pairs))
 
 """
     _solve_from_start!(system, beam)
@@ -53,11 +54,13 @@ function _solve_preview!(system, bg::BMO.AbstractBeamGroup, k::Int)
 end
 
 """
-    _compute(pairs, handles, panels, sinks; coarse = false, preview = false)
+    _compute(pairs, handles, panels, sinks; systems = first.(pairs), coarse = false, preview = false)
 
-Empties all `Detector`s of the systems of the `pairs`, solves the systems and computes the fields
-of the detector `panels` (see `_panel_field`), without changing any plot, such that it can run in
-a background task, see `_solve!`. `handles` are the render handles of the beams of the `pairs`.
+Empties all `Detector`s of the `systems` (by default those of the `pairs`), solves the systems of
+the `pairs` and computes the fields of the detector `panels` (see `_panel_field`), without changing
+any plot, such that it can run in a background task, see `_solve!`. `handles` are the render
+handles of the beams of the `pairs`. The caller leaves out the pairs of beams that are switched off
+(see `_on_pairs`) but passes all `systems`, such that no old hits of these beams remain.
 Each source is traced, and each field computed, with its progress output `sinks[k]` (see
 `BMO.PROGRESS_SINK`, `nothing` for the terminal): first one per pair, then one per panel.
 
@@ -65,11 +68,12 @@ With `preview`, beam groups rendered with `render_every > 1` are solved only for
 beams, see `_solve_preview!`. Returns `(; previewed, panels, fields, solve_time, field_time)`:
 whether a beam group was solved as a preview, the `panels` and their fields and the durations [s].
 """
-function _compute(pairs, handles, panels, sinks; coarse = false, preview = false)
+function _compute(pairs, handles, panels, sinks; systems = first.(pairs), coarse = false,
+        preview = false)
     # Monotonic clock with ns resolution, time() is too coarse on Windows for fast solves
     t0 = time_ns()
     # A detector can be part of several systems, hence empty all before solving
-    foreach(empty!, _find_detectors(first.(pairs)))
+    foreach(empty!, _find_detectors(systems))
     previewed = preview && any(i -> _previewable(pairs[i].second, handles[i]), eachindex(pairs))
     for (i, (sys, beam)) in enumerate(pairs)
         h = handles[i]
@@ -92,7 +96,8 @@ end
 """
     _apply!(gui, r, obj; coarse = false)
 
-Shows the result `r` of `_compute` in the `gui`: updates the beams, the detector panels, the
+Shows the result `r` of `_compute` in the `gui`: updates the beams that are switched on and their
+polarization overlays, the detector panels, the
 durations of the adaptive tracing and the status line, and calls the user `on_change` with the
 moved `obj` (or `nothing`) after a full solve.
 
@@ -103,7 +108,12 @@ recorded in the history of the panels.
 """
 function _apply!(gui::LiveView, r, obj; coarse = false)
     t0 = time_ns()
-    foreach(update_render!, gui.beam_handles)
+    for (p, h) in zip(gui.pairs, gui.beam_handles)
+        _beam_on(gui, p.second) && update_render!(h)
+    end
+    for (beam, h) in gui.beams.pol
+        _beam_on(gui, beam) && update_render!(h)
+    end
     t1 = time_ns()
     previewed = r.previewed
     for (p, field) in zip(r.panels, r.fields)
@@ -148,9 +158,11 @@ task; a solve of the `gui` in the background is cancelled first.
 function _resolve!(gui::LiveView, obj; coarse = false, preview = false)
     _cancel_solve!(gui)
     panels = _computed_panels(gui, preview)
-    sinks = fill(nothing, length(gui.pairs) + length(panels))
     _on_solve_started!(gui)
-    r = _compute(gui.pairs, gui.beam_handles, panels, sinks; coarse, preview)
+    # Beams that are switched off are not traced, see `_set_beam_on!`
+    pairs, handles = _on_pairs(gui, gui.pairs, gui.beam_handles)
+    sinks = fill(nothing, length(pairs) + length(panels))
+    r = _compute(pairs, handles, panels, sinks; systems = first.(gui.pairs), coarse, preview)
     _apply!(gui, r, obj; coarse)
     return nothing
 end
@@ -158,7 +170,7 @@ end
 """
     _start_job(gui, apply, obj, pairs, handles[, panels]; coarse = false, preview = false, timing) -> _SolveJob
 
-Starts `_compute` for the `pairs` (with the beam render `handles`) and the detector `panels` (by
+Starts `_compute` for the `pairs` whose beams are switched on (with the beam render `handles`) and the detector `panels` (by
 default `_computed_panels`) of the `gui` in a background task, with a progress sink per source and
 panel, see `_SolveJob`. `apply` shows the result, `timing` is the duration field that a cancelled
 job updates, `:panel_time` for a job that only computes panels, i.e. without `pairs`.
@@ -169,13 +181,18 @@ _start_job(gui::LiveView, apply, obj, pairs, handles; preview = false, kwargs...
 function _start_job(gui::LiveView, apply, obj, pairs, handles, panels; coarse = false,
         preview = false, timing::Symbol)
     isempty(pairs) || _on_solve_started!(gui)
-    # The task works on its own copies of the lists, the objects are protected by `_change!`
-    pairs, handles, panels = copy(pairs), copy(handles), copy(panels)
+    # The detectors of all systems are emptied, also of those whose beams are all switched off
+    systems = first.(pairs)
+    # Beams that are switched off are not traced, see `_set_beam_on!`. The task works on its own
+    # copies of the lists (filtered here, such that the sinks and anchors match them), the objects
+    # are protected by `_change!`
+    pairs, handles = _on_pairs(gui, pairs, handles)
+    panels = copy(panels)
     sinks = [BMO.ProgressSink() for _ in 1:(length(pairs) + length(panels))]
     anchors = Point3f[_progress_anchor.(last.(pairs)); _progress_anchor.(getfield.(panels, :pd))]
     done = Base.Event()
     task = Threads.@spawn try
-        _compute(pairs, handles, panels, sinks; coarse, preview)
+        _compute(pairs, handles, panels, sinks; systems, coarse, preview)
     finally
         notify(done)
     end
@@ -252,6 +269,8 @@ function _cancel!(gui::LiveView, job::_SolveJob)
 end
 
 const _CANCELLED = "trace cancelled, press t to trace"
+# Status of a live view that starts without auto tracing, see `live_view`
+const _NOT_TRACED = "not traced, press t to trace"
 
 """
     _finish!(gui, job)
@@ -364,9 +383,12 @@ const _STALE_ALPHA = 0.3
 _beam_plots(h::AbstractBeamRenderHandle) = render_plots(h)
 _beam_plots(h) = AbstractPlot[]
 
-"""Dims all beam plots of the `gui` to indicate outdated beams, stores the original `alpha`."""
+"""
+Dims all beam plots of the `gui`, including the polarization overlays, to indicate outdated beams,
+stores the original `alpha`.
+"""
 function _dim_beams!(gui::LiveView)
-    for h in gui.beam_handles, plot in _beam_plots(h)
+    for h in _all_beam_handles(gui), plot in _beam_plots(h)
         haskey(plot, :alpha) || continue
         haskey(gui.trace.beam_alphas, plot) || (gui.trace.beam_alphas[plot] = plot.alpha[])
         plot.alpha[] = _STALE_ALPHA
@@ -374,10 +396,14 @@ function _dim_beams!(gui::LiveView)
     return nothing
 end
 
-"""Restores the `alpha` of all beam plots of the `gui` after dimming."""
+"""
+Restores the `alpha` of all beam plots of the `gui` after dimming, except of plots removed
+meanwhile, e.g. of a polarization overlay that was switched off.
+"""
 function _restore_beams!(gui::LiveView)
+    plots = Base.IdSet{Any}(p for h in _all_beam_handles(gui) for p in _beam_plots(h))
     for (plot, alpha) in gui.trace.beam_alphas
-        plot.alpha[] = alpha
+        plot in plots && (plot.alpha[] = alpha)
     end
     empty!(gui.trace.beam_alphas)
     return nothing

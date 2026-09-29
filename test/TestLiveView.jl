@@ -577,6 +577,8 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); auto_trace = false,
             throttle = false)
+        # without auto tracing, the view starts untraced
+        GUI._trace!(gui)
         @test !gui.trace.stale
         # solve_system! fails for this beam
         gui.pairs[1] = gui.pairs[1].first => nothing
@@ -609,7 +611,10 @@ _points(h) = only(render_plots(h))[1][]
             @test !gui.trace.auto[]
             @test !gui.widgets.auto_trace_toggle.active[]
             @test gui.widgets.trace_button isa Makie.Button
-            # the initial solve runs anyway
+            # the view starts untraced, the first t solves
+            @test n_calls[] == 0
+            @test gui.trace.stale
+            GUI._trace!(gui)
             @test n_calls[] == 1
             @test length(BMO.hits(pd)) == 1
             @test !gui.trace.stale
@@ -682,6 +687,8 @@ _points(h) = only(render_plots(h))[1][]
             gui = _live_view(sys, beam; auto_trace = false, throttle = false,
                 sliders = ["detector z [mm]" => (0:0.1:2, callback)],
                 on_change = (g, obj) -> (n_calls[] += 1))
+            # the view starts untraced
+            GUI._trace!(gui)
             @test n_calls[] == 1
             xy0 = copy(gui.panels[1].xy[])
             p0 = Vector{Float64}(BMO.position(pd))

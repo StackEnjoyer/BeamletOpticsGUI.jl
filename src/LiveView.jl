@@ -288,6 +288,21 @@ Base.@kwdef mutable struct _ObjectState
 end
 
 """
+    _BeamState
+
+The beams of a `LiveView` (the objects `last.(gui.pairs)`) as their cards switch them: the beams
+that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the handle of its
+polarization overlay in `pol` and the kwargs of `live_render!` of that overlay in `pol_kwargs`,
+taken from the `beam_kwargs` of `live_view` without `render_every`, including the initial
+`show_polarization`.
+"""
+Base.@kwdef struct _BeamState
+    off::Base.IdSet{Any} = Base.IdSet{Any}()
+    pol::IdDict{Any, Any} = IdDict{Any, Any}()
+    pol_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+end
+
+"""
     _LayoutWidgets
 
 The widgets of a `LiveView` that its layout creates (see `_build_layout` and `_build_menus`) and
@@ -330,8 +345,8 @@ of the 3D view in `ax`, the `KinematicController` in `controls`, the detector `p
 remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
-(`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`) and
-`objects` (`_ObjectState`); the widgets that the layout creates are in `widgets`
+(`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
+`objects` (`_ObjectState`) and `beams` (`_BeamState`); the widgets that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. The
 objects of the `extras` kwarg are rendered, selectable and movable, but not part of any system,
@@ -363,6 +378,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     camera::_CameraState
     cards::_CardState
     objects::_ObjectState
+    beams::_BeamState = _BeamState()
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -565,8 +581,9 @@ With `auto_trace = false`, the systems are not solved after each change, which i
 systems that take long to solve. Objects and sliders still update the 3D view, while the beams are
 dimmed and the status line shows that they are outdated. The systems are solved by the
 `Trace (t)` button below the 3D view or the key `t`. The toggle next to the button switches auto
-tracing on or off, switching it on solves the systems if they are outdated. The initial solve
-always runs.
+tracing on or off, switching it on solves the systems if they are outdated. The view also starts
+untraced: the beams are dimmed and the status line shows "not traced, press t to trace" until the
+first `t`, the button or switching auto tracing on solves the systems.
 
 # Detector panels
 
@@ -667,8 +684,8 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   draws the rays, the markers and the dark materials of the render look (detectors, polarizers) in
   lighter colors; `:light` keeps the colors of the default look.
 - `size`: size of the figure, by default `(1400, 800)` for `:compact` and `(1600, 950)` for `:app`
-- `auto_trace = true`: solves the systems after each change, otherwise only on request, see
-  "Manual tracing"
+- `auto_trace = true`: solves the systems at the start and after each change, otherwise only on
+  request, see "Manual tracing"
 - `detectors = :auto`: all `Detector`s of all systems. Alternatively a vector of `pd`,
   `pd => mode` or `pd => (mode, kwargs)`, where `mode` is `:auto`, `:spot` or `:intensity` and
   `kwargs` are passed to `intensity`, e.g. `(; n = 200, x_min = -1e-3, x_max = 1e-3, ...)`,
@@ -684,6 +701,9 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
   `(; render_every = 5)` for beam groups
+- `beams_off = ()`: beams of the pairs that start switched off, i.e. neither traced nor drawn
+  (their source markers stay), e.g. `[src]`. Each entry must be one of the beams of the pairs
+  (`===`), otherwise an `ArgumentError` is thrown.
 - `movable_sources = true`: shows an orange marker at each source, i.e. the beam or beam group of
   each pair, with which the source can be selected and moved like the components
 - `show_sources = true`: initial visibility of the source markers, which can be switched with the
@@ -725,6 +745,7 @@ function live_view(
         sliders = [],
         system_kwargs = (;),
         beam_kwargs = Dict(),
+        beams_off = (),
         movable_sources = true,
         show_sources::Bool = true,
         labels = Dict(),
@@ -744,6 +765,10 @@ function live_view(
     )
     isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
     ps = Pair{BMO.AbstractSystem, Any}[p for p in pairs]
+    for b in beams_off
+        any(p -> p.second === b, ps) ||
+            throw(ArgumentError("beams_off: $(typeof(b)) is not a beam of the pairs"))
+    end
     # several beams may share a system, which is rendered once
     systems = unique(objectid, first.(ps))
     extra_specs = _extra_specs(extras, systems)
@@ -765,12 +790,16 @@ function live_view(
     sys_kw = isnothing(edges) ? system_kwargs : (; edges, system_kwargs...)
     system_handles = AbstractSystemRenderHandle[live_render!(ax, sys; sys_kw...) for sys in systems]
     beam_handles = AbstractBeamRenderHandle[]
+    beam_state = _BeamState()
     for beam in last.(ps)
         default = beam isa BMO.AbstractBeamGroup ? (; render_every = 5) : (;)
-        kw = get(beam_kwargs, beam, default)
+        kw = (; get(beam_kwargs, beam, default)...)
+        # The polarization is drawn by an overlay of the beam, whose initial state
+        # `show_polarization` is kept with the kwargs of the overlay, see `_BeamState`
+        beam_state.pol_kwargs[beam] = Base.structdiff(kw, NamedTuple{(:render_every,)})
         # The planes of the beams are set explicitly by `_apply_clip_planes!`, see `clip_beams`
-        push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)..., kw...,
-            clip_planes = Plane3f[]))
+        push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)...,
+            Base.structdiff(kw, NamedTuple{(:show_polarization,)})..., clip_planes = Plane3f[]))
     end
 
     # The extras are moved and selected like the objects of the systems, but never traced
@@ -821,7 +850,8 @@ function live_view(
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
-        objects = _ObjectState(; menu = Any[first.(entries)...]), widgets, layout = lay)
+        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state, widgets,
+        layout = lay)
     gui_ref[] = gui
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
@@ -844,7 +874,14 @@ function live_view(
     _connect_layout!(gui)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
-    _resolve!(gui, nothing)
+    # Before the initial solve, such that they are never traced
+    foreach(b -> _set_beam_off!(gui, b), beams_off)
+    if gui.trace.auto[]
+        _resolve!(gui, nothing)
+    else
+        # Traced on request, see "Manual tracing"
+        _mark_stale!(gui, nothing; msg = _NOT_TRACED)
+    end
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read
     # correctly. Only set once, later changes of the view, e.g. via `set_view`, are kept.
     cam = cameracontrols(ax.scene)
