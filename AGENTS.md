@@ -66,7 +66,7 @@ describe it as available in docs or the skill.
 ## Running Julia and tests
 
 - Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`). `Project.toml` takes
-  BeamletOptics from `[sources]` (a BMO branch until the protocol is released in BMO 0.13.11) in
+  BeamletOptics from `[sources]` (the BMO branch `feature/render_update` until BMO 0.13.11 is released) in
   `Project.toml`, `test/Project.toml` and `docs/Project.toml`. To work against a local BMO
   checkout, set these to `{path = "..."}` locally and do not commit that change.
 - GLMakie is the backend of the tests; on headless Linux run under `xvfb-run -a`.
