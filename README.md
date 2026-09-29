@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./docs/src/assets/logo.svg" alt="BeamletOpticsGUI.jl logo" width="300">
+</div>
+
 # BeamletOpticsGUI.jl
 
 Interactive GUI for [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl): move the
