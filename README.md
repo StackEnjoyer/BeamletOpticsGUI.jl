@@ -33,8 +33,7 @@ using Pkg
 Pkg.add(url = "https://github.com/StackEnjoyer/BeamletOpticsGUI.jl")
 ```
 
-It needs BeamletOptics with the render handle protocol (0.13.11 or the branch named in
-`Project.toml`) and a Makie backend, preferably GLMakie.
+It needs BeamletOptics 0.13.11 or newer and a Makie backend, preferably GLMakie.
 
 ## Features
 
