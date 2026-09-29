@@ -196,7 +196,7 @@ end
 _metrics_text(m::NamedTuple) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW" : "N = $(get(m, :n, 0))"
 _metrics_text(_) = "no hits"
 
-_source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.source_wavelength(src))), $(_size_text(src))"
+_source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.wavelength(src))), $(_size_text(src))"
 _size_text(cs::BMO.CollimatedSource) = "⌀ $(_length_string(cs.diameter))"
 _size_text(ps::BMO.PointSource) = "NA $(round(BMO.numerical_aperture(ps); digits = 3))"
 

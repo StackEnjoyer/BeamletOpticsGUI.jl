@@ -27,14 +27,16 @@ describe it as available in docs or the skill.
   `live_render!` and moved with `update_render!`; the GUI never calls `lines!`, `mesh!`,
   `surface!` etc. for a component. Its own plots are overlays only: source markers and clip planes
   (via `live_render!(draw, ax, x)`), measurements, the view cube, panels, icons.
-- **The GUI uses only declared BMO API**: exported names, the render handle protocol
+- **The GUI prefers declared BMO API**: exported names, the render handle protocol
   (`AbstractObjectRenderHandle`, `AbstractSystemRenderHandle`, `AbstractBeamRenderHandle`,
   `rendered`, `render_plots`, `render_children`, `render_parent`, `render_settings`,
   `pickable_plots`, `look_colors`, `push!`/`delete!` of system handles) and the `public` developer
-  API (`is_static`, `hit_count`, `source_wavelength`, `min_num_rays`, `ProgressSink`,
-  `PROGRESS_SINK`, `progress_state`, `is_cancelled`). Never `BMO._x` names, never
-  `Base.get_extension(BeamletOptics, ...)`. If something is missing, add it to BMO's protocol
-  first.
+  API (`is_static`, `hit_count`, `wavelength`, `min_num_rays`, `ProgressSink`, `PROGRESS_SINK`,
+  `progress_state`, `is_cancelled`, the sampling types). It also uses some internal BMO names
+  without underscore (the abstract types, the kinematic and shape traits, getters such as
+  `intersection`, `hits` or `objects`); these may change with any BMO release, which the compat
+  entry on the BMO version pins. Never `BMO._x` names in `src/`, never
+  `Base.get_extension(BeamletOptics, ...)`. If something is missing, add it to BMO first.
 - **Physics stays in BMO.** Solving is `solve_system!`; the GUI never computes rays, intersections
   or detector fields itself.
 - **Per-type behavior is dispatch**, never `isa` chains: a new BMO type gets its card via a
