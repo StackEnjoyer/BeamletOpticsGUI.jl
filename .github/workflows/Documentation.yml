@@ -1,0 +1,48 @@
+name: Documentation
+on:
+  push:
+    branches:
+      - main
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+jobs:
+  docs:
+    name: Build and deploy the documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write # julia-actions/cache deletes its old caches
+      contents: write # deploydocs pushes to the gh-pages branch
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      # GLMakie needs OpenGL and a display, which only exists inside xvfb-run below
+      - name: Install OpenGL dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb mesa-utils
+      # Precompilation is skipped here: GLMakie needs a display to initialize
+      - name: Instantiate the docs environment
+        shell: julia --project=docs --color=yes {0}
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: |
+          using Pkg
+          Pkg.instantiate()
+      # Builds on every run, deploys only for pushes to main and for tags (see deploydocs)
+      - name: Build and deploy with xvfb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            julia --project=docs --color=yes docs/make.jl
