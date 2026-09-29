@@ -78,6 +78,8 @@ function _set_beam_on!(gui::LiveView, beam, on::Bool)
         on ? delete!(gui.beams.off, beam) : _set_beam_off!(gui, beam)
     end
     on && _show_beam!(gui, beam, true)
+    # The number of rays, also if the change is not solved right away
+    _update_info!(gui)
     gui.controls.on_change(beam)
     return nothing
 end

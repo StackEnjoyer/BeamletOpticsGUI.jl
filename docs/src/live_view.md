@@ -253,7 +253,8 @@ Solving a large system on every mouse-drag event can be too slow for smooth inte
 solves the systems (and updates the beams and detector panels) on request: the `Trace (t)` button
 below the 3D view, the key `t`, or switching the "auto trace" toggle back on (which solves once if
 the state is outdated). While outdated, the beam plots are dimmed and the status line shows a
-hint. The initial solve always runs, regardless of `auto_trace`.
+hint. With `auto_trace = false`, the view also starts untraced, with the hint "not traced, press t
+to trace" in the status line, such that a slow system opens right away.
 
 With `auto_trace = true`, `live_view` adapts to slow systems as well: if solving takes longer than
 `trace_budget` (30 ms by default), the components still follow the mouse immediately, while the
@@ -270,6 +271,16 @@ moving, such that large groups stay interactive. `preview = false` always solves
 
 ```julia
 gui = live_view(system, source; beam_kwargs = Dict(source => (; render_every = 50)), preview = false)
+```
+
+A beam is switched off and on by the toggle "on" of its card (see the rows of the cards below); a
+beam that is off is neither solved nor drawn. The beams in `beams_off` start off, and
+`show_polarization = true` in the `beam_kwargs` of a polarized beam starts with its polarization
+drawn, like the toggle "polarization" of its card:
+
+```julia
+gui = live_view(system => src1, system => src2; beams_off = [src2],
+    beam_kwargs = Dict(src1 => (; show_polarization = true)))
 ```
 
 Solves longer than `progress_delay` run in the background with a progress window next to the
@@ -322,6 +333,7 @@ the menus, like in the object tree of the app layout:
   | detectors | `signal`: the power (intensity panel) or the number of rays (spot panel); `panel`: a button that cycles the mode of its detector panel (`auto`, `spot`, `intensity`) and a toggle of the logarithmic color scale, "no panel" for a detector without a panel (see "Detector panels") |
   | ray sources | `λ` and the diameter or NA; sources whose rays can be regenerated (`CollimatedSource`, `PointSource` and their uniform variants, see `set_num_rays!`) add the slider "rays" for their number of rays, which solves again |
   | Gaussian beamlets | `λ`, the waist `w0` and the Rayleigh range `zR` |
+  | beams, beam groups, sources, beamlets | `beam`: the toggle "on" switches the beam off and on; a beam that is off is neither solved nor drawn and its rays are removed from the detectors and measurements, only its source marker stays (with `auto_trace = false` the switch marks the beams as outdated). Polarized beams (rays of type `PolarizedRay`, astigmatic Gaussian beamlets) add the toggle "polarization", which draws the polarization along the beam, of a beam group along its central beam; it only changes the display. See [`beam_card_rows`](@ref) |
 
 The rows and the buttons in the head are declared per type by multiple dispatch, see
 [`card_rows`](@ref) and [`card_actions`](@ref): each row is a [`CardRow`](@ref) of texts and
@@ -340,8 +352,8 @@ where `solve = true` solves the systems again after an input, like a move. The r
 an own component or system type, for own widget types and for controls without a scene object are
 on the page [Cards and widgets](@ref).
 
-The card of a system shows the number of its objects, the number of rays and the duration of the last
-solve. A system is shown by its entry ("System 1", ...) in the component menu (compact layout) or by
+The card of a system shows the number of its objects, the number of rays of its beams that are on
+and the duration of the last solve. A system is shown by its entry ("System 1", ...) in the component menu (compact layout) or by
 a click on its row in the object tree (app layout), without a selection and without a gizmo, i.e.
 `gui.controls.selected[]` stays `nothing`. An object that is not movable is shown in the same way
 instead of being selected; its pose boxes reject inputs with a message in the status line. `Esc`, a

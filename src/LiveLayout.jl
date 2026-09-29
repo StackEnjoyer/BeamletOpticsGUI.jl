@@ -323,15 +323,20 @@ Info label: the last solve, the number of rays and the projection
 """Returns the number of rays (or beams) of the source `beam`, see `_status_info`."""
 _ray_count(beam::BMO.AbstractBeamGroup) = length(BMO.beams(beam))
 _ray_count(_) = 1
+# The rays of the beams of the `pairs` of the `gui` that are switched on, see `_set_beam_on!`
+_on_ray_count(gui::LiveView, pairs) = sum(p -> _beam_on(gui, p.second) ? _ray_count(p.second) : 0, pairs; init = 0)
 
 """Formats the duration `s` [s] of a solve in ms."""
 _ms_string(s) = s < 1e-3 ? "<1 ms" : "$(round(Int, 1e3 * s)) ms"
 
-"""Returns the text of the info label: last solve, number of rays, projection."""
+"""
+Returns the text of the info label: last solve (or "not traced" before the first one, see
+`auto_trace`), number of rays of the beams that are switched on, projection.
+"""
 function _status_info(gui::LiveView)
-    n = sum(p -> _ray_count(p.second), gui.pairs)
+    n = _on_ray_count(gui, gui.pairs)
     traced = gui.trace.preview ? "preview in $(_ms_string(gui.trace.preview_time))" :
-             "traced in $(_ms_string(gui.trace.solve_time))"
+             gui.trace.solve_time > 0 ? "traced in $(_ms_string(gui.trace.solve_time))" : "not traced"
     projection = gui.widgets.orthographic_toggle.active[] ? "orthographic" : "perspective"
     return "$traced · $n $(n == 1 ? "ray" : "rays") · $projection"
 end
@@ -344,7 +349,9 @@ _set_text!(::Nothing, _) = nothing
 
 # The info label shows the last solve, e.g. the inspector of the app layout the hits of a detector
 # after `_update_inspector!` of `_apply!`
-_on_solved!(gui::LiveView) = _set_text!(gui.widgets.info, _status_info(gui))
+_on_solved!(gui::LiveView) = _update_info!(gui)
+# Also without a solve: at an untraced start and after a beam is switched, see `_set_beam_on!`
+_update_info!(gui::LiveView) = _set_text!(gui.widgets.info, _status_info(gui))
 
 """
 Connects the parts of the `gui` that all layouts share: the info label follows the projection,

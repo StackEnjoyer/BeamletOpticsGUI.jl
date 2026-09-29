@@ -52,11 +52,15 @@ card_rows(p::Union{BMO.LinearPolarizer, BMO.PolarizationFilter}) =
 # the options of the panel, see `_panel_row`
 card_rows(pd::BMO.Detector) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _panel_text),
     _panel_row())
+# Beams and beam groups: switched on and off, their polarization, see `beam_card_rows`
+card_rows(b::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (pose_card_rows(b)..., beam_card_rows(b)...)
 # Sources whose rays can be regenerated: wavelength, size and a slider for the number of rays
 card_rows(src::Union{BMO.CollimatedSource, BMO.PointSource}) = (pose_card_rows(src)...,
-    _text_row("λ", :source, _source_text), _ray_rows(BMO.min_num_rays(src), length(src))...)
+    _text_row("λ", :source, _source_text), beam_card_rows(src)...,
+    _ray_rows(BMO.min_num_rays(src), length(src))...)
 # Gaussian beamlets: wavelength, waist and Rayleigh range
-card_rows(g::BMO.GaussianBeamlet) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text))
+card_rows(g::BMO.GaussianBeamlet) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
+    beam_card_rows(g)...)
 # Systems (inspected, see `_inspect!`): no pose, the number of objects, the rays of their sources and
 # the duration of the last solve
 card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text; width = 48),
@@ -202,13 +206,27 @@ _size_text(ps::BMO.PointSource) = "NA $(round(BMO.numerical_aperture(ps); digits
 
 # The rendered objects of a system, see `_leaves`
 _objects_text(::LiveView, sys) = string(length(_leaves(sys)))
-# The rays of the sources of a system (or beams of a beam group), as in the info label, see `_ray_count`
-_rays_text(gui::LiveView, sys) = string(sum(p -> _ray_count(p.second), filter(p -> p.first === sys, gui.pairs); init = 0))
+# The rays of the sources of a system (or beams of a beam group) that are switched on, as in the
+# info label, see `_on_ray_count`
+_rays_text(gui::LiveView, sys) = string(_on_ray_count(gui, filter(p -> p.first === sys, gui.pairs)))
 # The duration of the last full solve of all systems
 _solve_text(gui::LiveView, _) = gui.trace.solve_time > 0 ? _ms_string(gui.trace.solve_time) : "–"
 
 _gauss_text(gui::LiveView, g) ="$(_wavelength_string(BMO.wavelength(_first_ray(g)))), w0 " *
     "$(_length_string(BMO.beam_waist(g))), zR $(_length_string(BMO.rayleigh_range(g)))"
+
+#=
+Beams switched on and off and their polarization, see `_set_beam_on!` and `_set_polarization!`
+=#
+
+function beam_card_rows(b)
+    on = CardWidget(Toggle; name = :beam_on, value = (gui, b) -> _beam_on(gui, b),
+        on = (gui, b, v) -> _set_beam_on!(gui, b, v))
+    pol = _polarizable(b) ? (CardWidget(Toggle; name = :polarization,
+        value = (gui, b) -> _polarization_on(gui, b),
+        on = (gui, b, v) -> _set_polarization!(gui, b, v)), "polarization") : ()
+    return (CardRow("beam", on, "on", pol...),)
+end
 
 #=
 Ray count slider of the sources

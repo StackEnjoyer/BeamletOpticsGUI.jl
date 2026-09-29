@@ -24,7 +24,7 @@ Look up the docstring of any name before use, e.g.
 | Window | `live_view`, `export_changes`, `retrace!` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
-| Cards | `card_rows`, `pose_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
+| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
 
 Not exported: `BeamletOpticsGUI.install_agent_skill`.
 
@@ -41,8 +41,9 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
 | `extras = [housing => (; color = ...)]` | shown, movable, but never traced |
 | `clip_planes`, `clip_beams` | clip planes (`point => normal`) |
-| `auto_trace`, `trace_budget`, `idle_delay`, `preview`, `progress_delay` | when and how the systems are solved |
-| `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source |
+| `auto_trace`, `trace_budget`, `idle_delay`, `preview`, `progress_delay` | when and how the systems are solved (`auto_trace = false` also starts untraced, `t` traces) |
+| `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization = true` starts the card's polarization toggle on |
+| `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and

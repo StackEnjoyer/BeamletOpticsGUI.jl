@@ -1,6 +1,6 @@
 # Source card toggles: beam on/off, polarization, ray count
 
-**Status:** approved · **Tier:** full
+**Status:** implemented · **Tier:** full
 
 ## Goal
 
@@ -255,6 +255,26 @@ Tests (`test/TestLivePolarization.jl`): polarized `Beam` via `Beam(pos, dir, λ,
   `_w(c, :polarization).active[]` in both layouts (pattern `test/TestLiveWidgetRecipe.jl`).
 - Docs: rows table in `docs/src/live_view.md`, the untraced start with `auto_trace = false` (D2: `live_view` docstring LiveView.jl:562-569 and 670, `docs/src/live_view.md:213, 252`, `skills/beamletopticsgui/VISUALIZATION.md:75`), `beams_off` (D7), `beam_card_rows` in
   `docs/src/widgets.md` and the skill (`skills/beamletopticsgui/WIDGETS.md`, `API.md`).
+</details>
+
+<details>
+<summary>Deviations</summary>
+
+- W1: `_compute` takes a keyword `systems`; `_resolve!` and `_start_job` pass the systems of all
+  pairs, so a system whose beams are all off loses its old detector hits too (D1).
+- W1: with `auto_trace = false`, beams solved before `live_view` keep their rays (shown dimmed);
+  a beam switched on while auto trace is off shows its start ray until `t`.
+- W2: astigmatic overlays also drop `show_beams` and `show_waist`, so the overlay has exactly one
+  visible `Lines` plot; an overlay created while the trace is stale is dimmed like the beams;
+  `_set_polarization!(gui, b, true)` throws an `ArgumentError` for a beam that is not polarizable.
+- Integration: `live_view` checks `show_polarization = true` in `beam_kwargs` against
+  `_polarizable` before building the window (`ArgumentError`). `show_polarization = true` for a
+  beam group now draws only its central beam (D3, D4), where BMO drew every rendered beam.
+- Integration: the info label reads "not traced" before the first solve (`_update_info!`, also
+  after a beam switch without a solve) and, like the system
+  card, counts the rays of the beams that are on only.
+- Row order: sources pose, `λ`, `beam`, `rays`; Gaussian beamlets pose, `λ`, `beam`.
+- The full suite ran with `julia --project=test test/runtests.jl` (AGENTS.md), not `Pkg.test()`.
 </details>
 
 <details>

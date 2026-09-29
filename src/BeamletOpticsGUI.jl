@@ -16,8 +16,8 @@ import BeamletOptics: live_render!, update_render!, remove_render!, pick_object,
 const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, card_rows, pose_card_rows,
-       card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!, add_controls!,
-       add_tool!, retrace!
+       beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!,
+       add_controls!, add_tool!, retrace!
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,

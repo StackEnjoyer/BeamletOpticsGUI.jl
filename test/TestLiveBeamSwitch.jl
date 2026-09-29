@@ -170,10 +170,12 @@ const GUI = BeamletOpticsGUI
         @test n_calls[] == 0
         @test gui.trace.stale
         @test gui.status.text[] == "not traced, press t to trace"
+        @test startswith(gui.widgets.info.text[], "not traced · 2 rays")
         _key!(gui, Keyboard.t)
         @test _traced(b1) && _traced(b2)
         @test _nhits(pd) == 2
         @test !gui.trace.stale
+        @test startswith(gui.widgets.info.text[], "traced in ")
         @test n_calls[] == 1
         close(gui)
 

@@ -700,7 +700,10 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups
+  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam starts
+  with the toggle "polarization" of its card on, see [`beam_card_rows`](@ref); for a beam group
+  only its central beam shows the polarization. A beam without polarized rays throws an
+  `ArgumentError`.
 - `beams_off = ()`: beams of the pairs that start switched off, i.e. neither traced nor drawn
   (their source markers stay), e.g. `[src]`. Each entry must be one of the beams of the pairs
   (`===`), otherwise an `ArgumentError` is thrown.
@@ -768,6 +771,11 @@ function live_view(
     for b in beams_off
         any(p -> p.second === b, ps) ||
             throw(ArgumentError("beams_off: $(typeof(b)) is not a beam of the pairs"))
+    end
+    # Checked before the window is built, see `_init_polarization!`
+    for (b, kw) in beam_kwargs
+        get(kw, :show_polarization, false) === true && !_polarizable(b) &&
+            throw(ArgumentError("beam_kwargs: show_polarization = true for $(typeof(b)), which has no polarized rays"))
     end
     # several beams may share a system, which is rendered once
     systems = unique(objectid, first.(ps))
@@ -881,7 +889,10 @@ function live_view(
     else
         # Traced on request, see "Manual tracing"
         _mark_stale!(gui, nothing; msg = _NOT_TRACED)
+        _update_info!(gui)
     end
+    # The overlays of the beams with `show_polarization = true`, after the solve that they show
+    _init_polarization!(gui)
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read
     # correctly. Only set once, later changes of the view, e.g. via `set_view`, are kept.
     cam = cameracontrols(ax.scene)

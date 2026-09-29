@@ -147,12 +147,15 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(sys => b, sys => b2; beam_kwargs = Dict(b => (; show_polarization = true, color = :green)))
         # the main handles draw no polarization curve
         @test !any(p -> p isa Makie.Lines, render_plots(gui.beam_handles[1]))
-        @test !GUI._polarization_on(gui, b)
-        n = length(_visible_lines(gui))
-        GUI._init_polarization!(gui)
+        # live_view starts with the overlay of `b` only
         @test GUI._polarization_on(gui, b)
         @test !GUI._polarization_on(gui, b2)
-        @test length(_visible_lines(gui)) == n + 1
+        n = length(_visible_lines(gui))
+        GUI._set_polarization!(gui, b, false)
+        @test length(_visible_lines(gui)) == n - 1
+        # a beam without polarized rays is rejected before the window is built
+        b3 = Beam([0.0, 0, 0], [0.0, 1, 0])
+        @test_throws ArgumentError _live_view(sys => b3; beam_kwargs = Dict(b3 => (; show_polarization = true)))
     end
 
     @testset "clip beams and beams off" begin
