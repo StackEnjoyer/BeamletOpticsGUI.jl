@@ -14,7 +14,7 @@ PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
 
 [sources]
-BeamletOptics = {url = "https://github.com/JuliaPhysics/BeamletOptics.jl", rev = "feature/render_update"}
+BeamletOptics = {url = "https://github.com/JuliaPhysics/BeamletOptics.jl", rev = "master"}
 
 [compat]
 AbstractTrees = "0.4"
