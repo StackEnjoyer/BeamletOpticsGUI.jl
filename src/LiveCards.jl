@@ -155,9 +155,10 @@ Shows the card of the selection (`gui.cards.selection`) next to the selected (or
 placed in this order, each off the obstacles of the `gui` (the view cube and the parts of the
 layout over the 3D view, see `_obstacles`) and the cards before, so that none covers another:
 the cards that the mouse moved to their `spot` first, where they stay (see `_drag_cards!`), then
-the card of the selection, at its object; a pinned card without room is collapsed to its head. All
-cards are hidden while a menu is open, whose options they would cover. Called every frame, which
-moves the cards with the camera and the objects.
+the selection card of groups (see `_update_browse_card!`), then the card of the selection, at its
+object; a pinned card without room is collapsed to its head. All cards are hidden while a menu is
+open, whose options they would cover. Called every frame, which moves the cards with the camera
+and the objects.
 """
 function _update_cards!(gui::LiveView)
     menu = _menu_open(gui)
@@ -167,8 +168,12 @@ function _update_cards!(gui::LiveView)
         nothing : sel
     target(c) = c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
     order = [gui.cards.selection; filter(c -> c !== gui.cards.selection, gui.cards.all)]
-    for moved in (true, false), c in order
-        isnothing(c.spot) == moved || _update_card!(gui, c, target(c), obstacles)
+    for c in order
+        isnothing(c.spot) || _update_card!(gui, c, target(c), obstacles)
+    end
+    _update_browse_card!(gui, menu, obstacles)
+    for c in order
+        isnothing(c.spot) && _update_card!(gui, c, target(c), obstacles)
     end
     return nothing
 end
@@ -231,6 +236,8 @@ function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{
     end
     corners = _card_corners(gui, c, obj)
     _update!(c.title.text, _label(gui, obj))
+    # "‹" on the card of a part, see `_browse_parent!`
+    c.back_shown = !isnothing(_part_parent(gui, obj))
     _show_kind!(c, obj)
     scene = gui.ax.scene
     view = Rect2f(Makie.viewport(scene)[])
@@ -580,6 +587,7 @@ function _connect_card!(gui::LiveView, c::_ComponentCard)
     # The toggle switches itself, `_toggle_pinned!` sets it to the state of the card
     push!(listeners, on(v -> v == _pin_state(c) || _toggle_pinned!(gui, c), c.pin_button.active))
     push!(listeners, on(_ -> _toggle_properties!(gui, c), c.properties_button.clicks))
+    push!(listeners, on(_ -> _browse_parent!(gui, _card_object(gui, c)), c.back_button.clicks))
     _connect_selection_part!(gui, c)
     _connect_dock_button!(gui, c, c.dock_button)
     return nothing
@@ -722,7 +730,7 @@ function _shield_cards!(gui::LiveView)
     listeners = gui.controls.listeners
     foreach(off, gui.cards.shield)
     filter!(l -> !any(s -> s === l, gui.cards.shield), listeners)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_layout(gui)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) || _over_layout(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
         on(_ -> Consume(over()), ev.scroll; priority = 1)]
     append!(listeners, gui.cards.shield)
@@ -749,7 +757,7 @@ elsewhere ends the input into the textboxes of the cards, also if the controls c
 function _connect_cards!(gui::LiveView)
     ctrl = gui.controls
     ev = events(gui.ax.scene)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui)
     ctrl.ignore_mouse = () -> over() || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))

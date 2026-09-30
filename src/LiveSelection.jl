@@ -176,10 +176,12 @@ end
     _on_shown!(gui)
 
 Shows the object of the card of the selection (see `_shown_object`) in the component menu, on the
-cards, in the inspector and in the object tree, after the selection or the inspection changed.
+cards, in the inspector and in the object tree, after the selection or the inspection changed. A
+selected or inspected object closes the selection card, see `_end_browse!`.
 """
 function _on_shown!(gui::LiveView)
     obj = _shown_object(gui)
+    isnothing(obj) || _end_browse!(gui)
     key = _row_key(gui, obj)
     i = isnothing(obj) ? nothing : findfirst(o -> o === key, gui.objects.menu)
     _show_menu_selection!(gui.widgets.menu, something(i, 0))

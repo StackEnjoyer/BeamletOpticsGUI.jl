@@ -266,12 +266,15 @@ end
 
 Cards of a `LiveView`: the card of the `selection` next to the selected object, which shows the
 rows and actions declared for it (see [`card_rows`](@ref)); `all` cards, including the pinned
-ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`).
+ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`); the
+selection card of groups (`browse`, a `_BrowseCard`, see `_browse!`), `nothing` until it is
+connected.
 """
 Base.@kwdef mutable struct _CardState
     selection::_ComponentCard
     all::Vector{_ComponentCard} = [selection]
     shield::Vector{Any} = Any[]
+    browse::Any = nothing
 end
 
 """
@@ -285,7 +288,9 @@ with the `counters` of their running indices per type, see `_name_objects!`. `in
 on the card of the selection, but not selected for moving: a system or an object that is not
 movable, see `_inspect!`; it and `controls.selected[]` exclude each other. `parents` maps each part
 of an object (an object of a group or of a `MultiShape` object, e.g. a lens of a doublet) to that
-object, see `_map_parts!`; the top-level objects have no entry.
+object, see `_map_parts!`; the top-level objects have no entry. `browsed` is the group or
+`MultiShape` object whose parts the selection card shows, `nothing` while it is closed, see
+`_browse!`.
 """
 Base.@kwdef mutable struct _ObjectState
     menu::Vector{Any} = Any[]
@@ -295,6 +300,7 @@ Base.@kwdef mutable struct _ObjectState
     counters::Dict{String, Int} = Dict{String, Int}()
     inspected::Any = nothing
     parents::IdDict{Any, Any} = IdDict{Any, Any}()
+    browsed::Any = nothing
 end
 
 """
@@ -507,16 +513,6 @@ Objects without a `labels` entry are named by their type and a running index, e.
 layout. The rows of an own type are added by a method of [`card_rows`](@ref), see the page "Live
 view widgets" of the documentation.
 
-The card of a group or of another object that consists of objects (a `MultiShape` object, e.g. a
-`DoubletLens`, a `CubeBeamsplitter` or a `LinearPolarizer`) ends with the dropdown "part", one
-level at a time, see [`parts_card_rows`](@ref): "‹ <parent>" (except at the top level), then its
-direct parts that are not hidden, those with parts of their own marked " ›". Choosing a part shows
-its card, with the next level in its own dropdown: a movable object, e.g. an object of a group, is
-selected like by a click in the 3D view, a part of an object that is not a group, e.g. a lens of a
-doublet, is shown without being selected for moving, like an object that is not movable (its pose boxes reject inputs), with its
-card at the object it belongs to. Clicks in the 3D view select groups and their objects as before
-and never a part of such an object.
-
 Beside the component cards, the card of a system shows the number of its objects, the number of
 rays and the duration of the last solve. It is shown, without a gizmo and without a selection
 (`controls.selected[]` stays `nothing`), by selecting the system entry ("System 1", ...) in the
@@ -533,6 +529,23 @@ status line as a toast at the bottom of the 3D view for 3 s after each change.
 
 The "Export" button of the tool rail prints the changed poses as Julia code to `stdout` and copies it to the
 clipboard, see [`export_changes`](@ref).
+
+# Selection card
+
+A click in the 3D view on an object of a group opens the selection card of its top-level group
+instead of selecting it: a floating card next to the group (in both layouts) that browses the parts
+one level at a time. Its first entry "Select <group>" selects the group itself for moving (its card
+and the gizmo), then "‹ <parent>" (except at the top level) browses the enclosing object, then the
+direct parts that are not hidden, those with parts of their own (a subgroup or a `MultiShape`
+object, e.g. a `DoubletLens`, a `CubeBeamsplitter` or a `LinearPolarizer`) marked " ›". A part with
+parts browses its parts, any other part is selected like by a click in the 3D view, or, if it can
+not be moved on its own, e.g. a lens of a doublet, shown on its card without being selected for
+moving, like an object that is not movable (its pose boxes reject inputs). While browsing, the group
+is drawn see-through with a box around each part, the box of the part under the mouse highlighted;
+nothing is selected. A click in the 3D view on a part acts like its entry, a click elsewhere closes
+the card, `Esc` goes up one level and closes the card at the top level. The card of a part has "‹"
+in its head, which browses the object that it is a part of. A click on an object that is not in a
+group shows its card at once.
 
 # Background card
 
@@ -946,7 +959,7 @@ function live_view(
     gui_ref[] = gui
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
-    # The parents of the parts of groups and multi-shape objects, for the parts menu of the cards
+    # The parents of the parts of groups and multi-shape objects, for the selection card
     _map_parts!(gui)
     # Objects must not change while a solve in the background traces them
     controls.before_change = () -> _cancel_solve!(gui)
@@ -960,11 +973,8 @@ function live_view(
     _connect_inspection!(gui)
     _connect_camera!(gui)
     _connect_cards!(gui)
-    # The open dropdown of a menu on a card, e.g. the parts menu, takes the clicks, also where it
-    # reaches beyond its card
-    let over = controls.ignore_mouse
-        controls.ignore_mouse = () -> over() || _over_card_menu(gui)
-    end
+    # The selection card of groups, see `_browse!`
+    _connect_browse!(gui)
     push!(controls.listeners, on(v -> v == gui.clip.beams || _set_clip_beams!(gui, v),
         gui.widgets.clip_beams_toggle.active))
     _connect_projection!(gui, orthographic)

@@ -115,7 +115,11 @@ const _SPECTATOR_HELP = """
     components can not be selected or moved
     h: hide controls"""
 
-function _help_text(mode::Symbol, fine_step, fine_angle, select_modifier = nothing)
+# What a click does by default, see `_drill_select`
+const _CLICK_HELP = "select, again: part of a group"
+
+function _help_text(mode::Symbol, fine_step, fine_angle, select_modifier = nothing;
+        click_help::String = _CLICK_HELP)
     step = _step_string(mode, fine_step, fine_angle)
     if mode == :move
         verb = "move along"
@@ -127,7 +131,7 @@ function _help_text(mode::Symbol, fine_step, fine_angle, select_modifier = nothi
     click = isnothing(select_modifier) ? "click" : "$(_modifier_name(select_modifier))+click"
     return """
     $mode mode, m: switch to $(_other_mode(mode)) mode
-    $click: select, again: part of a group
+    $click: $click_help
     drag selection: $drag, other drags: camera
     ↑/↓: $verb $up
     ←/→: $verb $left
@@ -297,6 +301,14 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # `live_view` or its sidebars; releases are handled, such that a drag that started elsewhere
     # ends, but the release of an ignored press neither selects nor deselects
     ignore_mouse::Function
+    # the `pick` kwarg, `nothing` for the ray pick
+    pick::Any
+    # called after a click (not a drag) on the movable rendered object `leaf` before the selection
+    # changes; if it returns `true`, it took the click: the selection is kept and `on_click` is not
+    # called, e.g. `live_view` opens the selection card of a group instead, see `_browse!`
+    click_leaf::Function
+    # what a click does, in the overlay, see `_help_text`
+    click_help::String
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -382,6 +394,20 @@ function _drill_select(ctrl::KinematicController, leaf)
     return chain[max(i - 1, 1)]
 end
 
+"""
+    _click_leaf!(ctrl, leaf)
+
+A click on the rendered object `leaf`: left to `click_leaf` of the `ctrl` if it takes it, otherwise
+selects the next level of the hierarchy towards `leaf` (see `_drill_select`) and calls `on_click`.
+"""
+function _click_leaf!(ctrl::KinematicController, leaf)
+    ctrl.click_leaf(leaf) && return nothing
+    ctrl.selected[] = _drill_select(ctrl, leaf)
+    _update_selection_box!(ctrl)
+    ctrl.on_click(ctrl.selected[])
+    return nothing
+end
+
 """Axes of the keyboard controls: local y-axis, local x-axis and rotation axis of the `obj`."""
 function _control_axes(ctrl::KinematicController, obj)
     R = _pose(obj)[2]
@@ -444,7 +470,8 @@ function _update_help!(ctrl::KinematicController)
         ctrl.help_obs[] = _SPECTATOR_HELP
         return nothing
     end
-    help = _help_text(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier)
+    help = _help_text(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
+        ctrl.click_help)
     isempty(ctrl.help_extra) || (help *= "\n" * ctrl.help_extra)
     ctrl.help_obs[] = help
     return nothing
@@ -1046,7 +1073,7 @@ function kinematic_controls!(
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
         gizmo_size, gizmo_visible, help_obs, show_help, "", _default_hint, help_top, plots, Any[],
         nothing, obj -> false,
-        () -> nothing, () -> false
+        () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1127,19 +1154,11 @@ function kinematic_controls!(
                 end
             elseif kind == :pending_drag
                 # Released before crossing the threshold: a click, not a drag
-                if moved < ctrl.drag_threshold
-                    ctrl.selected[] = _drill_select(ctrl, ctrl.press_leaf)
-                    _update_selection_box!(ctrl)
-                    ctrl.on_click(ctrl.selected[])
-                end
+                moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
                 consume = true
             elseif kind == :pending_select
                 # Only select if this was a click, not a camera rotation
-                if moved < ctrl.drag_threshold
-                    ctrl.selected[] = _drill_select(ctrl, ctrl.press_leaf)
-                    _update_selection_box!(ctrl)
-                    ctrl.on_click(ctrl.selected[])
-                end
+                moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
             elseif kind == :background
                 if moved < ctrl.drag_threshold && !ctrl.on_click(nothing)
                     ctrl.selected[] = nothing

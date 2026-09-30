@@ -37,22 +37,21 @@ Rows of the component families, below the pose rows
 
 # Clip planes and any other movable object: the pose
 card_rows(obj) = pose_card_rows(obj)
-# Optical components and groups: the pose and the beams that hit them, see `_beam_text`. The rows of
-# the objects end with the dropdown of their parts, see `parts_card_rows` (none for `SingleShape`)
-card_rows(obj::BMO.AbstractObject) = (pose_card_rows(obj)..., _beam_row(), parts_card_rows(obj)...)
+# Optical components and groups: the pose and the beams that hit them, see `_beam_text`
+card_rows(obj::BMO.AbstractObject) = (pose_card_rows(obj)..., _beam_row())
 # Lenses and prisms: the refractive index at the wavelength of the beam and the center thickness
 card_rows(l::BMO.AbstractRefractiveOptic) = (pose_card_rows(l)..., _beam_row(),
-    _text_row("n", :index, _index_text), _thickness_rows(l)..., parts_card_rows(l)...)
+    _text_row("n", :index, _index_text), _thickness_rows(l)...)
 # Beamsplitters: the splitting ratio of the coating
 card_rows(bs::BMO.AbstractBeamsplitter) = (pose_card_rows(bs)..., _beam_row(),
-    _text_row("split", :split, (gui, bs) -> _split_text(_coating(bs))), parts_card_rows(bs)...)
+    _text_row("split", :split, (gui, bs) -> _split_text(_coating(bs))))
 # Polarizers: the transmission axis
 card_rows(p::Union{BMO.LinearPolarizer, BMO.PolarizationFilter}) =
-    (pose_card_rows(p)..., _beam_row(), _text_row("axis", :axis, _axis_text), parts_card_rows(p)...)
+    (pose_card_rows(p)..., _beam_row(), _text_row("axis", :axis, _axis_text))
 # Detectors: the hits of the last solve, the power, or the number of rays, of the detector panel and
 # the options of the panel, see `_panel_row`
 card_rows(pd::BMO.Detector) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _panel_text),
-    _panel_row(), parts_card_rows(pd)...)
+    _panel_row())
 # Beams and beam groups: switched on and off, their polarization, see `beam_card_rows`
 card_rows(b::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (pose_card_rows(b)..., beam_card_rows(b)...)
 # Sources whose rays can be regenerated: wavelength, size and a slider for the number of rays
@@ -277,27 +276,21 @@ function _set_num_rays!(gui::LiveView, src, n)
 end
 
 #=
-Parts of groups and multi-shape objects, one level at a time, see `parts_card_rows`
+Parts of groups and multi-shape objects, one level at a time, see the selection card (`_browse!`)
 =#
 
 """
     _part_children(x) -> Tuple
 
-The direct parts of `x` on its card (see [`parts_card_rows`](@ref)): of a `MultiShape` object, e.g.
-a group, a doublet or a cube beamsplitter, the elements of `BeamletOptics.shape(x)` that are
-objects, in their order (beams and bare shapes are left out); none of a `SingleShape` object or of
-anything else, e.g. a beam or a clip plane.
+The direct parts of `x` on the selection card (see `_browse!`): of a `MultiShape` object, e.g. a
+group, a doublet or a cube beamsplitter, the elements of `BeamletOptics.shape(x)` that are objects,
+in their order (beams and bare shapes are left out); none of a `SingleShape` object or of anything
+else, e.g. a beam or a clip plane.
 """
 _part_children(x::BMO.AbstractObject) = _part_children(x, BMO.shape_trait_of(x))
 _part_children(_) = ()
 _part_children(x, ::BMO.MultiShape) = Tuple(c for c in BMO.shape(x) if c isa BMO.AbstractObject)
 _part_children(_, ::BMO.AbstractShapeTrait) = ()
-
-function parts_card_rows(obj)
-    isempty(_part_children(obj)) && return ()
-    return (CardRow("part", CardWidget(_PartsMenu; name = :parts, width = 170,
-        value = _parts_options, on = _choose_part!)),)
-end
 
 """Returns the object whose part `x` is in the `gui` (see `_map_parts!`), `nothing` at the top level."""
 _part_parent(gui::LiveView, x) = get(gui.objects.parents, x, nothing)
@@ -331,56 +324,15 @@ function _map_parts!(gui::LiveView)
 end
 
 """
-    _parts_options(gui, obj) -> Vector{Pair{String, Any}}
-
-The options of the parts menu on the card of `obj` (see [`parts_card_rows`](@ref)), each
-`label => object`: first "‹ <parent>" (none at the top level), then the direct parts of `obj` that
-are not hidden, in the order of `BeamletOptics.shape`, named by `_label`; a part with parts of its
-own ends with " ›".
-"""
-function _parts_options(gui::LiveView, obj)
-    opts = Pair{String, Any}[]
-    parent = _part_parent(gui, obj)
-    isnothing(parent) || push!(opts, "‹ " * _label(gui, parent) => parent)
-    for c in _part_children(obj)
-        _all_hidden(gui, c) && continue
-        push!(opts, _label(gui, c) * (isempty(_part_children(c)) ? "" : " ›") => c)
-    end
-    return opts
-end
-
-"""
-    _choose_part!(gui, obj, part)
-
-Shows the card of `part`, chosen in the parts menu on the card of `obj` (see `_parts_options`),
-whose own parts menu then shows the next level: a movable object, i.e. an object of a movable group
-or the group itself, is selected like by a click in the 3D view (see `_select!`); any other, e.g. a
-lens of a doublet, is shown without being selected for moving (see `_inspect!`), its card at the
-bounding box of the nearest object with plots, see `_anchor_part_card!`.
-"""
-function _choose_part!(gui::LiveView, _, part)
-    if _is_movable(gui.controls, part)
-        _select!(gui, part)
-    else
-        _inspect!(gui, part)
-        _anchor_part_card!(gui, part)
-    end
-    return nothing
-end
-
-"""
     _anchor_part_card!(gui, part)
 
 Places the card of the selection of the `gui`, which shows the inspected `part`, at the bounding box
 of the plots of `part`, or, without plots of its own (e.g. a lens of a doublet, whose plots belong
-to the doublet), of the nearest object that it is a part of, see `_part_parent`.
+to the doublet), of the nearest object that it is a part of, see `_plotted_part`.
 """
 function _anchor_part_card!(gui::LiveView, part)
     ctrl = gui.controls
-    x = part
-    while !isnothing(x) && isempty(_object_plots(ctrl.h, x))
-        x = _part_parent(gui, x)
-    end
+    x = _plotted_part(gui, part)
     isnothing(x) && return nothing
     c = gui.cards.selection
     c.corners = _box_corners(_selection_bbox(ctrl, x, _object_plots(ctrl.h, x)))
@@ -389,24 +341,14 @@ function _anchor_part_card!(gui::LiveView, part)
     return nothing
 end
 
-# The parts menu has the style of a menu on the floating cards, see `_card_style`
-_card_style(t::NamedTuple, ::Type{_PartsMenu}) = _card_style(t, Menu)
-
 """
-    _over_card_menu(gui) -> Bool
-
-Returns `true` if the mouse is over the open dropdown of a menu on a floating card of the `gui`, e.g.
-the parts menu, which may reach beyond its card: its clicks are not clicks into the 3D view, see
-`ignore_mouse` of the controls.
+Returns `part` if it has plots in the `gui`, else the nearest object that it is a part of with plots
+(see `_part_parent`), e.g. the doublet of a lens, or `nothing`.
 """
-function _over_card_menu(gui::LiveView)
-    p = events(gui.ax.scene).mouseposition[]
-    for c in gui.cards.all
-        c.scene.visible[] || continue
-        for b in c.blocks
-            m = _open_menu(b)
-            !isnothing(m) && _over_open_menu(m, p) && return true
-        end
+function _plotted_part(gui::LiveView, part)
+    x = part
+    while !isnothing(x) && isempty(_object_plots(gui.controls.h, x))
+        x = _part_parent(gui, x)
     end
-    return false
+    return x
 end

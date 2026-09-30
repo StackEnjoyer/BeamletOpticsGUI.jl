@@ -24,7 +24,7 @@ Look up the docstring of any name before use, e.g.
 | Window | `live_view`, `export_changes`, `retrace!` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
-| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `parts_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
+| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
 
 Not exported: `BeamletOpticsGUI.install_agent_skill`.
 

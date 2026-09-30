@@ -253,9 +253,7 @@ dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams,
 sources add the toggles of [`beam_card_rows`](@ref), a source whose rays can be regenerated (see
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 the mode and the color scale of its detector panel, mechanics (`NonInteractableObject`, e.g. a
-`MeshDummy`, and `IntersectableObject`) a slider for their opacity. The cards of groups and other
-objects that consist of objects (e.g. a `DoubletLens`) end with the dropdown of their parts, see
-[`parts_card_rows`](@ref). The card of a system
+`MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
 (`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
 shows the number of its objects, the number of rays of its sources that are on and the duration of
 the last solve. Add a method for an own type to show its properties or controls on its card, e.g.
@@ -313,33 +311,6 @@ BeamletOpticsGUI.card_rows(b::MyBeam) = (pose_card_rows(b)..., beam_card_rows(b)
 ```
 """
 function beam_card_rows end
-
-"""
-    parts_card_rows(obj) -> Tuple{Vararg{CardRow}}
-
-The row "part" on the card of `obj` in [`live_view`](@ref), see [`card_rows`](@ref): a dropdown of
-the parts of `obj`, one level at a time, for an object that consists of objects, i.e. whose
-`BeamletOptics.shape_trait_of` is `MultiShape` (a group, a `DoubletLens`, `TripletLens`,
-`CubeBeamsplitter`, `LinearPolarizer`, plate beamsplitter or an own `AbstractObjectGroup`); `()` for
-any other object, e.g. a `SingleShape` object such as a lens, and anything else.
-
-The dropdown ("choose…") lists "‹ <parent>" if `obj` is a part of another object, then the direct
-parts of `obj`, i.e. the elements of `BeamletOptics.shape(obj)` that are objects (beams and bare
-shapes are left out), in their order and without hidden ones, named like in the rest of the live
-view (the `labels` of [`live_view`](@ref), else by type and running index); a part with parts of
-its own ends with " ›". Choosing an entry shows the card of that object, whose own dropdown shows
-the next level: a movable object, e.g. an object of a group or the doublet of a lens, is selected
-for moving like by a click in the 3D view; a part of an object that is not a group, e.g. a lens of
-a doublet, is shown without being selected for moving, its pose boxes reject inputs. Clicks in the 3D view select groups and their
-objects only, never the parts of other objects.
-
-The card of an own object type adds the row at its end, e.g.
-
-```julia
-BeamletOpticsGUI.card_rows(a::MyAssembly) = (pose_card_rows(a)..., parts_card_rows(a)...)
-```
-"""
-function parts_card_rows end
 
 """
     card_actions(obj)

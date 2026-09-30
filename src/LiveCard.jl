@@ -71,6 +71,9 @@ a scene with a pixel camera over the whole figure:
 
 - `head`: the `icon` of the kind of the object (see `_tree_kind`) in its `icon_color` and the
   `title`, i.e. the label of the object
+- `back`, left of the head while `back_shown`, i.e. for a part of another object (see
+  `_part_parent`): the `back_button` "‹" (an `_IconButton`), which opens the selection card of that
+  object, see `_browse_parent!`
 - `actions`, right of the head: the buttons of [`card_actions`](@ref) for the object
 - `tools`, at the right end of the first line: the `pin_button` (an `_IconToggle`, active while
   pinned) and the `collapse_button` (an `_IconButton`, a chevron down, or right while collapsed);
@@ -149,6 +152,9 @@ mutable struct _ComponentCard <: _AbstractCard
     # it next to its object
     spot::Union{Nothing, Tuple{Bool, Bool, Vec2f}}
     properties_shown::Bool
+    back::GridLayout
+    back_button::_IconButton
+    back_shown::Bool
 end
 
 # Content of a layout of the card `scene`, aligned at the top left corner of its suggested bounding box
@@ -180,13 +186,15 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     # width follows the card, see `_fit_properties!`
     part = _selection_part!(step, properties[1, 1], t; width = _CARD_PROPERTIES_WIDTH, tellwidth = true)
     properties_button = _properties_disclosure!(step[3, 1:2], t)
-    foreach(_fix_tooltip!, (pin_button, collapse_button, properties_button))
+    back = _card_part(scene)
+    back_button = _card_back!(back[1, 1], t)
+    foreach(_fix_tooltip!, (pin_button, collapse_button, properties_button, back_button))
     _fix_caret!(part.step_box, z)
     scene.visible[] = false
     return _ComponentCard(scene, t, background, head, _card_part(scene), tools, _card_part(scene), step,
         properties, icon, icon_color, title, collapse_button, pin_button, part.step_box, part.mode,
         part.list, properties_button, link, Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing,
-        false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, false)
+        false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, false, back, back_button, false)
 end
 
 #=
@@ -237,6 +245,16 @@ sidebar again, see `_dock!`.
 """
 _card_dock!(pos, t::NamedTuple; kwargs...) =
     _IconButton(pos; icon = :dock, tooltip = "Dock in the sidebar", _card_icons(t)..., kwargs...)
+
+# A chevron to the left, the mirror image of the icon `:expand`
+const _BACK_ICON = _svg_path("M456-480L640-664L584-720L344-480L584-240L640-296Z")
+
+"""
+The button "‹" of the card of a part at the grid position `pos`, which opens the selection card of
+the object that it is a part of, see `_browse_parent!`.
+"""
+_card_back!(pos, t::NamedTuple; kwargs...) = _IconButton(pos; icon = _BACK_ICON,
+    tooltip = "Parts of the enclosing object", _card_icons(t)..., kwargs...)
 
 """The chevron of a card at the grid position `pos` that collapses it, see `_show_head!`."""
 _card_collapse!(pos, t::NamedTuple; kwargs...) =
@@ -460,7 +478,7 @@ _declared_widgets(::String) = ()
 
 """Moves the parts of the card `c` away, see `_CARD_AWAY`."""
 _park_card!(c::_ComponentCard) =
-    foreach(_park!, (c.head, c.actions, c.tools, c.rows, c.step, c.properties, c.background))
+    foreach(_park!, (c.back, c.head, c.actions, c.tools, c.rows, c.step, c.properties, c.background))
 
 """Removes the declared widgets of the card `c`, with their listeners and layouts."""
 function _clear_content!(c::_AbstractCard)
@@ -511,6 +529,20 @@ _card_size(x) = Vec2f(Makie.widths(x.layoutobservables.computedbbox[]))
 _place!(x, p::Point2f) = _update!(x.layoutobservables.suggestedbbox, Rect2f(p[1], p[2], 0, 0))
 _park!(x) = _update!(x.layoutobservables.suggestedbbox, _CARD_AWAY)
 
+# Gap between the button "‹" and the head [px]
+const _CARD_BACK_GAP = 2.0f0
+
+# Width of the button "‹" left of the head with its gap, 0 without it
+_back_width(c::_ComponentCard) = c.back_shown ? _card_size(c.back)[1] + _CARD_BACK_GAP : 0.0f0
+
+# Size of the head with the button "‹" left of it, if shown
+function _head_size(c::_ComponentCard)
+    h = _card_size(c.head)
+    c.back_shown || return h
+    b = _card_size(c.back)
+    return Vec2f(b[1] + _CARD_BACK_GAP + h[1], max(b[2], h[2]))
+end
+
 # Size of the actions, empty without actions
 _actions_size(c::_ComponentCard) = isempty(c.actions.content) ? Vec2f(-_CARD_PADDING, 0) : _card_size(c.actions)
 
@@ -521,7 +553,7 @@ Size of the card `c` [px] with its actions and tools right of the head and the p
 `_lower_parts`), including the padding of the background.
 """
 function _card_size(c::_ComponentCard)
-    h, a, t = _card_size(c.head), _actions_size(c), _card_size(c.tools)
+    h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     w, height = h[1] + _CARD_PADDING + a[1] + _CARD_PADDING + t[1], max(h[2], a[2], t[2])
     for part in _lower_parts(c)
         s = _card_size(part)
@@ -540,7 +572,7 @@ but not wider than it needs. Only a changed width updates the layout.
 function _fit_properties!(c::_ComponentCard)
     lower = _lower_parts(c)
     any(p -> p === c.properties, lower) || return nothing
-    h, a, t = _card_size(c.head), _actions_size(c), _card_size(c.tools)
+    h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     w = h[1] + _CARD_PADDING + a[1] + _CARD_PADDING + t[1]
     for part in lower
         part === c.properties || (w = max(w, _card_size(part)[1]))
@@ -558,10 +590,12 @@ shown (see `_lower_parts`) away. Only changed positions update the layout.
 function _arrange_card!(c::_ComponentCard, p::Point2f)
     size = _card_size(c)
     x, y = p[1] + _CARD_PADDING, p[2] - _CARD_PADDING
-    h, a, t = _card_size(c.head), _actions_size(c), _card_size(c.tools)
+    h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     line = max(h[2], a[2], t[2])
     # The head, the actions and the tools (at the right end) are centered vertically in the first line
-    _place!(c.head, Point2f(x, y - (line - h[2]) / 2))
+    bw = _back_width(c)
+    c.back_shown ? _place!(c.back, Point2f(x, y - (line - _card_size(c.back)[2]) / 2)) : _park!(c.back)
+    _place!(c.head, Point2f(x + bw, y - (line - _card_size(c.head)[2]) / 2))
     _place!(c.actions, Point2f(x + h[1] + _CARD_PADDING, y - (line - a[2]) / 2))
     _place!(c.tools, Point2f(p[1] + size[1] - _CARD_PADDING - t[1], y - (line - t[2]) / 2))
     y -= line
@@ -721,7 +755,9 @@ head, i.e. its icon, its title and the free room around them.
 function _over_handle(c::_ComponentCard, events::Makie.Events)
     _over_card(c, events) || return false
     p = Point2f(events.mouseposition[])
-    return !any(x -> p in _part_rect(x), (c.actions, c.tools, c.rows, c.step, c.properties))
+    parts = c.back_shown ? (c.back, c.actions, c.tools, c.rows, c.step, c.properties) :
+        (c.actions, c.tools, c.rows, c.step, c.properties)
+    return !any(x -> p in _part_rect(x), parts)
 end
 
 # Rectangle of a card with the top left corner `p` and the `size`

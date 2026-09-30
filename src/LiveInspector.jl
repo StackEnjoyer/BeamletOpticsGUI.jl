@@ -131,6 +131,8 @@ mutable struct _Inspector
     const name::Label
     const type::Label
     const pin::_IconToggle
+    # "‹": opens the selection card of the object that the shown part belongs to, see `_browse_parent!`
+    const back::_IconButton
     const card::_DockedCard
     const step_box::Textbox
     const mode::_Segmented
@@ -165,6 +167,8 @@ function _build_inspector!(layout::AppLayout)
         tellwidth = false)
     pin = _card_pin!(header[1:2, 4], t; size = 24, icon_size = 18,
         tooltip = "Pin a card below the inspector", tooltip_placement = :left)
+    back = _card_back!(header[1:2, 3], t; size = 24, icon_size = 18, tooltip_placement = :left)
+    back.box.visible[] = false
     rowgap!(header, 0)
     colsize!(header, 2, Auto(false))
     card = _DockedCard(header, g, t)
@@ -179,7 +183,7 @@ function _build_inspector!(layout::AppLayout)
     rowsize!(g, 2, Fixed(0))
     rowsize!(g, 6, Fixed(0))
     rowgap!(g, 10)
-    layout.inspector = _Inspector(g, icon, icon_color, name, type, pin, card, step_box, mode, list,
+    layout.inspector = _Inspector(g, icon, icon_color, name, type, pin, back, card, step_box, mode, list,
         pinned_grid, _DockedCard[], nothing, true, nothing, (Dict{String, Float32}(), Dict{String, Float32}()))
     return (; step_box)
 end
@@ -462,6 +466,10 @@ function _show_pin!(gui::AppView)
     pin.active[] == pinned || (pin.active[] = pinned)
     visible = !isnothing(obj)
     pin.box.visible[] == visible || (pin.box.visible[] = visible)
+    # "‹" for a part of another object, see `_part_parent`
+    back = gui.layout.inspector.back
+    part = visible && !isnothing(_part_parent(gui, obj))
+    back.box.visible[] == part || (back.box.visible[] = part)
     return nothing
 end
 
@@ -504,6 +512,7 @@ function _connect_inspector!(gui::AppView)
         (isnothing(obj) || v == _is_pinned(gui, obj)) || _toggle_pin!(gui, obj)
         return nothing
     end)
+    push!(listeners, on(_ -> _browse_parent!(gui, _shown_object(gui)), insp.back.clicks))
     push!(listeners, on(v -> v && _refresh_inspector!(gui), layout.collapse.right.active))
     _refresh_inspector!(gui)
     return nothing

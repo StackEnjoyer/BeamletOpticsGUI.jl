@@ -38,7 +38,11 @@ the same rows as the inspector of the app), pinned cards do not. Objects without
 get automatic names ("Mirror 1", "Clip plane 2") in the cards, menus and tree. The card of a system
 (number of objects, rays, solve time) opens from its entry in the component menu of the tool rail (compact) or its
 row in the tree (app), without a selection; non-movable objects are shown the same way (pose
-inputs are rejected). Own types add rows with a `card_rows` method (`CardRow`, `CardWidget`), see
+inputs are rejected). A click on an object of a group opens the selection card of its top-level group
+(first entry "Select <group>", "‹ <parent>", then the parts, " ›" on parts with parts; a click on a
+part in the 3D view acts as its entry, a click beside or `Esc` at the top closes, `Esc` goes up one
+level; the card of a part has "‹" in its head); an object not in a group opens its card at once.
+Own types add rows with a `card_rows` method (`CardRow`, `CardWidget`), see
 `WIDGETS.md`.
 `theme = :light` (default) or `:dark` colors the whole window (both layouts); the info label
 (toast at the bottom for 3 s after each change in compact, status bar in app) shows the last solve

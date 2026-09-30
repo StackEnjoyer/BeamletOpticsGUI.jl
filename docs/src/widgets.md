@@ -144,21 +144,21 @@ BeamletOpticsGUI.card_rows(b::MyBench) = (
 An object that is not movable is shown on its card in the same way (inspected instead of selected),
 its pose boxes reject inputs with a message in the status line.
 
-## Recipe: the parts of a group on its card
+## The parts of a group: the selection card
 
-[`parts_card_rows`](@ref)`(obj)` is the row "part" of a card: a dropdown of the parts of `obj`, one
-level at a time ("‹ parent", then the direct parts that are not hidden, marked " ›" if a part has
-parts of its own). It gives rows for objects whose `shape_trait_of` is `MultiShape` (groups,
-`DoubletLens`, `CubeBeamsplitter`, ...) and `()` for any other object. The cards of the types of
-BeamletOptics end with it already; an own group type adds it to its own `card_rows` method:
+In [`live_view`](@ref), a click on an object of a group opens the selection card of its top-level
+group instead of selecting it. The card browses the parts one level at a time: the first entry
+"Select <group>" selects the group itself for moving, "‹ <parent>" (below the top level) browses the
+enclosing object, then come the direct parts, marked " ›" if a part has parts of its own (it opens the
+next level; any other part is selected). A part of an object that is not a group, e.g. a lens of a
+doublet, is shown but not movable: its pose boxes reject inputs. While browsing, the group is drawn
+see-through with a box around each part, and the box of the hovered entry is highlighted. A click in
+the 3D view on a part acts like its entry, a click beside closes the card, `Esc` goes up one level
+(closes at the top level). The card of a part has a button "‹" in its head that browses its parent.
+See the section "Selection card" of [`live_view`](@ref).
 
-```julia
-BeamletOpticsGUI.card_rows(a::MyAssembly) = (pose_card_rows(a)..., parts_card_rows(a)...)
-```
-
-Choosing a part shows its card, with the next level in its own dropdown. A movable part of a group is
-selected for moving, like by a click in the 3D view; a part of an object that is not a group, e.g. a
-lens of a doublet, is shown but not movable: its pose boxes reject inputs.
+The card needs no code: an own group type gets it automatically, since its `shape_trait_of` is
+`MultiShape`, and `card_rows` needs no row for the parts.
 
 ## Recipe: a card for an object without a place in the scene
 
@@ -350,7 +350,6 @@ The functions and types of the recipes:
 card_rows
 pose_card_rows
 beam_card_rows
-parts_card_rows
 card_actions
 CardRow
 CardWidget

@@ -106,21 +106,17 @@ BeamletOpticsGUI.card_rows(b::MyBench) = (
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))
 ```
 
-## Recipe: the parts of a group on its card
+## The parts of a group: the selection card
 
-`parts_card_rows(obj)` is the row "part": a dropdown of the parts of `obj`, one level at a time
-("‹ parent", then the direct parts that are not hidden, " ›" after a part with parts of its own). It
-gives rows for objects with `shape_trait_of` `MultiShape` (groups, `DoubletLens`, `CubeBeamsplitter`,
-...) and `()` for any other object. The default cards already end with it; an own group type adds it
-to its own `card_rows` method:
-
-```julia
-BeamletOpticsGUI.card_rows(a::MyAssembly) = (pose_card_rows(a)..., parts_card_rows(a)...)
-```
-
-Choosing a part shows its card (with the next level in its own dropdown). A movable part of a group is
-selected for moving; a part of an object that is not a group (e.g. a lens of a doublet) is shown but
-not movable (its pose boxes reject inputs).
+No code needed. In `live_view`, a click on an object of a group opens the selection card of its
+top-level group: first entry "Select <group>" (selects the group for moving), "‹ <parent>" below the
+top level, then the direct parts (" ›" after a part with parts of its own, which opens the next
+level; any other part is selected). A part of a non-group `MultiShape` object (e.g. a lens of a
+doublet) is shown but not movable (its pose boxes reject inputs). While browsing, the group is
+see-through with a box per part, the hovered entry's box highlighted. A click in the 3D view on a part
+acts as its entry, a click beside closes, `Esc` goes up one level (closes at the top). The card of a
+part has "‹" in its head to browse its parent. An own group type gets this automatically, since it is
+`MultiShape`.
 
 ## Recipe: a card for an object without a place in the scene
 

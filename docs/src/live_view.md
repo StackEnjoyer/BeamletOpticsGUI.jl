@@ -385,6 +385,15 @@ a click on its row in the object tree (app layout), without a selection and with
 instead of being selected; its pose boxes reject inputs with a message in the status line. `Esc`, a
 click on empty space or the selection of an object closes such a card.
 
+A click in the 3D view on an object of a group does not select it but opens the selection card of its
+top-level group, which browses the parts one level at a time: "Select <group>" selects the group for
+moving, "‹ <parent>" goes up, a part marked " ›" opens the next level, any other part is selected.
+While browsing, the group is see-through and the boxes of the parts are drawn. A click on a part in
+the 3D view acts like its entry, a click beside closes the card, `Esc` goes up one level. The card of
+a part has a button "‹" in its head that browses its parent. An object that is not in a group opens
+its card at once. The standalone [`kinematic_controls!`](@ref) keeps its drill-down (a second click
+on a selected group selects the part). See the section "Selection card" of [`live_view`](@ref).
+
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and
 actions, and below it the pinned cards, one below the other, each with its own head (icon, label,
