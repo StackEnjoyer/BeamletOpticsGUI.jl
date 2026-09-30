@@ -113,7 +113,7 @@ function _apply!(gui::LiveView, r, obj; coarse = false)
     for (p, h) in zip(gui.pairs, gui.beam_handles)
         _beam_on(gui, p.second) && update_render!(h)
     end
-    for (beam, h) in gui.beams.pol
+    for store in _overlay_stores(gui), (beam, h) in store
         _beam_on(gui, beam) && update_render!(h)
     end
     t1 = time_ns()

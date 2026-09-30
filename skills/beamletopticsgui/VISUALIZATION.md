@@ -26,9 +26,12 @@ its component). Below the pose, rows of the
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
 beamsplitters, the polarizer axis, detector power, the ray count slider of sources
 (`set_num_rays!`), and on every beam, beam group, source and beamlet the toggle "on" (off: not
-solved, not drawn, rays removed from detectors; only the source marker stays) plus, for polarized
-beams, the toggle "polarization" (draws the polarization, of a group along its central beam;
-display only). Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (; show_polarization = true))`.
+solved, not drawn, rays removed from detectors; only the source marker stays), for Gaussian
+beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true)`), for polarized
+beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength and amplitude of
+the drawn curve, log scale; astigmatic beamlets: amplitude × beam radius). Of a group only the
+central beam; display only. Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
+show_polarization = true, show_beams = true, pol_λ = 1e-3, pol_amplitude = 2e-4))`.
 Only the card of the selection also has the keyboard step (e.g. `250 nm`), a
 "Move"/"Rotate" control (in sync with the key `m`) and a "Properties" part (collapsed by default,
 the same rows as the inspector of the app), pinned cards do not. Objects without a `labels` entry

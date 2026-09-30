@@ -42,7 +42,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `extras = [housing => (; color = ...)]` | shown, movable, but never traced |
 | `clip_planes`, `clip_beams` | clip planes (`point => normal`) |
 | `auto_trace`, `trace_budget`, `idle_delay`, `preview`, `progress_delay` | when and how the systems are solved (`auto_trace = false` also starts untraced, `t` traces) |
-| `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization = true` starts the card's polarization toggle on |
+| `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization`, `show_beams`, `pol_λ`, `pol_amplitude`, `pol_scale` set the start state of the card toggles and sliders |
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 

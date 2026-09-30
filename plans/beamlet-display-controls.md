@@ -1,6 +1,6 @@
 # Beamlet display controls: generating beams, polarization curve sliders
 
-**Status:** approved · **Tier:** short
+**Status:** implemented · **Tier:** short
 
 ## Goal
 
@@ -75,4 +75,19 @@ while the curve is off (the value is kept for the next "on") (chosen)
   a separate controls panel.
 - Slider ranges are static in the card declarations, hence the sliders run over 0…1 and `value`
   and `on` map that logarithmically to the length range of the `gui` (they get the `gui`).
+</details>
+
+## Details
+
+<details>
+<summary>Deviations</summary>
+
+- `_BeamState.pol_kwargs` is renamed `overlay_kwargs` (it serves both overlays); overlays share
+  `_add_overlay!`/`_remove_overlay!` (LiveBeamSwitch.jl), whose visible plots are kept in
+  `_BeamState.shown`.
+- `show_beams = true` in `beam_kwargs` of a beam that is no Gaussian beamlet throws an
+  `ArgumentError` before the window is built, like `show_polarization`.
+- The look is checked against the static `render!(ax, g; show_beams = true)`: the overlay's
+  `LineSegments` have the same colors and points.
+- The card-level slider tests are in `test/TestLiveCardRows.jl` (both layouts).
 </details>

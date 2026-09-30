@@ -222,11 +222,24 @@ Beams switched on and off and their polarization, see `_set_beam_on!` and `_set_
 function beam_card_rows(b)
     on = CardWidget(Toggle; name = :beam_on, value = (gui, b) -> _beam_on(gui, b),
         on = (gui, b, v) -> _set_beam_on!(gui, b, v))
-    pol = _polarizable(b) ? (CardWidget(Toggle; name = :polarization,
-        value = (gui, b) -> _polarization_on(gui, b),
-        on = (gui, b, v) -> _set_polarization!(gui, b, v)), "polarization") : ()
-    return (CardRow("beam", on, "on", pol...),)
+    gen = _has_generating_beams(b) ? (CardWidget(Toggle; name = :show_beams,
+        value = (gui, b) -> _generating_beams_on(gui, b),
+        on = (gui, b, v) -> _set_generating_beams!(gui, b, v)), "beams") : ()
+    _polarizable(b) || return (CardRow("beam", on, "on", gen...),)
+    pol = CardWidget(Toggle; name = :polarization, value = (gui, b) -> _polarization_on(gui, b),
+        on = (gui, b, v) -> _set_polarization!(gui, b, v))
+    return (CardRow("beam", on, "on", gen..., pol, "polarization"),
+        _pol_slider_row("pol λ", :pol_wavelength, :λ), _pol_slider_row("pol amp", :pol_amplitude, :amp))
 end
+
+# A slider of the polarization curve, see `_pol_view`: over 0…1, mapped logarithmically to the
+# range of the value `key`, which is shown as text next to it
+_pol_slider_row(label::String, name::Symbol, key::Symbol) = CardRow(
+    CardWidget(Label; text = label, width = 48, halign = :left),
+    CardWidget(Slider; name, range = 0:0.005:1, width = 140,
+        value = (gui, b) -> _pol_position(gui, b, key), on = (gui, b, u) -> _set_pol_position!(gui, b, key, u)),
+    CardWidget(Label; name = Symbol(name, :_text), width = 64, halign = :left,
+        value = (gui, b) -> _pol_text(gui, b, key)))
 
 #=
 Ray count slider of the sources

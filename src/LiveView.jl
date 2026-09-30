@@ -293,15 +293,21 @@ end
     _BeamState
 
 The beams of a `LiveView` (the objects `last.(gui.pairs)`) as their cards switch them: the beams
-that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the handle of its
-polarization overlay in `pol` and the kwargs of `live_render!` of that overlay in `pol_kwargs`,
-taken from the `beam_kwargs` of `live_view` without `render_every`, including the initial
-`show_polarization`.
+that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the handles of its
+overlays, the polarization curve in `pol` (see `_set_polarization!`) and the generating beams of a
+Gaussian beamlet in `gen` (see `_set_generating_beams!`), and the kwargs of `live_render!` of the
+overlays in `overlay_kwargs`, taken from the `beam_kwargs` of `live_view` without `render_every`,
+including the initial `show_polarization` and `show_beams`. `shown` holds per overlay handle the
+plots that are visible while the beam is on, the others stay hidden; `pol_view` per beam the
+values of the sliders of its polarization curve, see `_pol_view`.
 """
 Base.@kwdef struct _BeamState
     off::Base.IdSet{Any} = Base.IdSet{Any}()
     pol::IdDict{Any, Any} = IdDict{Any, Any}()
-    pol_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+    gen::IdDict{Any, Any} = IdDict{Any, Any}()
+    overlay_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+    shown::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    pol_view::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
 end
 
 """
@@ -712,10 +718,12 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam starts
-  with the toggle "polarization" of its card on, see [`beam_card_rows`](@ref); for a beam group
-  only its central beam shows the polarization. A beam without polarized rays throws an
-  `ArgumentError`.
+  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam and
+  `show_beams = true` of a Gaussian beamlet start with the toggles "polarization" and "beams" of
+  its card on, `pol_λ`, `pol_amplitude` and `pol_scale` set the start values of the sliders of
+  the polarization curve, see [`beam_card_rows`](@ref); of a beam group only its central beam is
+  drawn so. `show_polarization` for a beam without polarized rays and `show_beams` for one that is
+  no Gaussian beamlet throw an `ArgumentError`.
 - `beams_off = ()`: beams of the pairs that start switched off, i.e. neither traced nor drawn
   (their source markers stay), e.g. `[src]`. Each entry must be one of the beams of the pairs
   (`===`), otherwise an `ArgumentError` is thrown.
@@ -784,10 +792,12 @@ function live_view(
         any(p -> p.second === b, ps) ||
             throw(ArgumentError("beams_off: $(typeof(b)) is not a beam of the pairs"))
     end
-    # Checked before the window is built, see `_init_polarization!`
+    # Checked before the window is built, see `_init_overlays!`
     for (b, kw) in beam_kwargs
         get(kw, :show_polarization, false) === true && !_polarizable(b) &&
             throw(ArgumentError("beam_kwargs: show_polarization = true for $(typeof(b)), which has no polarized rays"))
+        get(kw, :show_beams, false) === true && !_has_generating_beams(b) &&
+            throw(ArgumentError("beam_kwargs: show_beams = true for $(typeof(b)), which is no Gaussian beamlet"))
     end
     # several beams may share a system, which is rendered once
     systems = unique(objectid, first.(ps))
@@ -814,12 +824,13 @@ function live_view(
     for beam in last.(ps)
         default = beam isa BMO.AbstractBeamGroup ? (; render_every = 5) : (;)
         kw = (; get(beam_kwargs, beam, default)...)
-        # The polarization is drawn by an overlay of the beam, whose initial state
-        # `show_polarization` is kept with the kwargs of the overlay, see `_BeamState`
-        beam_state.pol_kwargs[beam] = Base.structdiff(kw, NamedTuple{(:render_every,)})
+        # The polarization and the generating beams are drawn by overlays of the beam, whose
+        # initial states `show_polarization` and `show_beams` are kept with the kwargs of the
+        # overlays, see `_BeamState`
+        beam_state.overlay_kwargs[beam] = Base.structdiff(kw, NamedTuple{(:render_every,)})
         # The planes of the beams are set explicitly by `_apply_clip_planes!`, see `clip_beams`
         push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)...,
-            Base.structdiff(kw, NamedTuple{(:show_polarization,)})..., clip_planes = Plane3f[]))
+            Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})..., clip_planes = Plane3f[]))
     end
 
     # The extras are moved and selected like the objects of the systems, but never traced
@@ -908,8 +919,8 @@ function live_view(
         _mark_stale!(gui, nothing; msg = _NOT_TRACED)
         _update_info!(gui)
     end
-    # The overlays of the beams with `show_polarization = true`, after the solve that they show
-    _init_polarization!(gui)
+    # The overlays of the beams with `show_polarization` or `show_beams`, after the solve they show
+    _init_overlays!(gui)
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read
     # correctly. Only set once, later changes of the view, e.g. via `set_view`, are kept.
     cam = cameracontrols(ax.scene)

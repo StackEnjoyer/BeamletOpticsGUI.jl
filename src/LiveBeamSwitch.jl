@@ -10,9 +10,13 @@ _beam_on(gui::LiveView, beam) = !(beam in gui.beams.off)
     _all_beam_handles(gui)
 
 The render handles of all beam plots of the `gui`: the handles of the beams of its pairs
-(`gui.beam_handles`), followed by the polarization overlays (`gui.beams.pol`).
+(`gui.beam_handles`), followed by the overlays (`gui.beams.pol`, `gui.beams.gen`).
 """
-_all_beam_handles(gui::LiveView) = Any[gui.beam_handles..., values(gui.beams.pol)...]
+_all_beam_handles(gui::LiveView) =
+    Any[gui.beam_handles..., values(gui.beams.pol)..., values(gui.beams.gen)...]
+
+"""The stores of the overlay handles of the `gui` by beam, see `_BeamState`."""
+_overlay_stores(gui::LiveView) = (gui.beams.pol, gui.beams.gen)
 
 """
     _on_pairs(gui, pairs, handles) -> (pairs, handles)
@@ -33,16 +37,48 @@ _empty_beam!(_) = nothing
     _show_beam!(gui, beam, on)
 
 Shows or hides the plots of the `beam` of the `gui`: of each render handle of a pair with the
-`beam` (a beam can be part of several pairs) and the `Lines` of its polarization overlay, if any,
-whose other plots stay hidden.
+`beam` (a beam can be part of several pairs) and the shown plots of its overlays (see
+`_add_overlay!`), whose other plots stay hidden.
 """
 function _show_beam!(gui::LiveView, beam, on::Bool)
     for (p, h) in zip(gui.pairs, gui.beam_handles)
         p.second === beam || continue
         foreach(plot -> plot.visible[] = on, _beam_plots(h))
     end
-    pol = get(gui.beams.pol, beam, nothing)
-    isnothing(pol) || foreach(plot -> plot isa Makie.Lines && (plot.visible[] = on), _beam_plots(pol))
+    for store in _overlay_stores(gui)
+        h = get(store, beam, nothing)
+        isnothing(h) || foreach(plot -> plot.visible[] = on, gui.beams.shown[h])
+    end
+    return nothing
+end
+
+"""
+    _add_overlay!(gui, store, beam, target; shown, kwargs...)
+
+Renders the overlay of the `beam` of the `gui`: a separate render handle of `target` (the `beam`
+or its central beam, see `_central_beam`) with the `kwargs`, stored as `store[beam]`. Only its
+plots for which `shown(plot)` holds are visible, and only while the `beam` is switched on. Like the
+beams, it is dimmed while the trace is outdated and clipped with `clip_beams`.
+"""
+function _add_overlay!(gui::LiveView, store::IdDict, beam, target; shown, kwargs...)
+    h = live_render!(gui.ax, target; kwargs..., clip_planes = Plane3f[])
+    plots = Any[p for p in _beam_plots(h) if shown(p)]
+    visible = _beam_on(gui, beam)
+    foreach(p -> p.visible[] = visible && any(q -> q === p, plots), _beam_plots(h))
+    store[beam] = h
+    gui.beams.shown[h] = plots
+    # A new overlay of outdated beams is dimmed like them
+    gui.trace.stale && _dim_beams!(gui)
+    _apply_clip_planes!(gui)
+    return h
+end
+
+"""Removes the overlay `store[beam]` of the `gui`, see `_add_overlay!`; it is never updated again."""
+function _remove_overlay!(gui::LiveView, store::IdDict, beam)
+    h = pop!(store, beam)
+    delete!(gui.beams.shown, h)
+    foreach(p -> delete!(gui.trace.beam_alphas, p), _beam_plots(h))
+    remove_render!(h)
     return nothing
 end
 

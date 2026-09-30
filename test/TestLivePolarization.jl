@@ -205,6 +205,60 @@ const GUI = BeamletOpticsGUI
         GUI._trace!(gui)
         @test !gui.trace.stale
     end
+
+    @testset "sliders of the curve" begin
+        sys, pd = _system()
+        b = _pbeam([0.0, 0, 0])
+        gui = _live_view(sys => b)
+        E = GUI._scene_size(gui)
+        v0 = GUI._pol_view(gui, b)
+        @test v0.λ ≈ E / 40 && v0.amp ≈ v0.λ / 4
+        GUI._set_polarization!(gui, b, true)
+        _line() = only(p for p in render_plots(gui.beams.pol[b]) if p isa Makie.Lines)
+        # the beam runs along +y, the field along x: the offset of the curve along x
+        _amp() = maximum(abs(q[1]) for q in _curve(_line()))
+        n0 = length(_curve(_line()))
+        @test _amp() ≈ v0.amp rtol = 1e-2
+        # half the wavelength: twice the points (a fixed number per wavelength), same amplitude
+        GUI._set_pol_view!(gui, b; λ = v0.λ / 2)
+        @test length(_curve(_line())) / n0 ≈ 2 rtol = 0.05
+        @test _amp() ≈ v0.amp rtol = 1e-2
+        GUI._set_pol_view!(gui, b; amp = 3 * v0.amp)
+        @test _amp() ≈ 3 * v0.amp rtol = 1e-2
+        # display only
+        @test !gui.trace.stale
+        # the slider positions map back to the values, on the logarithmic ranges
+        @test GUI._log_value(GUI._pol_position(gui, b, :λ), GUI._pol_range(gui, Val(:λ), b)) ≈ v0.λ / 2
+        GUI._set_pol_position!(gui, b, :λ, 1.0)
+        @test GUI._pol_view(gui, b).λ ≈ E / 2
+        @test GUI._pol_text(gui, b, :λ) == GUI._length_string(E / 2)
+        # values set while the curve is off are kept for the next "on"
+        GUI._set_polarization!(gui, b, false)
+        GUI._set_pol_view!(gui, b; λ = v0.λ)
+        GUI._set_polarization!(gui, b, true)
+        @test length(_curve(_line())) / n0 ≈ 1 rtol = 0.05
+        @test _amp() ≈ 3 * v0.amp rtol = 1e-2
+        close(gui)
+
+        # the beam_kwargs give the start values
+        gui = _live_view(sys => b; beam_kwargs = Dict(b => (; pol_λ = 1e-3, pol_amplitude = 2e-4)))
+        @test GUI._pol_view(gui, b) == (; λ = 1e-3, amp = 2e-4)
+        close(gui)
+        # astigmatic beamlets: the amplitude as a multiple of the beam radius (BMO's pol_scale)
+        agb = AstigmaticGaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 633e-9, 1e-3)
+        gui = _live_view(sys => agb; beam_kwargs = Dict(agb => (; pol_scale = 2.0)))
+        @test GUI._pol_view(gui, agb).amp == 2.0
+        @test GUI._pol_text(gui, agb, :amp) == "2.0 × w"
+        @test GUI._pol_range(gui, Val(:amp), agb) == (0.1, 10.0)
+        GUI._set_polarization!(gui, agb, true)
+        # the largest distance of the curve from the axis of the beamlet (along +y) scales with it
+        _offset() = maximum(hypot(q[1], q[3]) for p in render_plots(gui.beams.pol[agb])
+                            if p isa Makie.Lines for q in _curve(p))
+        d2 = _offset()
+        GUI._set_pol_view!(gui, agb; amp = 1.0)
+        @test d2 / _offset() ≈ 2 rtol = 1e-3
+        close(gui)
+    end
 end
 
 end

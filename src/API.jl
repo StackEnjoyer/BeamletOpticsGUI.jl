@@ -281,17 +281,25 @@ function pose_card_rows end
 """
     beam_card_rows(beam)
 
-The row `beam` on the card of a beam, beam group or source `beam` in [`live_view`](@ref), see
-[`card_rows`](@ref): the toggle "on" switches the beam off and on. A beam that is off is neither
-solved nor drawn, its rays are removed, such that detectors and measurements ignore it, and only
-its source marker stays; with `auto_trace = false` the switch marks the beams as outdated instead
-of solving. For a polarized beam (its rays are `PolarizedRay`s, e.g. an
-`AstigmaticGaussianBeamlet`) the row adds the toggle "polarization", which draws the polarization
-along the beam, for a beam group along its central beam (the one starting nearest the axis of
-the group). It only changes the display. The initial states are set by the `live_view` keywords
-`beams_off` and `beam_kwargs` (`show_polarization = true`).
+The rows of the beam on the card of a beam, beam group or source `beam` in [`live_view`](@ref),
+see [`card_rows`](@ref). The row `beam` has the toggle "on", which switches the beam off and on.
+A beam that is off is neither solved nor drawn, its rays are removed, such that detectors and
+measurements ignore it, and only its source marker stays; with `auto_trace = false` the switch
+marks the beams as outdated instead of solving.
 
-The card of an own beam type adds the row after its own rows, e.g.
+Gaussian beamlets (`GaussianBeamlet`, `AstigmaticGaussianBeamlet` and groups of them) add the
+toggle "beams", which draws the generating beams (chief, divergence and waist rays) as the static
+`render!` with `show_beams = true` does. Polarized beams (their rays are `PolarizedRay`s, e.g. an
+`AstigmaticGaussianBeamlet`) add the toggle "polarization", which draws the polarization along
+the beam, and the rows `pol λ` and `pol amp` with sliders for the wavelength [mm] of the drawn
+curve and its amplitude ([mm], of astigmatic beamlets as a multiple of the beam radius), on
+logarithmic scales over ranges given by the size of the scene. Of a beam group, the generating
+beams and the polarization are drawn for its central beam, the one starting nearest the axis of
+the group. These change the display only. The initial states are set by the `live_view` keywords
+`beams_off` and `beam_kwargs` (`show_beams`, `show_polarization`, `pol_λ`, `pol_amplitude`,
+`pol_scale`).
+
+The card of an own beam type adds the rows after its own rows, e.g.
 
 ```julia
 BeamletOpticsGUI.card_rows(b::MyBeam) = (pose_card_rows(b)..., beam_card_rows(b)...)
