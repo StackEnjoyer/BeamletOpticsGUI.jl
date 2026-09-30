@@ -47,7 +47,7 @@ const GUI = BeamletOpticsGUI
     @test kept(() -> GUI._set_polarization!(gui, pol, false))
     @test kept(() -> GUI._set_beam_on!(gui, pol, false))
     @test kept(() -> GUI._set_beam_on!(gui, pol, true))
-    @test kept(() -> redirect_stderr(() -> GUI._fail!(gui, ErrorException("x")), devnull))
+    @test kept(() -> @test_logs (:error, r"solving the systems failed") GUI._fail!(gui, ErrorException("x")))
     @test kept(() -> GUI._trace!(gui))
     @test kept(() -> GUI._add_clip_plane!(gui, [0.0, 0.05, 0.0], [0.0, 1.0, 0.0]))
     @test kept(() -> GUI._add_measure_point!(gui, [0.0, 0.05, 0.0], nothing))

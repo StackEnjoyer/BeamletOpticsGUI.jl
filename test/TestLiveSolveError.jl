@@ -33,7 +33,8 @@ const GUI = BeamletOpticsGUI
     @testset "two kinds of beams on one detector ($layout)" for layout in (:compact, :app)
         sys, pd, b1, b2 = _fixture()
         # the initial solve fails, the window opens with the message at the detector
-        gui = _live_view(sys => b1, sys => b2; layout, labels = Dict(pd => "PD"))
+        gui = @test_logs (:error, r"solving the systems failed") _live_view(sys => b1, sys => b2; layout,
+            labels = Dict(pd => "PD"))
         c = _message(gui)
         @test !isnothing(c)
         @test gui.trace.stale
@@ -42,14 +43,14 @@ const GUI = BeamletOpticsGUI
         @test c.obj.point ≈ Point3f(0, 0.1, 0)
         @test GUI._title(c.obj) == "Solve failed"
 
-        # Esc closes it, the same failure does not open it again
+        # Esc closes it, the same failure does not open it again (and is logged only once)
         _key!(gui, Keyboard.escape)
         @test isnothing(_message(gui))
-        GUI._trace!(gui)
+        @test_logs GUI._trace!(gui)
         @test gui.trace.stale
         @test isnothing(_message(gui))
         # a different error does
-        GUI._fail!(gui, ErrorException("another error"))
+        @test_logs (:error, r"solving the systems failed") GUI._fail!(gui, ErrorException("another error"))
         @test _texts(_message(gui))[1] == "another error"
 
         # a successful solve closes the message
@@ -58,7 +59,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(_message(gui))
         @test isnothing(gui.trace.error)
         # after a successful solve, the same failure opens it again
-        GUI._set_beam_on!(gui, b2, true)
+        @test_logs (:error, r"solving the systems failed") GUI._set_beam_on!(gui, b2, true)
         @test !isnothing(_message(gui))
         close(gui)
     end
@@ -69,7 +70,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(_message(gui))
         # solve_system! fails for this beam
         gui.pairs[1] = gui.pairs[1].first => nothing
-        GUI._trace!(gui)
+        @test_logs (:error, r"solving the systems failed") GUI._trace!(gui)
         c = _message(gui)
         @test !isnothing(c)
         t = _texts(c)
@@ -82,7 +83,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(_message(gui))
         @test !any(x -> x.obj isa GUI._SolveError, gui.cards.all)
         layout == :app && @test !any(d -> d.obj isa GUI._SolveError, gui.layout.inspector.pinned)
-        GUI._fail!(gui, ErrorException("a third error"))
+        @test_logs (:error, r"solving the systems failed") GUI._fail!(gui, ErrorException("a third error"))
         @test !isnothing(_message(gui))
         # a click in the 3D view closes it as well
         gui.controls.on_click(nothing)

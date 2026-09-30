@@ -485,10 +485,13 @@ _points(h) = only(render_plots(h))[1][]
         items(job) = something(BMO.progress_state(job.sinks[1]), (; count = -1)).count
 
         job = slow_job()
-        # no window while the loop has run shorter than `progress_delay`
+        # no window while the loop has run shorter than `progress_delay`: a delay with margin, such
+        # that a pause of a slow CI runner (compilation, GC) before the poll does not reach it
+        gui.trace.progress_delay = 10.0
         @test waitfor(() -> items(job) == 0)
         GUI._poll!(gui, job)
         @test !gui.trace.progress.visible[]
+        gui.trace.progress_delay = 0.2
         # A solve longer than `progress_delay` continues in the background, where its loop, which
         # has run that long, shows its window at once
         @test !GUI._run!(gui, job, "tracing, Esc cancels")
