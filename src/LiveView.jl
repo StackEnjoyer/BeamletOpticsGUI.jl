@@ -558,7 +558,9 @@ a new measurement, switching the toggle off clears it.
 The key `g` zooms to the selected object, or to all systems if nothing is selected, while the view
 direction is kept. "home" restores the view when the window was shown. The "views" menu sets one
 of the `views`, "save view" adds the current view as `"view n"` and prints it as an entry of the
-`views` kwarg, e.g. `"view 1" => ([0.1, -0.2, 0.3], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0])`.
+`views` kwarg, e.g. `"view 1" => ([0.1, -0.2, 0.3], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0])`. The view
+is fitted to the scene when the window is shown and kept afterwards, also when plots are added,
+e.g. the generating beams or the polarization curve of a beam, a clip plane or a measurement.
 
 # Adaptive tracing
 

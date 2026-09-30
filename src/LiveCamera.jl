@@ -208,6 +208,17 @@ function _go_home!(gui::LiveView)
 end
 
 """
+    _keep_camera!(gui)
+
+Keeps the view of the `gui` when plots are added to the open window, e.g. an overlay of a beam, a
+clip plane or a measurement: Makie's `plot!` into the `LScene` then calls `reset_limits!`, whose
+`center!` would move the camera to fit the scene. Called once the window is shown, after the view
+was fitted to the scene; `center!` then only updates the bounds of the camera (and its depth
+range), the reset key of `Camera3D` (Ctrl + left click) still fits the view.
+"""
+_keep_camera!(gui::LiveView) = (cameracontrols(gui.ax.scene).settings.center[] = false; nothing)
+
+"""
 Connects the camera tools of the `gui`: the key `g` (zoom to the selection), the home button, the
 views menu and the save view button, and the animation and the home view via `tick`.
 """
@@ -225,6 +236,7 @@ function _connect_camera!(gui::LiveView)
         if !gui.camera.home_set
             gui.camera.home = _current_view(gui)
             gui.camera.home_set = true
+            _keep_camera!(gui)
         end
         _step_camera!(gui, tick.delta_time)
         return nothing
