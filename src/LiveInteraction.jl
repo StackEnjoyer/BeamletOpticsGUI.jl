@@ -93,6 +93,17 @@ end
 
 const _SPECTATOR_HINT = "spectator mode, v: edit, h: show controls"
 
+"""
+    _default_hint(ctrl) -> String
+
+The line of the controls overlay while its help is hidden (see the key `h`): the spectator hint,
+otherwise the mode, the step and the keys, see `_help_hint`. The `help_hint` of a
+`KinematicController` by default; a live view may replace it, e.g. the compact layout, whose help
+pill names the key `h` instead, see `_compact_hint`.
+"""
+_default_hint(ctrl) =
+    ctrl.spectator[] ? _SPECTATOR_HINT : _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
+
 function _help_hint(mode::Symbol, fine_step, fine_angle)
     step = _step_string(mode, fine_step, fine_angle)
     return "$mode mode, step $step, +/-: step, m: switch mode, v: spectator, h: show controls"
@@ -269,6 +280,10 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     help_shown::Bool
     # additional lines of the overlay, e.g. the keys of `live_view`
     help_extra::String
+    # the line of the overlay while the help is hidden, `ctrl -> String` (see `_default_hint`), and
+    # the distance of the top of the overlay from the top of the 3D view [px]
+    help_hint::Function
+    help_top::Observable{Float32}
     plots::Vector{AbstractPlot}
     listeners::Vector{Any}
     # last error of on_change, logged only once
@@ -421,14 +436,17 @@ function _gizmo_colors(ctrl::KinematicController, obj, kind::Symbol)
 end
 
 function _update_help!(ctrl::KinematicController)
+    if !ctrl.help_shown
+        ctrl.help_obs[] = ctrl.help_hint(ctrl)
+        return nothing
+    end
     if ctrl.spectator[]
-        ctrl.help_obs[] = ctrl.help_shown ? _SPECTATOR_HELP : _SPECTATOR_HINT
+        ctrl.help_obs[] = _SPECTATOR_HELP
         return nothing
     end
     help = _help_text(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier)
     isempty(ctrl.help_extra) || (help *= "\n" * ctrl.help_extra)
-    ctrl.help_obs[] = ctrl.help_shown ? help :
-                      _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
+    ctrl.help_obs[] = help
     return nothing
 end
 
@@ -1010,8 +1028,10 @@ function kinematic_controls!(
             fontsize = 20, align = (:center, :center), overdraw = true, clip_planes = Plane3f[])
     ]
     help_obs = Observable("")
+    help_top = Observable(10.0f0)
     # Drawn in the 2D scene of the axis, such that it does not count towards the limits of the scene
-    help_pos = Makie.lift(vp -> Point2f(minimum(vp)[1] + 10, maximum(vp)[2] - 10), ax.scene.viewport)
+    help_pos = Makie.lift((vp, top) -> Point2f(minimum(vp)[1] + 10, maximum(vp)[2] - top),
+        ax.scene.viewport, help_top)
     push!(plots, text!(ax.blockscene, help_pos; text = help_obs, space = :pixel,
         align = (:left, :top), fontsize = 14, color = :gray40))
 
@@ -1024,7 +1044,8 @@ function kinematic_controls!(
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
         nothing, _HistoryEntry[], _HistoryEntry[], nothing,
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
-        gizmo_size, gizmo_visible, help_obs, show_help, "", plots, Any[], nothing, obj -> false,
+        gizmo_size, gizmo_visible, help_obs, show_help, "", _default_hint, help_top, plots, Any[],
+        nothing, obj -> false,
         () -> nothing, () -> false
     )
 

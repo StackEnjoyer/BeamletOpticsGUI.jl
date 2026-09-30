@@ -83,15 +83,14 @@ const GUI = BeamletOpticsGUI
         @test_logs _key!(gui, Keyboard.t)
         close(gui)
 
-        # without detector panels: a new column, the rows below the 3D view span both columns
+        # without detector panels: a new column next to the 3D view, the only other part of the figure
         gui, _, _ = _fixture(; detectors = [])
         @test isnothing(gui.layout.panels)
         layout, n = _counted_panel!(gui, "Power")
         grid = gui.layout.panels
         @test GLB.gridcontent(grid).span.cols == 2:2
         @test GLB.gridcontent(GLB.gridcontent(layout).parent).span.rows == 1:1
-        @test GLB.gridcontent(gui.layout.status_row).span.cols == 1:2
-        @test GLB.gridcontent(gui.layout.tool_row).span.cols == 1:2
+        @test size(gui.fig.layout) == (1, 2)
         @test n[] == 1
         close(gui)
     end
@@ -160,11 +159,10 @@ const GUI = BeamletOpticsGUI
         end
         @test content isa GridLayout
         if layout == :compact
-            # a row above the status row, over the width of the window
-            box = GLB.gridcontent(content).parent
-            @test GLB.gridcontent(box).span.rows.stop + 1 ==
-                  GLB.gridcontent(gui.layout.status_row).span.rows.start
-            @test GLB.gridcontent(box).span.cols == 1:2
+            # an entry of the tool rail, which opens the controls in a popover next to it
+            item, part = only(gui.layout.overlay.sections)
+            @test item.label[] == "Mine"
+            @test GLB.gridcontent(content).parent === part.content
         else
             # a section of the left sidebar
             @test last(gui.layout.sections[:left]) == ("Mine" => content)
@@ -277,15 +275,15 @@ const GUI = BeamletOpticsGUI
         bad = add_tool!(_ -> error("broken tool"), gui, "Bad")
         @test_logs (:error, r"tool \"Bad\"") (bad.clicks[] += 1)
         if layout == :compact
-            # text widgets in the tool row, which ends with its filler
-            @test b isa Button
-            @test b.label[] == "Tool (2)"
-            @test t isa Toggle
-            row = gui.layout.tool_row
-            filler = only(GLB.contents(row[1, GLB.ncols(row)]))
-            @test filler isa Label && filler.text[] == ""
-            # the compact layout shows the name, not the icon
-            @test own isa Button && own.label[] == "Own"
+            # entries of the tool rail with the icon and the name, below the built-in tools
+            rail = gui.layout.overlay.rail_tools
+            @test all(x -> x isa GUI._OverlayItem && GLB.gridcontent(x.box).parent === rail,
+                (b, t, own, own_toggle))
+            @test b.label[] == "Tool (2)" && !b.toggle
+            @test t.toggle && t.label[] == "Toggle"
+            @test own.label[] == "Own"
+            row(x) = GLB.gridcontent(x.box).span.rows.start
+            @test row(gui.widgets.export_button) < row(b) < row(t) < row(own)
         else
             # icon buttons in the toolbar group `:user` before "Help"
             @test b isa GUI._IconButton

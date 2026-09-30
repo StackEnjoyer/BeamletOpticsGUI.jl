@@ -13,7 +13,7 @@ const GUI = BeamletOpticsGUI
             :clip_beams, :sources, :measure, :export, :panel_left, :panel_right, :panel_bottom,
             :help, :eye, :eye_off, :expand, :collapse, :lens, :mirror, :detector, :source, :group,
             :clip_plane, :mesh, :object, :system, :beamsplitter, :polarizer, :pin, :pinned, :chart,
-            :float, :dock, :warning)
+            :float, :dock, :warning, :more, :search, :tune)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)
@@ -21,8 +21,9 @@ const GUI = BeamletOpticsGUI
             @test count(c -> c isa Makie.ClosePath, icon.commands) >= 1
             bb = Makie.bbox(icon)
             @test all(minimum(bb) .>= -0.5) && all(maximum(bb) .<= 0.5)
-            # Not a degenerate path
-            @test all(Makie.widths(bb) .> 0.2)
+            # Not a degenerate path; the three dots of :more are flat by design
+            @test name === :more ? Makie.widths(bb)[1] > 0.2 && Makie.widths(bb)[2] > 0.1 :
+                  all(Makie.widths(bb) .> 0.2)
             # Cached: parsed once
             @test GUI._icon(name) === icon
         end

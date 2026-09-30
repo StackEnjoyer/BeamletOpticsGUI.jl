@@ -35,11 +35,15 @@ and `profiles`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects that are rendered,
 selected, moved and hidden like the components, but never traced, e.g. a housing from an STL file
-(`MeshDummy`); the card of such mechanics has an opacity slider. `layout = :app` arranges the window like an application, with a toolbar,
+(`MeshDummy`); the card of such mechanics has an opacity slider. `background_card = obj` (or
+`gui -> obj`, `nothing` for none) shows the card of an object without a place in the scene, e.g.
+an environment, after a click on the empty background while nothing is selected; its
+[`card_rows`](@ref) get `obj` itself. `layout = :app` arranges the window like an application, with a toolbar,
 collapsible sidebars (object tree with selection and visibility, sliders, properties of the
 selection), an analysis dock with a tab per detector panel (only the panel of the active tab is
 computed after a solve) and a status bar, in the colors of `theme = :light` or `:dark`; the default
-`layout = :compact` places the panels next to the 3D view and the tools below it. The component
+`layout = :compact` fills the window with the 3D view, places the panels on its right and shows the
+tools, the status and the help on demand over the 3D view. The component
 cards and the progress window have the colors of the `theme` in both layouts. Own panels,
 widgets and tools are added to either layout via [`add_panel!`](@ref), [`add_controls!`](@ref)
 and [`add_tool!`](@ref). All other keyword arguments are passed to [`kinematic_controls!`](@ref). See
@@ -89,8 +93,9 @@ function add_panel! end
     add_controls!(f, gui, title::AbstractString) -> GridLayout
 
 Adds own widgets to the [`live_view`](@ref) window `gui`, placed by its layout: with
-`layout = :compact` in a row named `title` above the status row, spanning the width of the window;
-with `layout = :app` as a section `title` of the left sidebar, below "Parameters". `f(layout)`
+`layout = :compact` as an entry `title` of the tool rail (the button "⋯"), which opens the widgets
+in a popover next to the rail; with `layout = :app` as a section `title` of the left sidebar, below
+"Parameters". `f(layout)`
 builds the widgets (e.g. `Button`, `Toggle`, `Menu`, `Textbox`, or an own widget type, see
 [`card_input`](@ref)) into the given `GridLayout` and connects them. Returns the layout.
 
@@ -127,8 +132,8 @@ function add_controls! end
 Adds a tool to the [`live_view`](@ref) window `gui`: a button that calls `f(gui)`, or with
 `toggle = true` a toggle that calls `f(gui, active::Bool)` whenever it is switched. With
 `layout = :app`, an icon button (or toggle) in the toolbar, before "Help", with the `icon` and the
-`tooltip`; with `layout = :compact`, a button (or a toggle with a label) named `name` in the row
-below the status line.
+`tooltip`; with `layout = :compact`, an entry (icon and `name`) of the tool rail opened by the
+button "⋯".
 
 `icon` is a name of the icon set of the app layout, e.g. `:measure`, `:export` or `:chart` (an
 unknown name throws an `ArgumentError` that lists the valid ones, in any layout), or an own
@@ -248,7 +253,9 @@ dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams,
 sources add the toggles of [`beam_card_rows`](@ref), a source whose rays can be regenerated (see
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 the mode and the color scale of its detector panel, mechanics (`NonInteractableObject`, e.g. a
-`MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
+`MeshDummy`, and `IntersectableObject`) a slider for their opacity. The cards of groups and other
+objects that consist of objects (e.g. a `DoubletLens`) end with the dropdown of their parts, see
+[`parts_card_rows`](@ref). The card of a system
 (`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
 shows the number of its objects, the number of rays of its sources that are on and the duration of
 the last solve. Add a method for an own type to show its properties or controls on its card, e.g.
@@ -306,6 +313,33 @@ BeamletOpticsGUI.card_rows(b::MyBeam) = (pose_card_rows(b)..., beam_card_rows(b)
 ```
 """
 function beam_card_rows end
+
+"""
+    parts_card_rows(obj) -> Tuple{Vararg{CardRow}}
+
+The row "part" on the card of `obj` in [`live_view`](@ref), see [`card_rows`](@ref): a dropdown of
+the parts of `obj`, one level at a time, for an object that consists of objects, i.e. whose
+`BeamletOptics.shape_trait_of` is `MultiShape` (a group, a `DoubletLens`, `TripletLens`,
+`CubeBeamsplitter`, `LinearPolarizer`, plate beamsplitter or an own `AbstractObjectGroup`); `()` for
+any other object, e.g. a `SingleShape` object such as a lens, and anything else.
+
+The dropdown ("choose…") lists "‹ <parent>" if `obj` is a part of another object, then the direct
+parts of `obj`, i.e. the elements of `BeamletOptics.shape(obj)` that are objects (beams and bare
+shapes are left out), in their order and without hidden ones, named like in the rest of the live
+view (the `labels` of [`live_view`](@ref), else by type and running index); a part with parts of
+its own ends with " ›". Choosing an entry shows the card of that object, whose own dropdown shows
+the next level: a movable object, e.g. an object of a group or the doublet of a lens, is selected
+for moving like by a click in the 3D view; a part of an object that is not a group, e.g. a lens of
+a doublet, is shown without being selected for moving, its pose boxes reject inputs. Clicks in the 3D view select groups and their
+objects only, never the parts of other objects.
+
+The card of an own object type adds the row at its end, e.g.
+
+```julia
+BeamletOpticsGUI.card_rows(a::MyAssembly) = (pose_card_rows(a)..., parts_card_rows(a)...)
+```
+"""
+function parts_card_rows end
 
 """
     card_actions(obj)

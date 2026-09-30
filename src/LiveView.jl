@@ -89,6 +89,11 @@ and optionally, with defaults for any layout,
   docks them (`_card_tools!(layout, c)`).
 - `_outside_view(gui)`: `true` while the mouse is over a part of the layout whose clicks must not
   reach the controls of the 3D view, e.g. the sidebars of the app layout (none by default)
+- `_layout_obstacles(gui) -> Vector{Rect2f}`: the rectangles [figure px] of the parts of the layout
+  that lie over the 3D view and are shown, which the floating cards keep off besides the view cube,
+  e.g. the overlay of the compact layout (none by default)
+- `_over_layout(gui) -> Bool`: `true` while the mouse is over a part of the layout that lies over the
+  3D view, whose presses and scrolling the camera must not get (`false` by default)
 - hooks called by the shared logic: `_on_solved!(gui)` after a solve is shown,
   `_on_selected!(gui)` after the selection changed, `_on_clipping!(gui)` after clipping was
   switched, `_on_clip_planes_changed!(gui)` after a clip plane was added or removed,
@@ -118,7 +123,7 @@ and optionally, with defaults for any layout,
 The built-in tools (buttons and toggles such as trace, clipping or export) are declared once in
 `_BUILTIN_TOOLS` (see `_ToolSpec`). A layout implements `_tool_widget(layout, group, toggle::Val,
 label, icon, tooltip, active)`, which creates a tool of a `group` in the place of the layout, e.g.
-a labelled button in a row or an icon in a toolbar; `_build_tools(layout, spec)` builds all tools
+an entry of a tool rail or an icon in a toolbar; `_build_tools(layout, spec)` builds all tools
 that `_has_tool(layout, Val(role))` selects (by default those with a field in `_LayoutWidgets`)
 this way, and [`add_tool!`](@ref) its tools with the group `:user`.
 
@@ -278,7 +283,9 @@ groups, whose plots are invisible, see the action "hide" of the cards), the `opa
 set via their card (see `_set_opacity!`), and the automatic `names` of objects without a label
 with the `counters` of their running indices per type, see `_name_objects!`. `inspected` is shown
 on the card of the selection, but not selected for moving: a system or an object that is not
-movable, see `_inspect!`; it and `controls.selected[]` exclude each other.
+movable, see `_inspect!`; it and `controls.selected[]` exclude each other. `parents` maps each part
+of an object (an object of a group or of a `MultiShape` object, e.g. a lens of a doublet) to that
+object, see `_map_parts!`; the top-level objects have no entry.
 """
 Base.@kwdef mutable struct _ObjectState
     menu::Vector{Any} = Any[]
@@ -287,6 +294,7 @@ Base.@kwdef mutable struct _ObjectState
     names::IdDict{Any, String} = IdDict{Any, String}()
     counters::Dict{String, Int} = Dict{String, Int}()
     inspected::Any = nothing
+    parents::IdDict{Any, Any} = IdDict{Any, Any}()
 end
 
 """
@@ -359,7 +367,8 @@ The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `c
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. The
 objects of the `extras` kwarg are rendered, selectable and movable, but not part of any system,
 see `_live_render_extras!`. Panels, widgets and tool keys added via the customization API are in
-`custom`, see `LiveCustom.jl`.
+`custom`, see `LiveCustom.jl`. `background_card` is the kwarg of [`live_view`](@ref): the object
+(or `gui -> object`) whose card a click on the empty background shows, see `_show_background!`.
 
 The type parameter `L` is the type of the `layout`, see `AbstractLiveLayout`: `CompactView` and
 `AppView` are the `LiveView`s of `live_view(...; layout = :compact)` and `layout = :app`.
@@ -387,6 +396,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     cards::_CardState
     objects::_ObjectState
     beams::_BeamState = _BeamState()
+    background_card::Any = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -497,6 +507,16 @@ Objects without a `labels` entry are named by their type and a running index, e.
 layout. The rows of an own type are added by a method of [`card_rows`](@ref), see the page "Live
 view widgets" of the documentation.
 
+The card of a group or of another object that consists of objects (a `MultiShape` object, e.g. a
+`DoubletLens`, a `CubeBeamsplitter` or a `LinearPolarizer`) ends with the dropdown "part", one
+level at a time, see [`parts_card_rows`](@ref): "‹ <parent>" (except at the top level), then its
+direct parts that are not hidden, those with parts of their own marked " ›". Choosing a part shows
+its card, with the next level in its own dropdown: a movable object, e.g. an object of a group, is
+selected like by a click in the 3D view, a part of an object that is not a group, e.g. a lens of a
+doublet, is shown without being selected for moving, like an object that is not movable (its pose boxes reject inputs), with its
+card at the object it belongs to. Clicks in the 3D view select groups and their objects as before
+and never a part of such an object.
+
 Beside the component cards, the card of a system shows the number of its objects, the number of
 rays and the duration of the last solve. It is shown, without a gizmo and without a selection
 (`controls.selected[]` stays `nothing`), by selecting the system entry ("System 1", ...) in the
@@ -504,14 +524,29 @@ component menu. An object that is not movable is shown on its card in the same w
 being selected, and its pose boxes reject inputs with a message in the status line. `Esc`, a click
 on empty space or the selection of an object closes such a card.
 
-The row below the status line holds a menu of the systems and all movable objects (each system
-entry followed by its objects, the objects of a group indented after the group, without clip
-planes), which selects an object like a click in the 3D view, and "show all", which shows all
-hidden objects. The last cell of the status row is the info label: the duration of the last solve
-(or of the preview), the number of rays and the projection.
+In the compact layout, the tool rail (the button "⋯" at the bottom left) holds a menu of the systems
+and all movable objects ("select component"; each system entry followed by its objects, the objects
+of a group indented after the group, without clip planes), which selects an object like a click in
+the 3D view, and "Show all", which shows all hidden objects. The info label, the duration of the
+last solve (or of the preview), the number of rays and the projection, appears together with the
+status line as a toast at the bottom of the 3D view for 3 s after each change.
 
-The "Export" button prints the changed poses as Julia code to `stdout` and copies it to the
+The "Export" button of the tool rail prints the changed poses as Julia code to `stdout` and copies it to the
 clipboard, see [`export_changes`](@ref).
+
+# Background card
+
+`background_card = sky` shows the card of an object without a place in the scene, e.g. the
+environment of a telescope, after a click on the empty background of the 3D view (no component, no
+beam, no drag) while nothing is selected and no card of an inspected object, beam point,
+measurement or failed solve is shown; with a selection, the click only deselects as before, and
+while measuring it shows no card. `background_card = gui -> obj` is evaluated at each such click,
+e.g. to show the card only in some state of the view, and may return `nothing` for no card. The card
+has the rows of [`card_rows`](@ref) of the object, whose `value(gui, obj)` and `on(gui, obj, v)` get
+the object itself, the title of its `labels` entry (else its type) and no actions. It appears at the
+click, where the ray through the mouse meets the plane through the `lookat` point of the camera
+perpendicular to the view direction, and follows the view like the card of an inspected beam
+point: `Esc` or another click closes it, its pin keeps it (docked in the app layout).
 
 # Extras and opacity
 
@@ -600,8 +635,8 @@ succeeded, which also closes it.
 With `auto_trace = false`, the systems are not solved after each change, which is useful for
 systems that take long to solve. Objects and sliders still update the 3D view, while the beams are
 dimmed and the status line shows that they are outdated. The systems are solved by the
-`Trace (t)` button below the 3D view or the key `t`. The toggle next to the button switches auto
-tracing on or off, switching it on solves the systems if they are outdated. The view also starts
+`Trace (t)` button of the tool rail (compact layout, opened by "⋯") or the toolbar (app layout), or
+the key `t`. The "Auto trace" toggle next to it switches auto tracing on or off, switching it on solves the systems if they are outdated. The view also starts
 untraced: the beams are dimmed and the status line shows "not traced, press t to trace" until the
 first `t`, the button or switching auto tracing on solves the systems.
 
@@ -641,8 +676,8 @@ its normal is the green axis. Moving a plane does not solve the systems. The key
 | `Shift+c` | flip the selected clip plane             |
 
 Makie supports at most 8 clip planes. The markers of the sources and planes and the controls are
-never clipped, the beams only with `clip_beams = true` or the "clip beams" toggle below the 3D
-view. The selection box of a partly clipped component only covers its visible part.
+never clipped, the beams only with `clip_beams = true` or the "Clip beams" toggle of the
+tool rail. The selection box of a partly clipped component only covers its visible part.
 
 The key `g` zooms to the selection, see "Camera tools".
 
@@ -683,24 +718,42 @@ actions in the 3D view are unchanged:
   projection
 
 The sidebars and the dock can be collapsed via the toolbar, the 3D view then takes their space.
-The component menu of the compact layout is replaced by the tree. In the compact layout, the widgets are at
-fixed positions of `gui.fig`, e.g. the detector panels in `gui.fig[1, 2]`, next to which users
-may add their own axes.
+The component menu of the compact layout is replaced by the tree.
+
+# Compact layout
+
+With `layout = :compact`, the 3D view fills the window and the detector panels (and the panels of
+[`add_panel!`](@ref)) are on its right, in `gui.fig[1, 2]`, next to which users may add their own
+axes. There are no rows below the 3D view; everything else appears on demand over the 3D view:
+
+- a help pill at the top left ("? h keys"); a click on it or the key `h` shows the keys of the
+  controls
+- the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
+  Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools of
+  [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and one entry "Sliders" for
+  the `sliders`. Such an entry opens its widgets in a popover next to the rail. `Esc`, "⋯" or a
+  click outside close the rail (`Esc` closes an open popover first).
+- the mouse over the view cube shows the camera popover below it: home, fit (`g`), the views menu,
+  save view and orthographic; it hides 0.3 s after the mouse left the cube and the popover
+- the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
+  for 3 s after each change
+
+The floating cards keep off the pill, "⋯", the open rail and the popovers.
 
 # Own panels, controls and tools
 
-[`add_panel!`](@ref) adds an own panel (below the detector panels, or a tab of the dock of the app
-layout), [`add_controls!`](@ref) own widgets (a row above the status row, or a section of the left
-sidebar) and [`add_tool!`](@ref) a button or toggle, optionally with a key (in the tool row, or the
-toolbar). [`retrace!`](@ref) solves again after a change from code, e.g. from such a widget.
+[`add_panel!`](@ref) adds an own panel (next to the 3D view below the detector panels, or a tab of
+the dock of the app layout), [`add_controls!`](@ref) own widgets (an entry of the tool rail that
+opens them in a popover, or a section of the left sidebar) and [`add_tool!`](@ref) a button or
+toggle, optionally with a key (an entry of the tool rail, or an icon in the toolbar). [`retrace!`](@ref) solves again after a change from code, e.g. from such a widget.
 Widgets of a thing in the scene belong on its card, see [`card_rows`](@ref), own widget types on
 cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 
 # Keyword args
 
-- `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "App layout"
+- `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
 - `theme = :light`: colors, `:light` or `:dark`, of the whole window (background, cards, buttons,
-  menus, status row and progress window) in both layouts. For contrast on a dark 3D view, `:dark`
+  menus, status line and progress window) in both layouts. For contrast on a dark 3D view, `:dark`
   draws the rays, the markers and the dark materials of the render look (detectors, polarizers) in
   lighter colors; `:light` keeps the colors of the default look.
 - `size`: size of the figure, by default `(1400, 800)` for `:compact` and `(1600, 950)` for `:app`
@@ -732,7 +785,7 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 - `movable_sources = true`: shows an orange marker at each source, i.e. the beam or beam group of
   each pair, with which the source can be selected and moved like the components
 - `show_sources = true`: initial visibility of the source markers, which can be switched with the
-  "sources" toggle below the 3D view or the key `1`
+  "Sources" toggle of the tool rail or the key `1`
 - `labels = Dict()`: `obj => "name"` for the status line, the titles of the detector panels, the
   component menu and the variable names of [`export_changes`](@ref)
 - `trace_budget = 0.03`: [s] duration of a solve or panel update, above which tracing is deferred
@@ -740,11 +793,11 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 - `idle_delay = 0.2`: [s] pause of the movement after which deferred tracing runs
 - `clip_planes = []`: initial clip planes, a vector of `point => normal`, e.g.
   `[[0, 0.1, 0] => [0, 1, 0]]`, see "Clip planes"
-- `clip_beams = false`: clips the beams as well, can be switched with the "clip beams" toggle
+- `clip_beams = false`: clips the beams as well, can be switched with the "Clip beams" toggle
 - `view_cube = true`: shows a view cube in the top right corner of the 3D view, a click on a
   face, edge or corner switches to the corresponding standard view, see [`view_cube!`](@ref)
 - `orthographic = false`: starts the 3D view with orthographic instead of perspective projection,
-  can be switched with the "orthographic" toggle below the 3D view
+  can be switched with the "orthographic" toggle of the camera popover
 - `lighting = :studio`: lighting rig of the 3D view, see `BeamletOptics.studio_lighting!`, `:none`
   keeps the default lights of Makie
 - `edges = nothing`: draws the feature edges of the components, by default depending on the look,
@@ -756,6 +809,8 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   "Camera tools"
 - `progress_delay = 0.5`: [s] duration after which a solve continues in the background and a loop
   shows its progress window, see "Long solves"
+- `background_card = nothing`: an object, or a function `gui -> object or nothing`, whose card a
+  click on the empty background shows, see "Background card"
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -786,6 +841,7 @@ function live_view(
         views = [],
         progress_delay::Real = 0.5,
         extras = [],
+        background_card = nothing,
         kwargs...
     )
     isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
@@ -883,11 +939,13 @@ function live_view(
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
-        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state, widgets,
-        layout = lay)
+        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state, background_card,
+        widgets, layout = lay)
     gui_ref[] = gui
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
+    # The parents of the parts of groups and multi-shape objects, for the parts menu of the cards
+    _map_parts!(gui)
     # Objects must not change while a solve in the background traces them
     controls.before_change = () -> _cancel_solve!(gui)
     for (point, normal) in clip_specs
@@ -900,6 +958,11 @@ function live_view(
     _connect_inspection!(gui)
     _connect_camera!(gui)
     _connect_cards!(gui)
+    # The open dropdown of a menu on a card, e.g. the parts menu, takes the clicks, also where it
+    # reaches beyond its card
+    let over = controls.ignore_mouse
+        controls.ignore_mouse = () -> over() || _over_card_menu(gui)
+    end
     push!(controls.listeners, on(v -> v == gui.clip.beams || _set_clip_beams!(gui, v),
         gui.widgets.clip_beams_toggle.active))
     _connect_projection!(gui, orthographic)

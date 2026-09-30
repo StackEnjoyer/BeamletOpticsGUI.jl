@@ -17,7 +17,7 @@ const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, card_rows, pose_card_rows,
        beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!,
-       add_controls!, add_tool!, retrace!
+       add_controls!, add_tool!, retrace!, parts_card_rows
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -58,6 +58,7 @@ include("LiveCards.jl")
 include("LiveMeasure.jl")
 include("LiveCamera.jl")
 include("LiveCompact.jl")
+include("LiveOverlay.jl")
 include("LiveCardRows.jl")
 include("LiveExtras.jl")
 include("LiveApp.jl")
@@ -66,6 +67,7 @@ include("LiveAppTree.jl")
 include("LiveDock.jl")
 include("LiveInspector.jl")
 include("LiveInfo.jl")
+include("LiveBackground.jl")
 include("LiveSolveError.jl")
 include("LiveCustom.jl")
 # agent skill of the package

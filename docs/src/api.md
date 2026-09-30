@@ -33,6 +33,7 @@ view_cube!
 card_rows
 pose_card_rows
 beam_card_rows
+parts_card_rows
 card_actions
 CardRow
 CardWidget

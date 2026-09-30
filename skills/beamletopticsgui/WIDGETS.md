@@ -106,6 +106,47 @@ BeamletOpticsGUI.card_rows(b::MyBench) = (
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))
 ```
 
+## Recipe: the parts of a group on its card
+
+`parts_card_rows(obj)` is the row "part": a dropdown of the parts of `obj`, one level at a time
+("‹ parent", then the direct parts that are not hidden, " ›" after a part with parts of its own). It
+gives rows for objects with `shape_trait_of` `MultiShape` (groups, `DoubletLens`, `CubeBeamsplitter`,
+...) and `()` for any other object. The default cards already end with it; an own group type adds it
+to its own `card_rows` method:
+
+```julia
+BeamletOpticsGUI.card_rows(a::MyAssembly) = (pose_card_rows(a)..., parts_card_rows(a)...)
+```
+
+Choosing a part shows its card (with the next level in its own dropdown). A movable part of a group is
+selected for moving; a part of an object that is not a group (e.g. a lens of a doublet) is shown but
+not movable (its pose boxes reject inputs).
+
+## Recipe: a card for an object without a place in the scene
+
+`live_view(...; background_card = obj)` shows the card of `obj` on a click on the empty background
+while nothing is selected (a selection is only deselected by the click). `obj` is the object itself
+or a function `gui -> obj_or_nothing`, evaluated at each click (`nothing`: no card). The card has the
+rows of `card_rows(obj)` (no pose rows unless the method adds them), no actions, the title of the
+`labels` entry of `obj` (else its type), and `value(gui, obj)` and `on(gui, obj, v)` get `obj`. Use it
+for settings like an environment, which have no anchor in the scene (otherwise `add_controls!`). Abridged
+from `test/TestLiveBackgroundCard.jl`:
+
+```julia
+# Not a component: e.g. the environment of a telescope, without pose or shape
+mutable struct Sky
+    hour::Float64
+end
+
+BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
+    CardWidget(Slider; name = :hour, range = 0:0.5:24, width = 120,
+        value = (gui, s) -> s.hour, on = (gui, s, v) -> (s.hour = v)),
+    CardWidget(Label; name = :hour_text, value = (gui, s) -> "$(s.hour) h")),)
+
+sky = Sky(6.0)
+gui = live_view(system, beam; background_card = sky, labels = Dict(sky => "Sky"))
+```
+
 ## Recipe: your own widget type
 
 Any Makie block, or any type constructed as `T(position; attributes...)` that places itself at a
@@ -200,7 +241,7 @@ end
 ## Recipe: controls without a scene object
 
 1. `add_controls!(gui, title) do layout ... end` builds Makie blocks into `layout`; the layout places the
-   section (compact: row above the status row; app: left sidebar). Never use fixed `gui.fig[...]`
+   section (compact: entry of the tool rail "⋯", opens a popover; app: left sidebar). Never use fixed `gui.fig[...]`
    positions.
 2. A `Textbox` or `Menu` built inside `f` takes the keyboard automatically (3D keys ignored while
    focused or open); blocks added after `f` returns do not.

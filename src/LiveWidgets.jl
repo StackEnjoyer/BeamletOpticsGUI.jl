@@ -1,9 +1,10 @@
 #=
-Generic widgets of the live view: the property list and the segmented control
+Generic widgets of the live view: the property list, the segmented control and the parts menu
 =#
 
 using Makie: Button, Box, Label, Textbox, GridLayout, Observable, Point2f, RGBAf, BezierPath,
-             scatter!, text!, linesegments!, lift, on, rowgap!, colgap!, rowsize!, Fixed, Auto
+             scatter!, text!, linesegments!, lift, on, off, rowgap!, colgap!, rowsize!, Fixed, Auto,
+             Menu, Rect2f
 
 #=
 Property list
@@ -213,3 +214,74 @@ function _Segmented(parent, options::Vector{Pair{Symbol, String}}; theme,
     return _Segmented(grid, buttons, ks, sel)
 end
 
+#=
+Parts menu of the cards, see `parts_card_rows`
+=#
+
+# Text of the parts menu before a choice, and its only option without parts
+const _PARTS_PROMPT = "choose…"
+const _PARTS_NONE = "no parts"
+
+"""
+    _PartsMenu(pos; attributes...)
+
+The dropdown of the parts of an object on its card (see [`parts_card_rows`](@ref)): a `Menu` at the
+grid position `pos` with the `attributes`, whose prompt reads "choose…". [`card_show!`](@ref) sets
+its options, a vector of `label => object` pairs (see `_parts_options`), and shows the prompt again;
+its [`card_input`](@ref) `choice` is the chosen object. The menu itself never keeps a choice, since
+the card of the chosen object shows its own parts.
+"""
+struct _PartsMenu
+    menu::Menu
+    choice::Observable{Any}
+    listener::Any
+end
+
+function _PartsMenu(pos; attributes...)
+    # not searchable: the keys stay with the 3D view while it is open
+    menu = Menu(pos; options = [(_PARTS_NONE, nothing)], default = nothing, prompt = _PARTS_PROMPT,
+        searchable = false, attributes...)
+    choice = Observable{Any}(nothing)
+    # `nothing` is the prompt, i.e. no choice, see `card_show!`
+    listener = on(v -> isnothing(v) || (choice[] = v), menu.selection)
+    return _PartsMenu(menu, choice, listener)
+end
+
+card_input(m::_PartsMenu) = m.choice
+
+function card_show!(m::_PartsMenu, options)
+    opts = Tuple{String, Any}[(String(label), obj) for (label, obj) in options]
+    isempty(opts) && push!(opts, (_PARTS_NONE, nothing))
+    old = m.menu.options[]
+    same = length(old) == length(opts) &&
+        all(((a, b),) -> a[1] == b[1] && a[2] === b[2], zip(old, opts))
+    same || (m.menu.options[] = opts)
+    # the prompt, without a choice
+    m.menu.i_selected[] == 0 || (m.menu.i_selected[] = 0)
+    return nothing
+end
+
+"""Returns the open menu of the block `b` of a card, see `_over_card_menu`, or `nothing`."""
+_open_menu(_) = nothing
+_open_menu(m::Menu) = m.is_open[] ? m : nothing
+_open_menu(m::_PartsMenu) = _open_menu(m.menu)
+
+"""
+    _over_open_menu(m::Menu, p) -> Bool
+
+Returns `true` if the figure pixel `p` is over the dropdown of the open menu `m`, i.e. the scene of
+its options, which may lie outside of the card of the menu.
+"""
+function _over_open_menu(m::Menu, p)
+    for s in m.blockscene.children
+        r = Makie.viewport(s)[]
+        all(>(0), Makie.widths(r)) && Point2f(p) in Rect2f(r) && return true
+    end
+    return false
+end
+
+function Base.delete!(m::_PartsMenu)
+    off(m.listener)
+    delete!(m.menu)
+    return nothing
+end

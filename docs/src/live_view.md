@@ -23,14 +23,33 @@ display of that figure only, e.g. `display(fig; ssao = true)`.
 A [view cube](@ref "View cube") in the top right corner of the 3D view switches to the standard
 views with a click, clicks on the cube never select or deselect a component. The live view starts
 in the isometric view from the corner between `Top`, `Front` and `Right`, i.e. from `(1, -1, 1)`,
-such that the labels of the cube read correctly. The "orthographic" toggle below the 3D view,
-next to "auto trace" and "clip beams", switches between perspective and orthographic projection,
-`orthographic = true` starts with the latter. Moving along the view direction does not change an
+such that the labels of the cube read correctly. The "orthographic" toggle of the camera popover
+(compact layout, shown below the cube while the mouse is over it) or of the toolbar (app layout)
+switches between perspective and orthographic projection, `orthographic = true` starts with the
+latter. Moving along the view direction does not change an
 orthographic view, there `W`/`S` zoom like `U`/`O`:
 
 ```julia
 gui = live_view(system, beam; orthographic = true)
 ```
+
+With `layout = :compact` (default), the 3D view fills the window and the detector panels (and the
+panels of [`add_panel!`](@ref)) are on its right. Everything else appears on demand over the 3D
+view:
+
+- a help pill at the top left ("? h keys"); a click on it or the key `h` shows the keys of the
+  controls
+- the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
+  Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools
+  of [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and the entry "Sliders"
+  for the `sliders`. Such an entry opens its widgets in a popover next to the rail. `Esc`, "⋯" or
+  a click outside close the rail (`Esc` closes an open popover first).
+- the mouse over the view cube shows the camera popover below it: home, fit (`g`), the views menu,
+  save view and orthographic; it hides 0.3 s after the mouse left the cube and the popover
+- the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
+  for 3 s after each change
+
+The floating cards keep off the pill, "⋯", the open rail and the popovers.
 
 More than one `system => beam` pair can be shown in the same 3D view, e.g. the transmitter and
 receiver path of a lidar, which are solved with different sources:
@@ -44,8 +63,8 @@ gui = live_view(system_tx => beam_tx, system_rx => source_rx)
 Each source, i.e. the beam or beam group of each `system => beam` pair, is shown with an orange
 marker at its position, which points along its direction. A source is selected and moved via its
 marker like any component, after which the systems are solved again. For a beam, which only has a
-direction, the green axis is its direction. If a marker covers small components, the "sources"
-toggle below the 3D view or the key `1` hides all markers and shows them again, `show_sources =
+direction, the green axis is its direction. If a marker covers small components, the "Sources"
+toggle of the tool rail (or the toolbar) or the key `1` hides all markers and shows them again, `show_sources =
 false` starts with hidden markers. Pass `movable_sources = false` to omit the markers altogether.
 
 ## Extras and static context
@@ -93,7 +112,7 @@ component, its normal is the green axis. Moving a plane does not solve the syste
 | `Shift+c`  | Flip the selected clip plane, i.e. show the other side  |
 
 Planes can also be given at construction as `point => normal`. The beams are not clipped unless
-`clip_beams = true` or the "clip beams" toggle below the 3D view is switched on, the markers of
+`clip_beams = true` or the "Clip beams" toggle of the tool rail (or the toolbar) is switched on, the markers of
 the sources and planes are never clipped:
 
 ```julia
@@ -140,7 +159,8 @@ gui = live_view(system, beam; detectors = [pd => (:intensity, (; colorscale = :l
 
 ## Sliders
 
-`sliders` adds custom parameters below the 3D view. Each entry is `"label" => (range, callback)`
+`sliders` adds custom parameters: in the compact layout the entry "Sliders" of the tool rail, which
+opens them in a popover, in the app layout the section "Parameters" of the left sidebar. Each entry is `"label" => (range, callback)`
 (or `(range, callback, startvalue)`); `callback` is called with the current slider value and is
 expected to move objects or otherwise change the system:
 
@@ -183,8 +203,8 @@ the layout decides where the parts go:
 | function | `layout = :compact` | `layout = :app` |
 |:--|:--|:--|
 | [`add_panel!`](@ref) | below the detector panels, right of the 3D view | a tab of the analysis dock |
-| [`add_controls!`](@ref) | a row above the status row | a section of the left sidebar, below "Parameters" |
-| [`add_tool!`](@ref) | a button (or toggle) in the row below the status line | an icon button (or toggle) in the toolbar, before "Help" |
+| [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" |
+| [`add_tool!`](@ref) | an entry (icon and name) of the tool rail | an icon button (or toggle) in the toolbar, before "Help" |
 
 `add_panel!(f, gui, title)` calls `f(layout)` with the `GridLayout` of the new panel, into which it
 builds e.g. an `Axis` with plots. The function returned by `f` is called with the `gui` after each
@@ -251,7 +271,7 @@ end
 Solving a large system on every mouse-drag event can be too slow for smooth interaction. With
 `auto_trace = false`, `live_view` still updates the 3D view and the sliders immediately, but only
 solves the systems (and updates the beams and detector panels) on request: the `Trace (t)` button
-below the 3D view, the key `t`, or switching the "auto trace" toggle back on (which solves once if
+of the tool rail (compact layout) or the toolbar (app layout), the key `t`, or switching the "Auto trace" toggle back on (which solves once if
 the state is outdated). While outdated, the beam plots are dimmed and the status line shows a
 hint. With `auto_trace = false`, the view also starts untraced, with the hint "not traced, press t
 to trace" in the status line, such that a slow system opens right away.
@@ -297,7 +317,7 @@ the docstring of [`live_view`](@ref).
 Selecting a component, source or clip plane opens a card next to its bounding box in the 3D view,
 connected to it by a line. The card follows the camera and the component and stays inside the
 view, off the view cube and the other cards. With `theme = :light` (default) or `:dark`, the whole
-window has the colors of the theme, i.e. the cards, the menus, the buttons and the status row, in
+window has the colors of the theme, i.e. the cards, the menus, the buttons and the status line, in
 the compact layout as well as in the app layout. Objects without an entry in `labels` are named by
 their type and a running index, e.g. "Mirror 1" or "Clip plane 2", in the card, the status line and
 the menus, like in the object tree of the app layout:
@@ -377,14 +397,15 @@ as in the compact layout; the dock button in its head moves it back. Only the do
 room in the sidebar. The floating cards and the docked cards are built by the same code from the
 same declarations.
 
-The row below the status line holds the component menu and "show all". The menu lists the systems,
+In the compact layout, the tool rail (the button "⋯") holds the component menu ("select component")
+and "Show all". The menu lists the systems,
 each entry followed by its movable components and sources, by their `labels` (or automatic names),
 the objects of a group indented after the group. Selecting an entry selects the component like a
 click in the 3D view, a click in the 3D view shows the selected component in the menu; a system
 entry shows the card of the system, see above. The menu can be searched by typing while it is open.
-Clip planes are not listed. "show all" shows all hidden components. The last cell of the status row
-is the info label with the duration of the last solve (or of the preview), the number of rays and
-the projection; in the app layout, it is in the status bar.
+Clip planes are not listed. "Show all" shows all hidden components. The info label with the duration of the last solve (or of
+the preview), the number of rays and the projection appears with the status line as a toast at the
+bottom of the 3D view for 3 s after each change; in the app layout, it is in the status bar.
 
 ## Beam inspection and measuring
 
@@ -395,7 +416,7 @@ the radius of curvature `R` at this point (see `BeamletOptics.gauss_parameters`)
 precedence over beams, i.e. a click on a component still selects it. `esc` or a click elsewhere
 removes the marker.
 
-The "measure" toggle in the row of the component menu switches measuring on: two clicks on
+The "Measure" toggle of the tool rail (or the toolbar) switches measuring on: two clicks on
 components or beams show the distance between the positions of the components or the points of
 the beams [mm], its components Δ, and the angle between the optical axes (local y-axes) of two
 components, with a dashed line between the points. A third click starts a new measurement,
@@ -426,7 +447,7 @@ gui = live_view(system, beam;
 
 ## Exporting the changes
 
-The "Export" button next to the status line prints the changed poses as Julia code and copies it
+The "Export" button of the tool rail (or the toolbar) prints the changed poses as Julia code and copies it
 to the clipboard, such that an alignment found interactively can be pasted into the script that
 builds the system. [`export_changes`](@ref) returns the same code:
 

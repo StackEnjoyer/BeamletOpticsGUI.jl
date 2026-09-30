@@ -270,7 +270,8 @@ const GUI = BeamletOpticsGUI
         ax = gui.ax
         scene = ax.scene
         _click!() = (_press!(ax); _release!(ax))
-        beside = Tuple(Float64.(minimum(scene.viewport[]) .+ 20))
+        # Above the button "⋯" of the tool rail at the bottom left of the compact layout
+        beside = Tuple(Float64.(minimum(scene.viewport[]) .+ (20, 150)))
 
         # a click on the cube neither selects ...
         pick_plot[] = render_plots(render_children(gui.controls.h)[1])[1]

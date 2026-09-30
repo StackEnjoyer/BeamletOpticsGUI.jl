@@ -8,7 +8,7 @@ and how parameters without a scene object get their own controls. Everything wor
 [Live view](@ref).
 
 All code blocks assume `using GLMakie, BeamletOptics, BeamletOpticsGUI`, need a `Makie` backend with
-a window (`GLMakie`) and are therefore not run when the docs are built. They are run as tests in `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI, from which they are
+a window (`GLMakie`) and are therefore not run when the docs are built. Unless a recipe names another test file, they are run as tests in `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI, from which they are
 copied unchanged.
 
 ## Which path?
@@ -144,6 +144,48 @@ BeamletOpticsGUI.card_rows(b::MyBench) = (
 An object that is not movable is shown on its card in the same way (inspected instead of selected),
 its pose boxes reject inputs with a message in the status line.
 
+## Recipe: the parts of a group on its card
+
+[`parts_card_rows`](@ref)`(obj)` is the row "part" of a card: a dropdown of the parts of `obj`, one
+level at a time ("‹ parent", then the direct parts that are not hidden, marked " ›" if a part has
+parts of its own). It gives rows for objects whose `shape_trait_of` is `MultiShape` (groups,
+`DoubletLens`, `CubeBeamsplitter`, ...) and `()` for any other object. The cards of the types of
+BeamletOptics end with it already; an own group type adds it to its own `card_rows` method:
+
+```julia
+BeamletOpticsGUI.card_rows(a::MyAssembly) = (pose_card_rows(a)..., parts_card_rows(a)...)
+```
+
+Choosing a part shows its card, with the next level in its own dropdown. A movable part of a group is
+selected for moving, like by a click in the 3D view; a part of an object that is not a group, e.g. a
+lens of a doublet, is shown but not movable: its pose boxes reject inputs.
+
+## Recipe: a card for an object without a place in the scene
+
+The keyword `background_card` of [`live_view`](@ref) shows the card of an object that has no place in
+the scene, e.g. the settings of an environment, on a click on the empty background while nothing is
+selected (with a selection, the click only deselects). It is the object itself or a function
+`gui -> object or nothing`, which is evaluated at each such click and may return `nothing` for no
+card. The card has the rows of [`card_rows`](@ref) of the object (pose rows only if the method adds
+them), no actions and the title of the `labels` entry of the object (else its type); `value(gui, obj)`
+and `on(gui, obj, v)` get the object itself. For a parameter that is meant to be always visible use
+[`add_controls!`](@ref) instead. The example is abridged from `test/TestLiveBackgroundCard.jl`:
+
+```julia
+# Not a component: e.g. the environment of a telescope, without pose or shape
+mutable struct Sky
+    hour::Float64
+end
+
+BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
+    CardWidget(Slider; name = :hour, range = 0:0.5:24, width = 120,
+        value = (gui, s) -> s.hour, on = (gui, s, v) -> (s.hour = v)),
+    CardWidget(Label; name = :hour_text, value = (gui, s) -> "$(s.hour) h")),)
+
+sky = Sky(6.0)
+gui = live_view(system, beam; background_card = sky, labels = Dict(sky => "Sky"))
+```
+
 ## Recipe: your own widget type
 
 Any `Makie` block can be a [`CardWidget`](@ref) and is then placed, hidden and refreshed by the card.
@@ -246,7 +288,7 @@ A parameter that belongs to no object, e.g. an alignment setting of the whole se
 It is a controls section:
 
 1. `add_controls!(gui, title) do layout ... end` builds `Makie` blocks into the given `layout`. The
-   layout places the section (a row above the status row, or a section of the left sidebar); never
+   layout places the section (an entry of the tool rail that opens a popover, or a section of the left sidebar); never
    use fixed `gui.fig[...]` positions.
 2. A `Textbox` or `Menu` built inside `f` takes the keyboard automatically, i.e. the keys of the 3D
    view are ignored while it is focused or open. Blocks added after `f` returned do not.
@@ -307,6 +349,7 @@ The functions and types of the recipes:
 card_rows
 pose_card_rows
 beam_card_rows
+parts_card_rows
 card_actions
 CardRow
 CardWidget

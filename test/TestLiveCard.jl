@@ -251,8 +251,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         _select!(gui, m)
         @test c.scene.visible[]
         vp = Rect2f(gui.ax.scene.viewport[])
-        # a point of the 3D view beside the card and the objects
-        beside = Point2f(minimum(vp) .+ 30)
+        # a point of the 3D view beside the card, the objects and the button "⋯" of the tool rail
+        # at the bottom left, see `_CompactOverlay`
+        beside = Point2f(minimum(vp) .+ (30, 90))
         _move!(gui, beside)
         @test !GUI._over_card(c, ev)
         _move!(gui, _center(_rect(c.title)))

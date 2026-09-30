@@ -152,7 +152,8 @@ end
 
 Shows the card of the selection (`gui.cards.selection`) next to the selected (or inspected, see
 `_inspect!`) object, unless it has a pinned card, and the pinned cards of the `gui` next to their objects; see `_update_card!`. The cards are
-placed in this order, each off the view cube and the cards before, so that none covers another:
+placed in this order, each off the obstacles of the `gui` (the view cube and the parts of the
+layout over the 3D view, see `_obstacles`) and the cards before, so that none covers another:
 the cards that the mouse moved to their `spot` first, where they stay (see `_drag_cards!`), then
 the card of the selection, at its object; a pinned card without room is collapsed to its head. All
 cards are hidden while a menu is open, whose options they would cover. Called every frame, which
@@ -161,7 +162,7 @@ moves the cards with the camera and the objects.
 function _update_cards!(gui::LiveView)
     menu = _menu_open(gui)
     sel = _shown_object(gui)
-    obstacles = _obstacles(gui.widgets.view_cube)
+    obstacles = _obstacles(gui)
     shown = menu || !_selection_card_shown(gui) || any(c -> c.pinned && c.obj === sel, gui.cards.all) ?
         nothing : sel
     target(c) = c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
@@ -171,6 +172,33 @@ function _update_cards!(gui::LiveView)
     end
     return nothing
 end
+
+"""
+    _obstacles(gui) -> Vector{Rect2f}
+
+The screen rectangles [figure px] that the floating cards of the `gui` keep off, see `_avoid`: the
+view cube, if any, and the parts of the layout over the 3D view that are shown, see
+`_layout_obstacles`.
+"""
+_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui)]
+
+"""
+    _layout_obstacles(gui) -> Vector{Rect2f}
+
+The rectangles [figure px] of the parts of the layout of the `gui` that lie over the 3D view and
+are shown, e.g. the overlay of the compact layout (see `_CompactOverlay`), which the floating
+cards keep off like the view cube; none by default.
+"""
+_layout_obstacles(::LiveView) = Rect2f[]
+
+"""
+    _over_layout(gui) -> Bool
+
+Returns `true` if the mouse is over a part of the layout of the `gui` that lies over the 3D view,
+whose presses and scrolling the camera must not get, like those over the cards (see
+`_shield_cards!`), e.g. the overlay of the compact layout; `false` by default.
+"""
+_over_layout(::LiveView) = false
 
 """
 Returns `true` if the layout of the `gui` shows the card of the selection (`gui.cards.selection`) next to the
@@ -684,16 +712,17 @@ _connect_dock_button!(gui::LiveView, c::_ComponentCard, b::_IconButton) =
 """
     _shield_cards!(gui)
 
-(Re)adds the listeners that keep the presses and the scrolling over the cards of the `gui` from the
-camera: after the widgets of all cards (Textbox 70, Button 1), whose presses they would take
-otherwise, and before the camera (0).
+(Re)adds the listeners that keep the presses and the scrolling over the cards of the `gui` and
+over the parts of its layout in the 3D view (see `_over_layout`) from the camera: after the
+widgets of all cards and parts (Textbox 70, Button 1), whose presses they would take otherwise,
+and before the camera (0). Called again when widgets are added later.
 """
 function _shield_cards!(gui::LiveView)
     ev = events(gui.ax.scene)
     listeners = gui.controls.listeners
     foreach(off, gui.cards.shield)
     filter!(l -> !any(s -> s === l, gui.cards.shield), listeners)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_layout(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
         on(_ -> Consume(over()), ev.scroll; priority = 1)]
     append!(listeners, gui.cards.shield)

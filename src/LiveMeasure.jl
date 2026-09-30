@@ -275,12 +275,19 @@ end
 Called after a click in the 3D view with the selected object `obj`, or `nothing` for a click on no
 component. While measuring, the position of the component or the point of the beam under the
 cursor is added to the measurement. Otherwise a click on a beam inspects it, see `_inspect_beam`,
-and a click elsewhere removes the inspection. Returns `true` if a beam was clicked, then the
-selection is kept.
+and a click elsewhere removes the inspection. A click on the empty background, i.e. on no component
+and no beam, while neither a selection (or an inspected object, see `_inspect!`) nor a transient
+info card is shown, shows the card of the `background_card` of the `gui`, see `_show_background!`;
+otherwise it only closes them, i.e. the controls deselect. Any click closes the card of the
+background. Returns `true` if a beam was clicked, then the selection is kept.
 """
 function _on_click!(gui::LiveView, obj)
-    # A click closes the message of a failed solve, see `_show_solve_error!`
+    # The cards shown before the click; on the background, the selection is still the one before
+    shown = !isnothing(_shown_object(gui)) || !isnothing(_info_card(gui))
+    # A click closes the message of a failed solve (see `_show_solve_error!`) and the card of the
+    # background
     _release_info!(gui, _SolveError)
+    _release_info!(gui, _BackgroundItem)
     obj isa LiveClipPlane && (obj = nothing)
     info = isnothing(obj) ? _inspect_beam(gui) : nothing
     if gui.widgets.measure_toggle.active[]
@@ -291,6 +298,7 @@ function _on_click!(gui::LiveView, obj)
         end
     elseif isnothing(info)
         _clear_inspection!(gui)
+        isnothing(obj) && !shown && _show_background!(gui)
     else
         _show_inspection!(gui, info)
     end
@@ -315,6 +323,7 @@ function _connect_inspection!(gui::LiveView)
         _clear_inspection!(gui)
         _clear_measurement!(gui)
         _release_info!(gui, _SolveError)
+        _release_info!(gui, _BackgroundItem)
         return Consume(false)
     end)
     push!(listeners, on(v -> _set_measuring!(gui, v), gui.widgets.measure_toggle.active))

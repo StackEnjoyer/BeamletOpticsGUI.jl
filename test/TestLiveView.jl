@@ -613,7 +613,7 @@ _points(h) = only(render_plots(h))[1][]
                 fine_angle = 1e-2, on_change = (g, obj) -> (n_calls[] += 1))
             @test !gui.trace.auto[]
             @test !gui.widgets.auto_trace_toggle.active[]
-            @test gui.widgets.trace_button isa Makie.Button
+            @test gui.widgets.trace_button.clicks isa Observable{Int}
             # the view starts untraced, the first t solves
             @test n_calls[] == 0
             @test gui.trace.stale
@@ -1694,7 +1694,8 @@ _points(h) = only(render_plots(h))[1][]
         gui.widgets.orthographic_toggle.active[] = true
         @test endswith(info.text[], "orthographic")
         gui.widgets.orthographic_toggle.active[] = false
-        @test Makie.GridLayoutBase.gridcontent(info).parent === gui.layout.status_row
+        # in the toast of the overlay, after the status line
+        @test Makie.GridLayoutBase.gridcontent(info).parent === gui.layout.overlay.toast.content
         close(gui)
 
         # the dark theme colors the whole window and the 3D view
@@ -1705,9 +1706,12 @@ _points(h) = only(render_plots(h))[1][]
         @test dark.fig.scene.backgroundcolor[] == t.background
         @test dark.ax.scene.backgroundcolor[] == t.view
         @test dark.status.color[] == t.text
-        @test _rgb(dark.widgets.auto_trace_toggle.framecolor_active[]) == _rgb(t.accent)
-        @test _rgb(dark.widgets.measure_toggle.framecolor_inactive[]) == _rgb(t.muted)
-        @test _rgb(dark.widgets.trace_button.buttoncolor[]) == _rgb(t.field)
+        # the overlay: the rail in the color of the sidebars, active toggles in the accent colors
+        o = dark.layout.overlay
+        @test _rgb(o.rail.box.color[]) == _rgb(t.sidebar)
+        @test _rgb(o.rail.box.strokecolor[]) == _rgb(t.border)
+        @test _rgb(dark.widgets.auto_trace_toggle.box.color[]) == _rgb(t.accent_soft)
+        @test Makie.Colors.alpha(Makie.to_color(dark.widgets.measure_toggle.box.color[])) == 0
         @test _rgb(dark.panels[1].ax.backgroundcolor[]) == _rgb(t.view)
         @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
@@ -1723,25 +1727,28 @@ _points(h) = only(render_plots(h))[1][]
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); auto_trace = false,
             clip_beams = true, orthographic = true, show_sources = false)
         w = gui.widgets
-        # the tools of the shared logic, text buttons and toggles initialized from the kwargs
+        # the tools of the shared logic and fit and views, initialized from the kwargs
         @test [s.role for s in GUI._tools(gui.layout)] == [:trace_button, :auto_trace_toggle,
-            :show_all_button, :home_button, :save_view_button, :orthographic_toggle,
-            :clip_beams_toggle, :sources_toggle, :measure_toggle, :export_button]
-        @test w.trace_button isa Makie.Button && w.trace_button.label[] == "Trace (t)"
-        @test w.export_button isa Makie.Button && w.export_button.label[] == "Export"
+            :show_all_button, :home_button, :fit_button, :views_button, :save_view_button,
+            :orthographic_toggle, :clip_beams_toggle, :sources_toggle, :measure_toggle,
+            :export_button]
+        @test w.trace_button isa GUI._OverlayItem && w.trace_button.label[] == "Trace (t)"
+        @test w.export_button isa GUI._OverlayItem && w.export_button.label[] == "Export"
         @test (w.auto_trace_toggle.active[], w.clip_beams_toggle.active[],
             w.orthographic_toggle.active[], w.sources_toggle.active[], w.measure_toggle.active[]) ==
               (false, true, true, false, false)
-        # tracing and display in the status row, the menus and the other tools in the tool row
+        # the camera tools in the camera popover, the views menu after the views icon; the other
+        # tools and the component menu in the tool rail, see TestLiveCompact.jl
+        o = gui.layout.overlay
         grid(x) = Makie.GridLayoutBase.gridcontent(x).parent
-        @test grid(grid(w.auto_trace_toggle)) === gui.layout.status_tools
-        @test grid(w.trace_button) === gui.layout.status_tools
-        @test all(x -> grid(x) === gui.layout.tools, (w.menu, w.views_menu, w.home_button,
-            w.save_view_button, w.show_all_button, w.export_button))
+        @test all(x -> grid(x.box) === o.camera_tools, (w.home_button, w.save_view_button,
+            w.orthographic_toggle))
+        @test all(x -> grid(x.box) === o.rail_tools, (w.trace_button, w.auto_trace_toggle,
+            w.show_all_button, w.export_button))
+        @test grid(grid(w.menu)) === o.rail_tools
         col(x) = Makie.GridLayoutBase.gridcontent(x).span.cols.start
-        @test col(w.menu) == 1
-        @test col(w.views_menu) == col(w.home_button) + 1
-        @test col(w.save_view_button) == col(w.views_menu) + 1
+        @test col(w.views_menu) == col(o.views_button.box) + 1
+        @test col(w.save_view_button.box) == col(w.views_menu) + 1
         close(gui)
     end
 
