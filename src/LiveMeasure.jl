@@ -279,6 +279,8 @@ and a click elsewhere removes the inspection. Returns `true` if a beam was click
 selection is kept.
 """
 function _on_click!(gui::LiveView, obj)
+    # A click closes the message of a failed solve, see `_show_solve_error!`
+    _release_info!(gui, _SolveError)
     obj isa LiveClipPlane && (obj = nothing)
     info = isnothing(obj) ? _inspect_beam(gui) : nothing
     if gui.widgets.measure_toggle.active[]
@@ -312,6 +314,7 @@ function _connect_inspection!(gui::LiveView)
         gui.controls.ignore_keys() && return Consume(false)
         _clear_inspection!(gui)
         _clear_measurement!(gui)
+        _release_info!(gui, _SolveError)
         return Consume(false)
     end)
     push!(listeners, on(v -> _set_measuring!(gui, v), gui.widgets.measure_toggle.active))

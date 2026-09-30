@@ -121,6 +121,7 @@ the next inspection or measurement does not replace. In the app layout, whose pi
 docked (see `_pin!`), the item is pinned there and the floating card is removed.
 """
 function _keep_info!(gui::LiveView, c::_ComponentCard)
+    _keepable(c.obj) || return _release_info!(gui, _InfoItem)
     _keep_plots!(gui, c.obj)
     c.transient = false
     _show_head!(c)
@@ -130,12 +131,17 @@ function _keep_info!(gui::LiveView, c::_ComponentCard)
 end
 function _keep_info!(gui::AppView, c::_ComponentCard)
     x = c.obj
+    _keepable(x) || return _release_info!(gui, _InfoItem)
     _keep_plots!(gui, x)
     _release_info!(gui, _InfoItem)
     _pin!(gui, x)
     _on_pinned!(gui)
     return nothing
 end
+
+# Whether the card of an item can be kept by its pin or dock button, which otherwise close it, see
+# `_SolveError`
+_keepable(::_InfoItem) = true
 
 """
     _keep_plots!(gui, x::_InfoItem)

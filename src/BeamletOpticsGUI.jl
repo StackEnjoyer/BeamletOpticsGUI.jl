@@ -65,6 +65,7 @@ include("LiveAppTree.jl")
 include("LiveDock.jl")
 include("LiveInspector.jl")
 include("LiveInfo.jl")
+include("LiveSolveError.jl")
 include("LiveCustom.jl")
 # agent skill of the package
 include("AgentSkill.jl")

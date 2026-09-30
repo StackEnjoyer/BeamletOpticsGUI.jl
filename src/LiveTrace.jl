@@ -108,6 +108,8 @@ recorded in the history of the panels.
 """
 function _apply!(gui::LiveView, r, obj; coarse = false)
     t0 = time_ns()
+    # The solve succeeded, the message of a failed one is outdated
+    _clear_solve_error!(gui)
     for (p, h) in zip(gui.pairs, gui.beam_handles)
         _beam_on(gui, p.second) && update_render!(h)
     end
@@ -305,10 +307,12 @@ function _fail!(gui::LiveView, e)
         _mark_stale!(gui, nothing; msg = _CANCELLED)
         return nothing
     end
-    gui.last_error = _log_once(_task_error(e), gui.last_error, "solving the systems")
+    e = _task_error(e)
+    gui.last_error = _log_once(e, gui.last_error, "solving the systems")
     gui.trace.stale || _dim_beams!(gui)
     gui.trace.stale = true
     gui.status.text[] = "solving the systems failed, see the log"
+    _show_solve_error!(gui, e)
     return nothing
 end
 

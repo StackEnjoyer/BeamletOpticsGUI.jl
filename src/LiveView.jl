@@ -189,7 +189,8 @@ and preview solve [s], `coarse` is `true` while the panels show a preview on a c
 While moving, beam groups are solved only for their rendered beams if `preview_enabled`; `preview`
 is `true` from such a solve (of the moved `preview_obj`) until the full solve. A solve that takes
 longer than `budget` continues in the background as `job`, the `progress` window shows its loops
-after `progress_delay` [s]. The duration fields are named by `_SolveJob.timing`.
+after `progress_delay` [s]. The duration fields are named by `_SolveJob.timing`. `error` holds
+the rows of the message of the last failed solve until a solve succeeds, see `_show_solve_error!`.
 """
 Base.@kwdef mutable struct _TraceState
     auto::Observable{Bool}
@@ -210,6 +211,7 @@ Base.@kwdef mutable struct _TraceState
     preview::Bool = false
     preview_obj::Any = nothing
     job::Union{Nothing, _SolveJob} = nothing
+    error::Union{Nothing, Vector{Pair{String, String}}} = nothing
 end
 
 """
@@ -575,6 +577,16 @@ or detector once they have run for `progress_delay`, with the remaining time; th
 not drawn meanwhile. Moving a component or a source, a slider and `Esc` cancel the solve after the
 current beam, `t` is ignored until it is done.
 
+# Failed solves
+
+If solving fails, also the initial solve, the error is logged, the beams stay dimmed and a card
+"Solve failed" opens in the 3D view with the first line of the error. A detector hit by two kinds
+of beams in one solve, e.g. polarized and unpolarized rays or rays and Gaussian beamlets, stores
+only one kind: the card is placed at the detector and names it and both kinds, switching one of the
+beams off (see [`beam_card_rows`](@ref)) or giving it its own detector solves it. `Esc`, a click in
+the 3D view or the pin of the card closes it; the same error opens it again only after a solve
+succeeded, which also closes it.
+
 # Manual tracing
 
 With `auto_trace = false`, the systems are not solved after each change, which is useful for
@@ -885,7 +897,12 @@ function live_view(
     # Before the initial solve, such that they are never traced
     foreach(b -> _set_beam_off!(gui, b), beams_off)
     if gui.trace.auto[]
-        _resolve!(gui, nothing)
+        # A failed solve opens the window anyway, with its message, see `_fail!`
+        try
+            _resolve!(gui, nothing)
+        catch e
+            _fail!(gui, e)
+        end
     else
         # Traced on request, see "Manual tracing"
         _mark_stale!(gui, nothing; msg = _NOT_TRACED)

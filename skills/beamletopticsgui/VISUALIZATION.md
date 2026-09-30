@@ -92,3 +92,8 @@ end
 Solves longer than `progress_delay` (kwarg, default 0.5 s) run in the background: the window stays
 usable and a small progress window appears next to the source being traced or the detector whose
 field is computed. Moving a component or pressing `Esc` cancels the solve.
+
+A failed solve (also the initial one, `live_view` does not throw) opens a card "Solve failed" in the
+3D view besides the log. A detector stores one kind of hits per solve: two kinds on one detector
+(polarized + unpolarized rays, rays + Gaussian beamlets) fail by design in BMO; the card sits at
+the detector and names both kinds. Fix: switch a beam off (card toggle "on") or add a detector.

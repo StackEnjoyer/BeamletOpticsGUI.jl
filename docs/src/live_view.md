@@ -286,6 +286,12 @@ gui = live_view(system => src1, system => src2; beams_off = [src2],
 Solves longer than `progress_delay` run in the background with a progress window next to the
 source or detector, see "Long solves" in the docstring of [`live_view`](@ref).
 
+If a solve fails, a card "Solve failed" opens in the 3D view, in addition to the log and the status
+line. A detector stores one kind of hits per solve: if it is hit by two kinds of beams, e.g.
+polarized and unpolarized rays, the card is placed at the detector and names both kinds; switching
+one of the beams off by its card or giving it its own detector solves it. See "Failed solves" in
+the docstring of [`live_view`](@ref).
+
 ## Component card and component menu
 
 Selecting a component, source or clip plane opens a card next to its bounding box in the 3D view,

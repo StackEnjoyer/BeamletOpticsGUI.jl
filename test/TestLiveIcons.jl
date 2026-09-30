@@ -13,7 +13,7 @@ const GUI = BeamletOpticsGUI
             :clip_beams, :sources, :measure, :export, :panel_left, :panel_right, :panel_bottom,
             :help, :eye, :eye_off, :expand, :collapse, :lens, :mirror, :detector, :source, :group,
             :clip_plane, :mesh, :object, :system, :beamsplitter, :polarizer, :pin, :pinned, :chart,
-            :float, :dock)
+            :float, :dock, :warning)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)
