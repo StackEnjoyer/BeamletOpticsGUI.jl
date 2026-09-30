@@ -126,7 +126,8 @@ not movable (its pose boxes reject inputs).
 
 `live_view(...; background_card = obj)` shows the card of `obj` on a click on the empty background
 while nothing is selected (a selection is only deselected by the click). `obj` is the object itself
-or a function `gui -> obj_or_nothing`, evaluated at each click (`nothing`: no card). The card has the
+or a function `gui -> obj_or_nothing`, evaluated at each click (`nothing`: no card; `obj => point`:
+the card at `point` [m], e.g. on a sky dome, instead of at the click). The card has the
 rows of `card_rows(obj)` (no pose rows unless the method adds them), no actions, the title of the
 `labels` entry of `obj` (else its type), and `value(gui, obj)` and `on(gui, obj, v)` get `obj`. Use it
 for settings like an environment, which have no anchor in the scene (otherwise `add_controls!`). Abridged

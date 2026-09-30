@@ -546,7 +546,9 @@ has the rows of [`card_rows`](@ref) of the object, whose `value(gui, obj)` and `
 the object itself, the title of its `labels` entry (else its type) and no actions. It appears at the
 click, where the ray through the mouse meets the plane through the `lookat` point of the camera
 perpendicular to the view direction, and follows the view like the card of an inspected beam
-point: `Esc` or another click closes it, its pin keeps it (docked in the app layout).
+point: `Esc` or another click closes it, its pin keeps it (docked in the app layout). The function
+may return `obj => point` instead to attach the card to the `point` [m], e.g. where the ray through
+the mouse (`Makie.ray_at_cursor`) meets a sky dome.
 
 # Extras and opacity
 

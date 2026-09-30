@@ -166,7 +166,8 @@ The keyword `background_card` of [`live_view`](@ref) shows the card of an object
 the scene, e.g. the settings of an environment, on a click on the empty background while nothing is
 selected (with a selection, the click only deselects). It is the object itself or a function
 `gui -> object or nothing`, which is evaluated at each such click and may return `nothing` for no
-card. The card has the rows of [`card_rows`](@ref) of the object (pose rows only if the method adds
+card, or `object => point` to attach the card to the `point` [m], e.g. where the ray through the
+mouse (`Makie.ray_at_cursor`) meets a sky dome, instead of at the click. The card has the rows of [`card_rows`](@ref) of the object (pose rows only if the method adds
 them), no actions and the title of the `labels` entry of the object (else its type); `value(gui, obj)`
 and `on(gui, obj, v)` get the object itself. For a parameter that is meant to be always visible use
 [`add_controls!`](@ref) instead. The example is abridged from `test/TestLiveBackgroundCard.jl`:

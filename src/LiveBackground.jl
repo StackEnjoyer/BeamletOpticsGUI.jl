@@ -80,8 +80,16 @@ transient info card at the click, see `_background_anchor` and `_show_info!`, af
 empty background, see `_on_click!`. Returns `false` without such an object.
 """
 function _show_background!(gui::LiveView)
-    obj = _background_object(gui, gui.background_card)
-    isnothing(obj) && return false
-    _show_info!(gui, _BackgroundItem(obj, _background_anchor(gui.ax.scene)))
+    x = _background_object(gui, gui.background_card)
+    isnothing(x) && return false
+    _show_info!(gui, _background_item(x, gui.ax.scene))
     return true
 end
+
+"""
+The item of the card of the background for the result `x` of `_background_object`: the object at
+the click (see `_background_anchor`), or for `obj => point` the object at the `point` [m] of the
+3D `scene`, e.g. on a sky dome.
+"""
+_background_item(obj, scene) = _BackgroundItem(obj, _background_anchor(scene))
+_background_item((obj, point)::Pair, _) = _BackgroundItem(obj, Point3f(point))

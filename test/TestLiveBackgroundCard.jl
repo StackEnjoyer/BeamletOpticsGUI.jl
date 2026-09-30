@@ -151,6 +151,15 @@ BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
         @test GUI._info_card(gui).title.text[] == "Sky"
         close(gui)
 
+        # `obj => point`: the card at the given point, e.g. on a sky dome
+        far = Point3f(0, 0, 1e5)
+        gui, _ = _live_view(layout; background_card = _ -> sky => far)
+        _click_background!(gui)
+        x = _shown(gui)
+        @test x isa GUI._BackgroundItem && x.obj === sky && x.point == far
+        @test GUI._card_widget(GUI._info_card(gui), :hour).value[] == 3.0
+        close(gui)
+
         # none by default
         gui, _ = _live_view(layout)
         @test isnothing(gui.background_card)

@@ -174,6 +174,20 @@ const GUI = BeamletOpticsGUI
         @test gui.controls.selected[] === fx.m3
         close(gui)
     end
+
+    @testset "an open dropdown closes with its card" begin
+        gui = _live_view(:compact)
+        GUI._select!(gui, fx.bench)
+        GUI._update_cards!(gui)
+        menu = _w(gui, :parts).menu
+        menu.is_open[] = true
+        # e.g. `Esc` deselects the object of the card: the dropdown must not stay on screen
+        gui.controls.selected[] = nothing
+        GUI._update_cards!(gui)
+        @test !gui.cards.selection.scene.visible[]
+        @test !menu.is_open[]
+        close(gui)
+    end
 end
 
 end

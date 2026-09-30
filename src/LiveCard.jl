@@ -464,6 +464,7 @@ _park_card!(c::_ComponentCard) =
 
 """Removes the declared widgets of the card `c`, with their listeners and layouts."""
 function _clear_content!(c::_AbstractCard)
+    _close_menus!(c)
     foreach(off, c.listeners)
     foreach(delete!, c.blocks)
     empty!(c.listeners)
@@ -473,6 +474,19 @@ function _clear_content!(c::_AbstractCard)
     # New layouts instead of the empty rows and columns of the old ones
     _new_parts!(c)
     c.content_key = nothing
+    return nothing
+end
+
+"""
+Closes the open menus on the card `c` (see `_open_menu`), before it is hidden or its widgets are
+rebuilt: the dropdown of an open menu is a scene of its own, which would stay on screen, e.g. after
+`Esc` deselects the object of the card.
+"""
+function _close_menus!(c::_AbstractCard)
+    for b in c.blocks
+        m = _open_menu(b)
+        isnothing(m) || (m.is_open[] = false)
+    end
     return nothing
 end
 
@@ -577,6 +591,7 @@ end
 function _hide_card!(c::_ComponentCard)
     c.scene.visible[] || return nothing
     _defocus_card!(c)
+    _close_menus!(c)
     _park_card!(c)
     _update!(c.link, Point2f[])
     c.scene.visible[] = false
