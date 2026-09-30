@@ -244,13 +244,14 @@ _card_cell(w::CardWidget) = w
     card_rows(obj)
 
 Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s, chosen by multiple
-dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); a source whose rays can
-be regenerated (see `BeamletOptics.set_num_rays!`) adds a slider for the number of rays, a `Detector`
+dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams, beam groups and
+sources add the toggles of [`beam_card_rows`](@ref), a source whose rays can be regenerated (see
+`BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 the mode and the color scale of its detector panel, mechanics (`NonInteractableObject`, e.g. a
 `MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
 (`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
-shows the number of its objects, the number of rays of its sources and the duration of the last
-solve. Add a method for an own type to show its properties or controls on its card, e.g.
+shows the number of its objects, the number of rays of its sources that are on and the duration of
+the last solve. Add a method for an own type to show its properties or controls on its card, e.g.
 
 ```julia
 BeamletOpticsGUI.card_rows(l::MyLens) = (pose_card_rows(l)...,
@@ -276,6 +277,35 @@ position `x`, `y`, `z` [mm], where `Enter` moves `obj` to the typed coordinate, 
 `rx`, `ry`, `rv` [mrad] about the red, green and blue axis of the controls.
 """
 function pose_card_rows end
+
+"""
+    beam_card_rows(beam)
+
+The rows of the beam on the card of a beam, beam group or source `beam` in [`live_view`](@ref),
+see [`card_rows`](@ref). The row `beam` has the toggle "on", which switches the beam off and on.
+A beam that is off is neither solved nor drawn, its rays are removed, such that detectors and
+measurements ignore it, and only its source marker stays; with `auto_trace = false` the switch
+marks the beams as outdated instead of solving.
+
+Gaussian beamlets (`GaussianBeamlet`, `AstigmaticGaussianBeamlet` and groups of them) add the
+toggle "beams", which draws the generating beams (chief, divergence and waist rays) as the static
+`render!` with `show_beams = true` does. Polarized beams (their rays are `PolarizedRay`s, e.g. an
+`AstigmaticGaussianBeamlet`) add the toggle "polarization", which draws the polarization along
+the beam, and the rows `pol λ` and `pol amp` with sliders for the wavelength [mm] of the drawn
+curve and its amplitude ([mm], of astigmatic beamlets as a multiple of the beam radius), on
+logarithmic scales over ranges given by the size of the scene. Of a beam group, the generating
+beams and the polarization are drawn for its central beam, the one starting nearest the axis of
+the group. These change the display only. The initial states are set by the `live_view` keywords
+`beams_off` and `beam_kwargs` (`show_beams`, `show_polarization`, `pol_λ`, `pol_amplitude`,
+`pol_scale`).
+
+The card of an own beam type adds the rows after its own rows, e.g.
+
+```julia
+BeamletOpticsGUI.card_rows(b::MyBeam) = (pose_card_rows(b)..., beam_card_rows(b)...)
+```
+"""
+function beam_card_rows end
 
 """
     card_actions(obj)

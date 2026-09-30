@@ -149,6 +149,8 @@ const GUI = BeamletOpticsGUI
 
     @testset "controls and retrace! ($layout)" for layout in (:compact, :app)
         gui, m, pd = _fixture(; layout, auto_trace = false)
+        # the view starts untraced
+        GUI._trace!(gui)
         clicked = Ref(0)
         tb = Ref{Any}(nothing)
         content = add_controls!(gui, "Mine") do l

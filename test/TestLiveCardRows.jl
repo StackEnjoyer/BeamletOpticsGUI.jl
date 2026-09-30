@@ -125,6 +125,83 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "beam toggles ($layout)" for layout in (:compact, :app)
+        # the card of the selection: floating (compact) or in the inspector (app)
+        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
+        _card(gui) = gui.cards.selection
+        _w(gui, name) = GUI._card_widget(_card(gui), name)
+        _nhits(pd) = (h = BMO.hits(pd); isnothing(h) ? 0 : length(h))
+        m, pd = _fixture()
+        sys = System([m, pd])
+        b = Beam([0.0, 0, 0], [0.0, 1, 0])
+        # polarized, hits the mirror but misses the detector (a detector takes one kind of ray)
+        pol = Beam([0.0, 0, 10e-3], [0.0, 1, 0], 1e-6, [1.0, 0, 0])
+        src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
+        gui = _live_view(sys => b, sys => pol, sys => src; layout, preview = false)
+        @test _nhits(pd) == 41
+        # an unpolarized beam: only the on/off toggle
+        _select!(gui, b)
+        on = _w(gui, :beam_on)
+        @test on isa Toggle && on.active[] && isnothing(_w(gui, :polarization))
+        on.active[] = false
+        @test !GUI._beam_on(gui, b) && _nhits(pd) == 40
+        GUI._inspect!(gui, sys)
+        @test _w(gui, :rays).text[] == "41"
+        @test occursin("41 rays", gui.widgets.info.text[])
+        _select!(gui, b)
+        @test !_w(gui, :beam_on).active[]
+        _w(gui, :beam_on).active[] = true
+        @test GUI._beam_on(gui, b) && _nhits(pd) == 41
+        # a polarized beam: the polarization toggle, display only
+        _select!(gui, pol)
+        toggle = _w(gui, :polarization)
+        @test toggle isa Toggle && !toggle.active[] && _w(gui, :beam_on).active[]
+        toggle.active[] = true
+        @test GUI._polarization_on(gui, pol) && _nhits(pd) == 41
+        # its sliders set the wavelength and the amplitude of the curve, shown as text
+        λ = _w(gui, :pol_wavelength)
+        @test λ isa Slider
+        Makie.set_close_to!(λ, 0.5)
+        @test GUI._pol_view(gui, pol).λ ≈ GUI._log_value(λ.value[], GUI._pol_range(gui, Val(:λ), pol))
+        @test _w(gui, :pol_wavelength_text).text[] == GUI._length_string(GUI._pol_view(gui, pol).λ)
+        Makie.set_close_to!(_w(gui, :pol_amplitude), 0.2)
+        @test _w(gui, :pol_amplitude_text).text[] == GUI._length_string(GUI._pol_view(gui, pol).amp)
+        @test GUI._polarization_on(gui, pol) && _nhits(pd) == 41
+        toggle.active[] = false
+        @test !GUI._polarization_on(gui, pol)
+        # a ray source keeps its slider and gets the toggle
+        _select!(gui, src)
+        @test _w(gui, :rays) isa Slider && _w(gui, :ray_count).text[] == "40 rays"
+        @test _w(gui, :beam_on) isa Toggle && isnothing(_w(gui, :polarization))
+        close(gui)
+    end
+
+    @testset "card rows of beams" begin
+        g = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
+        b = Beam([0.0, 0, 0], [0.0, 1, 0])
+        pol = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6, [1.0, 0, 0])
+        src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
+        agb = AstigmaticGaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 633e-9, 1e-3)
+        # the pose, the λ row (sources, beamlets), the slider (sources), the row of the toggles
+        # and, of polarized beams, the two sliders of the polarization curve
+        @test length(card_rows(b)) == length(pose_card_rows(b)) + 1
+        @test length(card_rows(pol)) == length(pose_card_rows(pol)) + 3
+        @test length(card_rows(g)) == length(pose_card_rows(g)) + 2
+        @test length(card_rows(src)) == length(pose_card_rows(src)) + 3
+        @test length(beam_card_rows(b)) == 1
+        @test length(beam_card_rows(pol)) == 3
+        @test length(beam_card_rows(agb)) == 3
+        # the label, the toggle of the beam and its label; with the toggles "beams" (beamlets) and
+        # "polarization" (polarized beams) and their labels
+        _names(row) = [c.name for c in row.cells if c isa CardWidget]
+        @test length(only(beam_card_rows(b)).cells) == 3
+        @test _names(only(beam_card_rows(g))) == [:beam_on, :show_beams]
+        @test _names(first(beam_card_rows(pol))) == [:beam_on, :polarization]
+        @test _names(first(beam_card_rows(agb))) == [:beam_on, :show_beams, :polarization]
+        @test _names(beam_card_rows(pol)[2]) == [nothing, :pol_wavelength, :pol_wavelength_text]
+        @test _names(beam_card_rows(pol)[3]) == [nothing, :pol_amplitude, :pol_amplitude_text]
+    end
+
     @testset "refresh of 1000 rays" begin
         m, pd = _fixture()
         src = UniformDiscSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 1000)

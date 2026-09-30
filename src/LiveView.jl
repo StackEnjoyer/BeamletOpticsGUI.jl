@@ -189,7 +189,8 @@ and preview solve [s], `coarse` is `true` while the panels show a preview on a c
 While moving, beam groups are solved only for their rendered beams if `preview_enabled`; `preview`
 is `true` from such a solve (of the moved `preview_obj`) until the full solve. A solve that takes
 longer than `budget` continues in the background as `job`, the `progress` window shows its loops
-after `progress_delay` [s]. The duration fields are named by `_SolveJob.timing`.
+after `progress_delay` [s]. The duration fields are named by `_SolveJob.timing`. `error` holds
+the rows of the message of the last failed solve until a solve succeeds, see `_show_solve_error!`.
 """
 Base.@kwdef mutable struct _TraceState
     auto::Observable{Bool}
@@ -210,6 +211,7 @@ Base.@kwdef mutable struct _TraceState
     preview::Bool = false
     preview_obj::Any = nothing
     job::Union{Nothing, _SolveJob} = nothing
+    error::Union{Nothing, Vector{Pair{String, String}}} = nothing
 end
 
 """
@@ -288,6 +290,27 @@ Base.@kwdef mutable struct _ObjectState
 end
 
 """
+    _BeamState
+
+The beams of a `LiveView` (the objects `last.(gui.pairs)`) as their cards switch them: the beams
+that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the handles of its
+overlays, the polarization curve in `pol` (see `_set_polarization!`) and the generating beams of a
+Gaussian beamlet in `gen` (see `_set_generating_beams!`), and the kwargs of `live_render!` of the
+overlays in `overlay_kwargs`, taken from the `beam_kwargs` of `live_view` without `render_every`,
+including the initial `show_polarization` and `show_beams`. `shown` holds per overlay handle the
+plots that are visible while the beam is on, the others stay hidden; `pol_view` per beam the
+values of the sliders of its polarization curve, see `_pol_view`.
+"""
+Base.@kwdef struct _BeamState
+    off::Base.IdSet{Any} = Base.IdSet{Any}()
+    pol::IdDict{Any, Any} = IdDict{Any, Any}()
+    gen::IdDict{Any, Any} = IdDict{Any, Any}()
+    overlay_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+    shown::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    pol_view::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+end
+
+"""
     _LayoutWidgets
 
 The widgets of a `LiveView` that its layout creates (see `_build_layout` and `_build_menus`) and
@@ -330,8 +353,8 @@ of the 3D view in `ax`, the `KinematicController` in `controls`, the detector `p
 remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
-(`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`) and
-`objects` (`_ObjectState`); the widgets that the layout creates are in `widgets`
+(`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
+`objects` (`_ObjectState`) and `beams` (`_BeamState`); the widgets that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. The
 objects of the `extras` kwarg are rendered, selectable and movable, but not part of any system,
@@ -363,6 +386,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     camera::_CameraState
     cards::_CardState
     objects::_ObjectState
+    beams::_BeamState = _BeamState()
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -534,7 +558,9 @@ a new measurement, switching the toggle off clears it.
 The key `g` zooms to the selected object, or to all systems if nothing is selected, while the view
 direction is kept. "home" restores the view when the window was shown. The "views" menu sets one
 of the `views`, "save view" adds the current view as `"view n"` and prints it as an entry of the
-`views` kwarg, e.g. `"view 1" => ([0.1, -0.2, 0.3], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0])`.
+`views` kwarg, e.g. `"view 1" => ([0.1, -0.2, 0.3], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0])`. The view
+is fitted to the scene when the window is shown and kept afterwards, also when plots are added,
+e.g. the generating beams or the polarization curve of a beam, a clip plane or a measurement.
 
 # Adaptive tracing
 
@@ -559,14 +585,25 @@ or detector once they have run for `progress_delay`, with the remaining time; th
 not drawn meanwhile. Moving a component or a source, a slider and `Esc` cancel the solve after the
 current beam, `t` is ignored until it is done.
 
+# Failed solves
+
+If solving fails, also the initial solve, the error is logged, the beams stay dimmed and a card
+"Solve failed" opens in the 3D view with the first line of the error. A detector hit by two kinds
+of beams in one solve, e.g. polarized and unpolarized rays or rays and Gaussian beamlets, stores
+only one kind: the card is placed at the detector and names it and both kinds, switching one of the
+beams off (see [`beam_card_rows`](@ref)) or giving it its own detector solves it. `Esc`, a click in
+the 3D view or the pin of the card closes it; the same error opens it again only after a solve
+succeeded, which also closes it.
+
 # Manual tracing
 
 With `auto_trace = false`, the systems are not solved after each change, which is useful for
 systems that take long to solve. Objects and sliders still update the 3D view, while the beams are
 dimmed and the status line shows that they are outdated. The systems are solved by the
 `Trace (t)` button below the 3D view or the key `t`. The toggle next to the button switches auto
-tracing on or off, switching it on solves the systems if they are outdated. The initial solve
-always runs.
+tracing on or off, switching it on solves the systems if they are outdated. The view also starts
+untraced: the beams are dimmed and the status line shows "not traced, press t to trace" until the
+first `t`, the button or switching auto tracing on solves the systems.
 
 # Detector panels
 
@@ -667,8 +704,8 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   draws the rays, the markers and the dark materials of the render look (detectors, polarizers) in
   lighter colors; `:light` keeps the colors of the default look.
 - `size`: size of the figure, by default `(1400, 800)` for `:compact` and `(1600, 950)` for `:app`
-- `auto_trace = true`: solves the systems after each change, otherwise only on request, see
-  "Manual tracing"
+- `auto_trace = true`: solves the systems at the start and after each change, otherwise only on
+  request, see "Manual tracing"
 - `detectors = :auto`: all `Detector`s of all systems. Alternatively a vector of `pd`,
   `pd => mode` or `pd => (mode, kwargs)`, where `mode` is `:auto`, `:spot` or `:intensity` and
   `kwargs` are passed to `intensity`, e.g. `(; n = 200, x_min = -1e-3, x_max = 1e-3, ...)`,
@@ -683,7 +720,15 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups
+  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam and
+  `show_beams = true` of a Gaussian beamlet start with the toggles "polarization" and "beams" of
+  its card on, `pol_λ`, `pol_amplitude` and `pol_scale` set the start values of the sliders of
+  the polarization curve, see [`beam_card_rows`](@ref); of a beam group only its central beam is
+  drawn so. `show_polarization` for a beam without polarized rays and `show_beams` for one that is
+  no Gaussian beamlet throw an `ArgumentError`.
+- `beams_off = ()`: beams of the pairs that start switched off, i.e. neither traced nor drawn
+  (their source markers stay), e.g. `[src]`. Each entry must be one of the beams of the pairs
+  (`===`), otherwise an `ArgumentError` is thrown.
 - `movable_sources = true`: shows an orange marker at each source, i.e. the beam or beam group of
   each pair, with which the source can be selected and moved like the components
 - `show_sources = true`: initial visibility of the source markers, which can be switched with the
@@ -725,6 +770,7 @@ function live_view(
         sliders = [],
         system_kwargs = (;),
         beam_kwargs = Dict(),
+        beams_off = (),
         movable_sources = true,
         show_sources::Bool = true,
         labels = Dict(),
@@ -744,6 +790,17 @@ function live_view(
     )
     isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
     ps = Pair{BMO.AbstractSystem, Any}[p for p in pairs]
+    for b in beams_off
+        any(p -> p.second === b, ps) ||
+            throw(ArgumentError("beams_off: $(typeof(b)) is not a beam of the pairs"))
+    end
+    # Checked before the window is built, see `_init_overlays!`
+    for (b, kw) in beam_kwargs
+        get(kw, :show_polarization, false) === true && !_polarizable(b) &&
+            throw(ArgumentError("beam_kwargs: show_polarization = true for $(typeof(b)), which has no polarized rays"))
+        get(kw, :show_beams, false) === true && !_has_generating_beams(b) &&
+            throw(ArgumentError("beam_kwargs: show_beams = true for $(typeof(b)), which is no Gaussian beamlet"))
+    end
     # several beams may share a system, which is rendered once
     systems = unique(objectid, first.(ps))
     extra_specs = _extra_specs(extras, systems)
@@ -765,12 +822,17 @@ function live_view(
     sys_kw = isnothing(edges) ? system_kwargs : (; edges, system_kwargs...)
     system_handles = AbstractSystemRenderHandle[live_render!(ax, sys; sys_kw...) for sys in systems]
     beam_handles = AbstractBeamRenderHandle[]
+    beam_state = _BeamState()
     for beam in last.(ps)
         default = beam isa BMO.AbstractBeamGroup ? (; render_every = 5) : (;)
-        kw = get(beam_kwargs, beam, default)
+        kw = (; get(beam_kwargs, beam, default)...)
+        # The polarization and the generating beams are drawn by overlays of the beam, whose
+        # initial states `show_polarization` and `show_beams` are kept with the kwargs of the
+        # overlays, see `_BeamState`
+        beam_state.overlay_kwargs[beam] = Base.structdiff(kw, NamedTuple{(:render_every,)})
         # The planes of the beams are set explicitly by `_apply_clip_planes!`, see `clip_beams`
-        push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)..., kw...,
-            clip_planes = Plane3f[]))
+        push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)...,
+            Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})..., clip_planes = Plane3f[]))
     end
 
     # The extras are moved and selected like the objects of the systems, but never traced
@@ -821,7 +883,8 @@ function live_view(
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
-        objects = _ObjectState(; menu = Any[first.(entries)...]), widgets, layout = lay)
+        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state, widgets,
+        layout = lay)
     gui_ref[] = gui
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
@@ -844,7 +907,22 @@ function live_view(
     _connect_layout!(gui)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
-    _resolve!(gui, nothing)
+    # Before the initial solve, such that they are never traced
+    foreach(b -> _set_beam_off!(gui, b), beams_off)
+    if gui.trace.auto[]
+        # A failed solve opens the window anyway, with its message, see `_fail!`
+        try
+            _resolve!(gui, nothing)
+        catch e
+            _fail!(gui, e)
+        end
+    else
+        # Traced on request, see "Manual tracing"
+        _mark_stale!(gui, nothing; msg = _NOT_TRACED)
+        _update_info!(gui)
+    end
+    # The overlays of the beams with `show_polarization` or `show_beams`, after the solve they show
+    _init_overlays!(gui)
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read
     # correctly. Only set once, later changes of the view, e.g. via `set_view`, are kept.
     cam = cameracontrols(ax.scene)

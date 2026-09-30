@@ -23,9 +23,10 @@ end
     _apply_clip_planes!(gui::LiveView)
 
 Applies the clip planes of the `gui` (none if `clipping` is off) to the scene and to all its plots
-that did not set `clip_planes` explicitly, i.e. except the markers and the controls. The beams are
-clipped only if `clip_beams` is set, which can be switched at runtime. Nothing is written as long
-as there are no planes to apply or reset.
+that did not set `clip_planes` explicitly, i.e. except the markers and the controls. The beams and
+their polarization overlays (see `_all_beam_handles`) are clipped only if `clip_beams` is set,
+which can be switched at runtime. Nothing is written as long as there are no planes to apply or
+reset.
 """
 function _apply_clip_planes!(gui::LiveView)
     scene = gui.ax.scene
@@ -33,7 +34,7 @@ function _apply_clip_planes!(gui::LiveView)
     # Plots added later inherit the planes of the scene when they are created
     isempty(planes) && isempty(scene.theme.clip_planes[]) && return nothing
     scene.theme.clip_planes[] = planes
-    beam_plots = Base.IdSet{Any}(p for h in gui.beam_handles for p in _beam_plots(h))
+    beam_plots = Base.IdSet{Any}(p for h in _all_beam_handles(gui) for p in _beam_plots(h))
     for plot in scene.plots
         (haskey(plot.kw, :clip_planes) || plot in beam_plots) && continue
         # Nested plots inherit the planes of their parent

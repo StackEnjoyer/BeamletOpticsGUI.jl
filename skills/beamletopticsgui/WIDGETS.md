@@ -30,7 +30,9 @@ The card of the selected object shows the rows of `card_rows` below the head wit
 `card_actions`; only the card of the selection additionally has the step, the Move/Rotate control
 and a collapsed "Properties" part (added by the live view, nothing to do).
 
-1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`.
+1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`;
+   own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
+   `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams).
 2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
 3. `value(gui, obj)` returns what the widget shows, in display units (mm, mrad, %); it must be cheap,

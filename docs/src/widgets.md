@@ -58,6 +58,8 @@ and the collapsed "Properties" part, which the live view adds. To add rows for a
 
 1. Define a method `BeamletOpticsGUI.card_rows(x::MyType)`. For a movable object, start from
    `pose_card_rows(x)...` ([`pose_card_rows`](@ref)), which gives the position and rotation boxes.
+   An own beam type adds `beam_card_rows(x)...` ([`beam_card_rows`](@ref)), the toggle that
+   switches it off and on and, for polarized beams, the polarization toggle.
 2. Return one [`CardRow`](@ref) per line. Its cells are strings (labels) or [`CardWidget`](@ref)s.
 3. `value(gui, obj)` returns what the widget shows, in display units (mm, mrad, %), and must be
    cheap: it runs after every move, solve and input.
@@ -304,6 +306,7 @@ The functions and types of the recipes:
 ```@docs; canonical=false
 card_rows
 pose_card_rows
+beam_card_rows
 card_actions
 CardRow
 CardWidget

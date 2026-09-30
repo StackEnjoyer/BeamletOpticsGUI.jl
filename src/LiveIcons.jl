@@ -60,6 +60,8 @@ const _ICON_SVG = Dict{Symbol, String}(
     :object => "m260-520 220-360 220 360H260ZM700-80q-75 0-127.5-52.5T520-260q0-75 52.5-127.5T700-440q75 0 127.5 52.5T880-260q0 75-52.5 127.5T700-80Zm-580-20v-320h320v320H120Zm580-60q42 0 71-29t29-71q0-42-29-71t-71-29q-42 0-71 29t-29 71q0 42 29 71t71 29Zm-500-20h160v-160H200v160Zm202-420h156l-78-126-78 126Zm78 0ZM360-340Zm340 80Z",
     # Own designs, in the outlined style of Material Symbols: strokes of 80 units (2 px at 24 px),
     # solid parts clockwise, holes counterclockwise (nonzero fill rule of FreeType)
+    # own design: a warning triangle with an exclamation mark, the message of a failed solve
+    :warning => "M480-880L920-120L40-120ZM480-720L178-200L782-200ZM440-560L520-560L520-360L440-360ZM440-320L520-320L520-240L440-240Z",
     # own design: a ray that ends at a plane in perspective, dashed behind it
     :clip_beams => "M500-720L640-880L640-240L500-80ZM80-520L500-520L500-440L80-440ZM700-520L780-520L780-440L700-440ZM820-520L880-520L880-440L820-440Z",
     # own design: biconvex lens with flat edges, the optical axis on both sides
