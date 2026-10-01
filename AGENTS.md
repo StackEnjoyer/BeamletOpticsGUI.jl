@@ -53,12 +53,17 @@ describe it as available in docs or the skill.
 - `src/LiveView.jl`: `LiveView{L}` and its state structs (`_TraceState`, `_ClipState`,
   `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_LayoutWidgets`), `live_view`,
   and the docstring of `AbstractLiveLayout` (the layout interface).
-- `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes. `src/LiveCompact.jl`,
+- `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes, the collapsible parts of the
+  layouts (`_LayoutPart`, `_set_shown!`: the only way to collapse a part of the figure layout) and
+  the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,
   `src/LiveApp.jl`, `src/LiveAppTree.jl`, `src/LiveDock.jl`, `src/LiveInspector.jl`: the two layouts.
 - `src/LiveCard.jl`, `src/LiveCards.jl`, `src/LiveCardRows.jl`: cards and the card API.
 - `src/LiveTrace.jl`, `src/LivePanels.jl`, `src/LiveProgress.jl`: solving, detector panels,
   progress window. `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
+- `src/LiveSelectionCard.jl`: the small menu of a click on a group ("Select", "More") and the selection card of groups (browsing their parts level by level).
+  `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts).
+  `src/LiveBackground.jl`: the background card. `src/LiveOverlay.jl`: the overlay of the compact layout. `src/LiveHelp.jl`: the help of both layouts (pill, chips of mode and step, help card), built from the entries of `_help_sections` in `src/LiveInteraction.jl`.
 - `src/LiveInteraction.jl`: `kinematic_controls!`. `src/ViewCube.jl`: `view_cube!`.
 - `src/LiveCustom.jl`, `src/LiveWidgets.jl`: `add_panel!`, `add_controls!`, `add_tool!`,
   `retrace!`, own widgets.

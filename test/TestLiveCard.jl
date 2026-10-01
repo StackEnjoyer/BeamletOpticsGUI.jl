@@ -191,18 +191,42 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         notify(c.properties_button.clicks)
         @test !c.properties_shown && _away(c.properties) && !_away(c.step)
 
-        # a pinned card shows neither step, mode nor properties, also if they were expanded
+        # pinning does not change the card: the object is still selected, the card stands for the
+        # card of the selection, with step, mode and the expanded properties
         notify(c.properties_button.clicks)
+        _tick!(gui)
+        size0 = Makie.widths(_rect(c.background))
         _pin!(c)
-        @test c.pinned && c.scene.visible[]
-        @test _away(c.step) && _away(c.properties) && !_away(c.rows)
+        _tick!(gui)
+        @test c.pinned && c.scene.visible[] && c.properties_shown
+        @test !_away(c.step) && !_away(c.disclosure) && !_away(c.properties) && !_away(c.rows)
+        @test Makie.widths(_rect(c.background)) == size0
+        @test c.list.rows == GUI._inspector_rows(gui, pd)
         # the new card of the selection has its own state, collapsed
         _select!(gui, m)
         _tick!(gui)
         c2 = gui.cards.selection
         @test c2 !== c && !c2.properties_shown && !_away(c2.step) && _away(c2.properties)
+        @test !_away(c2.disclosure)
         @test c2.mode.selected[] == ctrl.mode[]
-        @test _away(c.step) && _away(c.properties)
+        # step and mode belong to the selection: the pinned card of another object keeps its rows
+        # and its properties only, the disclosure below the rows
+        @test _away(c.step) && !_away(c.disclosure) && !_away(c.properties)
+        @test maximum(_rect(c.disclosure))[2] < minimum(_rect(c.rows))[2]
+        @test maximum(_rect(c.list.box))[2] < minimum(_rect(c.disclosure))[2]
+        @test c.list.rows == GUI._inspector_rows(gui, pd)
+        # its disclosure collapses and expands the properties of its own object
+        notify(c.properties_button.clicks)
+        _tick!(gui)
+        @test !c.properties_shown && _away(c.properties) && !_away(c.disclosure) && !c2.properties_shown
+        notify(c.properties_button.clicks)
+        _tick!(gui)
+        @test c.properties_shown && !_away(c.properties) && c.list.rows == GUI._inspector_rows(gui, pd)
+        # selected again, e.g. by a click on the card: step and mode are back
+        _select!(gui, pd)
+        _tick!(gui)
+        @test !_away(c.step) && !c2.scene.visible[]
+        @test maximum(_rect(c.disclosure))[2] < minimum(_rect(c.step))[2]
         close(gui)
     end
 
@@ -251,8 +275,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         _select!(gui, m)
         @test c.scene.visible[]
         vp = Rect2f(gui.ax.scene.viewport[])
-        # a point of the 3D view beside the card and the objects
-        beside = Point2f(minimum(vp) .+ 30)
+        # a point of the 3D view beside the card, the objects and the button "⋯" of the tool rail
+        # at the bottom left, see `_CompactOverlay`
+        beside = Point2f(minimum(vp) .+ (30, 90))
         _move!(gui, beside)
         @test !GUI._over_card(c, ev)
         _move!(gui, _center(_rect(c.title)))
@@ -344,9 +369,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test c1.pinned && c1.obj === m && c1.pin_button.active[]
         # the selection gets another card
         @test gui.cards.selection !== c1 && length(gui.cards.all) == 2 && gui.widgets.step_box === gui.cards.selection.step_box
-        # the pinned object shows its pinned card only, without the keyboard step
+        # the pinned object shows its pinned card only, with the keyboard step while it is selected
         @test c1.scene.visible[] && !gui.cards.selection.scene.visible[]
-        @test _away(c1.step) && !_away(c1.rows)
+        @test !_away(c1.step) && !_away(c1.rows)
         @test length(c1.link[]) == 2
 
         # the pinned card stays when the selection changes
@@ -666,6 +691,40 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         close(gui)
     end
 
+    @testset "no cards in the spectator mode" begin
+        m, pd = _fixture()
+        gui = _live_view(System([m, pd]), _gauss(); labels = Dict(m => "M1", pd => "PD"),
+            size = (1600, 1000))
+        ctrl = gui.controls
+        _select!(gui, m)
+        c = gui.cards.selection
+        _pin!(c)
+        # a measurement, whose card is kept by its pin
+        gui.widgets.measure_toggle.active[] = true
+        GUI._add_measure_point!(gui, BMO.position(m), m)
+        GUI._add_measure_point!(gui, BMO.position(pd), pd)
+        info = GUI._info_card(gui)
+        info.pin_button.active[] = true
+        gui.widgets.measure_toggle.active[] = false
+        # the spectator mode clears the selection, with which the pinned card loses step and mode
+        _select!(gui, nothing)
+        _tick!(gui)
+        @test c.scene.visible[] && info.scene.visible[] && info.pinned
+        r, ri = _rect(c.background), _rect(info.background)
+        # hidden with all their parts, still pinned
+        GUI._set_spectator!(ctrl, true)
+        _tick!(gui)
+        @test !any(x -> x.scene.visible[], gui.cards.all)
+        @test all(_away, (c.head, c.rows, c.background, info.head, info.background))
+        @test c.pinned && c.obj === m && info.pinned && info.obj isa GUI._Measurement
+        # shown again at the same places
+        GUI._set_spectator!(ctrl, false)
+        _tick!(gui)
+        @test c.scene.visible[] && info.scene.visible[]
+        @test _rect(c.background) ≈ r && _rect(info.background) ≈ ri
+        close(gui)
+    end
+
     @testset "info cards of the inspection and the measurement" begin
         _info(y; w = nothing, R = nothing) = (; point = [0.0, y, 0.0], direction = [0.0, 1.0, 0.0],
             length = y, opl = y, w, R)
@@ -679,6 +738,8 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test c.title.text[] == "Beam" && c.icon[] === GUI._icon(:trace)
         @test _text(c, :at) == "(0.000, 50.000, 0.000) mm" && _text(c, :path) == "50.000 mm"
         @test isnothing(_w(c, :w)) && isnothing(_w(c, :hide)) && _away(c.step)
+        # no properties of a point
+        @test _away(c.disclosure) && _away(c.properties)
         @test length(c.link[]) == 2
         # the next inspection replaces it, with the rows of a Gaussian beamlet
         GUI._show_inspection!(gui, _info(0.06; w = 1e-3, R = 0.0))

@@ -35,11 +35,15 @@ and `profiles`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects that are rendered,
 selected, moved and hidden like the components, but never traced, e.g. a housing from an STL file
-(`MeshDummy`); the card of such mechanics has an opacity slider. `layout = :app` arranges the window like an application, with a toolbar,
+(`MeshDummy`); the card of such mechanics has an opacity slider. `background_card = obj` (or
+`gui -> obj`, `nothing` for none) shows the card of an object without a place in the scene, e.g.
+an environment, after a click on the empty background while nothing is selected; its
+[`card_rows`](@ref) get `obj` itself. `layout = :app` arranges the window like an application, with a toolbar,
 collapsible sidebars (object tree with selection and visibility, sliders, properties of the
 selection), an analysis dock with a tab per detector panel (only the panel of the active tab is
 computed after a solve) and a status bar, in the colors of `theme = :light` or `:dark`; the default
-`layout = :compact` places the panels next to the 3D view and the tools below it. The component
+`layout = :compact` fills the window with the 3D view, places the panels on its right and shows the
+tools, the status and the help on demand over the 3D view. The component
 cards and the progress window have the colors of the `theme` in both layouts. Own panels,
 widgets and tools are added to either layout via [`add_panel!`](@ref), [`add_controls!`](@ref)
 and [`add_tool!`](@ref). All other keyword arguments are passed to [`kinematic_controls!`](@ref). See
@@ -89,8 +93,9 @@ function add_panel! end
     add_controls!(f, gui, title::AbstractString) -> GridLayout
 
 Adds own widgets to the [`live_view`](@ref) window `gui`, placed by its layout: with
-`layout = :compact` in a row named `title` above the status row, spanning the width of the window;
-with `layout = :app` as a section `title` of the left sidebar, below "Parameters". `f(layout)`
+`layout = :compact` as an entry `title` of the tool rail (the button "⋯"), which opens the widgets
+in a popover next to the rail; with `layout = :app` as a section `title` of the left sidebar, below
+"Parameters". `f(layout)`
 builds the widgets (e.g. `Button`, `Toggle`, `Menu`, `Textbox`, or an own widget type, see
 [`card_input`](@ref)) into the given `GridLayout` and connects them. Returns the layout.
 
@@ -126,9 +131,9 @@ function add_controls! end
 
 Adds a tool to the [`live_view`](@ref) window `gui`: a button that calls `f(gui)`, or with
 `toggle = true` a toggle that calls `f(gui, active::Bool)` whenever it is switched. With
-`layout = :app`, an icon button (or toggle) in the toolbar, before "Help", with the `icon` and the
-`tooltip`; with `layout = :compact`, a button (or a toggle with a label) named `name` in the row
-below the status line.
+`layout = :app`, an icon button (or toggle) at the end of the toolbar, with the `icon` and the
+`tooltip`; with `layout = :compact`, an entry (icon and `name`) of the tool rail opened by the
+button "⋯". A tool with a `key` is listed in the help card under "Own tools".
 
 `icon` is a name of the icon set of the app layout, e.g. `:measure`, `:export` or `:chart` (an
 unknown name throws an `ArgumentError` that lists the valid ones, in any layout), or an own
@@ -312,7 +317,9 @@ function beam_card_rows end
 
 Buttons in the head of the card of `obj` in [`live_view`](@ref), a tuple of
 [`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default "hide"
-(or "show" for a hidden object), for clip planes "flip" and "remove".
+(or "show" for a hidden object), for clip planes "flip" and "remove". The card of an object with
+parts (a group or a `MultiShape` object) gets the button "parts ›" after them, which opens its
+selection card.
 """
 function card_actions end
 

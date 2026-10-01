@@ -175,6 +175,34 @@ const GUI = BeamletOpticsGUI
         close(cube)
     end
 
+    @testset "hidden cube" begin
+        fig, ax = _scene()
+        cube = view_cube!(ax; duration = 0)
+        set_view(ax, [3, -4, 2], [0.5, 0.2, 0.1], [0, 0, 1])
+        d = _dir(ax)
+        events(ax.scene).mouseposition[] = _px(cube, (0, 0, 1))
+        @test cube.hovered == (0, 0, 1) && cube.scene.visible[]
+        # hidden: no hover, no highlight, and a click at its place does not turn the camera
+        GUI._set_visible!(cube, false)
+        @test !cube.scene.visible[] && isnothing(cube.hovered) && !cube.highlight.visible[]
+        @test isnothing(GUI._region_at_cursor(cube))
+        events(ax.scene).mouseposition[] = _px(cube, (0, 0, 1))
+        @test isnothing(cube.hovered)
+        _press!(ax)
+        _release!(ax)
+        @test isnothing(cube.anim) && !cube.pressed && _dir(ax) ≈ d
+        # shown again: as before
+        GUI._set_visible!(cube, true)
+        events(ax.scene).mouseposition[] = _px(cube, (0, 0, 1))
+        @test cube.scene.visible[] && cube.hovered == (0, 0, 1)
+        _press!(ax)
+        _release!(ax)
+        @test _dir(ax) ≈ [0, 0, 1] atol = 1e-6
+        # no cube: nothing
+        @test isnothing(GUI._set_visible!(nothing, false))
+        close(cube)
+    end
+
     @testset "all regions switch the view" begin
         fig, ax = _scene()
         cube = view_cube!(ax; duration = 0)
@@ -270,7 +298,8 @@ const GUI = BeamletOpticsGUI
         ax = gui.ax
         scene = ax.scene
         _click!() = (_press!(ax); _release!(ax))
-        beside = Tuple(Float64.(minimum(scene.viewport[]) .+ 20))
+        # Above the button "⋯" of the tool rail at the bottom left of the compact layout
+        beside = Tuple(Float64.(minimum(scene.viewport[]) .+ (20, 150)))
 
         # a click on the cube neither selects ...
         pick_plot[] = render_plots(render_children(gui.controls.h)[1])[1]

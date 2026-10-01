@@ -32,20 +32,43 @@ beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength 
 the drawn curve, log scale; astigmatic beamlets: amplitude × beam radius). Of a group only the
 central beam; display only. Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
 show_polarization = true, show_beams = true, pol_λ = 1e-3, pol_amplitude = 2e-4))`.
-Only the card of the selection also has the keyboard step (e.g. `250 nm`), a
-"Move"/"Rotate" control (in sync with the key `m`) and a "Properties" part (collapsed by default,
-the same rows as the inspector of the app), pinned cards do not. Objects without a `labels` entry
+The card of the selected object also has the keyboard step (e.g. `250 nm`) and a
+"Move"/"Rotate" control (in sync with the key `m`); every card of an object, also a pinned one, has
+a "Properties" part (collapsed by default, the same rows as the inspector of the app). Objects without a `labels` entry
 get automatic names ("Mirror 1", "Clip plane 2") in the cards, menus and tree. The card of a system
-(number of objects, rays, solve time) opens from its entry in the component menu (compact) or its
+(number of objects, rays, solve time) opens from its entry in the component menu of the tool rail (compact) or its
 row in the tree (app), without a selection; non-movable objects are shown the same way (pose
-inputs are rejected). Own types add rows with a `card_rows` method (`CardRow`, `CardWidget`), see
+inputs are rejected). A click on an object of a group opens a small menu under the cursor ("Select <group>" under
+the cursor, so a second click selects the top-level group, and "More ›"); "More ›" opens the
+selection card of the group there (first entry "Select <group>", "‹ <parent>", then the parts, " ›"
+on parts with parts, more than 5 parts scroll; a click on a part in the 3D view acts as its entry, a
+click beside or `Esc` at the top closes, `Esc` goes up one level, `↑`/`↓` and `Enter` choose; the
+card of an object with parts has "parts ›" in its head, the card of a part "‹"; a drag at the head
+of the menu or the card moves it); a click inside the
+selection keeps it; an object not in a group opens its card at once. A click on a pinned card beside
+its widgets selects its object.
+Own types add rows with a `card_rows` method (`CardRow`, `CardWidget`), see
 `WIDGETS.md`.
-`theme = :light` (default) or `:dark` colors the whole window (both layouts); the info label at
-the end of the status row shows the last solve time, the number of rays (of the beams that are on)
-and the projection.
+`theme = :light` (default) or `:dark` colors the whole window (both layouts); the info label
+(toast at the bottom for 3 s after each change in compact, status bar in app) shows the last solve
+time, the number of rays (of the beams that are on) and the projection.
+`layout = :compact` (default): the 3D view fills the window, detector and `add_panel!` panels are
+on its right (`gui.fig[1, 2]`), there are no rows below it. Help pill at the top left (`h` or a
+click opens the help card: keys and mouse actions in sections, `add_tool!` keys under "Own tools";
+the chips next to it show mode and keyboard step, clickable); the button "⋯" at the bottom left opens the tool rail (trace, auto trace, sources, clip
+beams, measure, show all, component menu "select component", export, `add_tool!` tools, one entry
+per `add_controls!` section, "Sliders" for `sliders`; entries with widgets open a popover; `Esc`
+closes); the mouse over the view cube shows the camera popover (home, fit `g`, views, save view,
+orthographic); the status line appears as a toast.
 `layout = :app` arranges the window like an application, with the cards (selection and
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
-moves it into the 3D view next to its component, its dock button moves it back.
+moves it into the 3D view next to its component, its dock button moves it back; docked pinned
+cards have the same collapsible "Properties" part as floating ones. Its 3D view has
+the same help pill, chips and help card at the top left.
+The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the
+start) shows only the 3D view and the help in both layouts: tools, status, view cube, cards,
+source markers, panels, toolbar, sidebars and dock are hidden and come back as they were; the progress window of a
+running trace stays. `add_panel!`, `add_controls!` and `add_tool!` also work while it is on.
 
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
 `extras = [housing => (; color = :lightblue), ...]` (`obj` or `obj => render_kwargs`), not into
@@ -67,7 +90,7 @@ add_panel!(gui, "Power") do layout            # compact: below the detector pane
     pts = Observable(copy(power)); lines!(ax, pts)
     return gui -> (pts[] = copy(power); autolimits!(ax))   # update(gui): after full solves, only while shown
 end
-add_controls!(gui, "Mirror") do layout        # compact: row above the status row; app: left sidebar
+add_controls!(gui, "Mirror") do layout        # compact: entry of the tool rail "⋯", opens a popover; app: left sidebar
     b = Button(layout[1, 1]; label = "tilt +1 mrad")
     on(_ -> retrace!(() -> zrotate3d!(m1, 1e-3), gui), b.clicks)   # change inside retrace!, then re-solve
 end
@@ -94,7 +117,7 @@ end
 
 Solves longer than `progress_delay` (kwarg, default 0.5 s) run in the background: the window stays
 usable and a small progress window appears next to the source being traced or the detector whose
-field is computed. Moving a component or pressing `Esc` cancels the solve.
+field is computed, connected to it by a line. Moving a component or the button "Cancel" of the progress window cancels the solve (`Esc` does not).
 
 A failed solve (also the initial one, `live_view` does not throw) opens a card "Solve failed" in the
 3D view besides the log. A detector stores one kind of hits per solve: two kinds on one detector

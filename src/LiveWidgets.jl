@@ -3,7 +3,8 @@ Generic widgets of the live view: the property list and the segmented control
 =#
 
 using Makie: Button, Box, Label, Textbox, GridLayout, Observable, Point2f, RGBAf, BezierPath,
-             scatter!, text!, linesegments!, lift, on, rowgap!, colgap!, rowsize!, Fixed, Auto
+             scatter!, text!, linesegments!, lift, on, off, rowgap!, colgap!, rowsize!, Fixed, Auto,
+             Menu, Rect2f
 
 #=
 Property list
@@ -213,3 +214,10 @@ function _Segmented(parent, options::Vector{Pair{Symbol, String}}; theme,
     return _Segmented(grid, buttons, ks, sel)
 end
 
+#=
+Menus on the cards
+=#
+
+"""Returns the open menu of the block `b` of a card, see `_close_menus!`, or `nothing`."""
+_open_menu(_) = nothing
+_open_menu(m::Menu) = m.is_open[] ? m : nothing

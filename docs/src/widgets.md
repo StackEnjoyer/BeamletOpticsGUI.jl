@@ -8,7 +8,7 @@ and how parameters without a scene object get their own controls. Everything wor
 [Live view](@ref).
 
 All code blocks assume `using GLMakie, BeamletOptics, BeamletOpticsGUI`, need a `Makie` backend with
-a window (`GLMakie`) and are therefore not run when the docs are built. They are run as tests in `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI, from which they are
+a window (`GLMakie`) and are therefore not run when the docs are built. Unless a recipe names another test file, they are run as tests in `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI, from which they are
 copied unchanged.
 
 ## Which path?
@@ -144,6 +144,49 @@ BeamletOpticsGUI.card_rows(b::MyBench) = (
 An object that is not movable is shown on its card in the same way (inspected instead of selected),
 its pose boxes reject inputs with a message in the status line.
 
+## The parts of a group: the selection card
+
+In [`live_view`](@ref), a click on an object of a group opens the selection card of its top-level
+group instead of selecting it. The card browses the parts one level at a time: the first entry
+"Select <group>" selects the group itself for moving, "‹ <parent>" (below the top level) browses the
+enclosing object, then come the direct parts, marked " ›" if a part has parts of its own (it opens the
+next level; any other part is selected). A part of an object that is not a group, e.g. a lens of a
+doublet, is shown but not movable: its pose boxes reject inputs. While browsing, the group is drawn
+see-through with a box around each part, and the box of the hovered entry is highlighted. A click in
+the 3D view on a part acts like its entry, a click beside closes the card, `Esc` goes up one level
+(closes at the top level). The card of a part has a button "‹" in its head that browses its parent.
+See the section "Selection card" of [`live_view`](@ref).
+
+The card needs no code: an own group type gets it automatically, since its `shape_trait_of` is
+`MultiShape`, and `card_rows` needs no row for the parts.
+
+## Recipe: a card for an object without a place in the scene
+
+The keyword `background_card` of [`live_view`](@ref) shows the card of an object that has no place in
+the scene, e.g. the settings of an environment, on a click on the empty background while nothing is
+selected (with a selection, the click only deselects). It is the object itself or a function
+`gui -> object or nothing`, which is evaluated at each such click and may return `nothing` for no
+card, or `object => point` to attach the card to the `point` [m], e.g. where the ray through the
+mouse (`Makie.ray_at_cursor`) meets a sky dome, instead of at the click. The card has the rows of [`card_rows`](@ref) of the object (pose rows only if the method adds
+them), no actions and the title of the `labels` entry of the object (else its type); `value(gui, obj)`
+and `on(gui, obj, v)` get the object itself. For a parameter that is meant to be always visible use
+[`add_controls!`](@ref) instead. The example is abridged from `test/TestLiveBackgroundCard.jl`:
+
+```julia
+# Not a component: e.g. the environment of a telescope, without pose or shape
+mutable struct Sky
+    hour::Float64
+end
+
+BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
+    CardWidget(Slider; name = :hour, range = 0:0.5:24, width = 120,
+        value = (gui, s) -> s.hour, on = (gui, s, v) -> (s.hour = v)),
+    CardWidget(Label; name = :hour_text, value = (gui, s) -> "$(s.hour) h")),)
+
+sky = Sky(6.0)
+gui = live_view(system, beam; background_card = sky, labels = Dict(sky => "Sky"))
+```
+
 ## Recipe: your own widget type
 
 Any `Makie` block can be a [`CardWidget`](@ref) and is then placed, hidden and refreshed by the card.
@@ -246,7 +289,7 @@ A parameter that belongs to no object, e.g. an alignment setting of the whole se
 It is a controls section:
 
 1. `add_controls!(gui, title) do layout ... end` builds `Makie` blocks into the given `layout`. The
-   layout places the section (a row above the status row, or a section of the left sidebar); never
+   layout places the section (an entry of the tool rail that opens a popover, or a section of the left sidebar); never
    use fixed `gui.fig[...]` positions.
 2. A `Textbox` or `Menu` built inside `f` takes the keyboard automatically, i.e. the keys of the 3D
    view are ignored while it is focused or open. Blocks added after `f` returned do not.

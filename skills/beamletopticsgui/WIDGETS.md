@@ -27,8 +27,9 @@ object), its selection, its pin and its row in the object tree. Without such an 
 ## Recipe: a card for your type
 
 The card of the selected object shows the rows of `card_rows` below the head with the buttons of
-`card_actions`; only the card of the selection additionally has the step, the Move/Rotate control
-and a collapsed "Properties" part (added by the live view, nothing to do).
+`card_actions`; the card of the selected object additionally has the step and the Move/Rotate
+control, and every card, also a pinned one, a collapsed "Properties" part (added by the live view,
+nothing to do).
 
 1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`;
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
@@ -104,6 +105,47 @@ BeamletOptics.objects(b::MyBench) = b.objects
 BeamletOpticsGUI.card_rows(b::MyBench) = (
     invoke(BeamletOpticsGUI.card_rows, Tuple{BeamletOptics.AbstractSystem}, b)...,
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))
+```
+
+## The parts of a group: the selection card
+
+No code needed. In `live_view`, a click on an object of a group opens a small menu under the cursor:
+"Select <group>" (under the cursor: a second click selects the top-level group for moving) and
+"More ›", which opens the selection card of the group: first entry "Select <group>", "‹ <parent>"
+below the top level, then the direct parts (" ›" after a part with parts of its own, which opens the next
+level; any other part is selected). A part of a non-group `MultiShape` object (e.g. a lens of a
+doublet) is shown but not movable (its pose boxes reject inputs). While browsing, the group is
+see-through with a box per part, the hovered entry's box highlighted. A click in the 3D view on a part
+acts as its entry, a click beside closes, `Esc` goes up one level (closes at the top); a drag at the
+head of the menu or the card moves it. The card of a
+part has "‹" in its head to browse its parent, the card of an object with parts the button "parts ›"
+(added to the buttons of `card_actions`, also if that method returns none). An own group type gets
+this automatically, since it is `MultiShape`.
+
+## Recipe: a card for an object without a place in the scene
+
+`live_view(...; background_card = obj)` shows the card of `obj` on a click on the empty background
+while nothing is selected (a selection is only deselected by the click). `obj` is the object itself
+or a function `gui -> obj_or_nothing`, evaluated at each click (`nothing`: no card; `obj => point`:
+the card at `point` [m], e.g. on a sky dome, instead of at the click). The card has the
+rows of `card_rows(obj)` (no pose rows unless the method adds them), no actions, the title of the
+`labels` entry of `obj` (else its type), and `value(gui, obj)` and `on(gui, obj, v)` get `obj`. Use it
+for settings like an environment, which have no anchor in the scene (otherwise `add_controls!`). Abridged
+from `test/TestLiveBackgroundCard.jl`:
+
+```julia
+# Not a component: e.g. the environment of a telescope, without pose or shape
+mutable struct Sky
+    hour::Float64
+end
+
+BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
+    CardWidget(Slider; name = :hour, range = 0:0.5:24, width = 120,
+        value = (gui, s) -> s.hour, on = (gui, s, v) -> (s.hour = v)),
+    CardWidget(Label; name = :hour_text, value = (gui, s) -> "$(s.hour) h")),)
+
+sky = Sky(6.0)
+gui = live_view(system, beam; background_card = sky, labels = Dict(sky => "Sky"))
 ```
 
 ## Recipe: your own widget type
@@ -200,7 +242,7 @@ end
 ## Recipe: controls without a scene object
 
 1. `add_controls!(gui, title) do layout ... end` builds Makie blocks into `layout`; the layout places the
-   section (compact: row above the status row; app: left sidebar). Never use fixed `gui.fig[...]`
+   section (compact: entry of the tool rail "⋯", opens a popover; app: left sidebar). Never use fixed `gui.fig[...]`
    positions.
 2. A `Textbox` or `Menu` built inside `f` takes the keyboard automatically (3D keys ignored while
    focused or open); blocks added after `f` returns do not.

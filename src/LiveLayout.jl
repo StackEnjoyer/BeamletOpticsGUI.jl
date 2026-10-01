@@ -44,6 +44,143 @@ box of the `card` of the selection by default, see `_ComponentCard`.
 _step_box(::AbstractLiveLayout, _, card) = card.step_box
 
 #=
+Collapsible parts, see `_LayoutPart`
+=#
+
+"""
+    _LayoutPart
+
+Collapsible part of a layout, e.g. a sidebar, the dock, the toolbar or the status bar of the app
+layout or the panels of the compact layout: a background `box` and the `grid` of
+its content, both placed at `pos` of the `parent` layout. `resize(size)` sets the size of its
+column or row in the `parent`, which is `size` while the part is shown, see `_set_shown!`.
+"""
+mutable struct _LayoutPart
+    parent::GridLayout
+    pos::Tuple{Int, Int}
+    resize::Function
+    size::Any
+    box::Box
+    grid::GridLayout
+    shown::Bool
+end
+
+"""Appends all blocks in the layout `x` to `out`, including the blocks of nested layouts."""
+function _blocks!(out, gl::GridLayout)
+    for c in gl.content
+        _blocks!(out, c.content)
+    end
+    return out
+end
+_blocks!(out, b::Makie.Block) = push!(out, b)
+function _blocks!(out, sg::SliderGrid)
+    push!(out, sg)
+    return _blocks!(out, sg.layout)
+end
+
+# Detached parts are laid out here, where they can not take mouse events
+const _OFFSCREEN = Point2f(-1.0f5, -1.0f5)
+
+"""
+    _set_shown!(part::_LayoutPart, shown::Bool)
+
+Shows or collapses the `part`. A collapsed part is removed from its parent layout, whose column
+or row shrinks to zero, such that the 3D view takes the space. The only way to hide a part of a
+layout: the sidebars and the dock by their toggles, all parts in the spectator mode (see
+`_set_spectator_ui!`), the properties of a collapsed docked card. Since Makie keeps drawing, and
+buttons keep reacting to clicks within their last bounding boxes, the blocks of the part are also
+hidden and laid out off-screen. Its plots are kept, i.e. their state survives collapsing.
+"""
+function _set_shown!(part::_LayoutPart, shown::Bool)
+    part.shown == shown && return nothing
+    part.shown = shown
+    blocks = _blocks!(Any[], part.grid)
+    if shown
+        part.parent[part.pos...] = part.box
+        part.parent[part.pos...] = part.grid
+        part.resize(part.size)
+        Makie.unhide!(part.box)
+        foreach(Makie.unhide!, blocks)
+    else
+        Makie.hide!(part.box)
+        foreach(Makie.hide!, blocks)
+        for x in (part.box, part.grid)
+            _GLB.remove_from_gridlayout!(_GLB.gridcontent(x))
+            w = GeometryBasics.widths(x.layoutobservables.computedbbox[])
+            x.layoutobservables.suggestedbbox[] = Rect2f(_OFFSCREEN, w)
+        end
+        part.resize(Fixed(0))
+    end
+    return nothing
+end
+
+"""Hides the blocks of the collapsed `part`, e.g. those added to it since it was collapsed."""
+function _hide_collapsed!(part::_LayoutPart)
+    part.shown || foreach(Makie.hide!, _blocks!(Any[], part.grid))
+    return nothing
+end
+
+#=
+Spectator mode: only the 3D view, the help and the progress window are shown
+=#
+
+"""
+    _set_spectator_ui!(gui, on::Bool)
+
+Hides (`on`) or shows again the parts of the layout of the `gui` besides the 3D view and the help,
+for the spectator mode, see `_on_spectator!`: the tools, the status, the sidebars and the panels.
+Each part comes back as it was, e.g. a sidebar that was collapsed stays collapsed. Nothing by
+default, see `AbstractLiveLayout`.
+"""
+_set_spectator_ui!(::LiveView, ::Bool) = nothing
+
+"""
+    _on_spectator!(gui, on::Bool)
+
+Hides the UI of the `gui` when the spectator mode of its controls is switched `on` (the key `v`),
+and shows it again when it is switched off: the parts that all layouts share, i.e. the view cube
+(see `_set_visible!`), the floating cards (see `_update_cards!`), the markers of the sources (see
+`_update_source_markers!`, they come back if their toggle is on), the selection card and open
+menus, then the parts of the layout, see `_set_spectator_ui!`. The help pill with the chip of the
+mode and the progress window of a running solve stay, such that the mode can be left and a long
+trace cancelled.
+"""
+function _on_spectator!(gui::LiveView, on::Bool)
+    if on
+        _end_browse!(gui)
+        for m in (gui.widgets.menu, gui.widgets.views_menu)
+            (isnothing(m) || !m.is_open[]) || (m.is_open[] = false)
+        end
+    end
+    _set_visible!(gui.widgets.view_cube, !on)
+    _update_source_markers!(gui)
+    _set_spectator_ui!(gui, on)
+    _update_cards!(gui)
+    _arrange_help!(gui)
+    return nothing
+end
+
+"""
+    _with_ui(f, gui)
+
+Calls `f()` with all parts of the layout of the `gui` in the layout of the figure, and returns its
+result: Makie can only add blocks to a part that is attached to the figure, not to a collapsed one
+(see `_set_shown!`). In the spectator mode, the parts are shown for the call and hidden again, with
+the new blocks; nothing is drawn in between. Used by [`add_panel!`](@ref), [`add_controls!`](@ref)
+and [`add_tool!`](@ref), e.g. for a view that starts with `spectator = true`. A layout extends it
+for parts that its users collapse, e.g. the left sidebar of the app layout.
+"""
+function _with_ui(f, gui::LiveView)
+    hidden = gui.controls.spectator[]
+    hidden && _set_spectator_ui!(gui, false)
+    try
+        return f()
+    finally
+        hidden && _set_spectator_ui!(gui, true)
+    end
+end
+
+#=
 Theme
 =#
 
@@ -236,8 +373,9 @@ _ToolSpec(role, toggle, icon, label, tooltip, group) =
 
 """
 The built-in tools in their order, see `_ToolSpec`; a layout builds those of `_tools(layout)`.
-The groups (`:trace`, `:objects`, `:camera`, `:display`, `:tools`, `:panels`, `:help`) are placed
-by the layout, see `_tool_widget`.
+The groups (`:trace`, `:objects`, `:camera`, `:display`, `:tools`, `:panels`) are placed by the
+layout, see `_tool_widget`. The help of the controls has no tool: both layouts have a help pill, see
+`_help_pill`.
 """
 const _BUILTIN_TOOLS = (
     _ToolSpec(:trace_button, false, :trace, "Trace (t)", "Trace (t)", :trace),
@@ -260,7 +398,6 @@ const _BUILTIN_TOOLS = (
     _ToolSpec(:collapse_right, true, :panel_right, "properties", "Properties", :panels, true),
     _ToolSpec(:collapse_dock, true, :panel_bottom, "analysis", "Analysis", :panels,
         spec -> !isempty(spec.specs)),
-    _ToolSpec(:help_button, false, :help, "help (h)", "Help (h)", :help),
 )
 
 """

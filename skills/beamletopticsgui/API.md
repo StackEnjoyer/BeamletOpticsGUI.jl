@@ -32,18 +32,19 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 
 | Keyword | Meaning |
 |---------|---------|
-| `layout = :compact` or `:app` | the window layout (the app layout has a tree, an inspector, a dock and a toolbar) |
+| `layout = :compact` or `:app` | the window layout (compact: 3D view fills the window, tools on demand in a tool rail over it; app: a tree, an inspector, a dock and a toolbar) |
 | `theme = :light` or `:dark` | colors of the whole window |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
 | `constraints = Dict(obj => (; move = (), rotate = (:x, :v)))` | lock axes of components |
 | `detectors = :auto`, a vector (`pd => :spot`, `pd => (:intensity, (; x_min, ...))`) or `[]` | detector panels |
-| `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units) |
+| `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units); compact: entry "Sliders" of the tool rail, app: "Parameters" |
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
 | `extras = [housing => (; color = ...)]` | shown, movable, but never traced |
 | `clip_planes`, `clip_beams` | clip planes (`point => normal`) |
 | `auto_trace`, `trace_budget`, `idle_delay`, `preview`, `progress_delay` | when and how the systems are solved (`auto_trace = false` also starts untraced, `t` traces) |
 | `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization`, `show_beams`, `pol_λ`, `pol_amplitude`, `pol_scale` set the start state of the card toggles and sliders |
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
+| `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and

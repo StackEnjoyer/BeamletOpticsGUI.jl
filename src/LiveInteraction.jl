@@ -93,39 +93,133 @@ end
 
 const _SPECTATOR_HINT = "spectator mode, v: edit, h: show controls"
 
+"""
+    _default_hint(ctrl) -> String
+
+The line of the controls overlay while its help is hidden (see the key `h`): the spectator hint,
+otherwise the mode, the step and the keys, see `_help_hint`.
+"""
+_default_hint(ctrl) =
+    ctrl.spectator[] ? _SPECTATOR_HINT : _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
+
 function _help_hint(mode::Symbol, fine_step, fine_angle)
     step = _step_string(mode, fine_step, fine_angle)
     return "$mode mode, step $step, +/-: step, m: switch mode, v: spectator, h: show controls"
 end
 
-const _SPECTATOR_HELP = """
-    spectator mode, v: switch to edit mode
-    all clicks and drags: camera
-    components can not be selected or moved
-    h: hide controls"""
+# What a click does by default, see `_drill_select`
+const _CLICK_HELP = "select, again: part of a group"
 
-function _help_text(mode::Symbol, fine_step, fine_angle, select_modifier = nothing)
-    step = _step_string(mode, fine_step, fine_angle)
-    if mode == :move
-        verb = "move along"
-        up, left, page, drag = "green arrow", "red arrow", "blue arrow", "move in plane"
-    else
-        verb = "rotate around"
-        up, left, page, drag = "red ring", "blue ring", "green ring", "rotate around blue ring"
-    end
-    click = isnothing(select_modifier) ? "click" : "$(_modifier_name(select_modifier))+click"
-    return """
-    $mode mode, m: switch to $(_other_mode(mode)) mode
-    $click: select, again: part of a group
-    drag selection: $drag, other drags: camera
-    ↑/↓: $verb $up
-    ←/→: $verb $left
-    page up/down: $verb $page
-    step: $step, +/-: change step, shift: 10× step
-    backspace: reset, esc: enclosing group or deselect
-    ctrl/cmd+z: undo, ctrl/cmd+y or ctrl/cmd+shift+z: redo
-    v: spectator mode, h: hide controls"""
+"""
+    _HelpEntry(keys, text; combo = false, color = "")
+
+An entry of the help of the controls: the `keys` and the `text` of what they do. A key is the name
+on its cap, e.g. `"Esc"`, or `:mouse => "drag"` for an action of the mouse. The `keys` are
+alternatives, e.g. `["↑", "↓"]`, or, with `combo`, held together, e.g. `["Ctrl", "Z"]`. `color` is a
+word of the `text` that names the color of a gizmo axis (`"red"`, `"green"` or `"blue"`), which a
+help card draws in that color.
+"""
+struct _HelpEntry
+    keys::Vector{Any}
+    text::String
+    combo::Bool
+    color::String
 end
+
+_HelpEntry(keys, text::AbstractString; combo::Bool = false, color::AbstractString = "") =
+    _HelpEntry(collect(Any, keys), String(text), combo, String(color))
+
+"""A titled section of the help of the controls, `title => entries`, see `_help_sections`."""
+const _HelpSection = Pair{String, Vector{_HelpEntry}}
+
+# The name of the Ctrl key of undo and redo on its cap
+_ctrl_cap() = Sys.isapple() ? "Cmd" : "Ctrl"
+
+"""
+    _help_sections(mode, fine_step, fine_angle, select_modifier = nothing; kwargs...)
+    _help_sections(ctrl) -> Vector{_HelpSection}
+
+The help of the controls as titled sections of entries (see `_HelpEntry`), from which both the
+text of the controls overlay (see `_help_text`) and the help card of the live view are built: the
+keys of the `mode` with the current keyboard step, or those of the spectator mode. Of a `ctrl`,
+its `help_extra` sections are merged in, e.g. the keys of `live_view`, see `_merge_sections`.
+
+# Keyword arguments
+
+- `click_help = _CLICK_HELP`: what a click does
+- `spectator = false`: the entries of the spectator mode instead
+"""
+function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = nothing;
+        click_help::String = _CLICK_HELP, spectator::Bool = false)
+    spectator && return _HelpSection["Spectator mode" => [
+        _HelpEntry(["V"], "switch to edit mode"),
+        _HelpEntry([:mouse => "drag"], "all clicks and drags: camera"),
+        _HelpEntry([:mouse => "click"], "components can not be selected or moved")]]
+    step = _step_string(mode, fine_step, fine_angle)
+    move = mode == :move
+    along(color) = move ? "along the $color arrow" : "around the $color ring"
+    up, left, page = move ? ("green", "red", "blue") : ("red", "blue", "green")
+    click = isnothing(select_modifier) ? Any[:mouse => "click"] :
+            Any[_modifier_name(select_modifier), :mouse => "click"]
+    return _HelpSection[
+        "Select" => [
+            _HelpEntry(click, click_help; combo = true),
+            _HelpEntry(["Esc"], "enclosing group or deselect")],
+        (move ? "Move" : "Rotate") * " the selection" => [
+            _HelpEntry(["M"], "switch to $(_other_mode(mode)) mode"),
+            _HelpEntry(["↑", "↓"], along(up); color = up),
+            _HelpEntry(["←", "→"], along(left); color = left),
+            _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
+            _HelpEntry([:mouse => "drag"], move ? "move in the plane" : "rotate around the blue ring";
+                color = move ? "" : "blue"),
+            _HelpEntry(["+", "−"], "keyboard step, now $step"),
+            _HelpEntry(["Shift"], "with a key: 10× step"),
+            _HelpEntry(["Bksp"], "reset the pose")],
+        "Edit" => [
+            _HelpEntry([_ctrl_cap(), "Z"], "undo"; combo = true),
+            _HelpEntry([_ctrl_cap(), "Y"], "redo, also $(_ctrl_cap())+Shift+Z"; combo = true)],
+        "View" => [
+            _HelpEntry([:mouse => "drag"], "beside the selection: camera"),
+            _HelpEntry(["V"], "spectator mode: camera only")]]
+end
+
+"""
+    _merge_sections(sections, extra) -> Vector{_HelpSection}
+
+Returns the `sections` with the entries of the `extra` sections appended to the section of the same
+title, or as new sections at the end.
+"""
+function _merge_sections(sections, extra)
+    out = _HelpSection[title => copy(entries) for (title, entries) in sections]
+    for (title, entries) in extra
+        i = findfirst(s -> s.first == title, out)
+        isnothing(i) ? push!(out, title => copy(entries)) : append!(out[i].second, entries)
+    end
+    return out
+end
+
+# The keys of an entry in the text of the controls overlay, e.g. "ctrl+z" or "pgup/pgdn"
+_key_text(key::Pair) = String(last(key))
+_key_text(key) = replace(lowercase(String(key)), "−" => "-")
+_keys_text(e::_HelpEntry) = join(map(_key_text, e.keys), e.combo ? "+" : "/")
+
+"""
+    _help_text(sections) -> String
+    _help_text(mode, fine_step, fine_angle, select_modifier = nothing; kwargs...)
+
+The text of the controls overlay of the standalone controls: a line per title and per entry of the
+`sections` (see `_help_sections`, to which the other arguments are passed), then the key `h`.
+"""
+function _help_text(sections::AbstractVector{<:Pair})
+    lines = String[]
+    for (title, entries) in sections
+        push!(lines, title)
+        append!(lines, ("  " * _keys_text(e) * ": " * e.text for e in entries))
+    end
+    push!(lines, "h: hide controls")
+    return join(lines, "\n")
+end
+_help_text(mode::Symbol, args...; kwargs...) = _help_text(_help_sections(mode, args...; kwargs...))
 
 const _STEP_MANTISSAS = (1.0, 2.0, 5.0)
 # Bounds of the keyboard steps, changed via + and -
@@ -267,8 +361,11 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # controls overlay, toggled via h
     help_obs::Observable{String}
     help_shown::Bool
-    # additional lines of the overlay, e.g. the keys of `live_view`
-    help_extra::String
+    # additional sections of the help, e.g. the keys of `live_view`, see `_merge_sections`
+    help_extra::Vector{_HelpSection}
+    # `ctrl -> nothing`, shows the help instead of the text of the overlay, called after each change
+    # of what it shows (see `_update_help!`); `nothing` for the text, e.g. `live_view` shows a card
+    help_view::Union{Nothing, Function}
     plots::Vector{AbstractPlot}
     listeners::Vector{Any}
     # last error of on_change, logged only once
@@ -282,6 +379,14 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # `live_view` or its sidebars; releases are handled, such that a drag that started elsewhere
     # ends, but the release of an ignored press neither selects nor deselects
     ignore_mouse::Function
+    # the `pick` kwarg, `nothing` for the ray pick
+    pick::Any
+    # called after a click (not a drag) on the movable rendered object `leaf` before the selection
+    # changes; if it returns `true`, it took the click: the selection is kept and `on_click` is not
+    # called, e.g. `live_view` opens the selection card of a group instead, see `_browse!`
+    click_leaf::Function
+    # what a click does, in the help, see `_help_sections`
+    click_help::String
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -367,6 +472,20 @@ function _drill_select(ctrl::KinematicController, leaf)
     return chain[max(i - 1, 1)]
 end
 
+"""
+    _click_leaf!(ctrl, leaf)
+
+A click on the rendered object `leaf`: left to `click_leaf` of the `ctrl` if it takes it, otherwise
+selects the next level of the hierarchy towards `leaf` (see `_drill_select`) and calls `on_click`.
+"""
+function _click_leaf!(ctrl::KinematicController, leaf)
+    ctrl.click_leaf(leaf) && return nothing
+    ctrl.selected[] = _drill_select(ctrl, leaf)
+    _update_selection_box!(ctrl)
+    ctrl.on_click(ctrl.selected[])
+    return nothing
+end
+
 """Axes of the keyboard controls: local y-axis, local x-axis and rotation axis of the `obj`."""
 function _control_axes(ctrl::KinematicController, obj)
     R = _pose(obj)[2]
@@ -420,15 +539,21 @@ function _gizmo_colors(ctrl::KinematicController, obj, kind::Symbol)
     return colors
 end
 
+_help_sections(ctrl::KinematicController) = _merge_sections(
+    _help_sections(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
+        ctrl.click_help, spectator = ctrl.spectator[]),
+    ctrl.spectator[] ? _HelpSection[] : ctrl.help_extra)
+
+"""
+Updates the help of the `ctrl` after a change of what it shows (shown or hidden, mode, step,
+spectator mode, entries): its `help_view`, if any, otherwise the text of the controls overlay.
+"""
 function _update_help!(ctrl::KinematicController)
-    if ctrl.spectator[]
-        ctrl.help_obs[] = ctrl.help_shown ? _SPECTATOR_HELP : _SPECTATOR_HINT
+    if !isnothing(ctrl.help_view)
+        ctrl.help_view(ctrl)
         return nothing
     end
-    help = _help_text(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier)
-    isempty(ctrl.help_extra) || (help *= "\n" * ctrl.help_extra)
-    ctrl.help_obs[] = ctrl.help_shown ? help :
-                      _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
+    ctrl.help_obs[] = ctrl.help_shown ? _help_text(_help_sections(ctrl)) : _default_hint(ctrl)
     return nothing
 end
 
@@ -1024,8 +1149,9 @@ function kinematic_controls!(
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
         nothing, _HistoryEntry[], _HistoryEntry[], nothing,
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
-        gizmo_size, gizmo_visible, help_obs, show_help, "", plots, Any[], nothing, obj -> false,
-        () -> nothing, () -> false
+        gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
+        nothing, obj -> false,
+        () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1106,19 +1232,11 @@ function kinematic_controls!(
                 end
             elseif kind == :pending_drag
                 # Released before crossing the threshold: a click, not a drag
-                if moved < ctrl.drag_threshold
-                    ctrl.selected[] = _drill_select(ctrl, ctrl.press_leaf)
-                    _update_selection_box!(ctrl)
-                    ctrl.on_click(ctrl.selected[])
-                end
+                moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
                 consume = true
             elseif kind == :pending_select
                 # Only select if this was a click, not a camera rotation
-                if moved < ctrl.drag_threshold
-                    ctrl.selected[] = _drill_select(ctrl, ctrl.press_leaf)
-                    _update_selection_box!(ctrl)
-                    ctrl.on_click(ctrl.selected[])
-                end
+                moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
             elseif kind == :background
                 if moved < ctrl.drag_threshold && !ctrl.on_click(nothing)
                     ctrl.selected[] = nothing

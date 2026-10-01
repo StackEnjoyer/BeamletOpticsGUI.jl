@@ -35,13 +35,13 @@ _text_row(label::String, name::Symbol, text; width::Real = 40) =
 Rows of the component families, below the pose rows
 =#
 
-# Clip planes, groups of objects without their own method and any other movable object: the pose
+# Clip planes and any other movable object: the pose
 card_rows(obj) = pose_card_rows(obj)
-# Optical components: the pose and the beams that hit them, see `_beam_text`
+# Optical components and groups: the pose and the beams that hit them, see `_beam_text`
 card_rows(obj::BMO.AbstractObject) = (pose_card_rows(obj)..., _beam_row())
 # Lenses and prisms: the refractive index at the wavelength of the beam and the center thickness
-card_rows(l::BMO.AbstractRefractiveOptic) =
-    (pose_card_rows(l)..., _beam_row(), _text_row("n", :index, _index_text), _thickness_rows(l)...)
+card_rows(l::BMO.AbstractRefractiveOptic) = (pose_card_rows(l)..., _beam_row(),
+    _text_row("n", :index, _index_text), _thickness_rows(l)...)
 # Beamsplitters: the splitting ratio of the coating
 card_rows(bs::BMO.AbstractBeamsplitter) = (pose_card_rows(bs)..., _beam_row(),
     _text_row("split", :split, (gui, bs) -> _split_text(_coating(bs))))
@@ -273,4 +273,82 @@ function _set_num_rays!(gui::LiveView, src, n)
     _change!(() -> set_num_rays!(src, n), gui.controls, src)
     gui.controls.on_change(src)
     return nothing
+end
+
+#=
+Parts of groups and multi-shape objects, one level at a time, see the selection card (`_browse!`)
+=#
+
+"""
+    _part_children(x) -> Tuple
+
+The direct parts of `x` on the selection card (see `_browse!`): of a `MultiShape` object, e.g. a
+group, a doublet or a cube beamsplitter, the elements of `BeamletOptics.shape(x)` that are objects,
+in their order (beams and bare shapes are left out); none of a `SingleShape` object or of anything
+else, e.g. a beam or a clip plane.
+"""
+_part_children(x::BMO.AbstractObject) = _part_children(x, BMO.shape_trait_of(x))
+_part_children(_) = ()
+_part_children(x, ::BMO.MultiShape) = Tuple(c for c in BMO.shape(x) if c isa BMO.AbstractObject)
+_part_children(_, ::BMO.AbstractShapeTrait) = ()
+
+"""Returns the object whose part `x` is in the `gui` (see `_map_parts!`), `nothing` at the top level."""
+_part_parent(gui::LiveView, x) = get(gui.objects.parents, x, nothing)
+
+"""
+    _map_parts!(gui)
+
+Maps each part of the top-level objects of the systems and the extras of the `gui` to the object it
+is a part of, recursively (see `_part_children` and `_part_parent`), and names the parts without a
+label and a name by their type and a running index, like `_name_objects!`, e.g. the lenses of a
+doublet. The systems do not change at runtime, hence this runs once per live view.
+"""
+function _map_parts!(gui::LiveView)
+    state = gui.objects
+    function walk!(x)
+        for c in _part_children(x)
+            state.parents[c] = x
+            if !haskey(gui.labels, c) && !haskey(state.names, c)
+                base = string(nameof(typeof(c)))
+                n = state.counters[base] = get(state.counters, base, 0) + 1
+                state.names[c] = "$base $n"
+            end
+            walk!(c)
+        end
+        return nothing
+    end
+    for h in (gui.system_handles..., gui.extras), top in _top_levels(h)
+        walk!(top)
+    end
+    return nothing
+end
+
+"""
+    _anchor_part_card!(gui, part)
+
+Places the card of the selection of the `gui`, which shows the inspected `part`, at the bounding box
+of the plots of `part`, or, without plots of its own (e.g. a lens of a doublet, whose plots belong
+to the doublet), of the nearest object that it is a part of, see `_plotted_part`.
+"""
+function _anchor_part_card!(gui::LiveView, part)
+    ctrl = gui.controls
+    x = _plotted_part(gui, part)
+    isnothing(x) && return nothing
+    c = gui.cards.selection
+    c.corners = _box_corners(_selection_bbox(ctrl, x, _object_plots(ctrl.h, x)))
+    c.key = (part, _card_pose(part))
+    _update_cards!(gui)
+    return nothing
+end
+
+"""
+Returns `part` if it has plots in the `gui`, else the nearest object that it is a part of with plots
+(see `_part_parent`), e.g. the doublet of a lens, or `nothing`.
+"""
+function _plotted_part(gui::LiveView, part)
+    x = part
+    while !isnothing(x) && isempty(_object_plots(gui.controls.h, x))
+        x = _part_parent(gui, x)
+    end
+    return x
 end

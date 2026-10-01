@@ -152,25 +152,60 @@ end
 
 Shows the card of the selection (`gui.cards.selection`) next to the selected (or inspected, see
 `_inspect!`) object, unless it has a pinned card, and the pinned cards of the `gui` next to their objects; see `_update_card!`. The cards are
-placed in this order, each off the view cube and the cards before, so that none covers another:
+placed in this order, each off the obstacles of the `gui` (the view cube and the parts of the
+layout over the 3D view, see `_obstacles`) and the cards before, so that none covers another:
 the cards that the mouse moved to their `spot` first, where they stay (see `_drag_cards!`), then
-the card of the selection, at its object; a pinned card without room is collapsed to its head. All
-cards are hidden while a menu is open, whose options they would cover. Called every frame, which
-moves the cards with the camera and the objects.
+the selection card of groups (see `_update_browse_card!`), then the card of the selection, at its
+object; a pinned card without room is collapsed to its head. All cards are hidden while a menu is
+open, whose options they would cover, and in the spectator mode (see `_on_spectator!`), after which
+the pinned cards are shown again where they were. Called every frame, which moves the cards with the camera
+and the objects.
 """
 function _update_cards!(gui::LiveView)
     menu = _menu_open(gui)
     sel = _shown_object(gui)
-    obstacles = _obstacles(gui.widgets.view_cube)
+    obstacles = _obstacles(gui)
     shown = menu || !_selection_card_shown(gui) || any(c -> c.pinned && c.obj === sel, gui.cards.all) ?
         nothing : sel
-    target(c) = c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
+    spectator = gui.controls.spectator[]
+    target(c) = spectator ? nothing : c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
     order = [gui.cards.selection; filter(c -> c !== gui.cards.selection, gui.cards.all)]
-    for moved in (true, false), c in order
-        isnothing(c.spot) == moved || _update_card!(gui, c, target(c), obstacles)
+    for c in order
+        isnothing(c.spot) || _update_card!(gui, c, target(c), obstacles)
+    end
+    _update_browse_card!(gui, menu, obstacles)
+    for c in order
+        isnothing(c.spot) && _update_card!(gui, c, target(c), obstacles)
     end
     return nothing
 end
+
+"""
+    _obstacles(gui) -> Vector{Rect2f}
+
+The screen rectangles [figure px] that the floating cards of the `gui` keep off, see `_avoid`: the
+view cube, if any, and the parts of the layout over the 3D view that are shown, see
+`_layout_obstacles`.
+"""
+_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui)]
+
+"""
+    _layout_obstacles(gui) -> Vector{Rect2f}
+
+The rectangles [figure px] of the parts of the layout of the `gui` that lie over the 3D view and
+are shown, e.g. the overlay of the compact layout (see `_CompactOverlay`), which the floating
+cards keep off like the view cube; none by default.
+"""
+_layout_obstacles(::LiveView) = Rect2f[]
+
+"""
+    _over_layout(gui) -> Bool
+
+Returns `true` if the mouse is over a part of the layout of the `gui` that lies over the 3D view,
+whose presses and scrolling the camera must not get, like those over the cards (see
+`_shield_cards!`), e.g. the overlay of the compact layout; `false` by default.
+"""
+_over_layout(::LiveView) = false
 
 """
 Returns `true` if the layout of the `gui` shows the card of the selection (`gui.cards.selection`) next to the
@@ -203,11 +238,14 @@ function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{
     end
     corners = _card_corners(gui, c, obj)
     _update!(c.title.text, _label(gui, obj))
+    # "‹" on the card of a part, see `_browse_parent!`
+    c.back_shown = !isnothing(_part_parent(gui, obj))
     _show_kind!(c, obj)
     scene = gui.ax.scene
     view = Rect2f(Makie.viewport(scene)[])
     sel = _screen_rect(scene, corners, obj)
     c.auto_collapsed = false
+    c.step_shown, c.has_properties = _shows_step(gui, c, obj), _has_properties(obj)
     _fit_properties!(c)
     size = _card_size(c)
     p = isnothing(c.spot) ? _avoid(_card_position(sel, size, view), size, view, obstacles) :
@@ -261,10 +299,23 @@ end
 """
     _declarations(c, obj) -> (actions, rows)
 
-The declarations of the widgets of `obj` on the card `c`: [`card_actions`](@ref) and
-[`card_rows`](@ref), which a host may extend, e.g. the docked card of the app layout.
+The declarations of the widgets of `obj` on the card `c`: [`card_actions`](@ref) with the button
+"parts" of an object with parts (see `_head_actions`) and [`card_rows`](@ref), which a host may
+extend, e.g. the docked card of the app layout.
 """
-_declarations(::_AbstractCard, obj) = (card_actions(obj), card_rows(obj))
+_declarations(::_AbstractCard, obj) = (_head_actions(obj), card_rows(obj))
+
+"""
+    _head_actions(obj)
+
+The buttons in the head of the card of `obj`: those of [`card_actions`](@ref) and, for a group or
+another object with parts (see `_part_children`), the button "parts", which opens its selection
+card, see `_browse!`. A click selects such an object as a whole (see `_open_menu!`), the button is
+the visible way to its parts.
+"""
+_head_actions(obj) = isempty(_part_children(obj)) ? card_actions(obj) :
+    (card_actions(obj)..., CardWidget(Button; name = :parts, label = "parts ›",
+        on = (gui, o, _) -> _browse!(gui, o)))
 
 # The new widgets of a floating card come before the mouse shield of the cards
 _on_content_built!(gui::LiveView, ::_ComponentCard) = _shield_cards!(gui)
@@ -552,6 +603,7 @@ function _connect_card!(gui::LiveView, c::_ComponentCard)
     # The toggle switches itself, `_toggle_pinned!` sets it to the state of the card
     push!(listeners, on(v -> v == _pin_state(c) || _toggle_pinned!(gui, c), c.pin_button.active))
     push!(listeners, on(_ -> _toggle_properties!(gui, c), c.properties_button.clicks))
+    push!(listeners, on(_ -> _browse_parent!(gui, _card_object(gui, c)), c.back_button.clicks))
     _connect_selection_part!(gui, c)
     _connect_dock_button!(gui, c, c.dock_button)
     return nothing
@@ -649,32 +701,60 @@ function _inspector_rows(gui::LiveView, ::Nothing)
 end
 
 """
+    _shows_step(gui, c, obj) -> Bool
+
+Returns `true` if the floating card `c` of the `gui` shows the keyboard step and the mode for its
+object `obj`: the card of the selection, and a pinned card while its object is selected, which is
+then shown instead of the card of the selection (see `_update_cards!`). Not in a layout that shows
+them elsewhere, e.g. in the inspector of the app layout, see `_selection_card_shown`.
+"""
+_shows_step(gui::LiveView, c::_ComponentCard, obj) = c === gui.cards.selection ||
+    (_selection_card_shown(gui) && !c.transient && obj === gui.controls.selected[])
+
+"""
+Returns `true` if the floating card of `obj` has the disclosure row "Properties" (see
+`_show_properties!`): any object, but no inspected point, measurement or other `_InfoItem`.
+"""
+_has_properties(_) = true
+
+"""
     _refresh_selection_part!(gui, c, obj)
 
-Shows the properties of `obj` on the floating card `c` of the selection while they are expanded,
-see `_toggle_properties!`; pinned cards have no part of the selection. Nothing for other hosts, e.g.
-the inspector of the app layout refreshes its part itself, see `_refresh_inspector!`.
+Shows the properties of `obj` in the property list of the card `c` while they are expanded (see
+`_toggle_properties!` and `_list_shown`), otherwise empties the list, see `_hide_properties!`. For
+all cards with a list of their own (see `_has_list`): the floating cards and the docked pinned
+cards of the app layout. Nothing for the docked card of the selection, whose properties the
+inspector lists itself, see `_refresh_inspector!`.
 """
-_refresh_selection_part!(::LiveView, ::_AbstractCard, _) = nothing
-function _refresh_selection_part!(gui::LiveView, c::_ComponentCard, obj)
-    (c.pinned || !c.properties_shown) && return nothing
-    _show_properties!(gui, c, obj)
+function _refresh_selection_part!(gui::LiveView, c::_AbstractCard, obj)
+    _has_list(c) || return nothing
+    _list_shown(c, obj) ? _show_properties!(gui, c, obj) : _hide_properties!(c)
     return nothing
 end
-_refresh_selection_part!(::LiveView, ::_ComponentCard, ::Nothing) = nothing
+_refresh_selection_part!(::LiveView, ::_AbstractCard, ::Nothing) = nothing
+
+# A card with the fields `list`, `properties_button` and `properties_shown`
+_has_list(::_AbstractCard) = false
+_has_list(::_ComponentCard) = true
+# The list of the card `c` shows the properties of `obj`
+_list_shown(c::_AbstractCard, obj) = c.properties_shown && _has_properties(obj)
+# The list of a floating card that is not shown is moved away with its part, see `_lower_parts`
+_hide_properties!(::_AbstractCard) = nothing
 
 """
-Expands the properties of the floating card `c` of the selection of the `gui` below its disclosure
-row, or collapses them again, see `_ComponentCard`. The state stays with the card when another
-object is selected.
+Expands the properties of the card `c` of the `gui` below its disclosure row, or collapses them
+again, on a floating card (see `_ComponentCard`) and on a docked pinned card of the app layout. The
+state stays with the card when another object is selected, when the card is pinned and when it is
+docked or floated. The host of the card then lays it out again, see `_on_properties_toggled!`.
 """
-function _toggle_properties!(gui::LiveView, c::_ComponentCard)
+function _toggle_properties!(gui::LiveView, c::_AbstractCard)
     c.properties_shown = !c.properties_shown
     _show_properties_state!(c.properties_button, c.properties_shown)
     _refresh_selection_part!(gui, c, _card_object(gui, c))
-    _update_cards!(gui)
+    _on_properties_toggled!(gui, c)
     return nothing
 end
+_on_properties_toggled!(gui::LiveView, ::_AbstractCard) = _update_cards!(gui)
 
 # The button that docks the pinned card `c` in the sidebar, if the layout has one, see `_card_tools!`
 _connect_dock_button!(::LiveView, ::_ComponentCard, ::Nothing) = nothing
@@ -684,16 +764,17 @@ _connect_dock_button!(gui::LiveView, c::_ComponentCard, b::_IconButton) =
 """
     _shield_cards!(gui)
 
-(Re)adds the listeners that keep the presses and the scrolling over the cards of the `gui` from the
-camera: after the widgets of all cards (Textbox 70, Button 1), whose presses they would take
-otherwise, and before the camera (0).
+(Re)adds the listeners that keep the presses and the scrolling over the cards of the `gui` and
+over the parts of its layout in the 3D view (see `_over_layout`) from the camera: after the
+widgets of all cards and parts (Textbox 70, Button 1), whose presses they would take otherwise,
+and before the camera (0). Called again when widgets are added later.
 """
 function _shield_cards!(gui::LiveView)
     ev = events(gui.ax.scene)
     listeners = gui.controls.listeners
     foreach(off, gui.cards.shield)
     filter!(l -> !any(s -> s === l, gui.cards.shield), listeners)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) || _over_layout(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
         on(_ -> Consume(over()), ev.scroll; priority = 1)]
     append!(listeners, gui.cards.shield)
@@ -720,7 +801,7 @@ elsewhere ends the input into the textboxes of the cards, also if the controls c
 function _connect_cards!(gui::LiveView)
     ctrl = gui.controls
     ev = events(gui.ax.scene)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui)
     ctrl.ignore_mouse = () -> over() || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))
@@ -730,8 +811,48 @@ function _connect_cards!(gui::LiveView)
         return Consume(false)
     end)
     _drag_cards!(gui)
+    _click_cards!(gui)
     _shield_cards!(gui)
     _update_cards!(gui)
+    return nothing
+end
+
+"""Selects the object `obj` of a pinned card of the `gui` after a click on the card, if it can be selected."""
+function _select_pinned!(gui::LiveView, obj)
+    (isnothing(obj) || !_is_movable(gui.controls, obj)) && return nothing
+    _select!(gui, obj)
+    return nothing
+end
+
+"""Returns `true` if the point `p` [figure px] is over a widget among the `blocks` of a card, i.e. not over a text."""
+_over_widget(blocks, p::Point2f) = any(b -> b isa Makie.Block && !(b isa Union{Label, Makie.Box}) &&
+    p in Rect2f(b.layoutobservables.computedbbox[]), blocks)
+
+"""
+    _click_cards!(gui)
+
+A click on a pinned floating card of the `gui` selects its object (see `_select_pinned!`): on its
+head (see `_drag_cards!`, which takes the presses there) or, here, on its rows beside the widgets,
+whose clicks keep their meaning. The listener comes after `_drag_cards!` and passes the events on.
+"""
+function _click_cards!(gui::LiveView)
+    ev = events(gui.ax.scene)
+    # The card and the mouse at the press
+    press = Ref{Any}(nothing)
+    push!(gui.controls.listeners, on(ev.mousebutton, priority = 2) do event
+        event.button == Mouse.left || return Consume(false)
+        p = Point2f(ev.mouseposition[])
+        if event.action == Mouse.press
+            i = findlast(c -> c.pinned && _over_card(c, ev) && p in _part_rect(c.rows) &&
+                              !_over_widget(c.blocks, p), gui.cards.all)
+            press[] = isnothing(i) ? nothing : (gui.cards.all[i], p)
+        elseif event.action == Mouse.release && !isnothing(press[])
+            c, p0 = press[]
+            press[] = nothing
+            (c.pinned && maximum(abs, p - p0) < _CARD_DRAG_MIN) && _select_pinned!(gui, c.obj)
+        end
+        return Consume(false)
+    end)
     return nothing
 end
 
@@ -779,6 +900,8 @@ function _drag_cards!(gui::LiveView)
                 _update_cards!(gui)
             else
                 click[] = (c, time())
+                # A click on the head of a pinned card selects its object, see `_click_cards!`
+                c.pinned && _select_pinned!(gui, c.obj)
             end
             return Consume(true)
         end

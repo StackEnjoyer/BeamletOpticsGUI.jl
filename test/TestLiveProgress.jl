@@ -19,7 +19,13 @@ const GUI = BeamletOpticsGUI
         o = GUI._ProgressOverlay(ax)
         # In a child scene, drawn after all plots of the 3D scene
         @test length(ax.scene.plots) == n0
-        @test o.hud in ax.scene.children && length(o.hud.plots) == length(o.plots) == 4
+        @test o.hud in ax.scene.children && length(o.plots) == 6 && length(o.link_plots) == 2
+        @test length(o.hud.plots) == 8
+        # the line to the anchor point and its dot: below the panel, hidden, no line yet
+        @test isempty(o.link[])
+        z(p) = Makie.transformationmatrix(p)[][3, 4]
+        @test all(p -> GUI._PROGRESS_Z < z(p) < z(first(o.plots)), o.link_plots)
+        @test all(p -> !p.visible[] && !p.inspectable[] && isempty(p.clip_planes[]), o.link_plots)
         # GLMakie sorts the plots by the z translation before drawing, which also puts them in front
         # of the 3D scene; `overdraw` would put transparent plots over them
         @test all(p -> Makie.transformationmatrix(p)[][3, 4] > GUI._PROGRESS_Z, o.plots)
@@ -78,6 +84,65 @@ const GUI = BeamletOpticsGUI
         GUI._show_progress!(o, [1, 2, 3], 0.25, "y")
         @test all(p -> p.visible[], o.plots)
         @test length(ax.scene.plots) == n
+    end
+
+    @testset "line to the anchor point" begin
+        o = GUI._ProgressOverlay(ax)
+        scene = ax.scene
+        cam = cameracontrols(scene)
+        eye, look = Vector(cam.eyeposition[]), Vector(cam.lookat[])
+        v = normalize(look - eye)
+        right = normalize(cross(v, Vector(cam.upvector[])))
+        line, dot = o.link_plots
+        center(o) = Point2f(o.anchor[] .+ GUI._PROGRESS_GAP .+ GUI._PROGRESS_PANEL ./ 2)
+        # a point in the view: from its projection, with the dot there, to the center of the panel
+        GUI._show_progress!(o, look, 0.5, "x")
+        q = Makie.project(scene, :data, :pixel, Point3f(look))
+        @test length(o.link[]) == 2 && o.link[][1] ≈ Point2f(q[1], q[2]) && o.link[][2] == center(o)
+        @test all(p -> p.visible[], o.link_plots)
+        @test vcat(dot[1][]) == o.link[][1:1]
+        @test line.color[] == Makie.to_color(GUI._PROGRESS_FILL_COLOR)
+        # a point beyond the right edge: the panel stays in the view, the line leaves it towards the point
+        w = Makie.widths(scene.viewport[])[1]
+        GUI._show_progress!(o, look + 1e3 * norm(look - eye) * right, 0.5, "x")
+        @test o.link[][1][1] > w && o.link[][2] == center(o) && o.link[][2][1] < w
+        # behind the camera or without a position: no line and no dot
+        GUI._show_progress!(o, eye - v + 0.5 * right, 0.5, "x")
+        @test isempty(o.link[]) && isempty(vcat(dot[1][]))
+        GUI._show_progress!(o, [NaN, NaN, NaN], 0.5, "x")
+        @test isempty(o.link[])
+        # hidden with the window
+        GUI._show_progress!(o, look, 0.5, "x")
+        GUI._hide_progress!(o)
+        @test all(p -> !p.visible[], o.link_plots)
+    end
+
+    @testset "cancel button" begin
+        o = GUI._ProgressOverlay(ax)
+        button, text = o.plots[5], o.plots[6]
+        @test only(vcat(text.text[])) == "Cancel"
+        t = GUI._app_theme(:light)
+        @test button.color[] == t.field
+        GUI._show_progress!(o, [0.1, 0.2, 0.3], 0.5, "Tracing beams 50 %")
+        # right of the bar, inside the panel
+        r = GUI._cancel_rect(o)
+        @test Makie.widths(r) == GUI._PROGRESS_CANCEL
+        panel = Rect2f(o.anchor[] .+ GUI._PROGRESS_GAP, GUI._PROGRESS_PANEL)
+        @test all(minimum(r) .> minimum(panel)) && all(maximum(r) .< maximum(panel))
+        bar_end = o.anchor[][1] + GUI._PROGRESS_BAR_X + GUI._PROGRESS_TRACK[1]
+        @test minimum(r)[1] ≈ bar_end + GUI._PROGRESS_CANCEL_GAP
+        # the mouse [figure px] is over it only while the window is shown
+        origin = Point2f(minimum(Makie.viewport(ax.scene)[]))
+        center = Point2f(origin .+ minimum(r) .+ Makie.widths(r) ./ 2)
+        @test GUI._over_cancel(o, center)
+        @test !GUI._over_cancel(o, center .+ Point2f(0, GUI._PROGRESS_CANCEL[2]))
+        @test !GUI._over_cancel(o, center .- Point2f(GUI._PROGRESS_CANCEL[1], 0))
+        # hovered: highlighted; hiding the window ends it
+        o.hovered[] = true
+        @test button.color[] == t.hover
+        GUI._hide_progress!(o)
+        @test !o.hovered[] && button.color[] == t.field
+        @test !GUI._over_cancel(o, center)
     end
 
     @testset "window stays in the view" begin

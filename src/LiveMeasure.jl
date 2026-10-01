@@ -261,8 +261,9 @@ function _add_measure_point!(gui::LiveView, point, obj)
     return nothing
 end
 
-"""Switches measuring of the `gui` on or off, which clears the measurement."""
+"""Switches measuring of the `gui` on or off, which clears the measurement and closes the selection card."""
 function _set_measuring!(gui::LiveView, on::Bool)
+    _end_browse!(gui)
     _clear_measurement!(gui)
     _clear_inspection!(gui)
     gui.status.text[] = on ? "measure: click two components or beams" : "measuring off"
@@ -275,12 +276,25 @@ end
 Called after a click in the 3D view with the selected object `obj`, or `nothing` for a click on no
 component. While measuring, the position of the component or the point of the beam under the
 cursor is added to the measurement. Otherwise a click on a beam inspects it, see `_inspect_beam`,
-and a click elsewhere removes the inspection. Returns `true` if a beam was clicked, then the
-selection is kept.
+and a click elsewhere removes the inspection. A click on the empty background, i.e. on no component
+and no beam, while neither a selection (or an inspected object, see `_inspect!`) nor a transient
+info card is shown, shows the card of the `background_card` of the `gui`, see `_show_background!`;
+otherwise it only closes them, i.e. the controls deselect. Any click closes the card of the
+background. While the selection card is open (see `_browse!`), a click on no part of the
+browsed object only closes it, see `_click_while_browsing!`. Returns `true` if a beam was clicked
+or the selection card was closed, then the selection is kept.
 """
 function _on_click!(gui::LiveView, obj)
-    # A click closes the message of a failed solve, see `_show_solve_error!`
+    if !isnothing(gui.objects.browsed)
+        _click_while_browsing!(gui, nothing)
+        return true
+    end
+    # The cards shown before the click; on the background, the selection is still the one before
+    shown = !isnothing(_shown_object(gui)) || !isnothing(_info_card(gui))
+    # A click closes the message of a failed solve (see `_show_solve_error!`) and the card of the
+    # background
     _release_info!(gui, _SolveError)
+    _release_info!(gui, _BackgroundItem)
     obj isa LiveClipPlane && (obj = nothing)
     info = isnothing(obj) ? _inspect_beam(gui) : nothing
     if gui.widgets.measure_toggle.active[]
@@ -291,6 +305,7 @@ function _on_click!(gui::LiveView, obj)
         end
     elseif isnothing(info)
         _clear_inspection!(gui)
+        isnothing(obj) && !shown && _show_background!(gui)
     else
         _show_inspection!(gui, info)
     end
@@ -315,6 +330,7 @@ function _connect_inspection!(gui::LiveView)
         _clear_inspection!(gui)
         _clear_measurement!(gui)
         _release_info!(gui, _SolveError)
+        _release_info!(gui, _BackgroundItem)
         return Consume(false)
     end)
     push!(listeners, on(v -> _set_measuring!(gui, v), gui.widgets.measure_toggle.active))

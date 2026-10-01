@@ -50,6 +50,7 @@ BMO.position(x::_InfoItem) = Vector{Float64}(_pose(x)[1])
 _card_corners(::LiveView, ::_ComponentCard, x::_InfoItem) = _points(x)
 
 card_actions(::_InfoItem) = ()
+_has_properties(::_InfoItem) = false
 
 # An inspected point: position, direction, path and optical path length, and for Gaussian beamlets
 # the radius and the radius of curvature, see `_inspection_string`

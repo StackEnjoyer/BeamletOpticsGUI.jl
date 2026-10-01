@@ -10,7 +10,7 @@ Panels
 =#
 
 function add_panel!(f, gui::LiveView, title::AbstractString; select::Bool = false)
-    p = _add_user_panel!(f, gui, String(title), select)
+    p = _with_ui(() -> _add_user_panel!(f, gui, String(title), select), gui)
     push!(gui.custom.panels, p)
     _register_widgets!(gui, p.layout)
     # The live view has solved already, the panel shows its result right away
@@ -115,11 +115,14 @@ Controls
 =#
 
 function add_controls!(f, gui::LiveView, title::AbstractString)
-    layout = _controls_slot!(gui, String(title))
-    # Like the builder of a panel, `f` may return an `update`, see `_user_panel`
-    c = _UserControls(String(title), layout, _update_function(f(layout)), nothing)
-    push!(gui.custom.controls, c)
-    _on_controls_added!(gui)
+    layout, c = _with_ui(gui) do
+        layout = _controls_slot!(gui, String(title))
+        # Like the builder of a panel, `f` may return an `update`, see `_user_panel`
+        c = _UserControls(String(title), layout, _update_function(f(layout)), nothing)
+        push!(gui.custom.controls, c)
+        _on_controls_added!(gui)
+        return layout, c
+    end
     _register_widgets!(gui, layout)
     # The controls show the current state right away; they are always shown, i.e. never stale
     _run_update!(gui, c, c.update)
@@ -179,8 +182,8 @@ function add_tool!(f, gui::LiveView, name::AbstractString; icon::Union{Symbol, B
     _icon(icon)
     _check_key(gui, key, name)
     # Built like the built-in tools, in the group `:user`, see `_BUILTIN_TOOLS`
-    w = _tool_widget(gui.layout, :user, Val(toggle), _key_label(name, key), icon,
-        _key_label(tooltip, key), false)
+    w = _with_ui(() -> _tool_widget(gui.layout, :user, Val(toggle), _key_label(name, key), icon,
+        _key_label(tooltip, key), false), gui)
     _connect_tool!(gui, f, w, Val(toggle), String(name))
     _connect_tool_key!(gui, w, key, Val(toggle), String(name))
     return w
@@ -221,6 +224,10 @@ button or switches the toggle, unless a textbox or menu takes the keyboard, see 
 _connect_tool_key!(::LiveView, _, ::Nothing, ::Val, ::String) = nothing
 function _connect_tool_key!(gui::LiveView, w, key::Keyboard.Button, toggle::Val, name::String)
     gui.custom.keys[key] = name
+    # listed in the help, see `_help_sections`
+    push!(gui.controls.help_extra,
+        "Own tools" => [_HelpEntry([uppercasefirst(String(_key_name(key)))], name)])
+    _update_help!(gui.controls)
     push!(gui.controls.listeners, on(events(gui.ax.scene).keyboardbutton, priority = 200) do event
         (event.action == Keyboard.press && event.key == key) || return Consume(false)
         gui.controls.ignore_keys() && return Consume(false)
@@ -241,7 +248,9 @@ the usual layouts.
 """
 const _LIVE_VIEW_KEYS = (
     Keyboard.t => "trace (t)",
-    Keyboard.escape => "Esc (cancel a solve, clear the inspection, deselect)",
+    Keyboard.escape => "Esc (clear the inspection, enclosing group, deselect)",
+    Keyboard.enter => "Enter (choose an entry of the selection card)",
+    Keyboard.kp_enter => "Enter (choose an entry of the selection card)",
     Keyboard.c => "clipping (c, Shift+c)",
     Keyboard.p => "add a clip plane (p)",
     Keyboard.delete => "remove the clip plane (Delete)",

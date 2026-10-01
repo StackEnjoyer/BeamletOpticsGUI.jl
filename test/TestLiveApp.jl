@@ -46,7 +46,7 @@ const GUI = BeamletOpticsGUI
         @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters"]
         @test first.(gui.layout.sections[:right]) == ["Properties"]
         @test first.(gui.layout.dock_panels) == ["Detector 1"]
-        @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels, :help]
+        @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels]
         @test occursin("1 ray", gui.widgets.info.text[])
         @test occursin("perspective", gui.widgets.info.text[])
         @test sprint(show, gui) == "LiveView(1 systems, 1 detector panels)"
@@ -188,10 +188,7 @@ const GUI = BeamletOpticsGUI
         gui.widgets.measure_toggle.active[] = true
         @test startswith(gui.status.text[], "measure:")
         gui.widgets.measure_toggle.active[] = false
-        # help and fit
-        help = gui.controls.help_shown
-        gui.layout.help_button.clicks[] += 1
-        @test gui.controls.help_shown != help
+        # fit
         gui.layout.fit_button.clicks[] += 1
         @test !isnothing(gui.camera.animation)
         # the views menu is in the toolbar
@@ -398,16 +395,133 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "spectator mode: only the 3D view and the help" begin
+        m, pd = _fixture()
+        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
+            sliders = ["a" => (0:0.1:1, v -> nothing)])
+        layout, ctrl, help = gui.layout, gui.controls, gui.layout.help
+        cube = gui.widgets.view_cube
+        ev = events(gui.fig.scene)
+        fig = Rect2f(gui.fig.scene.viewport[])
+        view() = Rect2f(gui.ax.scene.viewport[])
+        same(a, b) = minimum(a) ≈ minimum(b) && Makie.widths(a) ≈ Makie.widths(b)
+        bbox(b) = Rect2f(b.layoutobservables.computedbbox[])
+        center(r) = minimum(r) .+ Makie.widths(r) ./ 2
+        parked(part) = minimum(part.outer.layoutobservables.suggestedbbox[])[1] < -1.0f4
+        function click!(p)
+            ev.mouseposition[] = (Float64(p[1]), Float64(p[2]))
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            return nothing
+        end
+        parts = (layout.bar, layout.status_bar, layout.left, layout.right, layout.dock)
+        @test all(p -> p.shown, parts) && !layout.ui_hidden
+        # the left sidebar is collapsed before, a card is pinned in the right one
+        layout.collapse.left.active[] = false
+        GUI._toggle_pin!(gui, m)
+        v1 = view()
+        ortho = gui.widgets.orthographic_toggle
+        button = bbox(ortho.box)
+        blocks = (gui.status, gui.widgets.step_box, ortho.box, gui.panels[1].ax,
+            only(layout.inspector.pinned).head.title)
+
+        _key!(gui, Keyboard.v)
+        @test ctrl.spectator[] && layout.ui_hidden
+        @test !any(p -> p.shown, parts)
+        @test same(view(), fig)
+        # hidden and off-screen, where they take no clicks
+        @test all(b -> !b.blockscene.visible[] && maximum(bbox(b))[1] < 0, blocks)
+        active = ortho.active[]
+        click!(center(button))
+        @test ortho.active[] == active
+        # no view cube: a click at its place does not turn the camera
+        @test !cube.scene.visible[]
+        click!(center(Rect2f(cube.scene.viewport[])))
+        @test isnothing(cube.anim)
+        # the help pill and the chip of the mode stay, inside the 3D view
+        @test !parked(help.pill) && !parked(help.spectator) && parked(help.chips)
+        @test all(minimum(GUI._overlay_rect(help.pill)) .>= minimum(fig))
+        # the toggles keep their state and do not show a part meanwhile
+        @test !layout.collapse.left.active[] && layout.collapse.right.active[] && layout.collapse.dock.active[]
+        layout.collapse.dock.active[] = false
+        layout.collapse.dock.active[] = true
+        layout.collapse.right.active[] = false
+        layout.collapse.right.active[] = true
+        @test !layout.dock.shown && !layout.right.shown && same(view(), fig)
+
+        # back: each part as its toggle says, the sidebar that was collapsed stays collapsed
+        _key!(gui, Keyboard.v)
+        @test !ctrl.spectator[] && !layout.ui_hidden
+        @test layout.bar.shown && layout.status_bar.shown && layout.right.shown && layout.dock.shown
+        @test !layout.left.shown
+        @test same(view(), v1)
+        @test all(b -> b.blockscene.visible[] && minimum(bbox(b))[1] >= 0, blocks)
+        @test same(bbox(ortho.box), button) && cube.scene.visible[]
+        click!(center(button))
+        @test ortho.active[] != active
+        @test only(layout.inspector.pinned).obj === m
+        close(gui)
+
+        # a view started in the spectator mode starts without the UI
+        m, pd = _fixture()
+        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); spectator = true)
+        layout = gui.layout
+        @test layout.ui_hidden && !any(p -> p.shown, (layout.bar, layout.status_bar, layout.left,
+            layout.right, layout.dock))
+        @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
+        GUI._set_spectator!(gui.controls, false)
+        @test all(p -> p.shown, (layout.bar, layout.status_bar, layout.left, layout.right, layout.dock))
+        close(gui)
+
+        # panels, controls and tools added in the spectator mode are hidden until it is left, e.g.
+        # those of a view that starts in it
+        m, pd = _fixture()
+        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); spectator = true)
+        layout = gui.layout
+        visible(b) = b.blockscene.visible[]
+        axis, button = Ref{Any}(nothing), Ref{Any}(nothing)
+        add_panel!(gui, "Own") do l
+            axis[] = Axis(l[1, 1])
+            return _ -> nothing
+        end
+        add_controls!(l -> (button[] = Button(l[1, 1]; label = "x")), gui, "Mine")
+        tool = add_tool!(g -> nothing, gui, "Own tool")
+        @test layout.ui_hidden && !any(p -> p.shown, (layout.bar, layout.left, layout.dock))
+        @test !visible(axis[]) && !visible(button[]) && !visible(tool.box)
+        @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
+        GUI._set_spectator!(gui.controls, false)
+        @test visible(button[]) && visible(tool.box) && "Mine" in first.(layout.sections[:left])
+        @test "Own" in first.(layout.dock_panels)
+        close(gui)
+
+        # controls added while the left sidebar is collapsed by its toggle
+        m, pd = _fixture()
+        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]))
+        layout = gui.layout
+        layout.collapse.left.active[] = false
+        add_controls!(l -> (button[] = Button(l[1, 1]; label = "x")), gui, "Mine")
+        @test !layout.left.shown && !visible(button[])
+        layout.collapse.left.active[] = true
+        @test layout.left.shown && visible(button[])
+        close(gui)
+    end
+
+    @testset "one collapse mechanism" begin
+        # the parts of both layouts are collapsed by the same function
+        @test length(methods(GUI._set_shown!)) == 1
+        @test only(methods(GUI._set_shown!)).sig.parameters[2] === GUI._LayoutPart
+    end
+
     @testset "slots" begin
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [])
-        # a new toolbar group after the built-in ones, but before "Help", which stays last
+        # a new toolbar group after the built-in ones
         b = Button(GUI._add_toolbar_entry!(gui, :custom); label = "Mine")
-        @test first.(gui.layout.groups[(end - 1):end]) == [:custom, :help]
-        @test b in contents(gui.layout.groups[end - 1].second)
+        @test first.(gui.layout.groups[(end - 1):end]) == [:panels, :custom]
+        @test b in contents(gui.layout.groups[end].second)
         # the groups and separators alternate in the columns of the toolbar
         cols(x) = Makie.GridLayoutBase.gridcontent(x).span.cols
-        @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11, 13:13]
+        @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11]
         # a sidebar section below the built-in ones
         g = GUI._add_sidebar_section!(gui, :right, "Extra")
         @test g isa GridLayout

@@ -8,23 +8,6 @@ using Makie: Box, Fixed, Auto, Outside, Rect2f, Point2f, rowsize!
 const _GLB = Makie.GridLayoutBase
 
 """
-    _AppPart
-
-Collapsible part of the app layout (a sidebar or the dock): a background `box` and the `grid` of
-its content, both placed at `pos` of the `parent` layout. `resize(size)` sets the size of its
-column or row in the `parent`, which is `size` while the part is shown, see `_set_shown!`.
-"""
-mutable struct _AppPart
-    parent::GridLayout
-    pos::Tuple{Int, Int}
-    resize::Function
-    size::Any
-    box::Box
-    grid::GridLayout
-    shown::Bool
-end
-
-"""
     AppLayout
 
 Layout of `live_view(...; layout = :app)`, an application window around the 3D view:
@@ -36,9 +19,12 @@ Layout of `live_view(...; layout = :app)`, an application window around the 3D v
 - the analysis dock below the 3D view, a tab per detector panel (or other panel, see
   `_add_dock_panel!`), of which only the active one is shown and computed, see `_DockTabs`
 - the status bar with the status line and an info label (last trace, number of rays, projection)
+- the `help` over the 3D view, like in the compact layout: the help pill at its top left, the
+  chips of the mode and the keyboard step and the help card, see `_HelpUI`
 
 The sidebars and the dock are collapsed via toggles in the toolbar, then the 3D view takes their
-space, see `_set_shown!`. The colors come from the tokens `theme` of the `theme` kwarg, see
+space, see `_set_shown!`. In the spectator mode, all parts are collapsed, also the toolbar and the
+status bar, and the 3D view fills the window, see `_set_spectator_ui!`. The colors come from the tokens `theme` of the `theme` kwarg, see
 `_APP_THEMES`. The fields are set by `_build_layout`.
 """
 mutable struct AppLayout <: AbstractLiveLayout
@@ -47,9 +33,14 @@ mutable struct AppLayout <: AbstractLiveLayout
     toolbar::GridLayout
     groups::Vector{Pair{Symbol, GridLayout}}
     # collapsible parts and the sections `title => content` of the sidebars (`:left`, `:right`)
-    left::_AppPart
-    right::_AppPart
-    dock::_AppPart
+    left::_LayoutPart
+    right::_LayoutPart
+    dock::_LayoutPart
+    # the toolbar and the status bar as collapsible parts; `ui_hidden` while all parts are hidden
+    # in the spectator mode, see `_set_spectator_ui!`
+    bar::_LayoutPart
+    status_bar::_LayoutPart
+    ui_hidden::Bool
     sections::Dict{Symbol, Vector{Pair{String, GridLayout}}}
     # the stack of a sidebar grows its sections marked `grow`, otherwise the filler at the end
     fillers::Dict{Symbol, Label}
@@ -62,7 +53,8 @@ mutable struct AppLayout <: AbstractLiveLayout
     clip_toggle::_IconToggle
     fit_button::_IconButton
     views_button::_IconButton
-    help_button::_IconButton
+    # the help over the 3D view: pill, chips and help card
+    help::_HelpUI
     # object tree, see `_tree_rows`: the expanded systems and groups (by key, the default is
     # expanded for systems, collapsed for groups); the names of its rows are in `gui.objects`, see
     # `_name_objects!`
@@ -90,8 +82,7 @@ Slots
     _add_toolbar_entry!(layout::AppLayout, group::Symbol) -> GridPosition
 
 Returns the position of a new entry at the end of the toolbar `group`, e.g. for a `Button`. A new
-group is appended to the toolbar, after a separator, but before the group `:help`, which stays
-last.
+group is appended to the toolbar, after a separator.
 """
 function _add_toolbar_entry!(layout::AppLayout, group::Symbol)
     i = findfirst(g -> g.first == group, layout.groups)
@@ -101,11 +92,8 @@ function _add_toolbar_entry!(layout::AppLayout, group::Symbol)
             Box(layout.toolbar[1, 2k]; width = 1, height = 22, color = layout.theme.border,
                 strokewidth = 0)
         end
-        # The group `:help` moves one place to the right, the new group takes its place
-        j = k > 0 && layout.groups[k].first == :help ? k : k + 1
-        j == k && (layout.toolbar[1, 2k + 1] = layout.groups[k].second)
-        g = GridLayout(layout.toolbar[1, 2j - 1]; default_colgap = 4)
-        insert!(layout.groups, j, group => g)
+        g = GridLayout(layout.toolbar[1, 2k + 1]; default_colgap = 4)
+        push!(layout.groups, group => g)
         g
     else
         layout.groups[i].second
@@ -145,71 +133,43 @@ _add_sidebar_section!(gui::AppView, side::Symbol, title::AbstractString; kwargs.
 
 # `_add_dock_panel!` is defined with the tabs of the dock in `LiveDock.jl`
 
-#=
-Collapsing
-=#
-
-"""Appends all blocks in the layout `x` to `out`, including the blocks of nested layouts."""
-function _blocks!(out, gl::GridLayout)
-    for c in gl.content
-        _blocks!(out, c.content)
-    end
-    return out
-end
-_blocks!(out, b::Makie.Block) = push!(out, b)
-function _blocks!(out, sg::SliderGrid)
-    push!(out, sg)
-    return _blocks!(out, sg.layout)
-end
-
-# Detached parts are laid out here, where they can not take mouse events
-const _OFFSCREEN = Point2f(-1.0f5, -1.0f5)
+"""
+Shows the dock if its toggle is on and it has panels, otherwise collapses it; always collapsed in
+the spectator mode, see `_set_spectator_ui!`.
+"""
+_update_dock!(layout::AppLayout) = _set_shown!(layout.dock,
+    !layout.ui_hidden && layout.collapse.dock.active[] && !isempty(layout.dock_panels))
 
 """
-    _set_shown!(part::_AppPart, shown::Bool)
-
-Shows or collapses the `part`. A collapsed part is removed from its parent layout, whose column
-or row shrinks to zero, such that the 3D view takes the space. Since Makie keeps drawing, and
-buttons keep reacting to clicks within their last bounding boxes, the blocks of the part are also
-hidden and laid out off-screen. Its plots are kept, i.e. their state survives collapsing.
+The spectator mode of the app layout: the toolbar, the status bar, the sidebars and the dock are
+collapsed, such that the 3D view fills the window (see `_set_shown!`); afterwards each is shown
+again as its toggle says, i.e. a sidebar that was collapsed stays collapsed, and the inspector and
+the dock are refreshed, which are not updated while they are collapsed.
 """
-function _set_shown!(part::_AppPart, shown::Bool)
-    part.shown == shown && return nothing
-    part.shown = shown
-    blocks = _blocks!(Any[], part.grid)
-    if shown
-        part.parent[part.pos...] = part.box
-        part.parent[part.pos...] = part.grid
-        part.resize(part.size)
-        Makie.unhide!(part.box)
-        foreach(Makie.unhide!, blocks)
-    else
-        Makie.hide!(part.box)
-        foreach(Makie.hide!, blocks)
-        for x in (part.box, part.grid)
-            _GLB.remove_from_gridlayout!(_GLB.gridcontent(x))
-            w = GeometryBasics.widths(x.layoutobservables.computedbbox[])
-            x.layoutobservables.suggestedbbox[] = Rect2f(_OFFSCREEN, w)
-        end
-        part.resize(Fixed(0))
+function _set_spectator_ui!(gui::AppView, on::Bool)
+    layout = gui.layout
+    layout.ui_hidden = on
+    foreach(p -> _set_shown!(p, !on), (layout.bar, layout.status_bar))
+    _set_shown!(layout.left, !on && layout.collapse.left.active[])
+    _set_shown!(layout.right, !on && layout.collapse.right.active[])
+    _update_dock!(layout)
+    if !on
+        _refresh_inspector!(gui; force = true)
+        _refresh_dock!(gui)
     end
     return nothing
 end
-
-"""Shows the dock if its toggle is on and it has panels, otherwise collapses it."""
-_update_dock!(layout::AppLayout) =
-    _set_shown!(layout.dock, layout.collapse.dock.active[] && !isempty(layout.dock_panels))
 
 #=
 Construction
 =#
 
-"""Returns a collapsible part with a background box at `pos` of the `parent`, see `_AppPart`."""
+"""Returns a collapsible part with a background box at `pos` of the `parent`, see `_LayoutPart`."""
 function _app_part(parent::GridLayout, pos, resize, size, color; padding = 10)
     box = Box(parent[pos...]; color, cornerradius = 0)
     grid = GridLayout(parent[pos...]; alignmode = Outside(padding), default_rowgap = 8)
     resize(size)
-    return _AppPart(parent, Tuple(pos), resize, size, box, grid, true)
+    return _LayoutPart(parent, Tuple(pos), resize, size, box, grid, true)
 end
 
 # Size of the icon buttons of the toolbar and of the icons on them [px]
@@ -290,6 +250,7 @@ _tree_marker_color(t::NamedTuple, ::Val{:clip_plane}) = t.clip_plane_icon
 function _build_layout(layout::AppLayout, fig, spec)
     t = layout.theme
     root = fig.layout
+    layout.ui_hidden = false
     # Gaps of rows and columns added later, the parts are separated by their borders
     root.default_rowgap = root.default_colgap = Fixed(0)
     main = GridLayout(root[2, 1]; default_colgap = 0)
@@ -311,8 +272,9 @@ function _build_layout(layout::AppLayout, fig, spec)
     layout.growing = Dict(:left => false, :right => false)
     rowsize!(root, 2, Auto(false))
     # Toolbar
-    Box(root[1, 1]; color = t.background, cornerradius = 0)
+    bar_box = Box(root[1, 1]; color = t.background, cornerradius = 0)
     bar = GridLayout(root[1, 1]; alignmode = Outside(8, 8, 6, 6))
+    layout.bar = _LayoutPart(root, (1, 1), s -> rowsize!(root, 1, s), Auto(), bar_box, bar, true)
     layout.toolbar = GridLayout(bar[1, 1]; halign = :left, default_colgap = 8)
     Label(bar[1, 2], ""; tellwidth = false)
     layout.groups = Pair{Symbol, GridLayout}[]
@@ -323,7 +285,6 @@ function _build_layout(layout::AppLayout, fig, spec)
     layout.clip_toggle = tb.clip_toggle
     layout.fit_button = tb.fit_button
     layout.views_button = tb.views_button
-    layout.help_button = tb.help_button
     # Sidebars
     sliders = if isempty(spec.slider_specs)
         nothing
@@ -336,11 +297,14 @@ function _build_layout(layout::AppLayout, fig, spec)
     panels = _build_dock!(layout, spec)
     _update_dock!(layout)
     # Status bar
-    Box(root[4, 1]; color = t.background, cornerradius = 0)
+    sb_box = Box(root[4, 1]; color = t.background, cornerradius = 0)
     sb = GridLayout(root[4, 1]; alignmode = Outside(10, 10, 4, 4))
+    layout.status_bar = _LayoutPart(root, (4, 1), s -> rowsize!(root, 4, s), Auto(), sb_box, sb, true)
     status = Label(sb[1, 1], "Click on a component to select it, press h to show the controls";
         halign = :left, tellwidth = false)
     info = Label(sb[1, 2], ""; halign = :right, color = t.muted)
+    # Help over the 3D view
+    layout.help = _HelpUI(_overlay_scene(fig), t, ax)
     return (; ax, cube, panels, sliders, status, tb.trace_button, tb.auto_trace_toggle,
         tb.clip_beams_toggle, tb.orthographic_toggle, tb.sources_toggle, inspector.step_box,
         tb.export_button, tb.show_all_button, tb.measure_toggle, tb.home_button,
@@ -389,8 +353,8 @@ end
 
 """
 Connects the entries of the app layout that are not fields of `LiveView`: the clip toggle, fit,
-help, the collapse toggles, the info label, the object tree and the inspector. All updates are
-driven by events.
+the help in the 3D view (see `_connect_help!`), the collapse toggles, the info label, the object
+tree and the inspector. All updates are driven by events.
 """
 function _connect_layout!(gui::AppView)
     layout = gui.layout
@@ -398,13 +362,16 @@ function _connect_layout!(gui::AppView)
     listeners = ctrl.listeners
     push!(listeners, on(v -> v == gui.clip.enabled || _set_clipping!(gui, v), layout.clip_toggle.active))
     push!(listeners, on(_ -> _zoom_to_selection!(gui), layout.fit_button.clicks))
-    push!(listeners, on(layout.help_button.clicks) do _
-        ctrl.help_shown = !ctrl.help_shown
-        _update_help!(ctrl)
+    # The help follows the 3D view, e.g. when a sidebar is collapsed, and makes room for the
+    # drop-down of the views menu of the toolbar, which it would cover
+    _connect_help!(gui)
+    push!(listeners, on(gui.widgets.views_menu.is_open) do open
+        layout.help.hidden = open
+        _arrange_help!(gui)
         return nothing
     end)
-    push!(listeners, on(v -> _set_shown!(layout.left, v), layout.collapse.left.active))
-    push!(listeners, on(v -> _set_shown!(layout.right, v), layout.collapse.right.active))
+    push!(listeners, on(v -> _set_shown!(layout.left, v && !layout.ui_hidden), layout.collapse.left.active))
+    push!(listeners, on(v -> _set_shown!(layout.right, v && !layout.ui_hidden), layout.collapse.right.active))
     push!(listeners, on(_ -> _update_dock!(layout), layout.collapse.dock.active))
     _connect_dock!(gui)
     # Object tree
@@ -418,20 +385,20 @@ function _connect_layout!(gui::AppView)
     return nothing
 end
 
+# The help lies over the 3D view: the floating cards keep off it, its clicks are not clicks into the
+# 3D view
+_layout_obstacles(gui::AppView) =
+    [_overlay_rect(gui.layout.help.pill); _help_rects(gui.layout.help)]
+_over_layout(gui::AppView) =
+    _over_help(gui.layout.help, Point2f(events(gui.ax.scene).mouseposition[]))
 
 #=
 App layout: panels as tabs of the analysis dock, controls as sections of the left sidebar, tools
-in the toolbar group `:user` before "Help"
+in the toolbar group `:user` at the end of the toolbar
 =#
 
 _mark_panel_stale!(gui::AppView, p::_UserPanel) = (push!(gui.layout.tabs.stale, p); nothing)
 _results_valid(gui::AppView) = gui.layout.tabs.hits_valid && !_running(gui) && !gui.trace.preview
-
-"""Hides the blocks of the collapsed `part`, e.g. those added to it since it was collapsed."""
-function _hide_collapsed!(part::_AppPart)
-    part.shown || foreach(Makie.hide!, _blocks!(Any[], part.grid))
-    return nothing
-end
 
 """
 Adds the panel as a tab of the dock: the content is built into the shown tab, then the previously
@@ -462,5 +429,21 @@ function _refresh_tab!(gui::AppView, p::_UserPanel)
 end
 
 _controls_slot!(gui::AppView, title::String) = _add_sidebar_section!(gui, :left, title)
+
+# The left sidebar, the place of `add_controls!`, may be collapsed by its toggle: it is attached to
+# the figure while blocks are added to it, see `_with_ui` of all layouts
+function _with_ui(f, gui::AppView)
+    left = gui.layout.left
+    function attached()
+        shown = left.shown
+        _set_shown!(left, true)
+        try
+            return f()
+        finally
+            _set_shown!(left, shown)
+        end
+    end
+    return invoke(_with_ui, Tuple{Any, LiveView}, attached, gui)
+end
 _on_controls_added!(gui::AppView) = _hide_collapsed!(gui.layout.left)
 

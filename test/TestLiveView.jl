@@ -494,9 +494,9 @@ _points(h) = only(render_plots(h))[1][]
         gui.trace.progress_delay = 0.2
         # A solve longer than `progress_delay` continues in the background, where its loop, which
         # has run that long, shows its window at once
-        @test !GUI._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, GUI._TRACING)
         @test gui.trace.job === job
-        @test gui.status.text[] == "tracing, Esc cancels"
+        @test gui.status.text[] == GUI._TRACING
         tick!()
         @test gui.trace.progress.visible[]
         @test gui.trace.progress.anchor[] == GUI._screen_anchor(scene, anchor)
@@ -514,12 +514,26 @@ _points(h) = only(render_plots(h))[1][]
         @test !gui.trace.progress.visible[]
         @test gui.status.text[] == "traced"
 
-        # `t` starts no second solve, Esc cancels after the current item
+        # `t` starts no second solve, and Esc does not cancel it: it is the key of the groups
         job = slow_job()
-        @test !GUI._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, GUI._TRACING)
         _key!(gui, Keyboard.t)
         @test gui.trace.job === job
         _key!(gui, Keyboard.escape)
+        @test gui.trace.job === job && !istaskdone(job.task)
+        # the button "Cancel" of the progress window cancels after the current item
+        tick!()
+        progress = gui.trace.progress
+        @test progress.visible[] && !progress.hovered[]
+        r = GUI._cancel_rect(progress)
+        p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
+        events(scene).mouseposition[] = (p[1], p[2])
+        @test progress.hovered[]
+        selected = gui.controls.selected[]
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test gui.controls.selected[] === selected
+        @test !progress.visible[] && !progress.hovered[]
         @test isnothing(gui.trace.job)
         @test istaskfailed(job.task)
         @test BMO.is_cancelled(TaskFailedException(job.task))
@@ -528,12 +542,26 @@ _points(h) = only(render_plots(h))[1][]
         @test startswith(gui.status.text[], "trace cancelled")
         # the elapsed time counts as the duration of the solve
         @test gui.trace.solve_time >= 0.15
+        # in the spectator mode, the progress window stays and its button still cancels
+        job = slow_job()
+        @test !GUI._run!(gui, job, GUI._TRACING)
+        GUI._set_spectator!(gui.controls, true)
+        tick!()
+        @test progress.visible[]
+        r = GUI._cancel_rect(progress)
+        p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
+        events(scene).mouseposition[] = (p[1], p[2])
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test !progress.visible[] && isnothing(gui.trace.job)
+        @test BMO.is_cancelled(TaskFailedException(job.task))
+        GUI._set_spectator!(gui.controls, false)
 
         # a change of an object cancels the solve before the object moves
         _select!(gui)
         @test gui.controls.selected[] === m
         job = slow_job()
-        @test !GUI._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, GUI._TRACING)
         hook = gui.controls.before_change
         done_before_change = Ref(false)
         gui.controls.before_change = () -> (hook(); done_before_change[] = istaskdone(job.task))
@@ -613,7 +641,7 @@ _points(h) = only(render_plots(h))[1][]
                 fine_angle = 1e-2, on_change = (g, obj) -> (n_calls[] += 1))
             @test !gui.trace.auto[]
             @test !gui.widgets.auto_trace_toggle.active[]
-            @test gui.widgets.trace_button isa Makie.Button
+            @test gui.widgets.trace_button.clicks isa Observable{Int}
             # the view starts untraced, the first t solves
             @test n_calls[] == 0
             @test gui.trace.stale
@@ -929,10 +957,9 @@ _points(h) = only(render_plots(h))[1][]
             @test isempty(gui.clip.planes)
             # no clip planes: nothing is written
             @test all(p -> p.clip_planes[] == Plane3f[], _optics_plots(gui))
-            @test occursin("p: add clip plane", GUI._help_text(:move, 1e-9, 1e-6) * "\n" * gui.controls.help_extra)
-            gui.controls.help_shown = true
-            GUI._update_help!(gui.controls)
-            @test occursin("shift+c: flip", gui.controls.help_obs[])
+            help = GUI._help_text(GUI._help_sections(gui.controls))
+            @test occursin("p: add a clip plane", help)
+            @test occursin("shift+c: flip the selected one", help)
             n0 = n_calls[]
 
             # nothing selected: through the lookat point of the camera, along the view direction
@@ -1694,7 +1721,8 @@ _points(h) = only(render_plots(h))[1][]
         gui.widgets.orthographic_toggle.active[] = true
         @test endswith(info.text[], "orthographic")
         gui.widgets.orthographic_toggle.active[] = false
-        @test Makie.GridLayoutBase.gridcontent(info).parent === gui.layout.status_row
+        # in the toast of the overlay, after the status line
+        @test Makie.GridLayoutBase.gridcontent(info).parent === gui.layout.overlay.toast.content
         close(gui)
 
         # the dark theme colors the whole window and the 3D view
@@ -1705,9 +1733,12 @@ _points(h) = only(render_plots(h))[1][]
         @test dark.fig.scene.backgroundcolor[] == t.background
         @test dark.ax.scene.backgroundcolor[] == t.view
         @test dark.status.color[] == t.text
-        @test _rgb(dark.widgets.auto_trace_toggle.framecolor_active[]) == _rgb(t.accent)
-        @test _rgb(dark.widgets.measure_toggle.framecolor_inactive[]) == _rgb(t.muted)
-        @test _rgb(dark.widgets.trace_button.buttoncolor[]) == _rgb(t.field)
+        # the overlay: the rail in the color of the sidebars, active toggles in the accent colors
+        o = dark.layout.overlay
+        @test _rgb(o.rail.box.color[]) == _rgb(t.sidebar)
+        @test _rgb(o.rail.box.strokecolor[]) == _rgb(t.border)
+        @test _rgb(dark.widgets.auto_trace_toggle.box.color[]) == _rgb(t.accent_soft)
+        @test Makie.Colors.alpha(Makie.to_color(dark.widgets.measure_toggle.box.color[])) == 0
         @test _rgb(dark.panels[1].ax.backgroundcolor[]) == _rgb(t.view)
         @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
@@ -1723,25 +1754,28 @@ _points(h) = only(render_plots(h))[1][]
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); auto_trace = false,
             clip_beams = true, orthographic = true, show_sources = false)
         w = gui.widgets
-        # the tools of the shared logic, text buttons and toggles initialized from the kwargs
+        # the tools of the shared logic and fit and views, initialized from the kwargs
         @test [s.role for s in GUI._tools(gui.layout)] == [:trace_button, :auto_trace_toggle,
-            :show_all_button, :home_button, :save_view_button, :orthographic_toggle,
-            :clip_beams_toggle, :sources_toggle, :measure_toggle, :export_button]
-        @test w.trace_button isa Makie.Button && w.trace_button.label[] == "Trace (t)"
-        @test w.export_button isa Makie.Button && w.export_button.label[] == "Export"
+            :show_all_button, :home_button, :fit_button, :views_button, :save_view_button,
+            :orthographic_toggle, :clip_beams_toggle, :sources_toggle, :measure_toggle,
+            :export_button]
+        @test w.trace_button isa GUI._OverlayItem && w.trace_button.label[] == "Trace (t)"
+        @test w.export_button isa GUI._OverlayItem && w.export_button.label[] == "Export"
         @test (w.auto_trace_toggle.active[], w.clip_beams_toggle.active[],
             w.orthographic_toggle.active[], w.sources_toggle.active[], w.measure_toggle.active[]) ==
               (false, true, true, false, false)
-        # tracing and display in the status row, the menus and the other tools in the tool row
+        # the camera tools in the camera popover, the views menu after the views icon; the other
+        # tools and the component menu in the tool rail, see TestLiveCompact.jl
+        o = gui.layout.overlay
         grid(x) = Makie.GridLayoutBase.gridcontent(x).parent
-        @test grid(grid(w.auto_trace_toggle)) === gui.layout.status_tools
-        @test grid(w.trace_button) === gui.layout.status_tools
-        @test all(x -> grid(x) === gui.layout.tools, (w.menu, w.views_menu, w.home_button,
-            w.save_view_button, w.show_all_button, w.export_button))
+        @test all(x -> grid(x.box) === o.camera_tools, (w.home_button, w.save_view_button,
+            w.orthographic_toggle))
+        @test all(x -> grid(x.box) === o.rail_tools, (w.trace_button, w.auto_trace_toggle,
+            w.show_all_button, w.export_button))
+        @test grid(grid(w.menu)) === o.rail_tools
         col(x) = Makie.GridLayoutBase.gridcontent(x).span.cols.start
-        @test col(w.menu) == 1
-        @test col(w.views_menu) == col(w.home_button) + 1
-        @test col(w.save_view_button) == col(w.views_menu) + 1
+        @test col(w.views_menu) == col(o.views_button.box) + 1
+        @test col(w.save_view_button.box) == col(w.views_menu) + 1
         close(gui)
     end
 

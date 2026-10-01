@@ -5,7 +5,13 @@ Clip planes of the live view
 # Makie ignores all clip planes of a plot beyond the 8th
 const _MAX_CLIP_PLANES = 8
 
-const _LIVE_VIEW_HELP = "p: add clip plane, del: remove, c: clipping on/off, shift+c: flip\n1: show/hide sources"
+const _LIVE_VIEW_HELP = _HelpSection[
+    "View" => [_HelpEntry(["1"], "source markers on/off")],
+    "Clip planes" => [
+        _HelpEntry(["P"], "add a clip plane"),
+        _HelpEntry(["Del"], "remove the selected one"),
+        _HelpEntry(["C"], "clipping on/off"),
+        _HelpEntry(["Shift", "C"], "flip the selected one"; combo = true)]]
 
 """Validates the `clip_planes` kwarg of `live_view` and returns a vector of `point => normal`."""
 function _clip_plane_specs(clip_planes)
@@ -198,7 +204,7 @@ function _connect_clip_planes!(gui::LiveView)
         gui.controls.ignore_keys() && return Consume(false)
         return Consume(_clip_key!(gui, event.key))
     end)
-    gui.controls.help_extra = _LIVE_VIEW_HELP
+    append!(gui.controls.help_extra, _LIVE_VIEW_HELP)
     _update_help!(gui.controls)
     return nothing
 end
