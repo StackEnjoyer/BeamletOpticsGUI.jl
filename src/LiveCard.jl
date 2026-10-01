@@ -780,9 +780,9 @@ _overlaps(a::Rect2f, b::Rect2f) = all(minimum(a) .< maximum(b)) && all(minimum(b
 # The card with the top left corner `p` and the `size` overlaps one of the `obstacles`
 _covers(p::Point2f, size::Vec2f, obstacles) = any(o -> _overlaps(_card_rect(p, size), o), obstacles)
 
-"""Returns the screen rectangles [figure px] that the cards keep off: the view cube, if any."""
+"""Returns the screen rectangles [figure px] that the cards keep off: the view cube, if any and shown."""
 _obstacles(::Nothing) = Rect2f[]
-_obstacles(cube::ViewCube) = [Rect2f(Makie.viewport(cube.scene)[])]
+_obstacles(cube::ViewCube) = cube.scene.visible[] ? [Rect2f(Makie.viewport(cube.scene)[])] : Rect2f[]
 
 """
     _avoid(p::Point2f, size::Vec2f, view::Rect2f, obstacles) -> Point2f

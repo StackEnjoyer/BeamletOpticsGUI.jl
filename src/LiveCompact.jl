@@ -26,14 +26,15 @@ mutable struct CompactLayout <: AbstractLiveLayout
     # the color tokens of the `theme` kwarg, see `_APP_THEMES`
     const theme::NamedTuple
     # the grid of the detector panels in `fig[1, 2]` (`nothing` without panels), the place of
-    # `add_panel!`, see `LiveCustom.jl`
+    # `add_panel!`, see `LiveCustom.jl`, and its collapsible part, see `_panel_part!`
     panels::Union{Nothing, GridLayout}
+    panel_part::Union{Nothing, _LayoutPart}
     # the overlay over the 3D view, a `_CompactOverlay` (defined in `LiveOverlay.jl`, which is
     # included after this file)
     overlay::Any
     # the help in the overlay, a `_HelpUI` (defined in `LiveHelp.jl`)
     help::Any
-    CompactLayout(theme::NamedTuple) = new(theme, nothing, nothing, nothing)
+    CompactLayout(theme::NamedTuple) = new(theme, nothing, nothing, nothing, nothing)
 end
 
 """`LiveView` with the compact layout, i.e. `live_view(...; layout = :compact)`."""
@@ -49,6 +50,31 @@ const _SLIDERS_WIDTH = 320
 # Distance of the detector panels and the own panels from the edges of the window [px]
 const _COMPACT_PANEL_PADDING = 12
 
+"""
+    _panel_part!(layout::CompactLayout, root::GridLayout) -> GridLayout
+
+Creates the grid of the panels of the compact layout in column 2 of the figure layout `root`, next
+to the 3D view, which keeps 60 % of the width, as a collapsible part (see `_LayoutPart`): collapsed,
+e.g. in the spectator mode (see `_set_spectator_ui!`), the 3D view fills the window.
+"""
+function _panel_part!(layout::CompactLayout, root::GridLayout)
+    # Invisible on the background of the figure
+    box = Box(root[1, 2]; color = layout.theme.background, strokewidth = 0, cornerradius = 0)
+    grid = GridLayout(root[1, 2]; alignmode = Outside(_COMPACT_PANEL_PADDING))
+    gap = root.addedcolgaps[1]
+    function resize(s)
+        shown = !(s isa Fixed)
+        colsize!(root, 1, Relative(shown ? 0.6 : 1.0))
+        colsize!(root, 2, s)
+        colgap!(root, 1, shown ? gap : Fixed(0))
+        return nothing
+    end
+    resize(Auto())
+    layout.panels = grid
+    layout.panel_part = _LayoutPart(root, (1, 2), resize, Auto(), box, grid, true)
+    return grid
+end
+
 function _build_layout(layout::CompactLayout, fig, spec)
     (; specs, slider_specs, labels, lighting, view_cube) = spec
     t = layout.theme
@@ -60,7 +86,7 @@ function _build_layout(layout::CompactLayout, fig, spec)
     # Detector panels in a near-square grid next to the 3D view
     panels = Any[]
     if !isempty(specs)
-        grid = GridLayout(fig[1, 2]; alignmode = Outside(_COMPACT_PANEL_PADDING))
+        grid = _panel_part!(layout, fig.layout)
         nc = ceil(Int, sqrt(length(specs)))
         for (i, (pd, mode, kw)) in enumerate(specs)
             parent = grid[(i - 1) ÷ nc + 1, (i - 1) % nc + 1]
@@ -68,8 +94,6 @@ function _build_layout(layout::CompactLayout, fig, spec)
             _theme_panel!(p, t)
             push!(panels, p)
         end
-        colsize!(fig.layout, 1, Relative(0.6))
-        layout.panels = grid
     end
     # Everything else is part of the overlay over the 3D view
     o = layout.overlay = _CompactOverlay(fig, ax, cube, t)
@@ -174,12 +198,7 @@ panels.
 """
 _panel_grid!(gui::CompactView) = _panel_grid!(gui, gui.layout.panels)
 _panel_grid!(::CompactView, grid::GridLayout) = grid
-function _panel_grid!(gui::CompactView, ::Nothing)
-    root = gui.fig.layout
-    grid = gui.layout.panels = GridLayout(root[1, 2]; alignmode = Outside(_COMPACT_PANEL_PADDING))
-    colsize!(root, 1, Relative(0.6))
-    return grid
-end
+_panel_grid!(gui::CompactView, ::Nothing) = _panel_part!(gui.layout, gui.fig.layout)
 
 function _add_user_panel!(f, gui::CompactView, title::String, ::Bool)
     grid = _panel_grid!(gui)

@@ -94,6 +94,10 @@ and optionally, with defaults for any layout,
   e.g. the overlay of the compact layout (none by default)
 - `_over_layout(gui) -> Bool`: `true` while the mouse is over a part of the layout that lies over the
   3D view, whose presses and scrolling the camera must not get (`false` by default)
+- `_set_spectator_ui!(gui, on)`: hides the parts of the layout besides the 3D view and the help in
+  the spectator mode and shows them again as they were (nothing by default), see `_on_spectator!`;
+  parts of the figure layout are collapsed as `_LayoutPart`s with `_set_shown!`, the one way to
+  collapse a part. `_with_ui(f, gui)` attaches collapsed parts while blocks are added to them
 - hooks called by the shared logic: `_on_solved!(gui)` after a solve is shown,
   `_on_selected!(gui)` after the selection changed, `_on_clipping!(gui)` after clipping was
   switched, `_on_clip_planes_changed!(gui)` after a clip plane was added or removed,
@@ -735,8 +739,11 @@ actions in the 3D view are unchanged:
   [`card_rows`](@ref), e.g. the pose, the ray slider of a source or the panel options of a
   detector); then the step box, the mode and the properties of the object (see
   [`properties`](@ref)). The pinned cards are docked below, one below the other, each with its own
-  head (icon, label, actions, float button, pin and chevron). The sidebar does not scroll: if the
-  docked cards do not fit, the older ones collapse to their heads. The float button of a docked
+  head (icon, label, actions, float button, pin and chevron), its rows and, like a floating card, a
+  "Properties" part, collapsed by default, whose state moves with the card when it floats or is
+  docked. The sidebar does not scroll: if the
+  docked cards do not fit, the older ones collapse to their heads, then the property lists are
+  shortened. The float button of a docked
   card moves it into the 3D view, where it floats next to its object like a pinned card of the
   compact layout; the dock button in its head moves it back to the end of the docked cards. A
   card keeps its collapsed state when it moves; pinned again after it was unpinned, it starts
@@ -765,7 +772,12 @@ axes. There are no rows below the 3D view; everything else appears on demand ove
   clip planes, trace, own tools), the keys as key caps; the 3D view stays usable while it is open.
   The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
   (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
-  leaves it.
+  leaves it. The spectator mode shows only the 3D view with this help: the tools, the status,
+  the view cube, the cards and the detector panels are hidden, in the app layout also the toolbar,
+  the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
+  progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
+  as it was, e.g. a sidebar that was collapsed stays collapsed. A view can start in it with
+  `spectator = true`.
 - the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
   Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools of
   [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and one entry "Sliders" for
@@ -1006,6 +1018,9 @@ function live_view(
     _connect_layout!(gui)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
+    # The spectator mode hides the UI, also at a start with `spectator = true`
+    push!(controls.listeners, on(v -> _on_spectator!(gui, v), controls.spectator))
+    controls.spectator[] && _on_spectator!(gui, true)
     # Before the initial solve, such that they are never traced
     foreach(b -> _set_beam_off!(gui, b), beams_off)
     if gui.trace.auto[]

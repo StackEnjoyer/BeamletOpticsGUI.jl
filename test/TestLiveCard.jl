@@ -691,6 +691,40 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         close(gui)
     end
 
+    @testset "no cards in the spectator mode" begin
+        m, pd = _fixture()
+        gui = _live_view(System([m, pd]), _gauss(); labels = Dict(m => "M1", pd => "PD"),
+            size = (1600, 1000))
+        ctrl = gui.controls
+        _select!(gui, m)
+        c = gui.cards.selection
+        _pin!(c)
+        # a measurement, whose card is kept by its pin
+        gui.widgets.measure_toggle.active[] = true
+        GUI._add_measure_point!(gui, BMO.position(m), m)
+        GUI._add_measure_point!(gui, BMO.position(pd), pd)
+        info = GUI._info_card(gui)
+        info.pin_button.active[] = true
+        gui.widgets.measure_toggle.active[] = false
+        # the spectator mode clears the selection, with which the pinned card loses step and mode
+        _select!(gui, nothing)
+        _tick!(gui)
+        @test c.scene.visible[] && info.scene.visible[] && info.pinned
+        r, ri = _rect(c.background), _rect(info.background)
+        # hidden with all their parts, still pinned
+        GUI._set_spectator!(ctrl, true)
+        _tick!(gui)
+        @test !any(x -> x.scene.visible[], gui.cards.all)
+        @test all(_away, (c.head, c.rows, c.background, info.head, info.background))
+        @test c.pinned && c.obj === m && info.pinned && info.obj isa GUI._Measurement
+        # shown again at the same places
+        GUI._set_spectator!(ctrl, false)
+        _tick!(gui)
+        @test c.scene.visible[] && info.scene.visible[]
+        @test _rect(c.background) ≈ r && _rect(info.background) ≈ ri
+        close(gui)
+    end
+
     @testset "info cards of the inspection and the measurement" begin
         _info(y; w = nothing, R = nothing) = (; point = [0.0, y, 0.0], direction = [0.0, 1.0, 0.0],
             length = y, opl = y, w, R)

@@ -42,7 +42,12 @@ view:
   clip planes, trace, own tools), the keys as key caps; the 3D view stays usable while it is open.
   The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
   (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
-  leaves it.
+  leaves it. The spectator mode shows only the 3D view with this help: the tools, the status,
+  the view cube, the cards and the detector panels are hidden, in the app layout also the toolbar,
+  the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
+  progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
+  as it was, e.g. a sidebar that was collapsed stays collapsed. A view can start in it with
+  `spectator = true`.
 - the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
   Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools
   of [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and the entry "Sliders"
@@ -412,9 +417,12 @@ on a selected group selects the part). See the section "Selection card" of [`liv
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and
 actions, and below it the pinned cards, one below the other, each with its own head (icon, label,
-actions, pin and chevron). The pin of the selection pins a card, the pin of a pinned card unpins
+actions, pin and chevron), its rows and a "Properties" part like a floating card, collapsed by
+default; its state moves with the card when it floats or is docked. The pin of the selection pins
+a card, the pin of a pinned card unpins
 it. The sidebar does not scroll: if the cards do not fit, the older pinned cards collapse to their
-heads (the one pinned or expanded last stays open) and the property list of the selection is
+heads (the one pinned or expanded last stays open) and the property list of the selection, then
+those of the pinned cards, are
 shortened; a collapsed card is only expanded again by its chevron. The float button in the head of
 a pinned card moves it out of the sidebar into the 3D view, where it floats next to its component
 as in the compact layout; the dock button in its head moves it back. Only the docked cards take

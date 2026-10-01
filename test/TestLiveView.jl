@@ -542,6 +542,20 @@ _points(h) = only(render_plots(h))[1][]
         @test startswith(gui.status.text[], "trace cancelled")
         # the elapsed time counts as the duration of the solve
         @test gui.trace.solve_time >= 0.15
+        # in the spectator mode, the progress window stays and its button still cancels
+        job = slow_job()
+        @test !GUI._run!(gui, job, GUI._TRACING)
+        GUI._set_spectator!(gui.controls, true)
+        tick!()
+        @test progress.visible[]
+        r = GUI._cancel_rect(progress)
+        p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
+        events(scene).mouseposition[] = (p[1], p[2])
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test !progress.visible[] && isnothing(gui.trace.job)
+        @test BMO.is_cancelled(TaskFailedException(job.task))
+        GUI._set_spectator!(gui.controls, false)
 
         # a change of an object cancels the solve before the object moves
         _select!(gui)

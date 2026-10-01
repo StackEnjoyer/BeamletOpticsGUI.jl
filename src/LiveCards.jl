@@ -157,7 +157,8 @@ layout over the 3D view, see `_obstacles`) and the cards before, so that none co
 the cards that the mouse moved to their `spot` first, where they stay (see `_drag_cards!`), then
 the selection card of groups (see `_update_browse_card!`), then the card of the selection, at its
 object; a pinned card without room is collapsed to its head. All cards are hidden while a menu is
-open, whose options they would cover. Called every frame, which moves the cards with the camera
+open, whose options they would cover, and in the spectator mode (see `_on_spectator!`), after which
+the pinned cards are shown again where they were. Called every frame, which moves the cards with the camera
 and the objects.
 """
 function _update_cards!(gui::LiveView)
@@ -166,7 +167,8 @@ function _update_cards!(gui::LiveView)
     obstacles = _obstacles(gui)
     shown = menu || !_selection_card_shown(gui) || any(c -> c.pinned && c.obj === sel, gui.cards.all) ?
         nothing : sel
-    target(c) = c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
+    spectator = gui.controls.spectator[]
+    target(c) = spectator ? nothing : c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
     order = [gui.cards.selection; filter(c -> c !== gui.cards.selection, gui.cards.all)]
     for c in order
         isnothing(c.spot) || _update_card!(gui, c, target(c), obstacles)
@@ -718,31 +720,41 @@ _has_properties(_) = true
 """
     _refresh_selection_part!(gui, c, obj)
 
-Shows the properties of `obj` on the floating card `c` while they are expanded, see
-`_toggle_properties!`, on the card of the selection and on a pinned card (see `_has_properties`).
-Nothing for other hosts, e.g. the inspector of the app layout refreshes its part itself, see
-`_refresh_inspector!`.
+Shows the properties of `obj` in the property list of the card `c` while they are expanded (see
+`_toggle_properties!` and `_list_shown`), otherwise empties the list, see `_hide_properties!`. For
+all cards with a list of their own (see `_has_list`): the floating cards and the docked pinned
+cards of the app layout. Nothing for the docked card of the selection, whose properties the
+inspector lists itself, see `_refresh_inspector!`.
 """
-_refresh_selection_part!(::LiveView, ::_AbstractCard, _) = nothing
-function _refresh_selection_part!(gui::LiveView, c::_ComponentCard, obj)
-    (c.properties_shown && _has_properties(obj)) || return nothing
-    _show_properties!(gui, c, obj)
+function _refresh_selection_part!(gui::LiveView, c::_AbstractCard, obj)
+    _has_list(c) || return nothing
+    _list_shown(c, obj) ? _show_properties!(gui, c, obj) : _hide_properties!(c)
     return nothing
 end
-_refresh_selection_part!(::LiveView, ::_ComponentCard, ::Nothing) = nothing
+_refresh_selection_part!(::LiveView, ::_AbstractCard, ::Nothing) = nothing
+
+# A card with the fields `list`, `properties_button` and `properties_shown`
+_has_list(::_AbstractCard) = false
+_has_list(::_ComponentCard) = true
+# The list of the card `c` shows the properties of `obj`
+_list_shown(c::_AbstractCard, obj) = c.properties_shown && _has_properties(obj)
+# The list of a floating card that is not shown is moved away with its part, see `_lower_parts`
+_hide_properties!(::_AbstractCard) = nothing
 
 """
-Expands the properties of the floating card `c` of the `gui` below its disclosure row, or collapses
-them again, see `_ComponentCard`. The state stays with the card when another object is selected
-and when the card is pinned.
+Expands the properties of the card `c` of the `gui` below its disclosure row, or collapses them
+again, on a floating card (see `_ComponentCard`) and on a docked pinned card of the app layout. The
+state stays with the card when another object is selected, when the card is pinned and when it is
+docked or floated. The host of the card then lays it out again, see `_on_properties_toggled!`.
 """
-function _toggle_properties!(gui::LiveView, c::_ComponentCard)
+function _toggle_properties!(gui::LiveView, c::_AbstractCard)
     c.properties_shown = !c.properties_shown
     _show_properties_state!(c.properties_button, c.properties_shown)
     _refresh_selection_part!(gui, c, _card_object(gui, c))
-    _update_cards!(gui)
+    _on_properties_toggled!(gui, c)
     return nothing
 end
+_on_properties_toggled!(gui::LiveView, ::_AbstractCard) = _update_cards!(gui)
 
 # The button that docks the pinned card `c` in the sidebar, if the layout has one, see `_card_tools!`
 _connect_dock_button!(::LiveView, ::_ComponentCard, ::Nothing) = nothing

@@ -266,7 +266,9 @@ with a pixel camera over the whole figure, translated to `_OVERLAY_Z`, built lik
   new text while `toast_shown`, see `toast_deadline`
 
 The shown parts are placed by `_arrange_overlay!`, the others moved away (see `_park!`), since
-hidden widgets still take clicks within their bounding box. `reshield` adds the mouse shield of
+hidden widgets still take clicks within their bounding box. While `hidden`, i.e. in the spectator
+mode (see `_set_spectator_ui!`), all parts but the help pill are moved away and keep their state,
+e.g. an open tool rail is open again afterwards. `reshield` adds the mouse shield of
 the cards again after widgets were added, see `_shield_cards!`.
 """
 mutable struct _CompactOverlay
@@ -294,6 +296,7 @@ mutable struct _CompactOverlay
     views_button::Any
     views_menu::Union{Nothing, Menu}
     reshield::Function
+    hidden::Bool
 end
 
 function _CompactOverlay(fig::Figure, ax::LScene, cube, t::NamedTuple)
@@ -317,7 +320,7 @@ function _CompactOverlay(fig::Figure, ax::LScene, cube, t::NamedTuple)
         cornerradius = 14, padding = (14, 14, 6, 6))
     o = _CompactOverlay(scene, t, ax, cube, pill, pill_button, more, more_button, rail, rail_tools,
         [0, 0, 0], Tuple{_OverlayItem, _OverlayPart}[], 0, camera, camera_tools, isnothing(cube),
-        _Deadline(), toast, false, _Deadline(), nothing, nothing, nothing, () -> nothing)
+        _Deadline(), toast, false, _Deadline(), nothing, nothing, nothing, () -> nothing, false)
     o.camera_deadline.action = () -> _hide_camera!(o)
     o.toast_deadline.action = () -> _hide_toast!(o)
     return o
@@ -466,7 +469,7 @@ popover (or the gap between them), and hides it `_CAMERA_HIDE_DELAY` seconds aft
 see `_hide_camera!`. Nothing without a view cube, whose popover is always shown.
 """
 function _hover_camera!(o::_CompactOverlay, p::Point2f)
-    isnothing(o.cube) && return nothing
+    (isnothing(o.cube) || o.hidden) && return nothing
     c = Rect2f(Makie.viewport(o.cube.scene)[])
     over = p in c || (o.camera_shown && p in _hull(c, _overlay_rect(o.camera)))
     if over
@@ -520,6 +523,11 @@ function _arrange_overlay!(o::_CompactOverlay)
     lo, hi = minimum(vp), maximum(vp)
     m = _OVERLAY_MARGIN
     _place_pill!(o.pill, vp)
+    if o.hidden
+        foreach(p -> _park!(p.outer), (o.more, o.rail, o.camera, o.toast))
+        foreach(s -> _park!(last(s).outer), o.sections)
+        return nothing
+    end
     ms = _card_size(o.more.outer)
     _place!(o.more.outer, Point2f(lo[1] + m, lo[2] + m + ms[2]))
     rail = if _rail_open(o)
@@ -559,7 +567,7 @@ function _arrange_overlay!(o::_CompactOverlay)
 end
 
 function _arrange_toast!(o::_CompactOverlay, vp::Rect2f)
-    o.toast_shown || return _park!(o.toast.outer)
+    (o.toast_shown && !o.hidden) || return _park!(o.toast.outer)
     ts = _card_size(o.toast.outer)
     x = minimum(vp)[1] + (Makie.widths(vp)[1] - ts[1]) / 2
     _place!(o.toast.outer, Point2f(max(x, minimum(vp)[1]), minimum(vp)[2] + _OVERLAY_MARGIN + ts[2]))
@@ -572,6 +580,7 @@ the help pill, "⋯", the open tool rail and popover of a section, the shown cam
 toast only shows text, the clicks on it reach the 3D view.
 """
 function _overlay_rects(o::_CompactOverlay)
+    o.hidden && return Rect2f[_overlay_rect(o.pill)]
     rects = Rect2f[_overlay_rect(o.pill), _overlay_rect(o.more)]
     if _rail_open(o)
         push!(rects, _overlay_rect(o.rail))
@@ -589,6 +598,7 @@ Closes the open popover of a section of the overlay `o`, else the tool rail, els
 popover. Returns `false` if none was open, see the key `Esc`.
 """
 function _close_overlay!(o::_CompactOverlay)
+    o.hidden && return false
     if _rail_open(o) && o.open_section > 0
         o.open_section = 0
         _arrange_overlay!(o)
@@ -617,6 +627,19 @@ end
 _outside_view(gui::CompactView) = _menu_open(gui) || _over_layout(gui)
 
 """
+The spectator mode of the compact layout: the overlay keeps only its help pill (see
+`_CompactOverlay`), the panels right of the 3D view are collapsed, such that the 3D view fills the
+window, see `_panel_part!`.
+"""
+function _set_spectator_ui!(gui::CompactView, on::Bool)
+    layout = gui.layout
+    layout.overlay.hidden = on
+    isnothing(layout.panel_part) || _set_shown!(layout.panel_part, !on)
+    _arrange_overlay!(layout.overlay)
+    return nothing
+end
+
+"""
     _connect_overlay!(gui)
 
 Connects the overlay of the compact layout of the `gui` (see `_CompactOverlay`), except its help
@@ -638,7 +661,7 @@ function _connect_overlay!(gui::CompactView)
     end)
     # Before the cards (250) and the controls (200), which still get the press
     push!(listeners, on(ev.mousebutton, priority = 260) do event
-        (event.action == Mouse.press && _rail_open(o)) || return Consume(false)
+        (event.action == Mouse.press && _rail_open(o) && !o.hidden) || return Consume(false)
         p = Point2f(ev.mouseposition[])
         (_over_overlay(o, p) || _menu_open(gui) || any(m -> m.is_open[], gui.custom.menus)) &&
             return Consume(false)

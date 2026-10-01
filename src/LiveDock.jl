@@ -277,7 +277,7 @@ showing them needs no second computation.
 """
 mutable struct _DockTabs
     const bar::_TabBar
-    const parts::Vector{_AppPart}
+    const parts::Vector{_LayoutPart}
     const panels::Vector{Any}
     active::Int
     const stale::Base.IdSet{Any}
@@ -300,7 +300,7 @@ function _build_dock!(layout::AppLayout, spec)
     g = layout.dock.grid
     bar = _TabBar(g[1, 1]; background = t.sidebar, text_color = t.text, muted_color = t.muted,
         accent_color = t.accent, border_color = t.border)
-    layout.tabs = _DockTabs(bar, _AppPart[], Any[], 0, Base.IdSet{Any}(), IdDict{Any, Any}(), false)
+    layout.tabs = _DockTabs(bar, _LayoutPart[], Any[], 0, Base.IdSet{Any}(), IdDict{Any, Any}(), false)
     layout.dock_panels = Pair{String, GridLayout}[]
     rowgap!(g, 6)
     panels = Any[]
@@ -385,7 +385,7 @@ function _add_dock_panel!(layout::AppLayout, title::AbstractString; icon::Symbol
     # created in the figure, since the layout of a collapsed dock is detached from it
     box = Box(layout.dock.box.parent; visible = false)
     parent[2, 1] = box
-    part = _AppPart(parent, (2, 1), _ -> nothing, nothing, box, GridLayout(parent[2, 1]), true)
+    part = _LayoutPart(parent, (2, 1), _ -> nothing, nothing, box, GridLayout(parent[2, 1]), true)
     push!(tabs.parts, part)
     push!(tabs.panels, nothing)
     push!(layout.dock_panels, String(title) => part.grid)

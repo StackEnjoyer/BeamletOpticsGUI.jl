@@ -200,6 +200,8 @@ end
 
 """Returns the region of the cube under the cursor, or `nothing` if the cursor misses the cube."""
 function _region_at_cursor(cube::ViewCube)
+    # A hidden cube takes no clicks, see `_set_visible!`
+    cube.scene.visible[] || return nothing
     mp = events(cube.ls.scene).mouseposition[]
     vp = cube.scene.viewport[]
     Makie.Vec(mp) in vp || return nothing
@@ -401,6 +403,24 @@ function view_cube!(
     push!(listeners, on(tick -> _step_animation!(cube, tick.delta_time), events(main).tick))
     return cube
 end
+
+"""
+    _set_visible!(cube, visible::Bool)
+
+Shows or hides the view `cube`, e.g. in the spectator mode of the live view. A hidden cube is not
+drawn and takes neither clicks nor the hover (see `_region_at_cursor`); it still follows the camera.
+Nothing for `nothing`, i.e. a view without a cube.
+"""
+function _set_visible!(cube::ViewCube, visible::Bool)
+    cube.scene.visible[] == visible && return nothing
+    cube.scene.visible[] = visible
+    if !visible
+        cube.pressed = false
+        _set_hover!(cube, nothing)
+    end
+    return nothing
+end
+_set_visible!(::Nothing, ::Bool) = nothing
 
 function Base.close(cube::ViewCube)
     foreach(off, cube.listeners)

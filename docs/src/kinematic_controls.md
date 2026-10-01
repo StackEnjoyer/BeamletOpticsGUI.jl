@@ -42,7 +42,9 @@ mode, which is switched with `m`:
 | `h`                          | Show or hide an overlay of all controls                         |
 
 In the spectator mode, the selection is cleared and all mouse and keyboard input goes to the
-camera, such that the system can be viewed without moving a component by accident. Components
+camera, such that the system can be viewed without moving a component by accident. In
+[`live_view`](@ref), the spectator mode also hides the user interface besides the 3D view and the
+help. Components
 whose kinematic trait is `Static` can not be selected.
 
 The selected component is marked by a box and three axes above it: its local y-axis (green), its

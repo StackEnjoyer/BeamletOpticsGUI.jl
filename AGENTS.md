@@ -53,7 +53,9 @@ describe it as available in docs or the skill.
 - `src/LiveView.jl`: `LiveView{L}` and its state structs (`_TraceState`, `_ClipState`,
   `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_LayoutWidgets`), `live_view`,
   and the docstring of `AbstractLiveLayout` (the layout interface).
-- `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes. `src/LiveCompact.jl`,
+- `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes, the collapsible parts of the
+  layouts (`_LayoutPart`, `_set_shown!`: the only way to collapse a part of the figure layout) and
+  the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,
   `src/LiveApp.jl`, `src/LiveAppTree.jl`, `src/LiveDock.jl`, `src/LiveInspector.jl`: the two layouts.
 - `src/LiveCard.jl`, `src/LiveCards.jl`, `src/LiveCardRows.jl`: cards and the card API.
 - `src/LiveTrace.jl`, `src/LivePanels.jl`, `src/LiveProgress.jl`: solving, detector panels,

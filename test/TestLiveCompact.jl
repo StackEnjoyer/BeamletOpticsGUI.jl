@@ -54,7 +54,10 @@ const GUI = BeamletOpticsGUI
         gui, _, _ = _fixture()
         root = gui.fig.layout
         @test size(root) == (1, 2)
-        @test sort([(c.span.rows, c.span.cols) for c in root.content]) == [(1:1, 1:1), (1:1, 2:2)]
+        # the 3D view, and the panels with the background box of their collapsible part
+        @test sort([(c.span.rows, c.span.cols) for c in root.content]) ==
+              [(1:1, 1:1), (1:1, 2:2), (1:1, 2:2)]
+        @test gui.layout.panel_part.grid === gui.layout.panels && gui.layout.panel_part.shown
         close(gui)
     end
 
@@ -262,6 +265,114 @@ const GUI = BeamletOpticsGUI
         o.more_button.active[] = true
         _click!(gui, _center(GUI._overlay_rect(help.card)))
         @test !GUI._rail_open(o) && ctrl.help_shown
+        close(gui)
+    end
+
+    @testset "spectator mode: only the 3D view and the help" begin
+        gui, m, _ = _fixture()
+        o, help, ctrl = gui.layout.overlay, gui.layout.help, gui.controls
+        cube = gui.widgets.view_cube
+        fig = Rect2f(gui.fig.scene.viewport[])
+        view() = Rect2f(gui.ax.scene.viewport[])
+        same(a, b) = minimum(a) ≈ minimum(b) && Makie.widths(a) ≈ Makie.widths(b)
+        parts = (o.more, o.rail, o.toast, o.camera)
+        v0 = view()
+        @test Makie.widths(v0)[1] < Makie.widths(fig)[1]
+        # an open tool rail, the camera popover, the toast and a pinned card
+        o.more_button.active[] = true
+        o.camera_shown = true
+        gui.status.text[] = "hello"
+        GUI._toggle_pin!(gui, m)
+        _tick!(gui)
+        c = only(GUI._floating_cards(gui, m))
+        card = Rect2f(c.background.layoutobservables.suggestedbbox[])
+        rects = map(GUI._overlay_rect, parts)
+        @test c.scene.visible[] && !any(_parked, parts) && cube.scene.visible[]
+
+        _key!(gui, Keyboard.v)
+        _tick!(gui)
+        @test ctrl.spectator[] && o.hidden
+        # the 3D view fills the window: the panels are collapsed, hidden and off-screen
+        @test same(view(), fig) && !gui.layout.panel_part.shown
+        @test !gui.panels[1].ax.blockscene.visible[]
+        @test maximum(_rect(gui.panels[1].ax))[1] < 0
+        # no tools, no status, no view cube, no cards
+        @test all(_parked, parts)
+        @test !cube.scene.visible[] && isempty(GUI._obstacles(cube))
+        @test !c.scene.visible[] && c.pinned && c.obj === m
+        # the help pill and the chip of the mode stay, inside the view
+        @test !_parked(o.pill) && !_parked(help.spectator) && _parked(help.chips)
+        inside(r) = all(minimum(r) .>= minimum(view())) && all(maximum(r) .<= maximum(view()))
+        @test inside(GUI._overlay_rect(o.pill)) && inside(GUI._overlay_rect(help.spectator))
+        @test GUI._overlay_rects(o) == [GUI._overlay_rect(o.pill)]
+        _key!(gui, Keyboard.h)
+        @test help.shown && !_parked(help.card)
+        _key!(gui, Keyboard.h)
+        # a new status does not bring the toast back
+        gui.status.text[] = "again"
+        _tick!(gui)
+        @test _parked(o.toast)
+        # clicks at the places of "⋯" and of the view cube, the hover of the cube and Esc do nothing
+        eye = copy(cameracontrols(gui.ax.scene).eyeposition[])
+        _click!(gui, _center(rects[1]))
+        _click!(gui, _center(Rect2f(cube.scene.viewport[])))
+        _key!(gui, Keyboard.escape)
+        _tick!(gui)
+        @test o.more_button.active[] && isnothing(cube.anim) && isnothing(cube.hovered)
+        @test cameracontrols(gui.ax.scene).eyeposition[] == eye
+        @test _parked(o.camera) && ctrl.spectator[]
+
+        # back as it was: the view, the open rail, the panels, the cube, the pinned card
+        _key!(gui, Keyboard.v)
+        _tick!(gui)
+        @test !ctrl.spectator[] && !o.hidden
+        @test same(view(), v0) && gui.layout.panel_part.shown
+        @test gui.panels[1].ax.blockscene.visible[] && minimum(_rect(gui.panels[1].ax))[1] > 0
+        @test o.more_button.active[] && same(GUI._overlay_rect(o.more), rects[1])
+        @test same(GUI._overlay_rect(o.rail), rects[2])
+        @test cube.scene.visible[] && !isempty(GUI._obstacles(cube))
+        @test c.scene.visible[] && c.pinned
+        @test same(Rect2f(c.background.layoutobservables.suggestedbbox[]), card)
+        @test _parked(help.spectator) && !_parked(help.chips)
+        close(gui)
+
+        # a view started in the spectator mode starts without the UI; the chip leaves the mode
+        gui, _, _ = _fixture(; spectator = true)
+        o = gui.layout.overlay
+        _tick!(gui)
+        @test o.hidden && _parked(o.more) && !gui.widgets.view_cube.scene.visible[]
+        @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
+        notify(gui.layout.help.spectator_button.clicks)
+        _tick!(gui)
+        @test !gui.controls.spectator[] && !o.hidden && !_parked(o.more)
+        @test gui.widgets.view_cube.scene.visible[] && gui.layout.panel_part.shown
+        close(gui)
+
+        # a panel added in the spectator mode to a view without panels stays hidden until it is left
+        gui, _, _ = _fixture(; detectors = [])
+        GUI._set_spectator!(gui.controls, true)
+        axis = Ref{Any}(nothing)
+        add_panel!(gui, "Own") do layout
+            axis[] = Axis(layout[1, 1])
+            return _ -> nothing
+        end
+        @test !gui.layout.panel_part.shown && !axis[].blockscene.visible[]
+        @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
+        GUI._set_spectator!(gui.controls, false)
+        @test gui.layout.panel_part.shown && axis[].blockscene.visible[]
+        @test Makie.widths(gui.ax.scene.viewport[])[1] < Makie.widths(gui.fig.scene.viewport[])[1]
+        # controls and tools added in the spectator mode appear in the rail afterwards
+        GUI._set_spectator!(gui.controls, true)
+        o = gui.layout.overlay
+        n = length(o.sections)
+        add_controls!(layout -> Button(layout[1, 1]; label = "x"), gui, "Mine")
+        tool = add_tool!(g -> nothing, gui, "Own tool")
+        _tick!(gui)
+        @test length(o.sections) == n + 1 && o.hidden && _parked(o.rail) && _parked(o.more)
+        GUI._set_spectator!(gui.controls, false)
+        o.more_button.active[] = true
+        _tick!(gui)
+        @test !_parked(o.rail) && all(minimum(_rect(tool.box)) .>= minimum(GUI._overlay_rect(o.rail)))
         close(gui)
     end
 

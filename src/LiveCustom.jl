@@ -10,7 +10,7 @@ Panels
 =#
 
 function add_panel!(f, gui::LiveView, title::AbstractString; select::Bool = false)
-    p = _add_user_panel!(f, gui, String(title), select)
+    p = _with_ui(() -> _add_user_panel!(f, gui, String(title), select), gui)
     push!(gui.custom.panels, p)
     _register_widgets!(gui, p.layout)
     # The live view has solved already, the panel shows its result right away
@@ -115,11 +115,14 @@ Controls
 =#
 
 function add_controls!(f, gui::LiveView, title::AbstractString)
-    layout = _controls_slot!(gui, String(title))
-    # Like the builder of a panel, `f` may return an `update`, see `_user_panel`
-    c = _UserControls(String(title), layout, _update_function(f(layout)), nothing)
-    push!(gui.custom.controls, c)
-    _on_controls_added!(gui)
+    layout, c = _with_ui(gui) do
+        layout = _controls_slot!(gui, String(title))
+        # Like the builder of a panel, `f` may return an `update`, see `_user_panel`
+        c = _UserControls(String(title), layout, _update_function(f(layout)), nothing)
+        push!(gui.custom.controls, c)
+        _on_controls_added!(gui)
+        return layout, c
+    end
     _register_widgets!(gui, layout)
     # The controls show the current state right away; they are always shown, i.e. never stale
     _run_update!(gui, c, c.update)
@@ -179,8 +182,8 @@ function add_tool!(f, gui::LiveView, name::AbstractString; icon::Union{Symbol, B
     _icon(icon)
     _check_key(gui, key, name)
     # Built like the built-in tools, in the group `:user`, see `_BUILTIN_TOOLS`
-    w = _tool_widget(gui.layout, :user, Val(toggle), _key_label(name, key), icon,
-        _key_label(tooltip, key), false)
+    w = _with_ui(() -> _tool_widget(gui.layout, :user, Val(toggle), _key_label(name, key), icon,
+        _key_label(tooltip, key), false), gui)
     _connect_tool!(gui, f, w, Val(toggle), String(name))
     _connect_tool_key!(gui, w, key, Val(toggle), String(name))
     return w
