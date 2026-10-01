@@ -59,7 +59,7 @@ describe it as available in docs or the skill.
 - `src/LiveTrace.jl`, `src/LivePanels.jl`, `src/LiveProgress.jl`: solving, detector panels,
   progress window. `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
-- `src/LiveSelectionCard.jl`: the selection card of groups (browsing their parts level by level).
+- `src/LiveSelectionCard.jl`: the small menu of a click on a group ("Select", "More") and the selection card of groups (browsing their parts level by level).
   `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts).
   `src/LiveBackground.jl`: the background card. `src/LiveOverlay.jl`: the overlay of the compact layout. `src/LiveHelp.jl`: the help of both layouts (pill, chips of mode and step, help card), built from the entries of `_help_sections` in `src/LiveInteraction.jl`.
 - `src/LiveInteraction.jl`: `kinematic_controls!`. `src/ViewCube.jl`: `view_cube!`.

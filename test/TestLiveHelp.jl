@@ -101,13 +101,13 @@ const GUI = BeamletOpticsGUI
         # each key of the live view (see `_LIVE_VIEW_KEYS`) is on a key cap; `h` is in the head of
         # the card
         ctrl = GUI._ctrl_cap()
-        @test Set(_caps(sections)) == Set(["Esc", "G", "M", "↑", "↓", "←", "→", "PgUp", "PgDn", "+",
+        @test Set(_caps(sections)) == Set(["Esc", "Enter", "G", "M", "↑", "↓", "←", "→", "PgUp", "PgDn", "+",
             "−", "Shift", "Bksp", ctrl, "Z", "Y", "V", "1", "P", "Del", "C", "T"])
         # no key is listed twice; Esc is the key of the groups, a trace is cancelled by a button
         keys = [(e.keys, e.combo) for (_, entries) in sections for e in entries if !(e.keys[1] isa Pair)]
         @test allunique(keys)
         @test any(e -> occursin("Cancel in the progress window", e.text), sections[end].second)
-        @test sections[1].second[1].text == "select, on a group: choose a part"
+        @test sections[1].second[1].text == GUI._BROWSE_CLICK_HELP
         close(gui)
     end
 

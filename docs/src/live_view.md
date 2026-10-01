@@ -312,7 +312,7 @@ gui = live_view(system => src1, system => src2; beams_off = [src2],
 ```
 
 Solves longer than `progress_delay` run in the background with a progress window next to the
-source or detector, see "Long solves" in the docstring of [`live_view`](@ref).
+source or detector, connected to it by a line, see "Long solves" in the docstring of [`live_view`](@ref).
 
 If a solve fails, a card "Solve failed" opens in the 3D view, in addition to the log and the status
 line. A detector stores one kind of hits per solve: if it is hit by two kinds of beams, e.g.
@@ -340,12 +340,13 @@ the menus, like in the object tree of the app layout:
   rotate mode, e.g. `rv = 1` equals one key step with a step of 1 mrad. Each input is a step of the
   undo history, the constraints of the component apply. While a box is focused, the keys of the 3D
   view are ignored.
-- Only the card of the selection has, below its rows, the `step` box of the keyboard step, see
-  below, the "Move"/"Rotate" control and a "Properties" part. The control shows the mode of the
-  controls and sets it, and follows the key `m` and vice versa. "Properties", collapsed by default,
+- The card of the selected object has, below its rows, the `step` box of the keyboard step, see
+  below, and the "Move"/"Rotate" control, which shows the mode of the controls and sets it, and
+  follows the key `m` and vice versa. A pinned card has them while its object is selected.
+- Every card of an object has a "Properties" part below. "Properties", collapsed by default,
   is expanded by its chevron and lists the properties of the object (see `properties`),
   the same rows as the inspector of the app layout; it stays expanded or collapsed while the card
-  follows the selection. Pinned cards have neither the step, the mode nor the properties.
+  follows the selection and when the card is pinned, so pinning does not change the card.
 - The chevron at the right end of the head collapses the card to its head and expands it again.
 - The pin keeps the card with its component when the selection changes, e.g. to watch or type the
   poses of several components; the widgets of a pinned card act on its component. Clicking the
@@ -393,13 +394,19 @@ a click on its row in the object tree (app layout), without a selection and with
 instead of being selected; its pose boxes reject inputs with a message in the status line. `Esc`, a
 click on empty space or the selection of an object closes such a card.
 
-A click in the 3D view on an object of a group does not select it but opens the selection card of its
-top-level group, which browses the parts one level at a time: "Select <group>" selects the group for
-moving, "‹ <parent>" goes up, a part marked " ›" opens the next level, any other part is selected.
-While browsing, the group is see-through and the boxes of the parts are drawn. A click on a part in
-the 3D view acts like its entry, a click beside closes the card, `Esc` goes up one level. The card of
-a part has a button "‹" in its head that browses its parent. An object that is not in a group opens
-its card at once. The standalone [`kinematic_controls!`](@ref) keeps its drill-down (a second click
+A click in the 3D view on an object of a group opens a small menu under the cursor: "Select <group>",
+which lies under the cursor, and "More ›". A second click without moving the mouse selects the
+top-level group for moving; until then nothing changes in the 3D view, except the box of the group
+while "Select" is marked. "More ›" opens the selection card at the same place, which browses the
+parts one level at a time: "Select <group>" selects the group, "‹ <parent>" goes up, a part marked
+" ›" opens the next level, any other part is selected. While browsing, the group is see-through and
+the boxes of the parts are drawn. A click on a part in the 3D view acts like its entry, a click
+beside closes the card, `Esc` goes up one level. More than 5 parts scroll with the mouse wheel;
+`↑`/`↓` move the mark, `Enter` chooses the marked entry. A click inside the current selection keeps
+it; the card of an object with parts has the button "parts ›" in its head, which opens its selection
+card, and the card of a part has a button "‹" that browses its parent. A drag at the head of the
+small menu or of the selection card moves it, e.g. off the parts that it covers. An object that is not in a
+group opens its card at once. A click on a pinned card beside its widgets selects its object. The standalone [`kinematic_controls!`](@ref) keeps its drill-down (a second click
 on a selected group selects the part). See the section "Selection card" of [`live_view`](@ref).
 
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of

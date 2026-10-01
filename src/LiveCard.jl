@@ -82,14 +82,18 @@ a scene with a pixel camera over the whole figure:
   `_card_tools!`
 - `rows`, below the head unless `collapsed`: the rows of [`card_rows`](@ref) for the object, each in
   its own layout
-- `step` and `properties`, below the rows, only on the card of the selection (the keyboard steps
-  and the mode belong to the selection, not to the object): the part of the selection, see
-  `_selection_part!`, shared with the inspector of the app layout. `step` holds the `step_box` of
-  the keyboard step, the Move/Rotate control `mode` of the mode of the controls (see `_bind_mode!`)
-  and a disclosure row "Properties" with the chevron `properties_button`; `properties` holds the
+- `step`, below the rows while `step_shown`: the `step_box` of the keyboard step and the Move/Rotate
+  control `mode` of the mode of the controls (see `_bind_mode!` and `_selection_part!`, shared with
+  the inspector of the app layout). They belong to the selection, not to the object: the card of
+  the selection shows them, and so does a pinned card while its object is selected, which then
+  stands for the card of the selection, see `_shows_step`
+- `disclosure` and `properties`, below them while `has_properties`, i.e. on the card of the
+  selection and on a pinned card of an object, not of an inspected point or a measurement (see
+  `_has_properties`): a disclosure row "Properties" with the chevron `properties_button`, and the
   `list` of the properties of the object (see `_show_properties!`), shown only while
-  `properties_shown` (collapsed by default, see `_toggle_properties!`). The state is kept while
-  the card follows the selection.
+  `properties_shown` (collapsed by default, see `_toggle_properties!`). The state stays with the
+  card while it follows the selection and when it is pinned, such that pinning does not change
+  the card.
 
 The widgets of the actions and the rows are built from their declarations when the card gets an
 object with other declarations, see `_build_content!`: `widgets` holds each widget with its
@@ -155,6 +159,9 @@ mutable struct _ComponentCard <: _AbstractCard
     back::GridLayout
     back_button::_IconButton
     back_shown::Bool
+    disclosure::GridLayout
+    step_shown::Bool
+    has_properties::Bool
 end
 
 # Content of a layout of the card `scene`, aligned at the top left corner of its suggested bounding box
@@ -177,15 +184,16 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     background = Box(scene; bbox = _CARD_AWAY, color = t.sidebar, strokecolor = t.border,
         strokewidth = 1, cornerradius = _CARD_CORNER)
     head, tools, step, properties = _card_part(scene), _card_part(scene), _card_part(scene), _card_part(scene)
+    disclosure = _card_part(scene)
     icon, icon_color = _card_icon!(head[1, 1])
     title = _card_title!(head[1, 2], t)
     pin_button = _card_pin!(tools[1, 1], t)
     collapse_button = _card_collapse!(tools[1, 2], t)
     Makie.colgap!(tools, 2)
-    # The part of the selection: step, mode and, below a disclosure row, the properties, whose
-    # width follows the card, see `_fit_properties!`
+    # Step and mode and, below a disclosure row of its own, the properties, whose width follows the
+    # card, see `_fit_properties!`
     part = _selection_part!(step, properties[1, 1], t; width = _CARD_PROPERTIES_WIDTH, tellwidth = true)
-    properties_button = _properties_disclosure!(step[3, 1:2], t)
+    properties_button = _properties_disclosure!(disclosure[1, 1], t)
     back = _card_part(scene)
     back_button = _card_back!(back[1, 1], t)
     foreach(_fix_tooltip!, (pin_button, collapse_button, properties_button, back_button))
@@ -194,7 +202,8 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     return _ComponentCard(scene, t, background, head, _card_part(scene), tools, _card_part(scene), step,
         properties, icon, icon_color, title, collapse_button, pin_button, part.step_box, part.mode,
         part.list, properties_button, link, Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing,
-        false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, false, back, back_button, false)
+        false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, false, back, back_button, false,
+        disclosure, false, false)
 end
 
 #=
@@ -296,7 +305,7 @@ function _selection_part!(grid::GridLayout, list_pos, t::NamedTuple; list_attrib
 end
 
 """
-The disclosure row of the properties of the floating card of the selection at the grid position
+The disclosure row of the properties of a floating card at the grid position
 `pos`: the chevron (see `_card_collapse!`), right while the properties are collapsed, and the text
 "Properties". Returns the chevron, see `_toggle_properties!`.
 """
@@ -478,7 +487,7 @@ _declared_widgets(::String) = ()
 
 """Moves the parts of the card `c` away, see `_CARD_AWAY`."""
 _park_card!(c::_ComponentCard) =
-    foreach(_park!, (c.back, c.head, c.actions, c.tools, c.rows, c.step, c.properties, c.background))
+    foreach(_park!, (c.back, c.head, c.actions, c.tools, c.rows, c.step, c.disclosure, c.properties, c.background))
 
 """Removes the declared widgets of the card `c`, with their listeners and layouts."""
 function _clear_content!(c::_AbstractCard)
@@ -517,10 +526,15 @@ end
 """Returns the parts of the card `c` below its head that are shown, see `_ComponentCard`."""
 function _lower_parts(c::_ComponentCard)
     (c.collapsed || c.auto_collapsed) && return GridLayout[]
-    rows = isempty(c.rows.content) ? GridLayout[] : [c.rows]
-    # the part of the selection, see `_selection_part!`, only on the card of the selection
-    c.pinned && return rows
-    return c.properties_shown ? [rows..., c.step, c.properties] : [rows..., c.step]
+    parts = isempty(c.rows.content) ? GridLayout[] : [c.rows]
+    # step and mode on the card that stands for the selection, the properties on the card of an
+    # object, see `_update_card!`
+    c.step_shown && push!(parts, c.step)
+    if c.has_properties
+        push!(parts, c.disclosure)
+        c.properties_shown && push!(parts, c.properties)
+    end
+    return parts
 end
 
 # Size of a layout or block [px], which does not depend on its position
@@ -600,7 +614,7 @@ function _arrange_card!(c::_ComponentCard, p::Point2f)
     _place!(c.tools, Point2f(p[1] + size[1] - _CARD_PADDING - t[1], y - (line - t[2]) / 2))
     y -= line
     lower = _lower_parts(c)
-    for part in (c.rows, c.step, c.properties)
+    for part in (c.rows, c.step, c.disclosure, c.properties)
         if any(l -> l === part, lower)
             y -= _CARD_PADDING
             _place!(part, Point2f(x, y))
@@ -755,8 +769,8 @@ head, i.e. its icon, its title and the free room around them.
 function _over_handle(c::_ComponentCard, events::Makie.Events)
     _over_card(c, events) || return false
     p = Point2f(events.mouseposition[])
-    parts = c.back_shown ? (c.back, c.actions, c.tools, c.rows, c.step, c.properties) :
-        (c.actions, c.tools, c.rows, c.step, c.properties)
+    parts = c.back_shown ? (c.back, c.actions, c.tools, c.rows, c.step, c.disclosure, c.properties) :
+        (c.actions, c.tools, c.rows, c.step, c.disclosure, c.properties)
     return !any(x -> p in _part_rect(x), parts)
 end
 

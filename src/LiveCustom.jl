@@ -246,6 +246,8 @@ the usual layouts.
 const _LIVE_VIEW_KEYS = (
     Keyboard.t => "trace (t)",
     Keyboard.escape => "Esc (clear the inspection, enclosing group, deselect)",
+    Keyboard.enter => "Enter (choose an entry of the selection card)",
+    Keyboard.kp_enter => "Enter (choose an entry of the selection card)",
     Keyboard.c => "clipping (c, Shift+c)",
     Keyboard.p => "add a clip plane (p)",
     Keyboard.delete => "remove the clip plane (Delete)",

@@ -317,7 +317,9 @@ function beam_card_rows end
 
 Buttons in the head of the card of `obj` in [`live_view`](@ref), a tuple of
 [`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default "hide"
-(or "show" for a hidden object), for clip planes "flip" and "remove".
+(or "show" for a hidden object), for clip planes "flip" and "remove". The card of an object with
+parts (a group or a `MultiShape` object) gets the button "parts ›" after them, which opens its
+selection card.
 """
 function card_actions end
 

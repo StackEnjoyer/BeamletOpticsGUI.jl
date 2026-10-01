@@ -27,8 +27,9 @@ object), its selection, its pin and its row in the object tree. Without such an 
 ## Recipe: a card for your type
 
 The card of the selected object shows the rows of `card_rows` below the head with the buttons of
-`card_actions`; only the card of the selection additionally has the step, the Move/Rotate control
-and a collapsed "Properties" part (added by the live view, nothing to do).
+`card_actions`; the card of the selected object additionally has the step and the Move/Rotate
+control, and every card, also a pinned one, a collapsed "Properties" part (added by the live view,
+nothing to do).
 
 1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`;
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
@@ -108,15 +109,18 @@ BeamletOpticsGUI.card_rows(b::MyBench) = (
 
 ## The parts of a group: the selection card
 
-No code needed. In `live_view`, a click on an object of a group opens the selection card of its
-top-level group: first entry "Select <group>" (selects the group for moving), "‹ <parent>" below the
-top level, then the direct parts (" ›" after a part with parts of its own, which opens the next
+No code needed. In `live_view`, a click on an object of a group opens a small menu under the cursor:
+"Select <group>" (under the cursor: a second click selects the top-level group for moving) and
+"More ›", which opens the selection card of the group: first entry "Select <group>", "‹ <parent>"
+below the top level, then the direct parts (" ›" after a part with parts of its own, which opens the next
 level; any other part is selected). A part of a non-group `MultiShape` object (e.g. a lens of a
 doublet) is shown but not movable (its pose boxes reject inputs). While browsing, the group is
 see-through with a box per part, the hovered entry's box highlighted. A click in the 3D view on a part
-acts as its entry, a click beside closes, `Esc` goes up one level (closes at the top). The card of a
-part has "‹" in its head to browse its parent. An own group type gets this automatically, since it is
-`MultiShape`.
+acts as its entry, a click beside closes, `Esc` goes up one level (closes at the top); a drag at the
+head of the menu or the card moves it. The card of a
+part has "‹" in its head to browse its parent, the card of an object with parts the button "parts ›"
+(added to the buttons of `card_actions`, also if that method returns none). An own group type gets
+this automatically, since it is `MultiShape`.
 
 ## Recipe: a card for an object without a place in the scene
 

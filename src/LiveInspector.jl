@@ -78,7 +78,7 @@ end
 _card_object(gui::LiveView, c::_DockedCard) = c.pinned ? c.obj : _shown_object(gui)
 _card_boxes(c::_DockedCard) = c.textboxes
 # A collapsed card shows only its actions
-_declarations(c::_DockedCard, obj) = (card_actions(obj), c.collapsed ? () : card_rows(obj))
+_declarations(c::_DockedCard, obj) = (_head_actions(obj), c.collapsed ? () : card_rows(obj))
 
 # The widgets take the theme of the figure, texts and axis colors from the tokens of the app
 _card_style(c::_DockedCard, ::Type{Label}) = (; color = c.theme.text, fontsize = 12)
@@ -228,6 +228,17 @@ function _dock_pinned!(gui::AppView, obj)
     push!(insp.pinned, c)
     rowsize!(insp.grid, 6, Auto())
     return c
+end
+
+"""
+Returns `true` if the point `p` [figure px] is over the docked pinned card `c` beside its widgets:
+over its head or its rows, but not over a button of the head or a widget, see `_over_widget`.
+"""
+function _over_free(c::_DockedCard, p::Point2f)
+    p in Rect2f(c.parent.layoutobservables.computedbbox[]) || return false
+    buttons = (c.head.float, c.head.pin, c.head.collapse)
+    any(b -> p in Rect2f(b.box.layoutobservables.computedbbox[]), buttons) && return false
+    return !_over_widget(c.blocks, p)
 end
 
 """Removes the pinned card `c` of the app layout of the `gui` with its widgets and listeners."""
@@ -513,6 +524,22 @@ function _connect_inspector!(gui::AppView)
         return nothing
     end)
     push!(listeners, on(_ -> _browse_parent!(gui, _shown_object(gui)), insp.back.clicks))
+    # A click on a docked pinned card beside its widgets selects its object, like on a floating one
+    ev = events(gui.ax.scene)
+    press = Ref{Any}(nothing)
+    push!(listeners, on(ev.mousebutton, priority = 2) do event
+        event.button == Mouse.left || return Consume(false)
+        p = Point2f(ev.mouseposition[])
+        if event.action == Mouse.press
+            i = findfirst(c -> _over_free(c, p), insp.pinned)
+            press[] = isnothing(i) ? nothing : (insp.pinned[i], p)
+        elseif event.action == Mouse.release && !isnothing(press[])
+            c, p0 = press[]
+            press[] = nothing
+            (c in insp.pinned && maximum(abs, p - p0) < _CARD_DRAG_MIN) && _select_pinned!(gui, c.obj)
+        end
+        return Consume(false)
+    end)
     push!(listeners, on(v -> v && _refresh_inspector!(gui), layout.collapse.right.active))
     _refresh_inspector!(gui)
     return nothing

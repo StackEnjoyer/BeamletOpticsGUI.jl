@@ -73,8 +73,8 @@ const GUI = BeamletOpticsGUI
         _select!(gui, cube)
         @test _text(gui, :split) == "R 50.0 %, T 50.0 %"
         @test _text(gui, :beam) != "not hit"
-        # no dropdown of its parts, see the selection card
-        @test isnothing(GUI._card_widget(gui.cards.selection, :parts))
+        # no dropdown of its parts, but the button that opens its selection card
+        @test GUI._card_widget(gui.cards.selection, :parts) isa Makie.Button
         # the transmission axis along the local x-axis, i.e. horizontal for an optical axis along y
         _select!(gui, pol)
         @test _text(gui, :axis) == "0.0° from horizontal"

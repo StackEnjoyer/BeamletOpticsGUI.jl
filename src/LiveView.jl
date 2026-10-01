@@ -495,12 +495,14 @@ Below, `x`, `y`, `z` [mm] show the position of the object, `Enter` in a box move
 typed absolute coordinate. `rx`, `ry` and `rv` [mrad] rotate the object about the red, green and
 blue axis of the controls, like the keys in the rotate mode. Each input is recorded in the undo
 history, invalid inputs are reported in the status line. The widgets of a pinned card act on its
-object, also if another object is selected. Only the card of the selection has, below its rows,
+object, also if another object is selected. The card of the selected object has, below its rows,
 the `step` box of the keyboard step, e.g. `250 nm` or `50 µrad`, where the unit selects the move
-or rotate mode, the "Move"/"Rotate" control, which shows and sets the mode of the controls (it
-follows the key `m` and vice versa), and a "Properties" part, collapsed by default, which lists
-the properties of the object (see [`properties`](@ref)), the same rows as in the inspector of the
-app layout. The state of "Properties" is kept while the card follows the selection. "–" in the
+or rotate mode, and the "Move"/"Rotate" control, which shows and sets the mode of the controls (it
+follows the key `m` and vice versa); a pinned card has them while its object is selected. Below
+them, every card of an object has a "Properties" part, collapsed by default, which lists the
+properties of the object (see [`properties`](@ref)), the same rows as in the inspector of the app
+layout. The state of "Properties" is kept while the card follows the selection and when the card is
+pinned: pinning does not change the card. "–" in the
 head collapses the card to its head, "+" expands it again. Clicks and drags on the card neither
 select objects nor move the camera, and while a box of the card has the focus, the keys of the 3D
 view are ignored. Further rows by type, see [`card_rows`](@ref): the number of rays of a source,
@@ -532,10 +534,13 @@ clipboard, see [`export_changes`](@ref).
 
 # Selection card
 
-A click in the 3D view on an object of a group opens the selection card of its top-level group
-instead of selecting it: a floating card next to the group (in both layouts) that browses the parts
-one level at a time. Its first entry "Select <group>" selects the group itself for moving (its card
-and the gizmo), then "‹ <parent>" (except at the top level) browses the enclosing object, then the
+A click in the 3D view on an object of a group opens a small menu under the cursor, like a context
+menu: "Select <group>", which lies under the cursor, and "More ›". A second click without moving the
+mouse thus selects the top-level group for moving (its card and the gizmo); nothing changes in the
+3D view until then, except the box of the group while "Select" is marked, and a selection is kept.
+"More ›" opens the selection card at the same place, which browses the parts one level at a time:
+its first entry "Select <group>" selects the group itself, then "‹ <parent>" (except at the top
+level) browses the enclosing object, then the
 direct parts that are not hidden, those with parts of their own (a subgroup or a `MultiShape`
 object, e.g. a `DoubletLens`, a `CubeBeamsplitter` or a `LinearPolarizer`) marked " ›". A part with
 parts browses its parts, any other part is selected like by a click in the 3D view, or, if it can
@@ -543,9 +548,17 @@ not be moved on its own, e.g. a lens of a doublet, shown on its card without bei
 moving, like an object that is not movable (its pose boxes reject inputs). While browsing, the group
 is drawn see-through with a box around each part, the box of the part under the mouse highlighted;
 nothing is selected. A click in the 3D view on a part acts like its entry, a click elsewhere closes
-the card, `Esc` goes up one level and closes the card at the top level. The card of a part has "‹"
-in its head, which browses the object that it is a part of. A click on an object that is not in a
-group shows its card at once.
+the card, `Esc` goes up one level and closes the card at the top level (and the small menu, which
+keeps the selection). More than 5 parts scroll: 5 are shown, the mouse wheel over the card scrolls.
+`↑`/`↓` move the mark over the entries, `Enter` chooses the marked one ("Select" of the small menu
+if none is marked). A click on the card is ignored for 0.3 s after its entries changed, such that a
+double click on "More ›" does not choose the part that appears under the cursor. A click inside the
+current selection keeps it and opens no menu; the card of an object with parts has the button
+"parts ›" in its head, which opens its selection card, and the card of a part has "‹", which
+browses the object that it is a part of. A drag at the head of the small menu or of the selection
+card moves it, e.g. off the parts that it covers; it stays there on the other levels until it is
+closed. A click on an object that is not in a group shows its card
+at once. A click on a pinned card beside its widgets selects its object.
 
 # Background card
 
@@ -631,7 +644,9 @@ A solve, or the computation of the detector panels, that takes longer than `prog
 in the background: the camera can still be moved, the beams are dimmed and the status line shows
 "tracing". The loops that show a progress bar in the terminal, i.e. the tracing of a beam group
 and the field of a detector panel, show a small progress window in the 3D view next to their source
-or detector once they have run for `progress_delay`, with the remaining time and a button "Cancel";
+or detector once they have run for `progress_delay`, with the remaining time and a button "Cancel",
+connected to the source or detector by a line with a dot at its end, also when the window is kept
+at the edge of the view because the source lies outside of it;
 the terminal bar is not drawn meanwhile. The button, moving a component or a source and a slider
 cancel the solve after the current beam, `t` is ignored until it is done. `Esc` does not cancel
 it: it is the key of the groups, see "Selection card".
