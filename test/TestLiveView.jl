@@ -441,6 +441,11 @@ _points(h) = only(render_plots(h))[1][]
         @test !gui.trace.coarse
         @test size(gui.panels[1].heat_I[]) == (40, 40)
         @test !endswith(gui.panels[1].ax.title[], "(preview)")
+        # the refinement measures the panels again, a fast panel is no longer previewed
+        @test gui.trace.panel_time < 0.5
+        _key!(gui, Keyboard.left)
+        @test !gui.trace.coarse
+        @test size(gui.panels[1].heat_I[]) == (40, 40)
         close(gui)
     end
 

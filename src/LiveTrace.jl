@@ -447,11 +447,17 @@ function _solve!(gui::LiveView, obj; coarse = false, preview = false)
     return done
 end
 
-"""Shows the fields `r.fields` of the detector panels `r.panels`, which refine a coarse preview."""
+"""
+Shows the fields `r.fields` of the detector panels `r.panels`, which refine a coarse preview, and
+measures the `panel_time` again: otherwise a single slow update, e.g. the first one, which
+includes compilation, would keep the panels coarse.
+"""
 function _refine!(gui::LiveView, r)
+    t1 = time_ns()
     for (p, field) in zip(r.panels, r.fields)
         _update_panel!(p, field; record = false)
     end
+    gui.trace.panel_time = r.field_time + 1e-9 * (time_ns() - t1)
     gui.trace.coarse = false
     return nothing
 end
