@@ -397,6 +397,96 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "properties on docked pinned cards" begin
+        gui, o = _fixture()
+        insp, ctrl = gui.layout.inspector, gui.controls
+        height(b) = Makie.widths(_rect(b))[2]
+        ctrl.selected[] = o.m
+        GUI._toggle_pin!(gui, o.m)
+        c = only(insp.pinned)
+        # the card of the selection has no list of its own: the inspector lists its properties
+        @test !GUI._has_list(insp.card) && isnothing(insp.card.list)
+        # the disclosure row below the rows, collapsed: the list is empty and has no height
+        @test GUI._has_list(c) && c.properties_part.shown && !c.properties_shown
+        @test c.properties_button.icon[] === GUI._icon(:expand)
+        @test isempty(c.list.rows) && height(c.list.box) == 0
+        @test maximum(_rect(c.properties_button.box))[2] <= minimum(_rect(c.rows))[2]
+        @test minimum(_rect(c.properties_button.box))[1] >= minimum(_rect(gui.layout.right.box))[1]
+        # expanded by its chevron: the properties of its object, below the disclosure row
+        notify(c.properties_button.clicks)
+        @test c.properties_shown && c.properties_button.icon[] === GUI._icon(:collapse)
+        @test c.list.rows == GUI._inspector_rows(gui, o.m) && !isempty(c.list.rows)
+        @test height(c.list.box) == length(c.list.rows) * GUI._PROPERTY_ROW
+        @test maximum(_rect(c.list.box))[2] <= minimum(_rect(c.properties_button.box))[2]
+        @test !GUI._overflows(gui)
+        # they stay those of its object when another one is selected
+        ctrl.selected[] = o.pd
+        @test c.list.rows == GUI._inspector_rows(gui, o.m)
+        # the list of the selection is shortened first, to make room for them
+        @test first(_rows(gui)) == first(GUI._inspector_rows(gui, o.pd))
+        # a click on the chevron collapses them and does not select the object of the card
+        _click!(gui, _center(_rect(c.properties_button.box)))
+        @test !c.properties_shown && isempty(c.list.rows) && height(c.list.box) == 0
+        @test ctrl.selected[] === o.pd
+        notify(c.properties_button.clicks)
+        # a collapsed card shows neither the disclosure row nor the list
+        notify(c.head.collapse.clicks)
+        @test c.collapsed && !c.properties_part.shown && isempty(c.list.rows)
+        @test !c.properties_button.box.blockscene.visible[]
+        @test maximum(_rect(c.properties_button.box))[1] < 0
+        notify(c.head.collapse.clicks)
+        @test !c.collapsed && c.properties_part.shown && c.properties_shown
+        @test c.list.rows == GUI._inspector_rows(gui, o.m)
+        @test c.properties_button.box.blockscene.visible[]
+
+        # the state moves with the card: floated with expanded properties
+        notify(c.head.float.clicks)
+        _tick!(gui)
+        f = only(GUI._floating_cards(gui, o.m))
+        @test isempty(insp.pinned) && c.list.box.parent === nothing
+        @test f.properties_shown && f.properties_button.icon[] === GUI._icon(:collapse)
+        @test f.list.rows == GUI._inspector_rows(gui, o.m)
+        # docked again with collapsed properties
+        notify(f.properties_button.clicks)
+        notify(f.dock_button.clicks)
+        d = only(insp.pinned)
+        @test !d.properties_shown && isempty(d.list.rows) && d.properties_button.icon[] === GUI._icon(:expand)
+        # and back and forth with expanded ones
+        notify(d.properties_button.clicks)
+        notify(d.head.float.clicks)
+        _tick!(gui)
+        f = only(GUI._floating_cards(gui, o.m))
+        @test f.properties_shown
+        notify(f.dock_button.clicks)
+        d = only(insp.pinned)
+        @test d.properties_shown && d.list.rows == GUI._inspector_rows(gui, o.m)
+        @test d.properties_button.icon[] === GUI._icon(:collapse)
+
+        # three pinned cards with expanded properties fit into the sidebar: the older ones collapse,
+        # the lists are shortened
+        for obj in (o.pd, o.bs)
+            GUI._toggle_pin!(gui, obj)
+            notify(last(insp.pinned).properties_button.clicks)
+        end
+        @test length(insp.pinned) == 3 && last(insp.pinned).properties_shown && !last(insp.pinned).collapsed
+        @test GUI._overflow(gui) <= 0.5
+        GUI._update_inspector!(gui; force = true)
+        @test GUI._overflow(gui) <= 0.5
+        # the card of an item without properties, e.g. a measurement, has no disclosure row
+        gui.widgets.measure_toggle.active[] = true
+        GUI._add_measure_point!(gui, BMO.position(o.m), o.m)
+        GUI._add_measure_point!(gui, BMO.position(o.pd), o.pd)
+        GUI._info_card(gui).pin_button.active[] = true
+        item = last(insp.pinned)
+        @test item.obj isa GUI._Measurement && !item.properties_part.shown
+        # unpinned: its blocks are removed
+        d = first(insp.pinned)
+        box, button = d.list.box, d.properties_button.box
+        GUI._toggle_pin!(gui, d.obj)
+        @test !(d in insp.pinned) && box.parent === nothing && button.parent === nothing
+        close(gui)
+    end
+
     @testset "pin and unpin by clicks" begin
         # Regression: the press and release of a click on a widget of the sidebar reached the
         # controls of the 3D view, whose release on the "background" cleared the selection, which
