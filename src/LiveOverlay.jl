@@ -1,6 +1,6 @@
 #=
 Overlay of the compact layout: help pill, tool rail, camera popover at the view cube and toast,
-see `CompactLayout`
+see `CompactLayout`; the app layout has the help pill as well, see `_help_pill`
 =#
 
 using Makie: Box, Outside
@@ -206,6 +206,64 @@ function _OverlayItem(pos, t::NamedTuple; icon::Union{Symbol, BezierPath},
 end
 
 #=
+Help pill, of both layouts
+=#
+
+"""
+    _overlay_scene(fig) -> Scene
+
+A scene with a pixel camera over the whole figure `fig`, translated to `_OVERLAY_Z`, for the
+`_OverlayPart`s of a layout.
+"""
+function _overlay_scene(fig::Figure)
+    scene = Scene(fig.scene; camera = Makie.campixel!, clear = false)
+    translate!(scene, 0, 0, _OVERLAY_Z)
+    return scene
+end
+
+"""
+    _help_pill(scene, t) -> (pill::_OverlayPart, button::_OverlayItem)
+
+The help pill ("? h keys") in the `scene` of an overlay in the colors of the theme tokens `t`,
+placed at the top left of the 3D view by `_place_pill!`; a click on its `button` toggles the help
+of the controls, see `_connect_pill!`.
+"""
+function _help_pill(scene::Scene, t::NamedTuple)
+    pill = _OverlayPart(scene, t; cornerradius = 13, padding = (0, 0, 0, 0))
+    button = _OverlayItem(pill.content[1, 1], t; icon = :help, label = "h  keys",
+        cornerradius = 13, padding = (8, 10, 3, 3), icon_size = 16, fontsize = 12,
+        icon_color = t.muted, label_color = t.muted)
+    return pill, button
+end
+
+"""Places the help `pill` at the top left of the 3D view with the viewport `vp` [figure px]."""
+_place_pill!(pill::_OverlayPart, vp) = _place!(pill.outer,
+    Point2f(minimum(vp)[1] + _OVERLAY_MARGIN, maximum(vp)[2] - _OVERLAY_MARGIN))
+
+"""The distance of the help of the controls from the top of the 3D view: below the help `pill`."""
+_help_top(pill::_OverlayPart) = _OVERLAY_MARGIN + _card_size(pill.outer)[2] + _OVERLAY_GAP
+
+"""
+    _connect_pill!(ctrl, pill, button, hint)
+
+Connects the help pill of a layout to the controls `ctrl`: a click on its `button` toggles their
+help like the key `h`, which starts below the `pill`; while it is hidden, the line of the controls
+is `hint(ctrl)`, which need not name the key `h`, see `_default_hint`.
+"""
+function _connect_pill!(ctrl::KinematicController, pill::_OverlayPart, button::_OverlayItem,
+        hint::Function)
+    push!(ctrl.listeners, on(button.clicks) do _
+        ctrl.help_shown = !ctrl.help_shown
+        _update_help!(ctrl)
+        return nothing
+    end)
+    ctrl.help_hint = hint
+    ctrl.help_top[] = _help_top(pill)
+    _update_help!(ctrl)
+    return nothing
+end
+
+#=
 The overlay
 =#
 
@@ -261,13 +319,8 @@ mutable struct _CompactOverlay
 end
 
 function _CompactOverlay(fig::Figure, ax::LScene, cube, t::NamedTuple)
-    scene = Scene(fig.scene; camera = Makie.campixel!, clear = false)
-    translate!(scene, 0, 0, _OVERLAY_Z)
-    # Help pill
-    pill = _OverlayPart(scene, t; cornerradius = 13, padding = (0, 0, 0, 0))
-    pill_button = _OverlayItem(pill.content[1, 1], t; icon = :help, label = "h  keys",
-        cornerradius = 13, padding = (8, 10, 3, 3), icon_size = 16, fontsize = 12,
-        icon_color = t.muted, label_color = t.muted)
+    scene = _overlay_scene(fig)
+    pill, pill_button = _help_pill(scene, t)
     # "⋯" and the tool rail
     more = _OverlayPart(scene, t; color = _rgba(t.accent_soft, _OVERLAY_ALPHA),
         strokecolor = t.accent, cornerradius = 20, padding = (0, 0, 0, 0))
@@ -291,9 +344,6 @@ function _CompactOverlay(fig::Figure, ax::LScene, cube, t::NamedTuple)
     o.toast_deadline.action = () -> _hide_toast!(o)
     return o
 end
-
-"""The distance of the help of the controls from the top of the 3D view: below the help pill."""
-_help_top(o::_CompactOverlay) = _OVERLAY_MARGIN + _card_size(o.pill.outer)[2] + _OVERLAY_GAP
 
 # The rail is open while its button "⋯" is active
 _rail_open(o::_CompactOverlay) = o.more_button.active[]
@@ -491,7 +541,7 @@ function _arrange_overlay!(o::_CompactOverlay)
     vp = _view_rect(o)
     lo, hi = minimum(vp), maximum(vp)
     m = _OVERLAY_MARGIN
-    _place!(o.pill.outer, Point2f(lo[1] + m, hi[2] - m))
+    _place_pill!(o.pill, vp)
     ms = _card_size(o.more.outer)
     _place!(o.more.outer, Point2f(lo[1] + m, lo[2] + m + ms[2]))
     rail = if _rail_open(o)
@@ -588,10 +638,10 @@ _outside_view(gui::CompactView) = _menu_open(gui) || _over_layout(gui)
 """
     _connect_overlay!(gui)
 
-Connects the overlay of the compact layout of the `gui` (see `_CompactOverlay`): the help pill
-toggles the help of the controls, "⋯" the tool rail, which a press outside of it (unless a menu is
-open) and the key `Esc` close, like its popovers; the camera popover follows the mouse, the parts
-follow the size of the window and their content.
+Connects the overlay of the compact layout of the `gui` (see `_CompactOverlay`), except its help
+pill (see `_connect_pill!`): "⋯" toggles the tool rail, which a press outside of it (unless a menu
+is open) and the key `Esc` close, like its popovers; the camera popover follows the mouse, the
+parts follow the size of the window and their content.
 """
 function _connect_overlay!(gui::CompactView)
     o = gui.layout.overlay
@@ -600,11 +650,6 @@ function _connect_overlay!(gui::CompactView)
     listeners = ctrl.listeners
     o.views_menu = gui.widgets.views_menu
     o.reshield = () -> _shield_cards!(gui)
-    push!(listeners, on(o.pill_button.clicks) do _
-        ctrl.help_shown = !ctrl.help_shown
-        _update_help!(ctrl)
-        return nothing
-    end)
     push!(listeners, on(o.more_button.active) do open
         open || (o.open_section = 0)
         _arrange_overlay!(o)

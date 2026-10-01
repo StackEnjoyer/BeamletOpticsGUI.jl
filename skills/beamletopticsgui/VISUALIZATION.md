@@ -56,7 +56,8 @@ closes); the mouse over the view cube shows the camera popover (home, fit `g`, v
 orthographic); the status line appears as a toast.
 `layout = :app` arranges the window like an application, with the cards (selection and
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
-moves it into the 3D view next to its component, its dock button moves it back.
+moves it into the 3D view next to its component, its dock button moves it back. Its 3D view has
+the same help pill at the top left, the line below it names the mode and the keyboard step.
 
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
 `extras = [housing => (; color = :lightblue), ...]` (`obj` or `obj => render_kwargs`), not into

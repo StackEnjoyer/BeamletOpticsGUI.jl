@@ -236,8 +236,9 @@ _ToolSpec(role, toggle, icon, label, tooltip, group) =
 
 """
 The built-in tools in their order, see `_ToolSpec`; a layout builds those of `_tools(layout)`.
-The groups (`:trace`, `:objects`, `:camera`, `:display`, `:tools`, `:panels`, `:help`) are placed
-by the layout, see `_tool_widget`.
+The groups (`:trace`, `:objects`, `:camera`, `:display`, `:tools`, `:panels`) are placed by the
+layout, see `_tool_widget`. The help of the controls has no tool: both layouts have a help pill, see
+`_help_pill`.
 """
 const _BUILTIN_TOOLS = (
     _ToolSpec(:trace_button, false, :trace, "Trace (t)", "Trace (t)", :trace),
@@ -260,7 +261,6 @@ const _BUILTIN_TOOLS = (
     _ToolSpec(:collapse_right, true, :panel_right, "properties", "Properties", :panels, true),
     _ToolSpec(:collapse_dock, true, :panel_bottom, "analysis", "Analysis", :panels,
         spec -> !isempty(spec.specs)),
-    _ToolSpec(:help_button, false, :help, "help (h)", "Help (h)", :help),
 )
 
 """

@@ -46,7 +46,7 @@ const GUI = BeamletOpticsGUI
         @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters"]
         @test first.(gui.layout.sections[:right]) == ["Properties"]
         @test first.(gui.layout.dock_panels) == ["Detector 1"]
-        @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels, :help]
+        @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels]
         @test occursin("1 ray", gui.widgets.info.text[])
         @test occursin("perspective", gui.widgets.info.text[])
         @test sprint(show, gui) == "LiveView(1 systems, 1 detector panels)"
@@ -188,10 +188,7 @@ const GUI = BeamletOpticsGUI
         gui.widgets.measure_toggle.active[] = true
         @test startswith(gui.status.text[], "measure:")
         gui.widgets.measure_toggle.active[] = false
-        # help and fit
-        help = gui.controls.help_shown
-        gui.layout.help_button.clicks[] += 1
-        @test gui.controls.help_shown != help
+        # fit
         gui.layout.fit_button.clicks[] += 1
         @test !isnothing(gui.camera.animation)
         # the views menu is in the toolbar
@@ -199,6 +196,64 @@ const GUI = BeamletOpticsGUI
         redirect_stdout(() -> (gui.widgets.save_view_button.clicks[] += 1), devnull)
         @test length(gui.camera.views) == n + 1
         @test length(gui.widgets.views_menu.options[]) == n + 1
+        close(gui)
+    end
+
+    @testset "help pill" begin
+        m, pd = _fixture()
+        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]))
+        layout, ctrl = gui.layout, gui.controls
+        ev = events(gui.ax.scene)
+        function _click!(p)
+            ev.mouseposition[] = (p[1], p[2])
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            return nothing
+        end
+        _center(r) = Point2f(minimum(r) .+ widths(r) ./ 2)
+        _corner(pill, vp) = (minimum(pill)[1] - minimum(vp)[1], maximum(vp)[2] - maximum(pill)[2])
+        # at the top left of the 3D view, like in the compact layout
+        pill = GUI._overlay_rect(layout.pill)
+        vp = Rect2f(gui.ax.scene.viewport[])
+        @test all(0 .< _corner(pill, vp) .< 20)
+        @test GUI._layout_obstacles(gui) == [pill]
+        # the line of the controls keeps the mode and the step, the pill names the key h
+        @test ctrl.help_obs[] == "move mode, step 10 nm, +/-: step, m: switch mode, v: spectator"
+        @test ctrl.help_top[] > widths(pill)[2]
+        # a click on the pill toggles the help like the key h, and is no click into the 3D view:
+        # the selection stays
+        ctrl.selected[] = m
+        _click!(_center(pill))
+        @test ctrl.help_shown && occursin("h: hide controls", ctrl.help_obs[])
+        @test ctrl.selected[] === m
+        _key!(gui, Keyboard.h)
+        @test !ctrl.help_shown && startswith(ctrl.help_obs[], "move mode, step")
+        # the toolbar has no help icon besides the pill
+        @test !hasproperty(layout, :help_button) && !(:help in first.(layout.groups))
+        # the step and the mode update the line
+        _key!(gui, Keyboard.m)
+        @test startswith(ctrl.help_obs[], "rotate mode, step")
+        _key!(gui, Keyboard.m)
+        ctrl.selected[] = nothing
+        _key!(gui, Keyboard.v)
+        @test ctrl.help_obs[] == "spectator mode, v: edit"
+        _key!(gui, Keyboard.v)
+        # the pill follows the 3D view when the left sidebar is collapsed
+        layout.collapse.left.active[] = false
+        vp2 = Rect2f(gui.ax.scene.viewport[])
+        @test minimum(vp2)[1] < minimum(vp)[1]
+        @test all(0 .< _corner(GUI._overlay_rect(layout.pill), vp2) .< 20)
+        layout.collapse.left.active[] = true
+        @test GUI._overlay_rect(layout.pill) == pill
+        # and makes room for the drop-down of the views menu
+        menu = gui.widgets.views_menu
+        menu.is_open[] = true
+        @test maximum(GUI._overlay_rect(layout.pill))[1] < 0
+        ev.mouseposition[] = Tuple(_center(pill))
+        @test !GUI._over_layout(gui)
+        menu.is_open[] = false
+        @test GUI._overlay_rect(layout.pill) == pill
+        @test GUI._over_layout(gui)
         close(gui)
     end
 
@@ -401,13 +456,13 @@ const GUI = BeamletOpticsGUI
     @testset "slots" begin
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [])
-        # a new toolbar group after the built-in ones, but before "Help", which stays last
+        # a new toolbar group after the built-in ones
         b = Button(GUI._add_toolbar_entry!(gui, :custom); label = "Mine")
-        @test first.(gui.layout.groups[(end - 1):end]) == [:custom, :help]
-        @test b in contents(gui.layout.groups[end - 1].second)
+        @test first.(gui.layout.groups[(end - 1):end]) == [:panels, :custom]
+        @test b in contents(gui.layout.groups[end].second)
         # the groups and separators alternate in the columns of the toolbar
         cols(x) = Makie.GridLayoutBase.gridcontent(x).span.cols
-        @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11, 13:13]
+        @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11]
         # a sidebar section below the built-in ones
         g = GUI._add_sidebar_section!(gui, :right, "Extra")
         @test g isa GridLayout

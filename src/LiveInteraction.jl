@@ -104,9 +104,13 @@ pill names the key `h` instead, see `_compact_hint`.
 _default_hint(ctrl) =
     ctrl.spectator[] ? _SPECTATOR_HINT : _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
 
-function _help_hint(mode::Symbol, fine_step, fine_angle)
+_help_hint(mode::Symbol, fine_step, fine_angle) =
+    _mode_hint(mode, fine_step, fine_angle) * ", h: show controls"
+
+# The line without the key `h`, for layouts that name it elsewhere, e.g. in a help pill
+function _mode_hint(mode::Symbol, fine_step, fine_angle)
     step = _step_string(mode, fine_step, fine_angle)
-    return "$mode mode, step $step, +/-: step, m: switch mode, v: spectator, h: show controls"
+    return "$mode mode, step $step, +/-: step, m: switch mode, v: spectator"
 end
 
 const _SPECTATOR_HELP = """

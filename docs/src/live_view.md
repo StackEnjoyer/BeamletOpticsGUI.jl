@@ -51,6 +51,9 @@ view:
 
 The floating cards keep off the pill, "⋯", the open rail and the popovers.
 
+The app layout (`layout = :app`) has the same help pill at the top left of its 3D view; the line
+below it names the mode and the keyboard step.
+
 More than one `system => beam` pair can be shown in the same 3D view, e.g. the transmitter and
 receiver path of a lidar, which are solved with different sources:
 
@@ -204,7 +207,7 @@ the layout decides where the parts go:
 |:--|:--|:--|
 | [`add_panel!`](@ref) | below the detector panels, right of the 3D view | a tab of the analysis dock |
 | [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" |
-| [`add_tool!`](@ref) | an entry (icon and name) of the tool rail | an icon button (or toggle) in the toolbar, before "Help" |
+| [`add_tool!`](@ref) | an entry (icon and name) of the tool rail | an icon button (or toggle) at the end of the toolbar |
 
 `add_panel!(f, gui, title)` calls `f(layout)` with the `GridLayout` of the new panel, into which it
 builds e.g. an `Axis` with plots. The function returned by `f` is called with the `gui` after each

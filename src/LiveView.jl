@@ -703,7 +703,7 @@ actions in the 3D view are unchanged:
 
 - toolbar (icons with tooltips): trace and auto trace, home, fit (`g`), views, save view,
   orthographic, clipping (`c`), clip beams, sources (`1`), measure, export, the toggles of the
-  sidebars and the dock, help (`h`)
+  sidebars and the dock
 - left sidebar: the object tree and, below it, the sliders ("Parameters"). The tree lists each
   system with its objects (groups with their objects, collapsed by default), then the `extras`
   under "Extras", the sources and the clip planes. A click on a name selects the object like a click in the 3D view, and a
@@ -731,6 +731,9 @@ actions in the 3D view are unchanged:
   every full solve. The history and profiles axes are shown beside the panel.
 - status bar: the status line and the duration of the last solve, the number of rays and the
   projection
+- the help pill at the top left of the 3D view ("? h keys"), like in the compact layout: a click
+  on it or the key `h` shows the keys of the controls; the line below it names the mode and the
+  keyboard step. It makes room while the views menu is open.
 
 The sidebars and the dock can be collapsed via the toolbar, the 3D view then takes their space.
 The component menu of the compact layout is replaced by the tree.

@@ -131,7 +131,7 @@ function add_controls! end
 
 Adds a tool to the [`live_view`](@ref) window `gui`: a button that calls `f(gui)`, or with
 `toggle = true` a toggle that calls `f(gui, active::Bool)` whenever it is switched. With
-`layout = :app`, an icon button (or toggle) in the toolbar, before "Help", with the `icon` and the
+`layout = :app`, an icon button (or toggle) at the end of the toolbar, with the `icon` and the
 `tooltip`; with `layout = :compact`, an entry (icon and `name`) of the tool rail opened by the
 button "⋯".
 

@@ -528,8 +528,8 @@ _selection_card_shown(::AppView) = false
 
 # The toolbar, the sidebars, the dock and the status bar surround the 3D view: a click on their
 # widgets, e.g. the pin of the inspector, neither selects nor deselects (the release of the press
-# would clear the selection, and with it the inspector)
-_outside_view(gui::AppView) = !Makie.is_mouseinside(gui.ax.scene)
+# would clear the selection, and with it the inspector), like one on the help pill over the 3D view
+_outside_view(gui::AppView) = !Makie.is_mouseinside(gui.ax.scene) || _over_layout(gui)
 
 #=
 Properties of the objects of the live view

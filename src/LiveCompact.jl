@@ -109,9 +109,7 @@ function _connect_layout!(gui::CompactView)
     ctrl = gui.controls
     push!(ctrl.listeners, on(_ -> _zoom_to_selection!(gui), o.fit_button.clicks))
     # The pill names the key `h`, the full help starts below it
-    ctrl.help_hint = _compact_hint
-    ctrl.help_top[] = _help_top(o)
-    _update_help!(ctrl)
+    _connect_pill!(ctrl, o.pill, o.pill_button, _compact_hint)
     _connect_overlay!(gui)
     return nothing
 end

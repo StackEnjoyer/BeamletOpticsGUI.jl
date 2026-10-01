@@ -285,11 +285,11 @@ const GUI = BeamletOpticsGUI
             row(x) = GLB.gridcontent(x.box).span.rows.start
             @test row(gui.widgets.export_button) < row(b) < row(t) < row(own)
         else
-            # icon buttons in the toolbar group `:user` before "Help"
+            # icon buttons in the toolbar group `:user` at the end of the toolbar
             @test b isa GUI._IconButton
             @test b.tooltip[] == "My tool (2)"
             @test t isa GUI._IconToggle
-            @test first.(gui.layout.groups)[(end - 1):end] == [:user, :help]
+            @test first.(gui.layout.groups)[(end - 1):end] == [:panels, :user]
             # the own icon in the toolbar, also on a toggle, on and off
             @test own.icon[] === path
             @test own_toggle.icon[] === path
