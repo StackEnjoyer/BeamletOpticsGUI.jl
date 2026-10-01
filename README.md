@@ -4,7 +4,11 @@
 
 # BeamletOpticsGUI.jl
 
-[![Documentation](https://img.shields.io/badge/docs-blue.svg)](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/dev/)
+[![CI](https://github.com/StackEnjoyer/BeamletOpticsGUI.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/StackEnjoyer/BeamletOpticsGUI.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/StackEnjoyer/BeamletOpticsGUI.jl/graph/badge.svg)](https://codecov.io/gh/StackEnjoyer/BeamletOpticsGUI.jl)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 Interactive GUI for [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl): move the
 components of an optical setup with the mouse and keyboard, and see the beams and detector signals

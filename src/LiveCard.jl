@@ -197,7 +197,7 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     back = _card_part(scene)
     back_button = _card_back!(back[1, 1], t)
     foreach(_fix_tooltip!, (pin_button, collapse_button, properties_button, back_button))
-    _fix_caret!(part.step_box, z)
+    _translate_caret!(part.step_box, z)
     scene.visible[] = false
     return _ComponentCard(scene, t, background, head, _card_part(scene), tools, _card_part(scene), step,
         properties, icon, icon_color, title, collapse_button, pin_button, part.step_box, part.mode,
@@ -432,14 +432,15 @@ _row_attributes(::_ComponentCard) = (; halign = :left, default_colgap = 6)
 
 # The caret and the selection of a textbox are drawn without the translation of the scene of the
 # card, which is at `z`
-function _fix_caret!(tb::Textbox, z::Real)
+function _translate_caret!(tb::Textbox, z::Real)
     for p in tb.editor.plots
         p isa Makie.Text || translate!(p, 0, 0, z + 5)
     end
     return nothing
 end
-_fix_caret!(_, ::Real) = nothing
-_fix_caret!(c::_ComponentCard, b) = _fix_caret!(b, _scene_z(c))
+_translate_caret!(_, ::Real) = nothing
+# The block `b` of the card `c`, see `_AbstractCard`: only the floating card is translated
+_fix_caret!(c::_ComponentCard, b) = _translate_caret!(b, _scene_z(c))
 _fix_caret!(::_AbstractCard, _) = nothing
 
 # The z translation of the scene of the card `c`
