@@ -36,9 +36,8 @@ Layout of `live_view(...; layout = :app)`, an application window around the 3D v
 - the analysis dock below the 3D view, a tab per detector panel (or other panel, see
   `_add_dock_panel!`), of which only the active one is shown and computed, see `_DockTabs`
 - the status bar with the status line and an info label (last trace, number of rays, projection)
-- the help pill at the top left of the 3D view (`pill` with its `pill_button`, see `_help_pill`),
-  like in the compact layout; the line of the controls below it keeps the mode and the step, see
-  `_app_hint`
+- the `help` over the 3D view, like in the compact layout: the help pill at its top left, the
+  chips of the mode and the keyboard step and the help card, see `_HelpUI`
 
 The sidebars and the dock are collapsed via toggles in the toolbar, then the 3D view takes their
 space, see `_set_shown!`. The colors come from the tokens `theme` of the `theme` kwarg, see
@@ -65,9 +64,8 @@ mutable struct AppLayout <: AbstractLiveLayout
     clip_toggle::_IconToggle
     fit_button::_IconButton
     views_button::_IconButton
-    # the help pill over the 3D view, see `_help_pill`
-    pill::_OverlayPart
-    pill_button::_OverlayItem
+    # the help over the 3D view: pill, chips and help card
+    help::_HelpUI
     # object tree, see `_tree_rows`: the expanded systems and groups (by key, the default is
     # expanded for systems, collapsed for groups); the names of its rows are in `gui.objects`, see
     # `_name_objects!`
@@ -341,8 +339,8 @@ function _build_layout(layout::AppLayout, fig, spec)
     status = Label(sb[1, 1], "Click on a component to select it, press h to show the controls";
         halign = :left, tellwidth = false)
     info = Label(sb[1, 2], ""; halign = :right, color = t.muted)
-    # Help pill over the 3D view
-    layout.pill, layout.pill_button = _help_pill(_overlay_scene(fig), t)
+    # Help over the 3D view
+    layout.help = _HelpUI(_overlay_scene(fig), t, ax)
     return (; ax, cube, panels, sliders, status, tb.trace_button, tb.auto_trace_toggle,
         tb.clip_beams_toggle, tb.orthographic_toggle, tb.sources_toggle, inspector.step_box,
         tb.export_button, tb.show_all_button, tb.measure_toggle, tb.home_button,
@@ -391,8 +389,8 @@ end
 
 """
 Connects the entries of the app layout that are not fields of `LiveView`: the clip toggle, fit,
-the help pill in the 3D view, the collapse toggles, the info label, the object tree and the
-inspector. All updates are driven by events.
+the help in the 3D view (see `_connect_help!`), the collapse toggles, the info label, the object
+tree and the inspector. All updates are driven by events.
 """
 function _connect_layout!(gui::AppView)
     layout = gui.layout
@@ -400,11 +398,14 @@ function _connect_layout!(gui::AppView)
     listeners = ctrl.listeners
     push!(listeners, on(v -> v == gui.clip.enabled || _set_clipping!(gui, v), layout.clip_toggle.active))
     push!(listeners, on(_ -> _zoom_to_selection!(gui), layout.fit_button.clicks))
-    # The pill names the key `h` and follows the 3D view, e.g. when a sidebar is collapsed
-    _connect_pill!(ctrl, layout.pill, layout.pill_button, _app_hint)
-    push!(listeners, on(_ -> _arrange_pill!(gui), gui.ax.scene.viewport))
-    push!(listeners, on(_ -> _arrange_pill!(gui), gui.widgets.views_menu.is_open))
-    _arrange_pill!(gui)
+    # The help follows the 3D view, e.g. when a sidebar is collapsed, and makes room for the
+    # drop-down of the views menu of the toolbar, which it would cover
+    _connect_help!(gui)
+    push!(listeners, on(gui.widgets.views_menu.is_open) do open
+        layout.help.hidden = open
+        _arrange_help!(gui)
+        return nothing
+    end)
     push!(listeners, on(v -> _set_shown!(layout.left, v), layout.collapse.left.active))
     push!(listeners, on(v -> _set_shown!(layout.right, v), layout.collapse.right.active))
     push!(listeners, on(_ -> _update_dock!(layout), layout.collapse.dock.active))
@@ -420,29 +421,12 @@ function _connect_layout!(gui::AppView)
     return nothing
 end
 
-"""
-The line of the controls of the app layout while the help is hidden: the mode, the step and their
-keys, without the key `h`, which the help pill names, see `_default_hint`.
-"""
-_app_hint(ctrl) = ctrl.spectator[] ? _compact_hint(ctrl) :
-                  _mode_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
-
-"""
-Places the help pill of the app layout at the top left of the 3D view, or moves it away (see
-`_park!`) while the views menu of the toolbar is open, whose drop-down it would cover.
-"""
-function _arrange_pill!(gui::AppView)
-    pill = gui.layout.pill
-    gui.widgets.views_menu.is_open[] ? _park!(pill.outer) :
-    _place_pill!(pill, Rect2f(gui.ax.scene.viewport[]))
-    return nothing
-end
-
-# The help pill lies over the 3D view: the floating cards keep off it, its clicks are not clicks
-# into the 3D view
-_layout_obstacles(gui::AppView) = Rect2f[_overlay_rect(gui.layout.pill)]
+# The help lies over the 3D view: the floating cards keep off it, its clicks are not clicks into the
+# 3D view
+_layout_obstacles(gui::AppView) =
+    [_overlay_rect(gui.layout.help.pill); _help_rects(gui.layout.help)]
 _over_layout(gui::AppView) =
-    Point2f(events(gui.ax.scene).mouseposition[]) in _overlay_rect(gui.layout.pill)
+    _over_help(gui.layout.help, Point2f(events(gui.ax.scene).mouseposition[]))
 
 #=
 App layout: panels as tabs of the analysis dock, controls as sections of the left sidebar, tools

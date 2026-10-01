@@ -2,7 +2,12 @@
 Camera tools
 =#
 
-const _CAMERA_HELP = "g: zoom to selection, click on a beam: inspect it, esc: cancel a long trace"
+const _CAMERA_HELP = _HelpSection[
+    "Select" => [_HelpEntry(["G"], "zoom to the selection")],
+    "Trace" => [
+        _HelpEntry(["T"], "trace now"),
+        _HelpEntry(["Esc"], "cancel a long trace"),
+        _HelpEntry([:mouse => "click"], "on a beam: inspect it")]]
 
 """
     _CameraAnimation
@@ -250,7 +255,7 @@ function _connect_camera!(gui::LiveView)
     push!(listeners, on(_ -> _go_home!(gui), gui.widgets.home_button.clicks))
     push!(listeners, on(i -> _set_saved_view!(gui, something(i, 0)), gui.widgets.views_menu.i_selected))
     push!(listeners, on(_ -> _save_view!(gui), gui.widgets.save_view_button.clicks))
-    gui.controls.help_extra *= "\n" * _CAMERA_HELP
+    append!(gui.controls.help_extra, _CAMERA_HELP)
     _update_help!(gui.controls)
     return nothing
 end

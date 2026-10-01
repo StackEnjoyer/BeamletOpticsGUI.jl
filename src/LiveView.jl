@@ -731,9 +731,9 @@ actions in the 3D view are unchanged:
   every full solve. The history and profiles axes are shown beside the panel.
 - status bar: the status line and the duration of the last solve, the number of rays and the
   projection
-- the help pill at the top left of the 3D view ("? h keys"), like in the compact layout: a click
-  on it or the key `h` shows the keys of the controls; the line below it names the mode and the
-  keyboard step. It makes room while the views menu is open.
+- the help pill at the top left of the 3D view ("? h keys") with the chips of the mode and the
+  keyboard step and the help card, like in the compact layout. They make room while the views menu
+  is open.
 
 The sidebars and the dock can be collapsed via the toolbar, the 3D view then takes their space.
 The component menu of the compact layout is replaced by the tree.
@@ -744,8 +744,12 @@ With `layout = :compact`, the 3D view fills the window and the detector panels (
 [`add_panel!`](@ref)) are on its right, in `gui.fig[1, 2]`, next to which users may add their own
 axes. There are no rows below the 3D view; everything else appears on demand over the 3D view:
 
-- a help pill at the top left ("? h keys"); a click on it or the key `h` shows the keys of the
-  controls
+- a help pill at the top left ("? h keys"); a click on it or the key `h` opens the help card
+  below it, which lists the keys and mouse actions in sections (select, move or rotate, edit, view,
+  clip planes, trace, own tools), the keys as key caps; the 3D view stays usable while it is open.
+  The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
+  (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
+  leaves it.
 - the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
   Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools of
   [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and one entry "Sliders" for
@@ -756,7 +760,8 @@ axes. There are no rows below the 3D view; everything else appears on demand ove
 - the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
   for 3 s after each change
 
-The floating cards keep off the pill, "⋯", the open rail and the popovers.
+The floating cards keep off the pill, the chips, the open help card, "⋯", the open rail and the
+popovers.
 
 # Own panels, controls and tools
 

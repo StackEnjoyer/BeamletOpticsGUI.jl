@@ -241,29 +241,28 @@ const GUI = BeamletOpticsGUI
         gui, _, _ = _fixture()
         o = gui.layout.overlay
         ctrl = gui.controls
-        # the short line of the controls is replaced by the pill, the help starts below it
+        help = gui.layout.help
+        # the pill of the overlay is the pill of the help, at the top left of the 3D view
+        @test help.pill === o.pill && help.scene === o.scene
         @test ctrl.help_obs[] == ""
-        @test ctrl.help_top[] > GUI._card_size(o.pill.outer)[2]
         pill = GUI._overlay_rect(o.pill)
         vp = Rect2f(Makie.viewport(gui.ax.scene)[])
         @test minimum(pill)[1] - minimum(vp)[1] < 20 && maximum(vp)[2] - maximum(pill)[2] < 20
-        # a click on the pill and the key h toggle the help
+        # a click on the pill and the key h open and close the help card, see TestLiveHelp.jl
         _click!(gui, _center(pill))
-        @test ctrl.help_shown && occursin("h: hide controls", ctrl.help_obs[])
+        @test ctrl.help_shown && !_parked(help.card)
         _key!(gui, Keyboard.h)
-        @test !ctrl.help_shown && ctrl.help_obs[] == ""
-        # the spectator mode is still named
-        _key!(gui, Keyboard.v)
-        @test occursin("spectator", ctrl.help_obs[])
+        @test !ctrl.help_shown && _parked(help.card)
+        # the help follows the 3D view every frame, like the overlay
+        GUI._park!(help.chips.outer)
+        _tick!(gui)
+        @test !_parked(help.chips)
+        # a press on the help card closes the open tool rail
+        _key!(gui, Keyboard.h)
+        o.more_button.active[] = true
+        _click!(gui, _center(GUI._overlay_rect(help.card)))
+        @test !GUI._rail_open(o) && ctrl.help_shown
         close(gui)
-
-        # standalone controls keep their line
-        fig = Figure()
-        ax = LScene(fig[1, 1])
-        h = live_render!(ax, System([RoundPlanoMirror(25e-3, 5e-3)]))
-        c = kinematic_controls!(ax, h)
-        @test c.help_obs[] == GUI._help_hint(:move, 10e-9, 10e-6)
-        close(c)
     end
 
     @testset "cards keep off the overlay" begin

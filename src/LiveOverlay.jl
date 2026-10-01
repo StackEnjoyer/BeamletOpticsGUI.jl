@@ -1,6 +1,6 @@
 #=
 Overlay of the compact layout: help pill, tool rail, camera popover at the view cube and toast,
-see `CompactLayout`; the app layout has the help pill as well, see `_help_pill`
+see `CompactLayout`; the help pill is a part of the help of both layouts, see `_HelpUI`
 =#
 
 using Makie: Box, Outside
@@ -225,8 +225,8 @@ end
     _help_pill(scene, t) -> (pill::_OverlayPart, button::_OverlayItem)
 
 The help pill ("? h keys") in the `scene` of an overlay in the colors of the theme tokens `t`,
-placed at the top left of the 3D view by `_place_pill!`; a click on its `button` toggles the help
-of the controls, see `_connect_pill!`.
+placed at the top left of the 3D view by `_place_pill!`; a click on its `button` opens and closes
+the help card, see `_HelpUI`.
 """
 function _help_pill(scene::Scene, t::NamedTuple)
     pill = _OverlayPart(scene, t; cornerradius = 13, padding = (0, 0, 0, 0))
@@ -240,29 +240,6 @@ end
 _place_pill!(pill::_OverlayPart, vp) = _place!(pill.outer,
     Point2f(minimum(vp)[1] + _OVERLAY_MARGIN, maximum(vp)[2] - _OVERLAY_MARGIN))
 
-"""The distance of the help of the controls from the top of the 3D view: below the help `pill`."""
-_help_top(pill::_OverlayPart) = _OVERLAY_MARGIN + _card_size(pill.outer)[2] + _OVERLAY_GAP
-
-"""
-    _connect_pill!(ctrl, pill, button, hint)
-
-Connects the help pill of a layout to the controls `ctrl`: a click on its `button` toggles their
-help like the key `h`, which starts below the `pill`; while it is hidden, the line of the controls
-is `hint(ctrl)`, which need not name the key `h`, see `_default_hint`.
-"""
-function _connect_pill!(ctrl::KinematicController, pill::_OverlayPart, button::_OverlayItem,
-        hint::Function)
-    push!(ctrl.listeners, on(button.clicks) do _
-        ctrl.help_shown = !ctrl.help_shown
-        _update_help!(ctrl)
-        return nothing
-    end)
-    ctrl.help_hint = hint
-    ctrl.help_top[] = _help_top(pill)
-    _update_help!(ctrl)
-    return nothing
-end
-
 #=
 The overlay
 =#
@@ -274,7 +251,8 @@ The overlay of the compact layout over the 3D view `ax` (see `CompactLayout`), i
 with a pixel camera over the whole figure, translated to `_OVERLAY_Z`, built like the floating cards
 (see `_ComponentCard`) from `_OverlayPart`s:
 
-- `pill`: the help pill at the top left, its `pill_button` toggles the help of the controls
+- `pill`: the help pill at the top left with its `pill_button`, a part of the help of the layout,
+  see `_HelpUI`
 - `more`: the round button "⋯" at the bottom left, whose toggle `more_button` opens the tool rail
 - `rail`: the tool rail above it, whose grid `rail_tools` holds an entry per row: the built-in
   tools (see `_RAIL_TOOLS`), then `rail_counts[1]` tools of [`add_tool!`](@ref),
@@ -629,9 +607,12 @@ end
 Hooks of the compact layout, see `AbstractLiveLayout`
 =#
 
-_layout_obstacles(gui::CompactView) = _overlay_rects(gui.layout.overlay)
-_over_layout(gui::CompactView) =
-    _over_overlay(gui.layout.overlay, Point2f(events(gui.ax.scene).mouseposition[]))
+_layout_obstacles(gui::CompactView) =
+    [_overlay_rects(gui.layout.overlay); _help_rects(gui.layout.help)]
+function _over_layout(gui::CompactView)
+    p = Point2f(events(gui.ax.scene).mouseposition[])
+    return _over_overlay(gui.layout.overlay, p) || _over_help(gui.layout.help, p)
+end
 # While a menu is open, a click into the 3D view only closes it
 _outside_view(gui::CompactView) = _menu_open(gui) || _over_layout(gui)
 
@@ -639,7 +620,7 @@ _outside_view(gui::CompactView) = _menu_open(gui) || _over_layout(gui)
     _connect_overlay!(gui)
 
 Connects the overlay of the compact layout of the `gui` (see `_CompactOverlay`), except its help
-pill (see `_connect_pill!`): "⋯" toggles the tool rail, which a press outside of it (unless a menu
+pill (see `_connect_help!`): "⋯" toggles the tool rail, which a press outside of it (unless a menu
 is open) and the key `Esc` close, like its popovers; the camera popover follows the mouse, the
 parts follow the size of the window and their content.
 """

@@ -10,7 +10,8 @@ Layout of `live_view(...; layout = :compact)`: the 3D view fills the window, the
 [`add_panel!`](@ref)). There are no rows below the 3D view: the tools, the status and the own
 parts appear on demand in an overlay over the 3D view (see `_CompactOverlay` in `LiveOverlay.jl`):
 
-- a help pill at the top left; a click on it or the key `h` shows the keys of the controls
+- a help pill at the top left; a click on it or the key `h` opens the help card with the keys of
+  the controls; the chips right of it show the mode and the keyboard step, see `_HelpUI`
 - the tool rail, opened by the round button "⋯" at the bottom left: the tools of tracing and the
   display, the component menu, export, the tools of [`add_tool!`](@ref), and an entry per section
   of [`add_controls!`](@ref) and one for the `sliders`, which opens their widgets in a popover
@@ -30,7 +31,9 @@ mutable struct CompactLayout <: AbstractLiveLayout
     # the overlay over the 3D view, a `_CompactOverlay` (defined in `LiveOverlay.jl`, which is
     # included after this file)
     overlay::Any
-    CompactLayout(theme::NamedTuple) = new(theme, nothing, nothing)
+    # the help in the overlay, a `_HelpUI` (defined in `LiveHelp.jl`)
+    help::Any
+    CompactLayout(theme::NamedTuple) = new(theme, nothing, nothing, nothing)
 end
 
 """`LiveView` with the compact layout, i.e. `live_view(...; layout = :compact)`."""
@@ -70,6 +73,7 @@ function _build_layout(layout::CompactLayout, fig, spec)
     end
     # Everything else is part of the overlay over the 3D view
     o = layout.overlay = _CompactOverlay(fig, ax, cube, t)
+    layout.help = _HelpUI(o.scene, t, ax, o.pill, o.pill_button)
     sliders = isempty(slider_specs) ? nothing :
               SliderGrid(_add_section!(o, "Sliders"; sliders = true)[1, 1], first.(slider_specs)...;
                   width = _SLIDERS_WIDTH)
@@ -101,24 +105,18 @@ _has_tool(::CompactLayout, ::Union{Val{:fit_button}, Val{:views_button}}) = true
 
 """
 Connects the parts of the compact layout that are not fields of `LiveView`: the fit button, the
-line of the controls next to the help pill (see `_compact_hint`) and the overlay, see
-`_connect_overlay!`.
+help (see `_connect_help!`) and the overlay, see `_connect_overlay!`.
 """
 function _connect_layout!(gui::CompactView)
     o = gui.layout.overlay
     ctrl = gui.controls
     push!(ctrl.listeners, on(_ -> _zoom_to_selection!(gui), o.fit_button.clicks))
-    # The pill names the key `h`, the full help starts below it
-    _connect_pill!(ctrl, o.pill, o.pill_button, _compact_hint)
+    _connect_help!(gui)
+    # Every frame like the overlay, which follows the size of its parts
+    push!(ctrl.listeners, on(_ -> _arrange_help!(gui), events(gui.ax.scene).tick))
     _connect_overlay!(gui)
     return nothing
 end
-
-"""
-The line of the controls of the compact layout while the help is hidden: none, since the help pill
-names the key `h`, except in the spectator mode, see `_default_hint`.
-"""
-_compact_hint(ctrl) = ctrl.spectator[] ? "spectator mode, v: edit" : ""
 
 _show_hint(::CompactView) = "choose it in the component menu of ⋯ to show it again"
 

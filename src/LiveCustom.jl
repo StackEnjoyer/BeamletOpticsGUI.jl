@@ -221,6 +221,10 @@ button or switches the toggle, unless a textbox or menu takes the keyboard, see 
 _connect_tool_key!(::LiveView, _, ::Nothing, ::Val, ::String) = nothing
 function _connect_tool_key!(gui::LiveView, w, key::Keyboard.Button, toggle::Val, name::String)
     gui.custom.keys[key] = name
+    # listed in the help, see `_help_sections`
+    push!(gui.controls.help_extra,
+        "Own tools" => [_HelpEntry([uppercasefirst(String(_key_name(key)))], name)])
+    _update_help!(gui.controls)
     push!(gui.controls.listeners, on(events(gui.ax.scene).keyboardbutton, priority = 200) do event
         (event.action == Keyboard.press && event.key == key) || return Consume(false)
         gui.controls.ignore_keys() && return Consume(false)

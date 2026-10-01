@@ -48,8 +48,9 @@ Own types add rows with a `card_rows` method (`CardRow`, `CardWidget`), see
 (toast at the bottom for 3 s after each change in compact, status bar in app) shows the last solve
 time, the number of rays (of the beams that are on) and the projection.
 `layout = :compact` (default): the 3D view fills the window, detector and `add_panel!` panels are
-on its right (`gui.fig[1, 2]`), there are no rows below it. Help pill at the top left (`h` shows
-the keys); the button "⋯" at the bottom left opens the tool rail (trace, auto trace, sources, clip
+on its right (`gui.fig[1, 2]`), there are no rows below it. Help pill at the top left (`h` or a
+click opens the help card: keys and mouse actions in sections, `add_tool!` keys under "Own tools";
+the chips next to it show mode and keyboard step, clickable); the button "⋯" at the bottom left opens the tool rail (trace, auto trace, sources, clip
 beams, measure, show all, component menu "select component", export, `add_tool!` tools, one entry
 per `add_controls!` section, "Sliders" for `sliders`; entries with widgets open a popover; `Esc`
 closes); the mouse over the view cube shows the camera popover (home, fit `g`, views, save view,
@@ -57,7 +58,7 @@ orthographic); the status line appears as a toast.
 `layout = :app` arranges the window like an application, with the cards (selection and
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
 moves it into the 3D view next to its component, its dock button moves it back. Its 3D view has
-the same help pill at the top left, the line below it names the mode and the keyboard step.
+the same help pill, chips and help card at the top left.
 
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
 `extras = [housing => (; color = :lightblue), ...]` (`obj` or `obj => render_kwargs`), not into

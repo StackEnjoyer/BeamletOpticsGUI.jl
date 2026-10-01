@@ -385,8 +385,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test ctrl.help_obs[] == hint
         # works without a selected object
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
-        @test occursin("step: 20 nm", ctrl.help_obs[])
-        @test occursin("+/-: change step", ctrl.help_obs[])
+        @test occursin("+/-: keyboard step, now 20 nm", ctrl.help_obs[])
+        @test ctrl.help_obs[] == GUI._help_text(:move, 20e-9, 10e-6)
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
         @test ctrl.help_obs[] == hint
         close(ctrl)
@@ -418,7 +418,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         events(scene).unicode_input[] = '+'
         @test ctrl.fine_step ≈ 10e-9
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
-        @test ctrl.help_obs[] == GUI._SPECTATOR_HELP
+        @test ctrl.help_obs[] == GUI._help_text(:move, 10e-9, 10e-6; spectator = true)
+        @test occursin("v: switch to edit mode", ctrl.help_obs[])
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
 
         # v again switches back to the edit mode
@@ -475,7 +476,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         # help overlay shows the new step as well
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
-        @test occursin("step: 50 nm", ctrl.help_obs[])
+        @test occursin("keyboard step, now 50 nm", ctrl.help_obs[])
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
 
         # rotate mode: fine_angle only

@@ -61,7 +61,7 @@ describe it as available in docs or the skill.
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
 - `src/LiveSelectionCard.jl`: the selection card of groups (browsing their parts level by level).
   `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts).
-  `src/LiveBackground.jl`: the background card. `src/LiveOverlay.jl`: the overlay of the compact layout.
+  `src/LiveBackground.jl`: the background card. `src/LiveOverlay.jl`: the overlay of the compact layout. `src/LiveHelp.jl`: the help of both layouts (pill, chips of mode and step, help card), built from the entries of `_help_sections` in `src/LiveInteraction.jl`.
 - `src/LiveInteraction.jl`: `kinematic_controls!`. `src/ViewCube.jl`: `view_cube!`.
 - `src/LiveCustom.jl`, `src/LiveWidgets.jl`: `add_panel!`, `add_controls!`, `add_tool!`,
   `retrace!`, own widgets.

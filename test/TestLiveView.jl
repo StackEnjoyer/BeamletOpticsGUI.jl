@@ -929,10 +929,9 @@ _points(h) = only(render_plots(h))[1][]
             @test isempty(gui.clip.planes)
             # no clip planes: nothing is written
             @test all(p -> p.clip_planes[] == Plane3f[], _optics_plots(gui))
-            @test occursin("p: add clip plane", GUI._help_text(:move, 1e-9, 1e-6) * "\n" * gui.controls.help_extra)
-            gui.controls.help_shown = true
-            GUI._update_help!(gui.controls)
-            @test occursin("shift+c: flip", gui.controls.help_obs[])
+            help = GUI._help_text(GUI._help_sections(gui.controls))
+            @test occursin("p: add a clip plane", help)
+            @test occursin("shift+c: flip the selected one", help)
             n0 = n_calls[]
 
             # nothing selected: through the lookat point of the camera, along the view direction

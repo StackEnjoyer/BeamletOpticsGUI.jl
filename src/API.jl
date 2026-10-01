@@ -133,7 +133,7 @@ Adds a tool to the [`live_view`](@ref) window `gui`: a button that calls `f(gui)
 `toggle = true` a toggle that calls `f(gui, active::Bool)` whenever it is switched. With
 `layout = :app`, an icon button (or toggle) at the end of the toolbar, with the `icon` and the
 `tooltip`; with `layout = :compact`, an entry (icon and `name`) of the tool rail opened by the
-button "⋯".
+button "⋯". A tool with a `key` is listed in the help card under "Own tools".
 
 `icon` is a name of the icon set of the app layout, e.g. `:measure`, `:export` or `:chart` (an
 unknown name throws an `ArgumentError` that lists the valid ones, in any layout), or an own

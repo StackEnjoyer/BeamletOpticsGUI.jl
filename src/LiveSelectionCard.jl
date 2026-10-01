@@ -20,7 +20,7 @@ const _BROWSE_CORNER = 4
 const _BROWSE_Z = _CARD_Z + 20
 # The small text right in the head
 const _BROWSE_KIND = "Selection"
-# What a click does in the live view, in the overlay of the controls, see `_help_text`
+# What a click does in the live view, in the help of the controls, see `_help_sections`
 const _BROWSE_CLICK_HELP = "select, on a group: choose a part"
 
 """

@@ -37,8 +37,12 @@ With `layout = :compact` (default), the 3D view fills the window and the detecto
 panels of [`add_panel!`](@ref)) are on its right. Everything else appears on demand over the 3D
 view:
 
-- a help pill at the top left ("? h keys"); a click on it or the key `h` shows the keys of the
-  controls
+- a help pill at the top left ("? h keys"); a click on it or the key `h` opens the help card
+  below it, which lists the keys and mouse actions in sections (select, move or rotate, edit, view,
+  clip planes, trace, own tools), the keys as key caps; the 3D view stays usable while it is open.
+  The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
+  (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
+  leaves it.
 - the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
   Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools
   of [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and the entry "Sliders"
@@ -49,10 +53,11 @@ view:
 - the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
   for 3 s after each change
 
-The floating cards keep off the pill, "⋯", the open rail and the popovers.
+The floating cards keep off the pill, the chips, the open help card, "⋯", the open rail and the
+popovers.
 
-The app layout (`layout = :app`) has the same help pill at the top left of its 3D view; the line
-below it names the mode and the keyboard step.
+The app layout (`layout = :app`) has the same help pill, chips and help card at the top left of its
+3D view.
 
 More than one `system => beam` pair can be shown in the same 3D view, e.g. the transmitter and
 receiver path of a lidar, which are solved with different sources:

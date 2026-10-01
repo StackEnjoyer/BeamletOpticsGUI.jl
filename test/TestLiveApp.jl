@@ -199,64 +199,6 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "help pill" begin
-        m, pd = _fixture()
-        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]))
-        layout, ctrl = gui.layout, gui.controls
-        ev = events(gui.ax.scene)
-        function _click!(p)
-            ev.mouseposition[] = (p[1], p[2])
-            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
-            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
-            return nothing
-        end
-        _center(r) = Point2f(minimum(r) .+ widths(r) ./ 2)
-        _corner(pill, vp) = (minimum(pill)[1] - minimum(vp)[1], maximum(vp)[2] - maximum(pill)[2])
-        # at the top left of the 3D view, like in the compact layout
-        pill = GUI._overlay_rect(layout.pill)
-        vp = Rect2f(gui.ax.scene.viewport[])
-        @test all(0 .< _corner(pill, vp) .< 20)
-        @test GUI._layout_obstacles(gui) == [pill]
-        # the line of the controls keeps the mode and the step, the pill names the key h
-        @test ctrl.help_obs[] == "move mode, step 10 nm, +/-: step, m: switch mode, v: spectator"
-        @test ctrl.help_top[] > widths(pill)[2]
-        # a click on the pill toggles the help like the key h, and is no click into the 3D view:
-        # the selection stays
-        ctrl.selected[] = m
-        _click!(_center(pill))
-        @test ctrl.help_shown && occursin("h: hide controls", ctrl.help_obs[])
-        @test ctrl.selected[] === m
-        _key!(gui, Keyboard.h)
-        @test !ctrl.help_shown && startswith(ctrl.help_obs[], "move mode, step")
-        # the toolbar has no help icon besides the pill
-        @test !hasproperty(layout, :help_button) && !(:help in first.(layout.groups))
-        # the step and the mode update the line
-        _key!(gui, Keyboard.m)
-        @test startswith(ctrl.help_obs[], "rotate mode, step")
-        _key!(gui, Keyboard.m)
-        ctrl.selected[] = nothing
-        _key!(gui, Keyboard.v)
-        @test ctrl.help_obs[] == "spectator mode, v: edit"
-        _key!(gui, Keyboard.v)
-        # the pill follows the 3D view when the left sidebar is collapsed
-        layout.collapse.left.active[] = false
-        vp2 = Rect2f(gui.ax.scene.viewport[])
-        @test minimum(vp2)[1] < minimum(vp)[1]
-        @test all(0 .< _corner(GUI._overlay_rect(layout.pill), vp2) .< 20)
-        layout.collapse.left.active[] = true
-        @test GUI._overlay_rect(layout.pill) == pill
-        # and makes room for the drop-down of the views menu
-        menu = gui.widgets.views_menu
-        menu.is_open[] = true
-        @test maximum(GUI._overlay_rect(layout.pill))[1] < 0
-        ev.mouseposition[] = Tuple(_center(pill))
-        @test !GUI._over_layout(gui)
-        menu.is_open[] = false
-        @test GUI._overlay_rect(layout.pill) == pill
-        @test GUI._over_layout(gui)
-        close(gui)
-    end
-
     @testset "inspector" begin
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
