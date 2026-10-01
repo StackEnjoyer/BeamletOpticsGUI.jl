@@ -494,9 +494,9 @@ _points(h) = only(render_plots(h))[1][]
         gui.trace.progress_delay = 0.2
         # A solve longer than `progress_delay` continues in the background, where its loop, which
         # has run that long, shows its window at once
-        @test !GUI._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, GUI._TRACING)
         @test gui.trace.job === job
-        @test gui.status.text[] == "tracing, Esc cancels"
+        @test gui.status.text[] == GUI._TRACING
         tick!()
         @test gui.trace.progress.visible[]
         @test gui.trace.progress.anchor[] == GUI._screen_anchor(scene, anchor)
@@ -514,12 +514,26 @@ _points(h) = only(render_plots(h))[1][]
         @test !gui.trace.progress.visible[]
         @test gui.status.text[] == "traced"
 
-        # `t` starts no second solve, Esc cancels after the current item
+        # `t` starts no second solve, and Esc does not cancel it: it is the key of the groups
         job = slow_job()
-        @test !GUI._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, GUI._TRACING)
         _key!(gui, Keyboard.t)
         @test gui.trace.job === job
         _key!(gui, Keyboard.escape)
+        @test gui.trace.job === job && !istaskdone(job.task)
+        # the button "Cancel" of the progress window cancels after the current item
+        tick!()
+        progress = gui.trace.progress
+        @test progress.visible[] && !progress.hovered[]
+        r = GUI._cancel_rect(progress)
+        p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
+        events(scene).mouseposition[] = (p[1], p[2])
+        @test progress.hovered[]
+        selected = gui.controls.selected[]
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test gui.controls.selected[] === selected
+        @test !progress.visible[] && !progress.hovered[]
         @test isnothing(gui.trace.job)
         @test istaskfailed(job.task)
         @test BMO.is_cancelled(TaskFailedException(job.task))
@@ -533,7 +547,7 @@ _points(h) = only(render_plots(h))[1][]
         _select!(gui)
         @test gui.controls.selected[] === m
         job = slow_job()
-        @test !GUI._run!(gui, job, "tracing, Esc cancels")
+        @test !GUI._run!(gui, job, GUI._TRACING)
         hook = gui.controls.before_change
         done_before_change = Ref(false)
         gui.controls.before_change = () -> (hook(); done_before_change[] = istaskdone(job.task))

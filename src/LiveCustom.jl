@@ -245,7 +245,7 @@ the usual layouts.
 """
 const _LIVE_VIEW_KEYS = (
     Keyboard.t => "trace (t)",
-    Keyboard.escape => "Esc (cancel a solve, clear the inspection, deselect)",
+    Keyboard.escape => "Esc (clear the inspection, enclosing group, deselect)",
     Keyboard.c => "clipping (c, Shift+c)",
     Keyboard.p => "add a clip plane (p)",
     Keyboard.delete => "remove the clip plane (Delete)",

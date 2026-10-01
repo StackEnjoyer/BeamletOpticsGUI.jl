@@ -5,7 +5,7 @@ using Makie: Observable, Point2f, Vec2f, Rect
 # Layout in pixels relative to the anchor: the panel sits above and to the right of the anchor,
 # such that it does not cover the marker at the anchor
 const _PROGRESS_GAP = 16.0f0
-const _PROGRESS_PANEL = Vec2f(220, 46)
+const _PROGRESS_PANEL = Vec2f(240, 50)
 # Minimum distance of the panel from the edges of the view
 const _PROGRESS_MARGIN = 8.0f0
 # z translation of the plots: GLMakie draws the plots in the order of this value, the window comes
@@ -14,7 +14,11 @@ const _PROGRESS_MARGIN = 8.0f0
 # levels of the component cards, see `_CARD_Z`
 const _PROGRESS_Z = 9800.0f0
 const _PROGRESS_PADDING = 10.0f0
-const _PROGRESS_TRACK = Vec2f(_PROGRESS_PANEL[1] - 2 * _PROGRESS_PADDING, 6)
+# Size of the cancel button right of the bar and its distance from the bar
+const _PROGRESS_CANCEL = Vec2f(54, 20)
+const _PROGRESS_CANCEL_GAP = 8.0f0
+const _PROGRESS_TRACK = Vec2f(
+    _PROGRESS_PANEL[1] - 2 * _PROGRESS_PADDING - _PROGRESS_CANCEL[1] - _PROGRESS_CANCEL_GAP, 6)
 const _PROGRESS_CORNER = 6.0f0
 # Orange of the source markers, see `_live_render_source!`; the other colors come from the tokens
 # of the theme of the live view, like those of the component cards
@@ -22,8 +26,11 @@ const _PROGRESS_FILL_COLOR = RGBAf(Makie.to_color(:orange))
 
 # Left edge of the bar and vertical centers of the bar and the label
 const _PROGRESS_BAR_X = _PROGRESS_GAP + _PROGRESS_PADDING
-const _PROGRESS_BAR_Y = _PROGRESS_GAP + 14
+const _PROGRESS_BAR_Y = _PROGRESS_GAP + 16
 const _PROGRESS_LABEL_Y = _PROGRESS_GAP + _PROGRESS_PANEL[2] - 15
+# Offset of the center of the cancel button from the anchor
+const _PROGRESS_CANCEL_OFFSET = Vec2f(
+    _PROGRESS_GAP + _PROGRESS_PANEL[1] - _PROGRESS_PADDING - _PROGRESS_CANCEL[1] / 2, _PROGRESS_BAR_Y)
 
 """
     _rounded_rect_marker(w, h, r)
@@ -53,12 +60,14 @@ end
 """
     _ProgressOverlay(ax::LScene, theme::NamedTuple = _app_theme(:light))
 
-A small progress window of the live view in the 3D scene of `ax`: a panel with a label and a
-progress bar next to an anchor point, e.g. the marker of the source that is being traced, in the
+A small progress window of the live view in the 3D scene of `ax`: a panel with a label, a
+progress bar and a button "Cancel" next to an anchor point, e.g. the marker of the source that is being traced, in the
 color tokens `theme` of the live view (see `_APP_THEMES`) like the component cards: the panel in
 the color of the sidebars with a border, the text, the track of the bar in the color of the
-borders and the bar in the orange of the source markers. The
-panel has a fixed size on the screen (about 220 × 46 px, above and to the right of the anchor)
+borders and the bar in the orange of the source markers. The button is drawn like the buttons of
+the cards; the window only draws it and tells whether the mouse is over it (`_over_cancel`), the
+live view cancels the solve on a click, see `_connect_trace!`. The
+panel has a fixed size on the screen (about 240 × 50 px, above and to the right of the anchor)
 and is drawn on top of the scene. It is drawn in a child scene of the 3D scene with a pixel
 camera, at the projection of the anchor, which [`_show_progress!`](@ref) updates, e.g. every frame
 while the camera moves; an anchor outside of the view puts the panel at the edge towards it, see
@@ -78,7 +87,8 @@ The constructor adds all plots at once, hidden, [`_show_progress!`](@ref) and
 - `fill_offset`: pixel offset of the center of the bar fill from the anchor
 - `label`: text above the bar, e.g. "Tracing beams 42 %"
 - `visible`: visibility of all plots
-- `plots`: panel, bar track, bar fill and label
+- `hovered`: `true` while the mouse is over the cancel button, which highlights it
+- `plots`: panel, bar track, bar fill, label, cancel button and its text
 """
 struct _ProgressOverlay
     scene::Makie.Scene
@@ -88,6 +98,7 @@ struct _ProgressOverlay
     fill_offset::Observable{Vec2f}
     label::Observable{String}
     visible::Observable{Bool}
+    hovered::Observable{Bool}
     plots::Vector{Makie.AbstractPlot}
 end
 
@@ -115,13 +126,35 @@ function _ProgressOverlay(ax::LScene, theme::NamedTuple = _app_theme(:light))
     # Font size of the theme, like the status line of the live view
     text = text!(hud, anchor; common..., text = label, color = t.text,
         align = (:left, :center), offset = Vec2f(_PROGRESS_BAR_X, _PROGRESS_LABEL_Y))
-    plots = Makie.AbstractPlot[panel, track, bar, text]
+    # Cancel button right of the bar, in the colors of the buttons of the cards
+    hovered = Observable(false)
+    cw, ch = _PROGRESS_CANCEL
+    button = scatter!(hud, anchor; common..., marker = _rounded_rect_marker(1, ch / cw, 4 / cw),
+        markersize = cw, color = Makie.lift(h -> h ? t.hover : t.field, hovered),
+        strokecolor = t.border, strokewidth = 1, marker_offset = _PROGRESS_CANCEL_OFFSET)
+    cancel = text!(hud, anchor; common..., text = "Cancel", color = t.text, fontsize = 11,
+        align = (:center, :center), offset = _PROGRESS_CANCEL_OFFSET)
+    plots = Makie.AbstractPlot[panel, track, bar, text, button, cancel]
     # In this order, after all other plots
     for (k, p) in enumerate(plots)
         translate!(p, 0, 0, _PROGRESS_Z + k)
     end
-    return _ProgressOverlay(ax.scene, hud, anchor, fill_size, fill_offset, label, visible, plots)
+    return _ProgressOverlay(ax.scene, hud, anchor, fill_size, fill_offset, label, visible, hovered,
+        plots)
 end
+
+"""The rectangle of the cancel button of the progress window `o` [px in its 3D scene]."""
+_cancel_rect(o::_ProgressOverlay) =
+    Rect2f(o.anchor[] .+ _PROGRESS_CANCEL_OFFSET .- _PROGRESS_CANCEL ./ 2, _PROGRESS_CANCEL)
+
+"""
+    _over_cancel(o::_ProgressOverlay, p::Point2f) -> Bool
+
+Returns `true` if the point `p` [figure px] is over the cancel button of the shown progress
+window `o`.
+"""
+_over_cancel(o::_ProgressOverlay, p::Point2f) = o.visible[] &&
+    Point2f(p .- minimum(Makie.viewport(o.scene)[])) in _cancel_rect(o)
 
 """
     _screen_anchor(scene, p) -> Point2f
@@ -187,4 +220,8 @@ end
 
 Hides the progress window `o`, see [`_show_progress!`](@ref).
 """
-_hide_progress!(o::_ProgressOverlay) = _update!(o.visible, false)
+function _hide_progress!(o::_ProgressOverlay)
+    _update!(o.visible, false)
+    _update!(o.hovered, false)
+    return nothing
+end

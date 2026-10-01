@@ -6,7 +6,7 @@ const _CAMERA_HELP = _HelpSection[
     "Select" => [_HelpEntry(["G"], "zoom to the selection")],
     "Trace" => [
         _HelpEntry(["T"], "trace now"),
-        _HelpEntry(["Esc"], "cancel a long trace"),
+        _HelpEntry([:mouse => "click"], "Cancel in the progress window: stop a long trace"),
         _HelpEntry([:mouse => "click"], "on a beam: inspect it")]]
 
 """

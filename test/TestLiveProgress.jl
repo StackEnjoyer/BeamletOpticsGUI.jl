@@ -19,7 +19,7 @@ const GUI = BeamletOpticsGUI
         o = GUI._ProgressOverlay(ax)
         # In a child scene, drawn after all plots of the 3D scene
         @test length(ax.scene.plots) == n0
-        @test o.hud in ax.scene.children && length(o.hud.plots) == length(o.plots) == 4
+        @test o.hud in ax.scene.children && length(o.hud.plots) == length(o.plots) == 6
         # GLMakie sorts the plots by the z translation before drawing, which also puts them in front
         # of the 3D scene; `overdraw` would put transparent plots over them
         @test all(p -> Makie.transformationmatrix(p)[][3, 4] > GUI._PROGRESS_Z, o.plots)
@@ -78,6 +78,34 @@ const GUI = BeamletOpticsGUI
         GUI._show_progress!(o, [1, 2, 3], 0.25, "y")
         @test all(p -> p.visible[], o.plots)
         @test length(ax.scene.plots) == n
+    end
+
+    @testset "cancel button" begin
+        o = GUI._ProgressOverlay(ax)
+        button, text = o.plots[5], o.plots[6]
+        @test only(vcat(text.text[])) == "Cancel"
+        t = GUI._app_theme(:light)
+        @test button.color[] == t.field
+        GUI._show_progress!(o, [0.1, 0.2, 0.3], 0.5, "Tracing beams 50 %")
+        # right of the bar, inside the panel
+        r = GUI._cancel_rect(o)
+        @test Makie.widths(r) == GUI._PROGRESS_CANCEL
+        panel = Rect2f(o.anchor[] .+ GUI._PROGRESS_GAP, GUI._PROGRESS_PANEL)
+        @test all(minimum(r) .> minimum(panel)) && all(maximum(r) .< maximum(panel))
+        bar_end = o.anchor[][1] + GUI._PROGRESS_BAR_X + GUI._PROGRESS_TRACK[1]
+        @test minimum(r)[1] ≈ bar_end + GUI._PROGRESS_CANCEL_GAP
+        # the mouse [figure px] is over it only while the window is shown
+        origin = Point2f(minimum(Makie.viewport(ax.scene)[]))
+        center = Point2f(origin .+ minimum(r) .+ Makie.widths(r) ./ 2)
+        @test GUI._over_cancel(o, center)
+        @test !GUI._over_cancel(o, center .+ Point2f(0, GUI._PROGRESS_CANCEL[2]))
+        @test !GUI._over_cancel(o, center .- Point2f(GUI._PROGRESS_CANCEL[1], 0))
+        # hovered: highlighted; hiding the window ends it
+        o.hovered[] = true
+        @test button.color[] == t.hover
+        GUI._hide_progress!(o)
+        @test !o.hovered[] && button.color[] == t.field
+        @test !GUI._over_cancel(o, center)
     end
 
     @testset "window stays in the view" begin

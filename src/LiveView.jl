@@ -631,9 +631,10 @@ A solve, or the computation of the detector panels, that takes longer than `prog
 in the background: the camera can still be moved, the beams are dimmed and the status line shows
 "tracing". The loops that show a progress bar in the terminal, i.e. the tracing of a beam group
 and the field of a detector panel, show a small progress window in the 3D view next to their source
-or detector once they have run for `progress_delay`, with the remaining time; the terminal bar is
-not drawn meanwhile. Moving a component or a source, a slider and `Esc` cancel the solve after the
-current beam, `t` is ignored until it is done.
+or detector once they have run for `progress_delay`, with the remaining time and a button "Cancel";
+the terminal bar is not drawn meanwhile. The button, moving a component or a source and a slider
+cancel the solve after the current beam, `t` is ignored until it is done. `Esc` does not cancel
+it: it is the key of the groups, see "Selection card".
 
 # Failed solves
 

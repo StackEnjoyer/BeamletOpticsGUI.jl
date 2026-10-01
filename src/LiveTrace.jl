@@ -271,6 +271,8 @@ function _cancel!(gui::LiveView, job::_SolveJob)
 end
 
 const _CANCELLED = "trace cancelled, press t to trace"
+# Status of a solve in the background, see `_run!`
+const _TRACING = "tracing, Cancel in the progress window stops it"
 # Status of a live view that starts without auto tracing, see `live_view`
 const _NOT_TRACED = "not traced, press t to trace"
 
@@ -436,7 +438,7 @@ function _solve!(gui::LiveView, obj; coarse = false, preview = false)
     gui.trace.pending = false
     job = _start_job(gui, r -> _apply!(gui, r, obj; coarse), obj, gui.pairs, gui.beam_handles;
         coarse, preview, timing = preview ? :preview_time : :solve_time)
-    done = _run!(gui, job, "tracing, Esc cancels")
+    done = _run!(gui, job, _TRACING)
     if _running(gui)
         # Outdated until the solve in the background is shown, see `_finish!`
         gui.trace.stale || _dim_beams!(gui)
@@ -492,7 +494,7 @@ function _on_idle!(gui::LiveView)
     elseif gui.trace.coarse
         job = _start_job(gui, r -> _refine!(gui, r), gui.trace.preview_obj, empty(gui.pairs),
             empty(gui.beam_handles), _shown_panels(gui); timing = :panel_time)
-        _run!(gui, job, "computing the detector fields, Esc cancels")
+        _run!(gui, job, "computing the detector fields, Cancel in the progress window stops it")
     end
     return nothing
 end
@@ -511,8 +513,9 @@ function _trace!(gui::LiveView)
 end
 
 """
-Connects the trace button, the key `t`, the auto trace toggle and the key `Esc`, which cancels a
-solve in the background, of the `gui`.
+Connects the trace button, the key `t`, the auto trace toggle and the button "Cancel" of the
+progress window, which cancels a solve in the background, of the `gui`. `Esc` does not cancel it:
+it navigates the groups, see `_connect_browse!`.
 """
 function _connect_trace!(gui::LiveView)
     listeners = gui.controls.listeners
@@ -524,12 +527,18 @@ function _connect_trace!(gui::LiveView)
         _trace!(gui)
         return Consume(true)
     end)
-    # Before the beam inspection and the controls, which use Esc as well
-    push!(listeners, on(events(scene).keyboardbutton, priority = 202) do event
-        (event.action == Keyboard.press && event.key == Keyboard.escape) || return Consume(false)
-        (_running(gui) && !gui.controls.ignore_keys()) || return Consume(false)
+    # The cancel button of the progress window: before the overlay of the compact layout (260),
+    # the cards (250) and the controls (200), which do not get its press
+    progress = gui.trace.progress
+    push!(listeners, on(events(scene).mousebutton, priority = 270) do event
+        (event.button == Mouse.left && event.action == Mouse.press) || return Consume(false)
+        _over_cancel(progress, Point2f(events(scene).mouseposition[])) || return Consume(false)
         _cancel_solve!(gui)
         return Consume(true)
+    end)
+    push!(listeners, on(events(scene).mouseposition) do p
+        _update!(progress.hovered, _over_cancel(progress, Point2f(p)))
+        return Consume(false)
     end)
     push!(listeners, on(gui.trace.auto) do active
         active && gui.trace.stale && _trace!(gui)
