@@ -100,36 +100,13 @@ function _part_box(gui::LiveView, part)
 end
 
 """
-    _image_marker(p)
-
-The marker of the scatter `p` if it is an image (a matrix of colors), else `nothing`. GLMakie can not
-apply a scalar `alpha` to such a scatter ("Failed to update renderobject"), hence its opacity is set
-via the alpha of the image, see `_dim_plot!`.
-"""
-_image_marker(::AbstractPlot) = nothing
-function _image_marker(p::Makie.Scatter)
-    m = p.marker[]
-    return m isa AbstractMatrix{<:Makie.Colorant} ? m : nothing
-end
-
-"""
     _dim_plot!(p, s)
 
-Scales the opacity of the plot `p` with `s < 1` and makes it `transparency = true`, see
-`_apply_opacity!`: via its `alpha`, or via the alpha of the image of a scatter with an image marker
-(see `_image_marker`). The colors are not changed; the alpha of per-vertex colors is multiplied by
-the `alpha` of the plot.
+Scales the current opacity of the plot `p` with `s < 1` and makes it `transparency = true`, see
+`_apply_opacity!`. The colors are not changed; the alpha of per-vertex colors is multiplied by the
+`alpha` of the plot.
 """
-function _dim_plot!(p::AbstractPlot, s)
-    img = _image_marker(p)
-    if isnothing(img)
-        _apply_opacity!(p, _plot_base(p)..., s)
-    else
-        p.marker[] = map(c -> (c = RGBAf(c); RGBAf(c.r, c.g, c.b, c.alpha * s)), img)
-        _set_transparency!(p, true)
-    end
-    return nothing
-end
+_dim_plot!(p::AbstractPlot, s) = _apply_opacity!(p, _plot_base(p)..., s)
 
 """Restores the plot `p` to its `alpha`, `transparency` and image `marker` (`nothing`: none)."""
 function _restore_plot!(p::AbstractPlot, alpha, transparency, marker)

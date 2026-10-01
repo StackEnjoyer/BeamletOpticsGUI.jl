@@ -71,17 +71,35 @@ end
 Opacity, see `_set_opacity!`
 =#
 
+# What `_apply_opacity!` scales: the `alpha`, the `transparency`, the opacity and the image marker
+# (`nothing` for none) of a plot, see `_plot_base`
+const _PlotBase = Tuple{Float32, Bool, Float32, Any}
+
+"""
+    _image_marker(p)
+
+The marker of the scatter `p` if it is an image (a matrix of colors), else `nothing`. GLMakie can not
+apply a scalar `alpha` to such a scatter: it logs "Failed to update renderobject" and skips this
+and all later updates of the plot, which then no longer follows its object. Hence its opacity is
+set via the alpha of the image, see `_apply_opacity!`.
+"""
+_image_marker(::AbstractPlot) = nothing
+function _image_marker(p::Makie.Scatter)
+    m = p.marker[]
+    return m isa AbstractMatrix{<:Makie.Colorant} ? m : nothing
+end
+
 """
     _Opacity
 
 Opacity of an object of a live view set via its card, see `_set_opacity!`: the current `value`, the
-`initial` opacity as rendered and, per plot, its `alpha`, `transparency` and opacity as rendered
-(`base`).
+`initial` opacity as rendered and, per plot, its `alpha`, `transparency`, opacity and image marker
+as rendered (`base`, see `_plot_base`).
 """
 mutable struct _Opacity
     value::Float64
     initial::Float64
-    base::IdDict{AbstractPlot, Tuple{Float32, Bool, Float32}}
+    base::IdDict{AbstractPlot, _PlotBase}
 end
 
 # Alpha of a single color, per-vertex colors (and none) count as opaque
@@ -91,7 +109,8 @@ _color_alpha(_) = 1.0f0
 _plot_alpha(p::AbstractPlot) = haskey(p, :alpha) ? Float32(p.alpha[]) : 1.0f0
 # The opacity of a plot: its `alpha` times the alpha of its color
 _plot_opacity(p::AbstractPlot) = _plot_alpha(p) * (haskey(p, :color) ? _color_alpha(p.color[]) : 1.0f0)
-_plot_base(p::AbstractPlot) = (_plot_alpha(p), Bool(p.transparency[]), _plot_opacity(p))
+_plot_base(p::AbstractPlot) =
+    (_plot_alpha(p), Bool(p.transparency[]), _plot_opacity(p), _image_marker(p))
 
 """The opacity of an object with the `plots` as rendered: the largest opacity of its plots."""
 _rendered_opacity(plots) = isempty(plots) ? 1.0 : Float64(maximum(_plot_opacity, plots))
@@ -115,7 +134,7 @@ hidden like via the "hide" action, a larger opacity shows it again.
 function _set_opacity!(gui::LiveView, obj, o::Real)
     o = clamp(Float64(o), 0.0, 1.0)
     plots = _object_plots(gui.controls.h, obj)
-    rec = get!(() -> _Opacity(o, _rendered_opacity(plots), IdDict{AbstractPlot, Tuple{Float32, Bool, Float32}}()),
+    rec = get!(() -> _Opacity(o, _rendered_opacity(plots), IdDict{AbstractPlot, _PlotBase}()),
         gui.objects.opacity, obj)
     rec.value = o
     s = rec.initial > 0 ? o / rec.initial : o
@@ -132,15 +151,22 @@ function _set_opacity!(gui::LiveView, obj, o::Real)
 end
 
 """
-    _apply_opacity!(p, alpha, transparency, opacity, s)
+    _apply_opacity!(p, alpha, transparency, opacity, marker, s)
 
-Scales the opacity of the plot `p` with the `alpha`, `transparency` and `opacity` as rendered by
-`s`, at most to 1. `s = 1` restores the plot as rendered.
+Scales the opacity of the plot `p` with the `alpha`, `transparency`, `opacity` and image `marker`
+as rendered (see `_plot_base`) by `s`, at most to 1. `s = 1` restores the plot as rendered. The
+`alpha` of the plot is scaled, or, for a scatter with an image marker, the alpha of the image, see
+`_image_marker`.
 """
-function _apply_opacity!(p::AbstractPlot, alpha, transparency, opacity, s)
+function _apply_opacity!(p::AbstractPlot, alpha, transparency, opacity, marker, s)
     f = opacity > 0 ? min(s, 1 / opacity) : s
-    a = Float32(alpha * f)
-    haskey(p, :alpha) && (p.alpha[] == a || (p.alpha[] = a))
+    if isnothing(marker)
+        a = Float32(alpha * f)
+        haskey(p, :alpha) && (p.alpha[] == a || (p.alpha[] = a))
+    else
+        image = f == 1 ? marker : map(c -> (c = RGBAf(c); RGBAf(c.r, c.g, c.b, c.alpha * f)), marker)
+        p.marker[] == image || (p.marker[] = image)
+    end
     _set_transparency!(p, s == 1 ? transparency : (transparency || s < 1) && opacity * f < 1)
     return nothing
 end

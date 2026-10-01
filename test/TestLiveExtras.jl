@@ -102,6 +102,41 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    # A lamp on the housing, drawn as a scatter with an image marker: GLMakie can not apply a
+    # scalar `alpha` to it (it skips this and all later updates of the plot, which then no longer
+    # follows its object, seen with the warning lights of a telescope)
+    @testset "opacity of an image marker" begin
+        m, pd = _fixture()
+        housing = _housing()
+        gui = _live_view(System([m, pd, housing]), Beam([0.0, 0, 0], [0.0, 1, 0]))
+        plots = render_plots(_handle(gui, housing))
+        img = [RGBAf(1, 0, 0, (i + j) / 8) for i in 1:4, j in 1:4]
+        lamp = scatter!(gui.ax, [Point3f(0.05, 0.05, 0.03)]; marker = img, markersize = 0.01,
+            markerspace = :data, transparency = true)
+        push!(plots, lamp)
+        @test lamp in GUI._object_plots(gui.controls.h, housing)
+        @test GUI._plot_base(lamp) == (1.0f0, true, 1.0f0, img)
+        alphas(image) = [c.alpha for c in image]
+        # the opacity scales the alpha of the image, not the `alpha` of the plot
+        GUI._set_opacity!(gui, housing, 0.4)
+        @test lamp.alpha[] == 1
+        @test alphas(lamp.marker[]) ≈ 0.4f0 .* alphas(img)
+        @test lamp.transparency[]
+        @test all(p -> p.alpha[] ≈ 0.4f0, filter(!=(lamp), plots))
+        # relative to the image as rendered, also after another value
+        GUI._set_opacity!(gui, housing, 0.8)
+        @test alphas(lamp.marker[]) ≈ 0.8f0 .* alphas(img)
+        GUI._set_opacity!(gui, housing, 1)
+        @test lamp.marker[] == img && lamp.alpha[] == 1 && lamp.transparency[]
+        # the highlight of the selection card dims it the same way and restores it
+        GUI._browse_highlight!(gui, housing, Any[])
+        @test lamp.alpha[] == 1
+        @test alphas(lamp.marker[]) ≈ Float32(GUI._BROWSE_OPACITY) .* alphas(img)
+        GUI._end_highlight!(gui)
+        @test lamp.marker[] == img && lamp.transparency[]
+        close(gui)
+    end
+
     @testset "opacity of transparent mechanics and edges" begin
         m, pd = _fixture()
         # a mechanical part with an analytic shape, rendered transparent as in
