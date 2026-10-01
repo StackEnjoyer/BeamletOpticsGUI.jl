@@ -299,7 +299,7 @@ function _set_hidden!(gui::LiveView, obj, hide::Bool)
         hide ? push!(gui.objects.hidden, leaf) : delete!(gui.objects.hidden, leaf)
         oh = _child_handle(gui.controls.h, leaf)
         isnothing(oh) && continue
-        visible = !hide && (gui.widgets.sources_toggle.active[] || !_is_source(leaf))
+        visible = !hide && (_sources_shown(gui) || !_is_source(leaf))
         for plot in render_plots(oh)
             plot.visible[] == visible || (plot.visible[] = visible)
         end
@@ -311,21 +311,37 @@ end
 _is_source(obj) = obj isa Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}
 
 """
-    _set_show_sources!(gui, show)
-
-Shows or hides the markers of all movable sources of the `gui`, e.g. if a marker covers small
-components. Hidden markers can not be selected in the 3D view, a selected source is deselected.
-Sources hidden via the "hide" button stay hidden.
+Returns `true` if the markers of the sources of the `gui` are shown: while its "sources" toggle is
+on, but never in the spectator mode, which shows the scene without handles, see `_on_spectator!`.
 """
-function _set_show_sources!(gui::LiveView, show::Bool)
-    ctrl = gui.controls
-    for oh in render_children(ctrl.h)
+_sources_shown(gui::LiveView) = gui.widgets.sources_toggle.active[] && !gui.controls.spectator[]
+
+"""
+Shows the markers of all movable sources of the `gui` if they are to be shown (see
+`_sources_shown`), otherwise hides them. Sources hidden via the "hide" button stay hidden.
+"""
+function _update_source_markers!(gui::LiveView)
+    show = _sources_shown(gui)
+    for oh in render_children(gui.controls.h)
         _is_source(rendered(oh)) || continue
         visible = show && !(rendered(oh) in gui.objects.hidden)
         for plot in render_plots(oh)
             plot.visible[] == visible || (plot.visible[] = visible)
         end
     end
+    return nothing
+end
+
+"""
+    _set_show_sources!(gui, show)
+
+Shows or hides the markers of all movable sources of the `gui` after its "sources" toggle was
+switched to `show`, e.g. if a marker covers small components, see `_update_source_markers!`.
+Hidden markers can not be selected in the 3D view, a selected source is deselected.
+"""
+function _set_show_sources!(gui::LiveView, show::Bool)
+    ctrl = gui.controls
+    _update_source_markers!(gui)
     if !show && _is_source(ctrl.selected[])
         ctrl.selected[] = nothing
         _update_selection_box!(ctrl)

@@ -336,11 +336,48 @@ const GUI = BeamletOpticsGUI
         @test _parked(help.spectator) && !_parked(help.chips)
         close(gui)
 
+        # the markers of the sources are hidden in the mode and follow their toggle afterwards
+        gui, m, _ = _fixture()
+        ctrl, toggle = gui.controls, gui.widgets.sources_toggle
+        marker = only(oh for oh in BMO.render_children(ctrl.h) if GUI._is_source(BMO.rendered(oh)))
+        shown() = all(p -> p.visible[], BMO.render_plots(marker))
+        hidden() = !any(p -> p.visible[], BMO.render_plots(marker))
+        mirror = BMO.render_plots(only(oh for oh in BMO.render_children(ctrl.h) if BMO.rendered(oh) === m))
+        @test toggle.active[] && shown() && GUI._sources_shown(gui)
+        _key!(gui, Keyboard.v)
+        @test hidden() && toggle.active[] && !GUI._sources_shown(gui)
+        # the components and the beams stay
+        @test all(p -> p.visible[], mirror)
+        _key!(gui, Keyboard.v)
+        @test shown()
+        # switched off before: off afterwards; the toggle does not show them in the mode
+        toggle.active[] = false
+        @test hidden()
+        _key!(gui, Keyboard.v)
+        toggle.active[] = true
+        @test hidden() && toggle.active[]
+        toggle.active[] = false
+        _key!(gui, Keyboard.v)
+        @test hidden()
+        toggle.active[] = true
+        @test shown()
+        # a source hidden by "hide" stays hidden, and one shown again in the mode has no marker
+        src = BMO.rendered(marker)
+        GUI._set_hidden!(gui, src, true)
+        _key!(gui, Keyboard.v)
+        GUI._set_hidden!(gui, src, false)
+        @test hidden()
+        _key!(gui, Keyboard.v)
+        @test shown()
+        close(gui)
+
         # a view started in the spectator mode starts without the UI; the chip leaves the mode
         gui, _, _ = _fixture(; spectator = true)
         o = gui.layout.overlay
         _tick!(gui)
         @test o.hidden && _parked(o.more) && !gui.widgets.view_cube.scene.visible[]
+        @test !GUI._sources_shown(gui) && !any(p -> p.visible[], BMO.render_plots(
+            only(oh for oh in BMO.render_children(gui.controls.h) if GUI._is_source(BMO.rendered(oh)))))
         @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
         notify(gui.layout.help.spectator_button.clicks)
         _tick!(gui)

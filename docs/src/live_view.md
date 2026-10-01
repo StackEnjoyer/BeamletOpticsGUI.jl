@@ -43,7 +43,7 @@ view:
   The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
   (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
   leaves it. The spectator mode shows only the 3D view with this help: the tools, the status,
-  the view cube, the cards and the detector panels are hidden, in the app layout also the toolbar,
+  the view cube, the cards, the markers of the sources and the detector panels are hidden, in the app layout also the toolbar,
   the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
   progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
   as it was, e.g. a sidebar that was collapsed stays collapsed. A view can start in it with
