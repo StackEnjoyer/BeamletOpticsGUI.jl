@@ -2,10 +2,10 @@
 
 All examples on this page assume `using GLMakie, BeamletOptics, BeamletOpticsGUI` and a `system` and `beam` (or beam group `source`) built with BeamletOptics.
 
-[`live_view`](@ref) combines `live_render!`, [`kinematic_controls!`](@ref), detector
-panels and optional sliders into a single ready-to-use window. It is the fastest way to explore
+[`live_view`](@ref) combines `live_render!`, [`kinematic_controls!`](@ref), cards with detector
+views and optional sliders into a single ready-to-use window. It is the fastest way to explore
 the sensitivity of a system in the REPL: grab a mirror, watch the beam path and the detector
-panels update live.
+views update live.
 
 ```julia
 using GLMakie, BeamletOptics, BeamletOpticsGUI
@@ -33,9 +33,9 @@ orthographic view, there `W`/`S` zoom like `U`/`O`:
 gui = live_view(system, beam; orthographic = true)
 ```
 
-With `layout = :compact` (default), the 3D view fills the window and the detector panels (and the
-panels of [`add_panel!`](@ref)) are on its right. Everything else appears on demand over the 3D
-view:
+With `layout = :compact` (default), the 3D view fills the window; the panels of
+[`add_panel!`](@ref), if there are any, form a column on its right. Everything else appears on
+demand over the 3D view:
 
 - a help pill at the top left ("? h keys"); a click on it or the key `h` opens the help card
   below it, which lists the keys and mouse actions in sections (select, move or rotate, edit, view,
@@ -43,7 +43,7 @@ view:
   The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
   (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
   leaves it. The spectator mode shows only the 3D view with this help: the tools, the status,
-  the view cube, the cards, the markers of the sources and the detector panels are hidden, in the app layout also the toolbar,
+  the view cube, the cards (and with them the detector views), the markers of the sources and the panels of [`add_panel!`](@ref) are hidden, in the app layout also the toolbar,
   the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
   progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
   as it was, e.g. a sidebar that was collapsed stays collapsed. A view can start in it with
@@ -135,40 +135,94 @@ gui = live_view(system, beam; clip_planes = [[0, 0.1, 0] => [0, 1, 0]], clip_bea
 Makie supports at most 8 clip planes. The selection box of a partly clipped component only covers
 its visible part.
 
-## Detector panels
+## Detector view
 
-By default (`detectors = :auto`), one panel is shown for every `Detector` of every system,
-deduplicated by identity. Each panel shows the spot diagram (`:spot`) for ray-based hits or the
-intensity (`:intensity`) for Gaussian beamlet hits, chosen automatically (`:auto`). Pass a vector
-to select detectors and modes explicitly, or `[]` to disable the panels:
+The results of a detector are on its card. Every card has pages, chosen by a page bar below its head: "Pose" (the rows of
+[`card_rows`](@ref); on the card of the selection also the keyboard step and the Move/Rotate mode)
+and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
+has a third page, "Results", between them, which shows the detector view. A card with a single
+page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
+detector and on "Pose" for every other object; a pinned card keeps its page.
 
-```julia
-gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity, (; n = 200))])
-```
+The view is expanded by default. Its chevron collapses it to a thumbnail (92 px) with the kind,
+the key value (the power or the number of rays), the centroid and the radii; a click on the
+thumbnail or on its chevron expands it again. The expanded view has:
 
-The `kwargs` of the `pd => (mode, kwargs)` form are passed to `intensity`; most useful is
-a fixed extent via `x_min`, `x_max`, `z_min` and `z_max` (in meters, like the rest of this
-package), instead of the automatic crop around the beam.
+- a switch of the kinds that the hits of the last solve offer, the toggles "log" and "profiles"
+  (field views only) and the button "fit"
+- the plot in mm with equal scales, the y axis on the right, the ticks, tick labels and axis names
+  inside the frame, and the centroid as a red cross
+- the metrics in two lines below the plot
 
-The subtitle of each panel shows its metrics for alignment, the centroid is marked by a red cross:
+"profiles" adds an axis with the intensity along x (red) and z (blue) through the centroid.
+
+The kinds depend on the hits, the first is the default:
+
+| Hits | Kinds |
+|:-----|:------|
+| rays (`RayHit`, `PolarizedRayHit`) | "Spot" (spot diagram), "PSF" (the `intensity` of the rays, which BeamletOptics returns unscaled, hence shown normalized to its peak, with the metrics without the power) |
+| Gaussian beamlets (`GaussianBeamletHit`, `AstigmaticGaussianBeamletHit`) | "Intensity" (in W/m², with the power), "Spot" (the 1/e² outlines) |
+
+A chosen kind that the current hits do not offer falls back to their default and applies again
+when they offer it. Without hits, the view reads "no hits". The metrics, with the centroid marked
+by a red cross, are for alignment:
 
 - spot diagram: the number of hits `N`, the centroid `c`, the RMS radius `sqrt(mean(|p - c|²))`
   and the geometric radius, i.e. the largest distance from the centroid
 - intensity: the power `P`, the peak intensity, the centroid `c` and the 1/e² radii `w` along x
   and z, i.e. twice the standard deviation of the intensity along each axis
+- PSF: as the intensity, but without the power
 
-The following panel options are not passed to `intensity`:
+In the expanded view, the wheel zooms about the cursor, a drag pans, and a double click or "fit"
+resets the view. In a spot view, this only changes the limits. In a PSF or intensity view, the
+field is recomputed for the visible window on the full grid `n` once the mouse rests for
+`idle_delay`, not per wheel step. The cost of one field is proportional to `n² ·` the number of
+hits, about 14 ns per pixel and hit on one thread, e.g. about 150 ms for `n = 100` and 1000 ray
+hits, but about 9 ms with 32 threads. Start Julia with `julia -t auto` to use the threads. Long
+computations run in the background with the progress window and its "Cancel", like long solves;
+computations slower than `trace_budget` show a coarse preview first.
+
+Only shown views are computed: the page "Results" of the card of the selected detector or of a
+pinned card that is not collapsed. A thumbnail is computed on a grid of at most 48 points per
+axis. A view that is shown later is computed from the hits of the last solve. The spectator mode
+hides the cards and with them the views.
+
+The floating card with an expanded view is resizable: a grip at its bottom right corner changes
+its size from 160 px up to the size of the 3D view. In the sidebar of the app layout, the view
+takes the width of the sidebar and has no grip; pinned cards there collapse or shrink their views
+when the sidebar is full, and the float button moves a pinned card with its view into the 3D view.
+
+By default (`detectors = :auto`, or `[]`), every `Detector` of every system, deduplicated by
+identity, has its page "Results", and no card is pinned at start. A vector pins the cards of
+these detectors at start, floating next to the detector in the compact layout and docked in the
+right sidebar in the app layout, and sets their options; a listed detector that is not part of
+the systems throws an `ArgumentError`:
+
+```julia
+gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity, (; n = 200))])
+```
+
+`kind` is `:auto` (default, the first kind of the hits), `:spot`, `:psf` or `:intensity`. The
+`kwargs` of the `pd => (kind, kwargs)` form are options of the view or are passed to `intensity`;
+most useful is a fixed extent via `x_min`, `x_max`, `z_min` and `z_max` (in meters, like the rest
+of this package), which is the area that "fit" shows, instead of the automatic crop around the
+beam. The following options are not passed to `intensity`:
 
 | Option                  | Effect                                                               |
 |:------------------------|:---------------------------------------------------------------------|
-| `colorscale = :log`     | shows `log10` of the intensity, with a floor of 1e-4 times the maximum |
-| `colorrange = (lo, hi)` | fixed color range of the intensity (in `log10` units for `:log`)     |
-| `history = true`        | adds an axis with the power (or `N`) and the centroid over the last 300 full solves |
-| `profiles = true`       | adds an axis with the intensity along x and z through the centroid   |
+| `n = 100`               | grid points per axis of a field                                      |
+| `colorscale = :linear`  | `:log` shows `log10` of the intensity, with a floor of 1e-4 times the maximum |
+| `colorrange = nothing`  | `(lo, hi)`: fixed color range of the intensity (in `log10` units for `:log`) |
+| `profiles = false`      | `true` adds the axis with the intensity along x and z through the centroid |
+| `expanded = true`       | `false` starts the pinned card with the thumbnail                    |
 
 ```julia
-gui = live_view(system, beam; detectors = [pd => (:intensity, (; colorscale = :log, history = true, profiles = true))])
+gui = live_view(system, beam; detectors = [pd => (:intensity, (; colorscale = :log, profiles = true))])
 ```
+
+The option `history` is no longer available and throws an `ArgumentError`: record the values in
+`on_change` and plot them in a panel of [`add_panel!`](@ref), see [Own panels, controls and tools](@ref)
+and the [Interactive Michelson interferometer](@ref) example.
 
 ## Sliders
 
@@ -215,7 +269,7 @@ the layout decides where the parts go:
 
 | function | `layout = :compact` | `layout = :app` |
 |:--|:--|:--|
-| [`add_panel!`](@ref) | below the detector panels, right of the 3D view | a tab of the analysis dock |
+| [`add_panel!`](@ref) | a column right of the 3D view, created by the first panel | a tab of the analysis dock, which stays collapsed until the first panel exists |
 | [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" |
 | [`add_tool!`](@ref) | an entry (icon and name) of the tool rail | an icon button (or toggle) at the end of the toolbar |
 
@@ -236,8 +290,7 @@ end
 
 Data that must be recorded after every solve, also while the panel is hidden, is recorded by
 `on_change`, as above, and only plotted by the panel. In the compact layout, the panels are placed
-in a grid in `gui.fig[1, 2]`; an axis at `gui.fig[1, 2][2, 1]`, below a single detector panel,
-works as well, but only `add_panel!` works with both layouts.
+in a grid in `gui.fig[1, 2]`, but only `add_panel!` works with both layouts.
 
 `add_controls!(f, gui, title)` calls `f(layout)` to build widgets, e.g. buttons, menus and
 textboxes. While a textbox of the controls is focused or a menu is open, the keys of the 3D view and
@@ -283,7 +336,7 @@ end
 
 Solving a large system on every mouse-drag event can be too slow for smooth interaction. With
 `auto_trace = false`, `live_view` still updates the 3D view and the sliders immediately, but only
-solves the systems (and updates the beams and detector panels) on request: the `Trace (t)` button
+solves the systems (and updates the beams and detector views) on request: the `Trace (t)` button
 of the tool rail (compact layout) or the toolbar (app layout), the key `t`, or switching the "Auto trace" toggle back on (which solves once if
 the state is outdated). While outdated, the beam plots are dimmed and the status line shows a
 hint. With `auto_trace = false`, the view also starts untraced, with the hint "not traced, press t
@@ -291,14 +344,14 @@ to trace" in the status line, such that a slow system opens right away.
 
 With `auto_trace = true`, `live_view` adapts to slow systems as well: if solving takes longer than
 `trace_budget` (30 ms by default), the components still follow the mouse immediately, while the
-systems are solved once the movement pauses for `idle_delay` (0.2 s). Likewise, detector panels
+systems are solved once the movement pauses for `idle_delay` (0.2 s). Likewise, detector views
 that take longer than `trace_budget` show a coarse preview while moving, which is refined once the
 movement pauses.
 
 Beam groups, e.g. a source with thousands of rays, are rendered with `render_every = 5` by
 default, i.e. only every fifth beam is drawn. While a component is moved, such groups are only
 solved for the rendered beams (preview tracing), the other beams are reset and do not hit the
-detectors; the titles of the detector panels end with "(preview)". Once the movement pauses for
+detectors; the kinds of the detector views read "(preview)". Once the movement pauses for
 `idle_delay`, the full group is solved. The `trace_budget` applies to the preview solve while
 moving, such that large groups stay interactive. `preview = false` always solves the full groups:
 
@@ -345,13 +398,15 @@ the menus, like in the object tree of the app layout:
   rotate mode, e.g. `rv = 1` equals one key step with a step of 1 mrad. Each input is a step of the
   undo history, the constraints of the component apply. While a box is focused, the keys of the 3D
   view are ignored.
-- The card of the selected object has, below its rows, the `step` box of the keyboard step, see
+- On the page "Pose", the card of the selected object has, below its rows, the `step` box of the keyboard step, see
   below, and the "Move"/"Rotate" control, which shows the mode of the controls and sets it, and
   follows the key `m` and vice versa. A pinned card has them while its object is selected.
-- Every card of an object has a "Properties" part below. "Properties", collapsed by default,
-  is expanded by its chevron and lists the properties of the object (see `properties`),
-  the same rows as the inspector of the app layout; it stays expanded or collapsed while the card
-  follows the selection and when the card is pinned, so pinning does not change the card.
+- A page bar below the head chooses the page of the card: "Pose" (the pose boxes and the rows
+  below), "Properties" (the properties of the object, see `properties`, the same rows as the
+  inspector of the app layout) and, for a detector, "Results" (see [Detector view](@ref)). A card
+  opens on "Results" for a detector and on "Pose" otherwise; a click on the bar sets the page,
+  which stays while the card shows the same object and when the card is pinned, so pinning does
+  not change the card. A card with a single page has no bar.
 - The chevron at the right end of the head collapses the card to its head and expands it again.
 - The pin keeps the card with its component when the selection changes, e.g. to watch or type the
   poses of several components; the widgets of a pinned card act on its component. Clicking the
@@ -362,7 +417,7 @@ the menus, like in the object tree of the app layout:
   the selection also keeps its place for the next selected component. The place is kept relative
   to the nearest corner of the view, so a card at an edge stays there when the window is resized.
   A double click on the head places the card next to its component again, as does unpinning it.
-- Below the pose, rows of the component type, refreshed after each solve and move:
+- Below the pose on the page "Pose", rows of the component type, refreshed after each solve and move:
 
   | Component | Rows |
   |:----------|:-----|
@@ -370,7 +425,7 @@ the menus, like in the object tree of the app layout:
   | lenses, prisms | `n` at the wavelength of the hitting beam, `d` the center thickness (`Lens`) |
   | beamsplitters | `split`: R and T (power) of the coating |
   | polarizers | `axis`: the transmission axis about the optical axis, from the horizontal |
-  | detectors | `signal`: the power (intensity panel) or the number of rays (spot panel); `panel`: a button that cycles the mode of its detector panel (`auto`, `spot`, `intensity`) and a toggle of the logarithmic color scale, "no panel" for a detector without a panel (see "Detector panels") |
+  | detectors | `signal`: the power or the number of rays of its detector view while a view of it is shown, otherwise the number of hits; the switch of the kinds and the toggle "log" are in the view (see [Detector view](@ref)) |
   | ray sources | `λ` and the diameter or NA; sources whose rays can be regenerated (`CollimatedSource`, `PointSource` and their uniform variants, see `set_num_rays!`) add the slider "rays" for their number of rays, which solves again |
   | Gaussian beamlets | `λ`, the waist `w0` and the Rayleigh range `zR` |
   | beams, beam groups, sources, beamlets | `beam`: the toggle "on" switches the beam off and on; a beam that is off is neither solved nor drawn and its rays are removed from the detectors and measurements, only its source marker stays (with `auto_trace = false` the switch marks the beams as outdated). Gaussian beamlets and their groups add the toggle "beams", which draws the generating beams (chief, divergence, waist) like `render!` with `show_beams = true`. Polarized beams (rays of type `PolarizedRay`, astigmatic Gaussian beamlets) add the toggle "polarization", which draws the polarization along the beam, and the sliders `pol λ` and `pol amp` for the wavelength and the amplitude of that curve. Of a beam group, both are drawn for its central beam; they only change the display. See [`beam_card_rows`](@ref) |
@@ -417,13 +472,13 @@ on a selected group selects the part). See the section "Selection card" of [`liv
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and
 actions, and below it the pinned cards, one below the other, each with its own head (icon, label,
-actions, pin and chevron), its rows and a "Properties" part like a floating card, collapsed by
-default; its state moves with the card when it floats or is docked. The pin of the selection pins
+actions, pin and chevron) and the same pages as a floating card; its state, including its page and
+its view, moves with the card when it floats or is docked. The pin of the selection pins
 a card, the pin of a pinned card unpins
 it. The sidebar does not scroll: if the cards do not fit, the older pinned cards collapse to their
 heads (the one pinned or expanded last stays open) and the property list of the selection, then
-those of the pinned cards, are
-shortened; a collapsed card is only expanded again by its chevron. The float button in the head of
+those of the pinned cards, and the detector views are
+shortened or collapsed; a collapsed card is only expanded again by its chevron. The float button in the head of
 a pinned card moves it out of the sidebar into the 3D view, where it floats next to its component
 as in the compact layout; the dock button in its head moves it back. Only the docked cards take
 room in the sidebar. The floating cards and the docked cards are built by the same code from the
@@ -513,7 +568,7 @@ The 3D view uses the controls of [`kinematic_controls!`](@ref), see
 `250 nm` or `50 µrad`, where the unit selects the move or rotate mode, see
 [Component card and component menu](@ref). The status line shows the
 pose of the moved component and its change since the window was opened. Names for the status line
-and the detector panels are passed via `labels`:
+and the cards are passed via `labels`:
 
 ```julia
 gui = live_view(system, beam; labels = Dict(m1 => "Mirror 1", pd => "Photodiode"),

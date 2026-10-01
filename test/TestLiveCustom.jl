@@ -55,10 +55,11 @@ const GUI = BeamletOpticsGUI
     @testset "panels: compact" begin
         gui, m, _ = _fixture()
         layout, n = _counted_panel!(gui, "Power")
-        # below the detector panel, in the grid in fig[1, 2], with its title above
+        # in the grid in fig[1, 2], a new column next to the 3D view, with its title above
         box = GLB.gridcontent(layout).parent
         @test GLB.gridcontent(box).parent === gui.layout.panels
-        @test GLB.gridcontent(box).span.rows == 2:2
+        @test GLB.gridcontent(gui.layout.panels).span.cols == 2:2 && size(gui.fig.layout) == (1, 2)
+        @test GLB.gridcontent(box).span.rows == 1:1
         @test any(c -> c.content isa Label && c.content.text[] == "Power", box.content)
         @test only(gui.custom.panels).layout === layout
         # updated right away, after full solves only
@@ -69,41 +70,40 @@ const GUI = BeamletOpticsGUI
         @test n[] == 2
         _key!(gui, Keyboard.t)
         @test n[] == 3
-        # an own axis below the detector panel still works
-        @test Axis(gui.fig[1, 2][3, 1]) isa Axis
+        # an own axis below the panel still works
+        @test Axis(gui.fig[1, 2][2, 1]) isa Axis
         # a `do` block that returns a plot has no update
         layout2 = add_panel!(gui, "Plot") do layout
             lines!(Axis(layout[1, 1]), [1, 2], [1, 2])
         end
         @test isnothing(gui.custom.panels[2].update)
-        @test GLB.gridcontent(GLB.gridcontent(layout2).parent).span.rows == 4:4
+        @test GLB.gridcontent(GLB.gridcontent(layout2).parent).span.rows == 3:3
         # errors in `update` are logged once
         @test_logs (:error, r"panel \"Broken\"") add_panel!(_ -> (_ -> error("broken panel")), gui, "Broken")
         @test gui.custom.panels[3].last_error == "broken panel"
         @test_logs _key!(gui, Keyboard.t)
         close(gui)
 
-        # without detector panels: a new column next to the 3D view, the only other part of the figure
-        gui, _, _ = _fixture(; detectors = [])
-        @test isnothing(gui.layout.panels)
-        layout, n = _counted_panel!(gui, "Power")
-        grid = gui.layout.panels
-        @test GLB.gridcontent(grid).span.cols == 2:2
-        @test GLB.gridcontent(GLB.gridcontent(layout).parent).span.rows == 1:1
-        @test size(gui.fig.layout) == (1, 2)
-        @test n[] == 1
+        # no column without a panel, also with a pinned detector card
+        gui, _, pd = _fixture()
+        GUI._pin_view!(gui, pd)
+        @test isnothing(gui.layout.panels) && size(gui.fig.layout) == (1, 1)
         close(gui)
     end
 
     @testset "panels: app" begin
         gui, m, _ = _fixture(; layout = :app)
         tabs = gui.layout.tabs
+        # no tab without a panel: the dock is collapsed, the first panel shows it
+        @test isempty(tabs.bar.titles) && !gui.layout.dock.shown
+        _, n_front = _counted_panel!(gui, "Front")
+        @test gui.layout.dock.shown && tabs.active == 1 && n_front[] == 1
         layout, n = _counted_panel!(gui, "Power")
-        # a tab behind the detector tab, which stays active; hidden, i.e. not updated
-        @test tabs.bar.titles == ["Detector 1", "Power"]
+        # a tab behind the first one, which stays active; hidden, i.e. not updated
+        @test tabs.bar.titles == ["Front", "Power"]
         @test last(gui.layout.dock_panels) == ("Power" => layout)
         @test tabs.active == 1
-        @test tabs.panels[2] === only(gui.custom.panels)
+        @test tabs.panels[2] === gui.custom.panels[2]
         @test n[] == 0
         @test tabs.panels[2] in tabs.stale
         _key!(gui, Keyboard.t)
@@ -136,8 +136,10 @@ const GUI = BeamletOpticsGUI
         @test layout2.parent !== nothing
         close(gui)
 
-        # without detector panels, the first panel is the active tab of the shown dock
-        gui, _, _ = _fixture(; layout = :app, detectors = [])
+        # the first panel is the active tab of the dock, also next to a pinned detector card
+        gui, _, pd = _fixture(; layout = :app)
+        GUI._pin_view!(gui, pd)
+        @test GUI._is_pinned(gui, pd)
         @test !gui.layout.dock.shown
         layout, n = _counted_panel!(gui, "Power")
         @test gui.layout.dock.shown

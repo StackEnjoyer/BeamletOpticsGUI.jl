@@ -16,6 +16,10 @@ const GUI = BeamletOpticsGUI
         GUI._update_selection_box!(gui.controls)
         return nothing
     end
+    # A view of the detector `pd` in a figure of its own: the signal of a detector is the metric of
+    # its view while one is shown, see `_signal_text`
+    _view!(gui, pd) = GUI._register_view!(gui, pd,
+        GUI._DetectorView(GridLayout(Figure()[1, 1]), gui.layout.theme))
     # Text of the declared label `name` on the card of the selection
     _text(gui, name) = GUI._card_widget(gui.cards.selection, name).text[]
 
@@ -35,14 +39,17 @@ const GUI = BeamletOpticsGUI
         far = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(far, [0.3, 0.3, 0.3])
         gui = _live_view(System([m, pd, far]), Beam([0.0, 0, 0], [0.0, 1, 0]))
+        _view!(gui, pd)
         _select!(gui, m)
         @test _text(gui, :beam) == "1 ray, AOI 45.0°"
         _select!(gui, far)
         @test _text(gui, :beam) == "not hit"
         _select!(gui, pd)
         @test _text(gui, :beam) == "1 ray, AOI 0.0°"
-        # the number of rays of the spot panel
+        # the number of rays of the spot view
         @test _text(gui, :signal) == "N = 1"
+        # no options of a panel on the card: they are on the view
+        @test isnothing(GUI._card_widget(gui.cards.selection, :panel_mode))
         # refreshed after the solve of a change: the mirror rotated by 1° about z
         _select!(gui, m)
         GUI._card_widget(gui.cards.selection, :rv).stored_string[] = string(1e3 * deg2rad(1))
@@ -88,9 +95,10 @@ const GUI = BeamletOpticsGUI
         m, pd = _fixture()
         g = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
         gui = _live_view(System([m, pd]), g)
+        _view!(gui, pd)
         _select!(gui, g)
         @test _text(gui, :gauss) == "1000 nm, w0 500 µm, zR $(GUI._length_string(rayleigh_range(g)))"
-        # the power of the intensity panel of the detector
+        # the power of the intensity view of the detector
         _select!(gui, pd)
         @test startswith(_text(gui, :signal), "P = ") && endswith(_text(gui, :signal), " mW")
         close(gui)

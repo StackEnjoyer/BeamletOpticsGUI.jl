@@ -8,7 +8,7 @@ metadata:
 
 You are helping the user with the interactive GUI **BeamletOpticsGUI.jl**: a Julia package that opens a
 GLMakie window for a BeamletOptics system, in which components are moved with the mouse and keyboard and
-the beams and detector panels update live. The optics is BeamletOptics (BMO); this skill covers only the GUI.
+the beams and the detector views on the detector cards update live. The optics is BeamletOptics (BMO); this skill covers only the GUI.
 
 When this Skill is active:
 
@@ -51,7 +51,10 @@ When this Skill is active:
   when the view starts).
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
-- Analysis panels exist for `Detector` only; own panels are added with `add_panel!`.
+- The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for
+  views of own types. Own plots are added with `add_panel!`.
+- There are no detector panels beside the 3D view or in the dock and no `history` option: record
+  values in `on_change` and plot them in an `add_panel!` panel.
 
 Do not describe these as available.
 

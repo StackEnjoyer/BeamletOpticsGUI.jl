@@ -80,20 +80,29 @@ a scene with a pixel camera over the whole figure:
   in a layout that docks pinned cards, e.g. the app layout, before them the `dock_button`, which
   docks the card in the sidebar again (see `_dock!`), otherwise `dock_button = nothing`, see
   `_card_tools!`
-- `rows`, below the head unless `collapsed`: the rows of [`card_rows`](@ref) for the object, each in
-  its own layout
-- `step`, below the rows while `step_shown`: the `step_box` of the keyboard step and the Move/Rotate
-  control `mode` of the mode of the controls (see `_bind_mode!` and `_selection_part!`, shared with
-  the inspector of the app layout). They belong to the selection, not to the object: the card of
-  the selection shows them, and so does a pinned card while its object is selected, which then
-  stands for the card of the selection, see `_shows_step`
-- `disclosure` and `properties`, below them while `has_properties`, i.e. on the card of the
-  selection and on a pinned card of an object, not of an inspected point or a measurement (see
-  `_has_properties`): a disclosure row "Properties" with the chevron `properties_button`, and the
-  `list` of the properties of the object (see `_show_properties!`), shown only while
-  `properties_shown` (collapsed by default, see `_toggle_properties!`). The state stays with the
-  card while it follows the selection and when it is pinned, such that pinning does not change
-  the card.
+- the page bar `bar` in its layout `bar_part`, below the head unless `collapsed`: a segmented
+  control of the `pages` of the object (see `_card_pages`), of which the card shows one, its
+  `page`. A card with a single page, e.g. of an inspected point or a measurement, has no bar. The
+  bar of each set of pages is built once and kept in `bars`. A click sets the page (see
+  `_set_page!`); a card that gets another object shows its default page (see `_default_page`),
+  unless it is pinned. The page stays with the card when it is pinned.
+- on the page `:pose`: `rows`, the rows of [`card_rows`](@ref) for the object, each in its own
+  layout, and below them, while `step_shown`, `step`: the `step_box` of the keyboard step and the
+  Move/Rotate control `mode` of the mode of the controls (see `_bind_mode!` and
+  `_selection_part!`, shared with the inspector of the app layout). They belong to the selection,
+  not to the object: the card of the selection shows them, and so does a pinned card while its
+  object is selected, which then stands for the card of the selection, see `_shows_step`
+- on the page `:properties`: `properties`, the `list` of the properties of the object (see
+  `_show_properties!`)
+- on the page `:results`, of an object with a view (see `_has_view`, e.g. a detector):
+  `view_part` with the `view` of its results (a `_DetectorView`), built when the card gets such
+  an object and deleted when it gets another one, see `_build_view!`. The view starts expanded,
+  its chevron collapses it to a thumbnail (`view_expanded`, which the card remembers). While the
+  expanded view is shown, the `grip` at the bottom right corner of the card resizes its axis to
+  `view_size` [px], see `_resize_cards!`. `view_shown` is whether the view was shown when the card
+  was updated last, by which the card notices that it must be computed (see `_show_view!`),
+  `view_switches` the number of the switches of the view, which are built later than the view and
+  must come before the mouse shield of the cards.
 
 The widgets of the actions and the rows are built from their declarations when the card gets an
 object with other declarations, see `_build_content!`: `widgets` holds each widget with its
@@ -133,7 +142,6 @@ mutable struct _ComponentCard <: _AbstractCard
     step_box::Textbox
     mode::_Segmented
     list::_PropertyList
-    properties_button::_IconButton
     link::Observable{Vector{Point2f}}
     widgets::Vector{Tuple{Any, CardWidget}}
     blocks::Vector{Any}
@@ -155,14 +163,31 @@ mutable struct _ComponentCard <: _AbstractCard
     # the place in the 3D view to which the mouse moved the card, see `_card_spot`; `nothing` places
     # it next to its object
     spot::Union{Nothing, Tuple{Bool, Bool, Vec2f}}
-    properties_shown::Bool
     back::GridLayout
     back_button::_IconButton
     back_shown::Bool
-    disclosure::GridLayout
     step_shown::Bool
-    has_properties::Bool
+    # pages, see `_card_pages`
+    page::Symbol
+    pages::Tuple{Vararg{Symbol}}
+    bars::Dict{Any, Tuple{GridLayout, _Segmented}}
+    bar::Union{Nothing, _Segmented}
+    bar_part::Union{Nothing, GridLayout}
+    # the view of the page "Results"
+    view::Union{Nothing, _DetectorView}
+    view_part::GridLayout
+    view_expanded::Bool
+    view_size::Vec2f
+    view_shown::Bool
+    view_switches::Int
+    grip::Observable{Vector{Point2f}}
 end
+
+# Size of the axis of the expanded view of a new card [px] and its smallest side, see `_view_bounds`
+const _CARD_VIEW_SIZE = Vec2f(280, 280)
+const _CARD_VIEW_MIN = 160.0f0
+# Side of the square at the bottom right corner of a card in which the mouse takes its grip [px]
+const _CARD_GRIP = 16.0f0
 
 # Content of a layout of the card `scene`, aligned at the top left corner of its suggested bounding box
 function _card_part(scene::Scene)
@@ -184,26 +209,27 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     background = Box(scene; bbox = _CARD_AWAY, color = t.sidebar, strokecolor = t.border,
         strokewidth = 1, cornerradius = _CARD_CORNER)
     head, tools, step, properties = _card_part(scene), _card_part(scene), _card_part(scene), _card_part(scene)
-    disclosure = _card_part(scene)
+    # The grip, in front of the background and of the view
+    grip = Observable(Point2f[])
+    translate!(linesegments!(scene, grip; color = t.muted, linewidth = 1.5, inspectable = false), 0, 0, 6)
     icon, icon_color = _card_icon!(head[1, 1])
     title = _card_title!(head[1, 2], t)
     pin_button = _card_pin!(tools[1, 1], t)
     collapse_button = _card_collapse!(tools[1, 2], t)
     Makie.colgap!(tools, 2)
-    # Step and mode and, below a disclosure row of its own, the properties, whose width follows the
-    # card, see `_fit_properties!`
+    # Step and mode, and the properties, whose width follows the card, see `_fit_properties!`
     part = _selection_part!(step, properties[1, 1], t; width = _CARD_PROPERTIES_WIDTH, tellwidth = true)
-    properties_button = _properties_disclosure!(disclosure[1, 1], t)
     back = _card_part(scene)
     back_button = _card_back!(back[1, 1], t)
-    foreach(_fix_tooltip!, (pin_button, collapse_button, properties_button, back_button))
+    foreach(_fix_tooltip!, (pin_button, collapse_button, back_button))
     _translate_caret!(part.step_box, z)
     scene.visible[] = false
     return _ComponentCard(scene, t, background, head, _card_part(scene), tools, _card_part(scene), step,
         properties, icon, icon_color, title, collapse_button, pin_button, part.step_box, part.mode,
-        part.list, properties_button, link, Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing,
-        false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, false, back, back_button, false,
-        disclosure, false, false)
+        part.list, link, Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing,
+        false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, back, back_button, false,
+        false, :pose, (:pose,), Dict{Any, Tuple{GridLayout, _Segmented}}(), nothing, nothing,
+        nothing, _card_part(scene), true, _CARD_VIEW_SIZE, false, 0, grip)
 end
 
 #=
@@ -302,26 +328,6 @@ function _selection_part!(grid::GridLayout, list_pos, t::NamedTuple; list_attrib
     list = _PropertyList(list_pos; label_color = t.muted, value_color = t.text,
         line_color = RGBAf(Makie.to_color(t.border)), list_attributes...)
     return (; step_box, mode, list)
-end
-
-"""
-The disclosure row of the properties of a floating card at the grid position
-`pos`: the chevron (see `_card_collapse!`), right while the properties are collapsed, and the text
-"Properties". Returns the chevron, see `_toggle_properties!`.
-"""
-function _properties_disclosure!(pos, t::NamedTuple)
-    g = GridLayout(pos; default_colgap = 2, halign = :left)
-    b = _IconButton(g[1, 1]; icon = :expand, tooltip = "Show the properties",
-        _card_icons(t; size = 18, icon_size = 14)...)
-    Label(g[1, 2], "Properties"; _card_style(t, Label)..., color = t.muted, halign = :left)
-    return b
-end
-
-"""Shows on the chevron `b` of the properties of a floating card whether they are `shown`."""
-function _show_properties_state!(b::_IconButton, shown::Bool)
-    _update!(b.icon, _icon(shown ? :collapse : :expand))
-    _update!(b.tooltip, shown ? "Hide the properties" : "Show the properties")
-    return nothing
 end
 
 """
@@ -487,8 +493,16 @@ _declared_widgets(w::CardWidget) = (w,)
 _declared_widgets(::String) = ()
 
 """Moves the parts of the card `c` away, see `_CARD_AWAY`."""
-_park_card!(c::_ComponentCard) =
-    foreach(_park!, (c.back, c.head, c.actions, c.tools, c.rows, c.step, c.disclosure, c.properties, c.background))
+function _park_card!(c::_ComponentCard)
+    foreach(_park!, (c.back, c.head, c.actions, c.tools, c.background))
+    foreach(_park!, _page_parts(c))
+    _update!(c.grip, Point2f[])
+    return nothing
+end
+
+"""Returns the parts of the card `c` below its head, shown or not: the page bars and the parts of the pages."""
+_page_parts(c::_ComponentCard) =
+    GridLayout[(first(b) for b in values(c.bars))..., c.rows, c.step, c.properties, c.view_part]
 
 """Removes the declared widgets of the card `c`, with their listeners and layouts."""
 function _clear_content!(c::_AbstractCard)
@@ -524,22 +538,44 @@ function _new_parts!(c::_ComponentCard)
     return nothing
 end
 
-"""Returns the parts of the card `c` below its head that are shown, see `_ComponentCard`."""
+"""
+Returns the parts of the card `c` below its head that are shown, from top to bottom: the page bar,
+if any, and the parts of its page, see `_ComponentCard`.
+"""
 function _lower_parts(c::_ComponentCard)
-    (c.collapsed || c.auto_collapsed) && return GridLayout[]
-    parts = isempty(c.rows.content) ? GridLayout[] : [c.rows]
-    # step and mode on the card that stands for the selection, the properties on the card of an
-    # object, see `_update_card!`
-    c.step_shown && push!(parts, c.step)
-    if c.has_properties
-        push!(parts, c.disclosure)
-        c.properties_shown && push!(parts, c.properties)
+    parts = GridLayout[]
+    (c.collapsed || c.auto_collapsed) && return parts
+    isnothing(c.bar_part) || push!(parts, c.bar_part)
+    if c.page === :pose
+        isempty(c.rows.content) || push!(parts, c.rows)
+        # step and mode on the card that stands for the selection, see `_update_card!`
+        c.step_shown && push!(parts, c.step)
+    elseif c.page === :properties
+        push!(parts, c.properties)
+    elseif c.page === :results && !isnothing(c.view)
+        push!(parts, c.view_part)
     end
     return parts
 end
 
+"""Returns `true` if the card `c` shows its page "Results" with its view, unless it is collapsed."""
+_shows_results(c::_ComponentCard) =
+    c.page === :results && !isnothing(c.view) && !(c.collapsed || c.auto_collapsed)
+
+"""
+    _card_view(c::_ComponentCard)
+
+The detector view that the floating card `c` shows: its `view` while its page "Results" is shown
+and the card is neither hidden nor collapsed, else `nothing`. Only shown views are computed after a
+solve, see `_shown_views`.
+"""
+_card_view(c::_ComponentCard) = (c.scene.visible[] && _shows_results(c)) ? c.view : nothing
+
 # Size of a layout or block [px], which does not depend on its position
 _card_size(x) = Vec2f(Makie.widths(x.layoutobservables.computedbbox[]))
+# Size of the part of the card `c`; that of its view depends on the state of the view
+_part_size(c::_ComponentCard, part) =
+    (part === c.view_part && !isnothing(c.view)) ? _view_size(c.view) : _card_size(part)
 # Moves a layout or block such that its top left corner is at `p`, or away, see `_CARD_AWAY`
 _place!(x, p::Point2f) = _update!(x.layoutobservables.suggestedbbox, Rect2f(p[1], p[2], 0, 0))
 _park!(x) = _update!(x.layoutobservables.suggestedbbox, _CARD_AWAY)
@@ -571,7 +607,7 @@ function _card_size(c::_ComponentCard)
     h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     w, height = h[1] + _CARD_PADDING + a[1] + _CARD_PADDING + t[1], max(h[2], a[2], t[2])
     for part in _lower_parts(c)
-        s = _card_size(part)
+        s = _part_size(c, part)
         w, height = max(w, s[1]), height + _CARD_PADDING + s[2]
     end
     return Vec2f(w, height) .+ 2 * _CARD_PADDING
@@ -590,7 +626,7 @@ function _fit_properties!(c::_ComponentCard)
     h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     w = h[1] + _CARD_PADDING + a[1] + _CARD_PADDING + t[1]
     for part in lower
-        part === c.properties || (w = max(w, _card_size(part)[1]))
+        part === c.properties || (w = max(w, _part_size(c, part)[1]))
     end
     _update!(c.list.box.width, max(w, _CARD_PROPERTIES_WIDTH))
     return nothing
@@ -615,17 +651,58 @@ function _arrange_card!(c::_ComponentCard, p::Point2f)
     _place!(c.tools, Point2f(p[1] + size[1] - _CARD_PADDING - t[1], y - (line - t[2]) / 2))
     y -= line
     lower = _lower_parts(c)
-    for part in (c.rows, c.step, c.disclosure, c.properties)
-        if any(l -> l === part, lower)
-            y -= _CARD_PADDING
-            _place!(part, Point2f(x, y))
-            y -= _card_size(part)[2]
-        else
-            _park!(part)
-        end
+    for part in _page_parts(c)
+        any(l -> l === part, lower) || _park!(part)
     end
-    _update!(c.background.layoutobservables.suggestedbbox, Rect2f(p[1], p[2] - size[2], size...))
+    for part in lower
+        y -= _CARD_PADDING
+        _place!(part, Point2f(x, y))
+        y -= _part_size(c, part)[2]
+    end
+    rect = Rect2f(p[1], p[2] - size[2], size...)
+    _update!(c.background.layoutobservables.suggestedbbox, rect)
+    _update!(c.grip, _has_grip(c) ? _grip_lines(rect) : Point2f[])
     return nothing
+end
+
+"""
+Returns `true` if the card `c` has its grip, by which the mouse resizes its view (see
+`_resize_cards!`): while the expanded view is shown.
+"""
+_has_grip(c::_ComponentCard) = _shows_results(c) && c.view.expanded
+
+# The three diagonal lines of the grip in the bottom right corner of the card with the rectangle `rect`
+function _grip_lines(rect::Rect2f)
+    q = Point2f(maximum(rect)[1] - 3, minimum(rect)[2] + 3)
+    lines = Point2f[]
+    for k in (4, 8, 12)
+        push!(lines, q + Point2f(-k, 0), q + Point2f(0, k))
+    end
+    return lines
+end
+
+"""Returns `true` if the card `c` is shown with its grip and the mouse of the `events` is over it."""
+function _over_grip(c::_ComponentCard, events::Makie.Events)
+    (c.scene.visible[] && _has_grip(c)) || return false
+    r = c.background.layoutobservables.computedbbox[]
+    q = Point2f(maximum(r)[1], minimum(r)[2])
+    return Point2f(events.mouseposition[]) in Rect2f(q[1] - _CARD_GRIP, q[2], _CARD_GRIP, _CARD_GRIP)
+end
+
+"""
+    _view_bounds(c::_ComponentCard, view::Rect2f) -> (lo, hi)
+
+The smallest and the largest size [px] of the axis of the expanded view of the card `c` in the 3D
+view `view`: each side at least `_CARD_VIEW_MIN`, and at most such that the card fits into the view
+with the margin `_CARD_MARGIN`.
+"""
+function _view_bounds(c::_ComponentCard, view::Rect2f)
+    room = Vec2f(Makie.widths(view)) .- 2 * _CARD_MARGIN
+    # what the card needs beside the axis: its padding, and its head, its page bar and the
+    # controls of the view above and below the axis
+    frame = Vec2f(2 * _CARD_PADDING, _card_size(c)[2] - c.view.ax.height[])
+    lo = Vec2f(_CARD_VIEW_MIN)
+    return lo, max.(lo, room .- frame)
 end
 
 """Ends the input into the textboxes of the card `c`, see `Makie.defocus!`."""
@@ -644,6 +721,7 @@ function _hide_card!(c::_ComponentCard)
     _park_card!(c)
     _update!(c.link, Point2f[])
     c.scene.visible[] = false
+    c.view_shown = false
     return nothing
 end
 
@@ -764,15 +842,17 @@ end
 
 """
 Returns `true` if the mouse of the `events` is over the handle of the shown card `c`, by which the
-mouse moves it (see `_drag_cards!`): the card except its actions, its tools and the parts below the
-head, i.e. its icon, its title and the free room around them.
+mouse moves it (see `_drag_cards!`): the card except its actions, its tools, the parts below the
+head (the page bar, the rows, the view, where a drag pans, etc.) and its grip, i.e. its icon, its
+title and the free room around them.
 """
 function _over_handle(c::_ComponentCard, events::Makie.Events)
     _over_card(c, events) || return false
     p = Point2f(events.mouseposition[])
-    parts = c.back_shown ? (c.back, c.actions, c.tools, c.rows, c.step, c.disclosure, c.properties) :
-        (c.actions, c.tools, c.rows, c.step, c.disclosure, c.properties)
-    return !any(x -> p in _part_rect(x), parts)
+    (c.back_shown && p in _part_rect(c.back)) && return false
+    (_shows_results(c) && _over_view(c.view, p)) && return false
+    _over_grip(c, events) && return false
+    return !any(x -> p in _part_rect(x), (c.actions, c.tools, _page_parts(c)...))
 end
 
 # Rectangle of a card with the top left corner `p` and the `size`

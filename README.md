@@ -43,7 +43,7 @@ It needs BeamletOptics 0.13 (0.13.11 or newer) and a Makie backend, preferably G
 
 ## Features
 
-- `live_view`: a window with the 3D view, detector panels (spot diagram or intensity), cards of
+- `live_view`: a window with the 3D view, a detector view on the card of each detector (spot diagram, PSF or intensity), cards of
   the selected component, clip planes, measurements and camera tools, in a compact or an
   application layout, light or dark
 - `kinematic_controls!` and `view_cube!` for own Makie scenes

@@ -76,25 +76,13 @@ function _panel_part!(layout::CompactLayout, root::GridLayout)
 end
 
 function _build_layout(layout::CompactLayout, fig, spec)
-    (; specs, slider_specs, labels, lighting, view_cube) = spec
+    (; slider_specs, lighting, view_cube) = spec
     t = layout.theme
     ax = LScene(fig[1, 1]; show_axis = false, scenekw = (; clear = true, backgroundcolor = t.view))
     studio_lighting!(ax; preset = lighting)
     # Its click listener runs before the controls, hence clicks on the cube never select objects
     cube = view_cube ? view_cube!(ax) : nothing
 
-    # Detector panels in a near-square grid next to the 3D view
-    panels = Any[]
-    if !isempty(specs)
-        grid = _panel_part!(layout, fig.layout)
-        nc = ceil(Int, sqrt(length(specs)))
-        for (i, (pd, mode, kw)) in enumerate(specs)
-            parent = grid[(i - 1) ÷ nc + 1, (i - 1) % nc + 1]
-            p = DetectorPanel(parent, pd, get(labels, pd, "Detector $i"), mode, kw)
-            _theme_panel!(p, t)
-            push!(panels, p)
-        end
-    end
     # Everything else is part of the overlay over the 3D view
     o = layout.overlay = _CompactOverlay(fig, ax, cube, t)
     layout.help = _HelpUI(o.scene, t, ax, o.pill, o.pill_button)
@@ -105,7 +93,7 @@ function _build_layout(layout::CompactLayout, fig, spec)
     tools = _build_tools(layout, spec)
     o.fit_button, o.views_button = tools.fit_button, tools.views_button
     _arrange_overlay!(o)
-    return (; ax, cube, panels, sliders, status, info, tools...)
+    return (; ax, cube, sliders, status, info, tools...)
 end
 
 """

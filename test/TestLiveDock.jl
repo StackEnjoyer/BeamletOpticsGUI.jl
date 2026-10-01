@@ -9,35 +9,28 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live view analysis dock" begin
 
-    # Rays along +y through two transparent detectors onto a third one; the first panel records
-    # its history, the Gaussian beam of a second system hits the intensity panel PD4
+    # Rays along +y through a transparent detector onto a second one
     function _fixture(; layout = :app, kwargs...)
-        pds = [Detector(25e-3, false), Detector(25e-3, false), Detector(25e-3)]
+        pds = [Detector(25e-3, false), Detector(25e-3)]
         foreach(((k, pd),) -> translate3d!(pd, [0, 0.05k, 0]), enumerate(pds))
-        pd4 = Detector(10e-3)
-        translate3d!(pd4, [0.06, 0.1, 0])
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 1e-6; num_rings = 2, num_rays = 40)
-        g = GaussianBeamlet([0.06, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
-        labels = Dict(pds[1] => "PD1", pds[2] => "PD2", pds[3] => "PD3", pd4 => "PD4")
-        detectors = [pds[1] => (:spot, (; history = true)), pds[2], pds[3],
-            pd4 => (:intensity, (; n = 20, profiles = true))]
-        gui = live_view(System(pds) => src, System([pd4]) => g; layout, labels, detectors,
-            trace_budget = Inf, kwargs...)
-        return gui
+        gui = live_view(System(pds) => src; layout, labels = Dict(pds[1] => "PD1", pds[2] => "PD2"),
+            trace_budget = Inf, throttle = false, preview = false, kwargs...)
+        return gui, pds
     end
 
-    # Counts the updates of the plots of each panel, i.e. its computations
-    function _counters(gui)
-        counts = zeros(Int, length(gui.panels))
-        for (k, p) in enumerate(gui.panels)
-            on(_ -> (counts[k] += 1), p.xy)
-            on(_ -> (counts[k] += 1), p.heat_I)
+    # A panel of `add_panel!` with an axis, whose updates are counted
+    function _panel!(gui, title; kwargs...)
+        n, ax = Ref(0), Ref{Any}(nothing)
+        layout = add_panel!(gui, title; kwargs...) do l
+            ax[] = Axis(l[1, 1])
+            return _ -> (n[] += 1)
         end
-        return counts
+        return (; layout, n, ax = ax[], panel = last(gui.custom.panels))
     end
 
     _tabs(gui) = gui.layout.tabs
-    _shown(p) = p.ax.blockscene.visible[]
+    _shown(ax) = ax.blockscene.visible[]
 
     # A click on the tab `i` of the tab bar
     function _click_tab!(gui, i)
@@ -51,164 +44,172 @@ const GUI = BeamletOpticsGUI
         return nothing
     end
 
-    @testset "tabs" begin
-        gui = _fixture()
+    @testset "no tabs without add_panel!" begin
+        # the results of the detectors are on their cards: the dock has no tab and stays collapsed
+        gui, pds = _fixture()
         tabs = _tabs(gui)
         @test tabs.bar isa GUI._TabBar
-        @test tabs.bar.titles == ["PD1", "PD2", "PD3", "PD4"]
+        @test isempty(tabs.bar.titles) && isempty(tabs.parts) && isempty(tabs.panels)
+        @test tabs.active == 0 && isnothing(GUI._active_panel(tabs))
+        @test isempty(gui.layout.dock_panels) && !gui.layout.dock.shown
+        # also after a solve, with a selected detector and with the toggle of the dock
+        gui.controls.selected[] = pds[2]
+        GUI._resolve!(gui, nothing)
+        @test isempty(tabs.bar.titles) && !gui.layout.dock.shown
+        gui.layout.collapse.dock.active[] = false
+        gui.layout.collapse.dock.active[] = true
+        @test !gui.layout.dock.shown
+        # a constant number of plots
+        @test length(tabs.bar.scene.plots) == 3
+        close(gui)
+
+        gui, _ = _fixture(; detectors = [])
+        @test isempty(_tabs(gui).bar.titles) && !gui.layout.dock.shown
+        close(gui)
+    end
+
+    @testset "tabs" begin
+        gui, _ = _fixture()
+        tabs = _tabs(gui)
+        # the first panel shows the dock, later panels are tabs behind the active one
+        a = _panel!(gui, "Power")
+        @test gui.layout.dock.shown && gui.layout.collapse.dock.active[]
+        b = _panel!(gui, "Spectrum")
+        c = _panel!(gui, "History")
+        @test tabs.bar.titles == ["Power", "Spectrum", "History"]
         @test first.(gui.layout.dock_panels) == tabs.bar.titles
-        @test tabs.panels == gui.panels
+        @test last.(gui.layout.dock_panels) == [a.layout, b.layout, c.layout]
+        @test tabs.panels == gui.custom.panels
         @test tabs.active == 1 && tabs.bar.active == 1
+        @test GUI._active_panel(tabs) === a.panel
         # only the active panel is laid out and drawn
-        @test _shown(gui.panels[1])
-        @test !any(_shown, gui.panels[2:end])
-        @test maximum(gui.panels[2].ax.layoutobservables.computedbbox[])[1] < 0
+        @test _shown(a.ax) && !_shown(b.ax) && !_shown(c.ax)
+        @test maximum(b.ax.layoutobservables.computedbbox[])[1] < 0
         # a constant number of plots
         @test length(tabs.bar.scene.plots) == 3
         # a click on a tab switches the panel
         _click_tab!(gui, 3)
         @test tabs.active == 3 && tabs.bar.active == 3
-        @test _shown(gui.panels[3])
-        @test !_shown(gui.panels[1])
-        @test minimum(gui.panels[3].ax.layoutobservables.computedbbox[])[1] > 0
-        # the history and the profiles beside the axis
-        p1, p4 = gui.panels[1], gui.panels[4]
-        @test GUI._GLB.gridcontent(p1.history_axes[1]).span.cols == 2:2
-        @test GUI._GLB.gridcontent(p4.profiles_ax).span.cols == 2:2
+        @test _shown(c.ax) && !_shown(a.ax)
+        @test minimum(c.ax.layoutobservables.computedbbox[])[1] > 0
+        # `select = true` shows the new tab at once
+        d = _panel!(gui, "Selected"; select = true)
+        @test tabs.active == 4 && _shown(d.ax) && !_shown(c.ax)
         close(gui)
     end
 
     @testset "lazy panels" begin
-        gui = _fixture()
+        gui, _ = _fixture()
         tabs = _tabs(gui)
-        # initially only the active panel (and the history panel, which is the active one) is
-        # computed, the other panels are stale
-        @test occursin("PD1: 40 rays", gui.panels[1].ax.title[])
-        @test gui.panels[2].ax.title[] == "PD2: no hits"
-        @test Set(tabs.stale) == Set(gui.panels[2:4])
-        n = _counters(gui)
-        # after a solve only the active panel is computed
+        a, b, c = _panel!(gui, "A"), _panel!(gui, "B"), _panel!(gui, "C")
+        # a new panel shows the result of the last solve if it is shown, else it is stale
+        @test (a.n[], b.n[], c.n[]) == (1, 0, 0)
+        @test Set(tabs.stale) == Set([b.panel, c.panel])
+        @test GUI._panel_shown(gui, a.panel) && !GUI._panel_shown(gui, b.panel)
+        # after a solve only the panel of the active tab is updated
         GUI._resolve!(gui, nothing)
-        @test n == [1, 0, 0, 0]
-        @test GUI._computed_panels(gui, false) == gui.panels[1:1]
-        # a stale tab is computed once when it becomes active
+        @test (a.n[], b.n[], c.n[]) == (2, 0, 0)
+        @test !(a.panel in tabs.stale)
+        # a stale tab is updated once when it becomes active
         GUI._activate_tab!(gui, 2)
-        @test n == [1, 1, 0, 0]
-        @test occursin("PD2: 40 rays", gui.panels[2].ax.title[])
-        @test !(gui.panels[2] in tabs.stale)
+        @test (a.n[], b.n[], c.n[]) == (2, 1, 0)
+        @test !(b.panel in tabs.stale)
         GUI._activate_tab!(gui, 1)
         GUI._activate_tab!(gui, 2)
-        @test n == [1, 1, 0, 0]
-        # the intensity panel in a job, like the refinement of a coarse preview
-        GUI._activate_tab!(gui, 4)
-        @test n[4] == 1
-        @test gui.panels[4].heat_plot.visible[]
-        @test !isempty(gui.panels[4].profile_x[])
-        @test isnothing(gui.trace.job)
-        @test !gui.trace.stale
-        # the history panel records every full solve, also while it is not shown, but draws it
-        # only when shown
-        p1 = gui.panels[1]
-        drawn = Ref(0)
-        on(_ -> (drawn[] += 1), p1.history_value)
-        k = p1.history_count
+        @test (a.n[], b.n[], c.n[]) == (2, 1, 0)
+        # the panel that is left is stale after the next solve
         GUI._resolve!(gui, nothing)
-        GUI._resolve!(gui, nothing)
-        @test p1.history_count == k + 2
-        @test length(p1.history_value[]) == k + 2
-        @test drawn[] == 0
-        @test n == [1, 1, 0, 3]
-        # its field is kept: showing it needs no second computation
-        @test haskey(tabs.fields, p1)
+        @test (a.n[], b.n[], c.n[]) == (2, 2, 0)
+        @test a.panel in tabs.stale
         GUI._activate_tab!(gui, 1)
-        @test n == [2, 1, 0, 3]
-        @test drawn[] == 1
-        @test p1.history_count == k + 2
-        # previews are not recorded, the history panel is not computed
-        @test GUI._computed_panels(gui, true) == [p1]
-        GUI._activate_tab!(gui, 2)
-        @test GUI._computed_panels(gui, true) == [gui.panels[2]]
+        @test (a.n[], b.n[], c.n[]) == (3, 2, 0)
+        @test isnothing(gui.trace.job) && !gui.trace.stale
         close(gui)
     end
 
     @testset "collapsed dock" begin
-        gui = _fixture()
+        gui, _ = _fixture()
         tabs = _tabs(gui)
+        a, b = _panel!(gui, "A"), _panel!(gui, "B")
         GUI._activate_tab!(gui, 2)
-        n = _counters(gui)
+        @test (a.n[], b.n[]) == (1, 1)
         gui.layout.collapse.dock.active[] = false
         @test !gui.layout.dock.shown
-        @test isempty(GUI._shown_panels(gui))
-        # only the history panel is computed, for its metrics
+        @test !GUI._panel_shown(gui, b.panel) && !_shown(b.ax)
+        # a collapsed dock updates nothing
         GUI._resolve!(gui, nothing)
-        @test n == [0, 0, 0, 0]
-        @test gui.panels[2] in tabs.stale
-        @test GUI._computed_panels(gui, false) == gui.panels[1:1]
-        # expanding computes the active panel
+        @test (a.n[], b.n[]) == (1, 1)
+        @test b.panel in tabs.stale
+        # expanding updates the active panel
         gui.layout.collapse.dock.active[] = true
-        @test n == [0, 1, 0, 0]
-        @test !(gui.panels[2] in tabs.stale)
-        @test _shown(gui.panels[2])
-        @test !_shown(gui.panels[1])
+        @test (a.n[], b.n[]) == (1, 2)
+        @test !(b.panel in tabs.stale)
+        @test _shown(b.ax) && !_shown(a.ax)
         close(gui)
     end
 
     @testset "stale hits" begin
-        gui = _fixture()
+        gui, _ = _fixture()
         tabs = _tabs(gui)
-        n = _counters(gui)
+        a, b = _panel!(gui, "A"), _panel!(gui, "B")
         # a solve that did not complete (e.g. cancelled) leaves incomplete hits: stale tabs are
-        # not computed until the next solve
-        GUI._on_solve_started!(gui)
-        GUI._activate_tab!(gui, 3)
-        @test n == [0, 0, 0, 0]
-        @test gui.panels[3] in tabs.stale
+        # not updated until the next solve
+        GUI._views_cancelled!(gui)
+        @test !GUI._results_valid(gui)
+        GUI._activate_tab!(gui, 2)
+        @test (a.n[], b.n[]) == (1, 0)
+        @test b.panel in tabs.stale
         GUI._resolve!(gui, nothing)
-        @test n == [0, 0, 1, 0]
-        # the app layout computes after each solve
-        @test !(gui.panels[3] in tabs.stale)
+        @test (a.n[], b.n[]) == (1, 1)
+        @test !(b.panel in tabs.stale) && GUI._results_valid(gui)
+        # a panel that is added meanwhile waits, too
+        GUI._views_cancelled!(gui)
+        c = _panel!(gui, "C"; select = true)
+        @test c.n[] == 0 && c.panel in tabs.stale
+        GUI._resolve!(gui, nothing)
+        @test c.n[] == 1 && !(c.panel in tabs.stale)
         close(gui)
     end
 
-    @testset "coarse and preview panels" begin
-        gui = _fixture()
+    @testset "coarse results" begin
+        gui, _ = _fixture()
         tabs = _tabs(gui)
-        GUI._activate_tab!(gui, 4)
-        # a panel that shows a coarse preview is computed again when it is shown next
+        a, b = _panel!(gui, "A"), _panel!(gui, "B")
+        # a panel that is left while the live view shows a coarse result is updated again when it
+        # is shown next
         GUI._resolve!(gui, nothing; coarse = true)
-        @test gui.trace.coarse
-        @test size(gui.panels[4].heat_I[]) == (16, 16)
-        @test GUI._shown_panels(gui) == gui.panels[4:4]
+        @test gui.trace.coarse && a.n[] == 2
+        GUI._activate_tab!(gui, 2)
+        @test a.panel in tabs.stale
         GUI._activate_tab!(gui, 1)
-        @test gui.panels[4] in tabs.stale
+        @test a.n[] == 3 && !(a.panel in tabs.stale)
         close(gui)
     end
 
     @testset "slots" begin
-        gui = _fixture()
+        gui, _ = _fixture()
         tabs = _tabs(gui)
-        n = _counters(gui)
-        # a dock panel of the user is a tab, which becomes active
+        a = _panel!(gui, "A")
+        # a dock panel without an update is a tab, which becomes active
         d = GUI._add_dock_panel!(gui, "Mine")
         ax = Axis(d[1, 1])
-        @test tabs.bar.titles[end] == "Mine"
-        @test tabs.active == 5
+        @test tabs.bar.titles == ["A", "Mine"]
+        @test tabs.active == 2
         @test isnothing(GUI._active_panel(tabs))
-        @test !any(_shown, gui.panels)
-        # no detector panel is shown, only the history panel is computed
+        @test !_shown(a.ax) && _shown(ax)
+        # nothing is updated for it
         GUI._resolve!(gui, nothing)
-        @test n == [0, 0, 0, 0]
-        @test GUI._computed_panels(gui, false) == gui.panels[1:1]
-        GUI._activate_tab!(gui, 2)
+        @test a.n[] == 1 && a.panel in tabs.stale
+        GUI._activate_tab!(gui, 1)
         @test !ax.blockscene.visible[]
-        @test n == [0, 1, 0, 0]
+        @test a.n[] == 2
         close(gui)
     end
 
     @testset "overflow" begin
-        gui = _fixture(; size = (700, 700), view_cube = false)
+        gui, _ = _fixture(; size = (700, 700), view_cube = false)
         bar = _tabs(gui).bar
-        for k in 1:8
+        for k in 1:12
             GUI._add_dock_panel!(gui, "Panel with a long name $k")
         end
         (; slots, overflow) = GUI._tab_slots(bar)
@@ -224,17 +225,6 @@ const GUI = BeamletOpticsGUI
         @test bar.first == f - 1
         GUI._activate_tab!(gui, 1)
         @test bar.first == 1
-        close(gui)
-    end
-
-    @testset "compact layout computes all panels" begin
-        gui = _fixture(; layout = :compact)
-        n = _counters(gui)
-        GUI._resolve!(gui, nothing)
-        @test n == [1, 1, 1, 1]
-        @test GUI._computed_panels(gui, false) == gui.panels
-        @test GUI._shown_panels(gui) == gui.panels
-        @test gui.panels[1].history_count == 2
         close(gui)
     end
 end
