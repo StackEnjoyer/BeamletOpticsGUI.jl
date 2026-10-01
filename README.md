@@ -4,6 +4,8 @@
 
 # BeamletOpticsGUI.jl
 
+[![Documentation](https://img.shields.io/badge/docs-blue.svg)](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/)
+
 Interactive GUI for [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl): move the
 components of an optical setup with the mouse and keyboard, and see the beams and detector signals
 update live. BeamletOptics computes the physics and draws the components; this package arranges
@@ -26,14 +28,14 @@ display(gui)
 
 ## Installation
 
-BeamletOpticsGUI is not registered yet:
+BeamletOpticsGUI is installed from the General registry:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/StackEnjoyer/BeamletOpticsGUI.jl")
+Pkg.add("BeamletOpticsGUI")
 ```
 
-It needs BeamletOptics 0.13.11 or newer and a Makie backend, preferably GLMakie.
+It needs BeamletOptics 0.13 (0.13.11 or newer) and a Makie backend, preferably GLMakie.
 
 ## Features
 
@@ -44,5 +46,5 @@ It needs BeamletOptics 0.13.11 or newer and a Makie backend, preferably GLMakie.
 - own panels, controls and tools (`add_panel!`, `add_controls!`, `add_tool!`) and cards for own
   component types (`card_rows`)
 
-See the documentation in `docs/` and the agent skill in `skills/beamletopticsgui/`
-(`BeamletOpticsGUI.install_agent_skill()`).
+See the [documentation](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/) and the agent skill
+in `skills/beamletopticsgui/` (`BeamletOpticsGUI.install_agent_skill()`).
