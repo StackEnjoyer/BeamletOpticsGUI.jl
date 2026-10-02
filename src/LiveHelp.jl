@@ -8,6 +8,24 @@ using Makie: rich
 # Gap between the columns of the help card and between the key caps of an entry [px]
 const _HELP_COLGAP = 28
 const _HELP_CAP_GAP = 3
+# z translation of the scene of the help card: over everything else, i.e. the cards with their
+# tooltips (`_CARD_Z` + `_CARD_TOOLTIP_DZ`), the selection card of groups and the windows of the
+# live view, within the clip range ±10000 of the pixel camera
+const _HELP_Z = 9970.0f0
+# Priority of the listeners that keep the presses and the scrolling on the help card from
+# everything below it: before the controls (200), the placement (210), the cards (250), the tool
+# rail of the compact layout (260) and the view cube, the tree and the dock (300)
+const _HELP_PRIORITY = 310
+
+"""
+A scene with a pixel camera over the whole figure of the overlay `scene`, translated to `_HELP_Z`,
+for the help card, which is drawn over everything else.
+"""
+function _help_scene(scene::Scene)
+    top = Scene(scene.parent; camera = Makie.campixel!, clear = false)
+    translate!(top, 0, 0, _HELP_Z)
+    return top
+end
 
 """
     _HelpUI(scene, theme, ax, pill, pill_button)
@@ -24,7 +42,9 @@ overlay (see `_overlay_scene`) in the colors of the `theme` tokens:
   back to the edit mode like the key `v`.
 - `card`: the help card below the pill, shown while `shown`: the sections of `_help_sections` in
   columns (see `_help_columns`), each entry with its key caps (see `_help_cap!`) and its text; the
-  `close_button` in its head closes it. Its `body` holds the `blocks` of the sections, which are
+  `close_button` in its head closes it. It lies in a scene of its own over everything else (see
+  `_help_scene`), e.g. over a card at the same place, and what lies below it gets neither its
+  presses nor its scrolling, see `_connect_help!`. Its `body` holds the `blocks` of the sections, which are
   rebuilt when the keys of the entries change (`keys`, e.g. in the spectator mode or after
   [`add_tool!`](@ref) with a key), otherwise only the `texts` are updated, e.g. the step.
 
@@ -71,8 +91,10 @@ function _HelpUI(scene::Scene, t::NamedTuple, ax::LScene, pill::_OverlayPart,
     spectator_button = _help_button(g[1, 1], t, "Spectator"; accent = true)
     _help_cap!(g[1, 2], t, "V")
     Label(g[1, 3], "camera only"; _card_style(t, Label)..., color = t.muted)
-    # Help card: the head, the sections are built by `_build_help!`
-    card = _OverlayPart(scene, t; padding = (14, 14, 12, 12), default_rowgap = 10)
+    # Help card: the head, the sections are built by `_build_help!`; in a scene of its own, over
+    # the cards, and opaque, such that what it covers does not shine through
+    card = _OverlayPart(_help_scene(scene), t; color = _rgba(t.sidebar, 1.0),
+        padding = (14, 14, 12, 12), default_rowgap = 10)
     head = GridLayout(card.content[1, 1]; default_colgap = 6)
     Label(head[1, 1], "Keys and mouse"; _card_style(t, Label)..., fontsize = 13, font = :bold,
         halign = :left)
@@ -253,7 +275,8 @@ _over_help(help::_HelpUI, p::Point2f) =
 Connects the help of the live view `gui` (see `_HelpUI`) to its controls: the pill and the close
 button of the card open and close the card like the key `h`, the chips switch the mode, change the
 keyboard step and leave the spectator mode like the keys `m`, `+`, `-` and `v`. The help replaces
-the text of the controls overlay (`help_view`) and follows the 3D view.
+the text of the controls overlay (`help_view`) and follows the 3D view. The presses and the
+scrolling on the help card are consumed before all other listeners (`_HELP_PRIORITY`).
 """
 function _connect_help!(gui::LiveView)
     help = _help_ui(gui)
@@ -266,6 +289,26 @@ function _connect_help!(gui::LiveView)
     end
     push!(listeners, on(toggle!, help.pill_button.clicks))
     push!(listeners, on(toggle!, help.close_button.clicks))
+    # The help card lies over everything else: a press on it reaches nothing below it, e.g. a
+    # button of a card at the same place, hence the press on its close button is taken here
+    ev = events(gui.ax.scene)
+    over_card = () -> help.shown && !help.hidden && Point2f(ev.mouseposition[]) in _overlay_rect(help.card)
+    # The buttons whose press was taken, whose release is taken as well, also once the card is closed
+    taken = Set{Mouse.Button}()
+    push!(listeners, on(ev.mousebutton; priority = _HELP_PRIORITY) do event
+        if event.action == Mouse.release && event.button in taken
+            delete!(taken, event.button)
+            return Consume(true)
+        end
+        over_card() || return Consume(false)
+        event.action == Mouse.press && push!(taken, event.button)
+        close = Rect2f(help.close_button.box.layoutobservables.computedbbox[])
+        if event.button == Mouse.left && event.action == Mouse.press && Point2f(ev.mouseposition[]) in close
+            toggle!(nothing)
+        end
+        return Consume(true)
+    end)
+    push!(listeners, on(_ -> Consume(over_card()), ev.scroll; priority = _HELP_PRIORITY))
     push!(listeners, on(_ -> _set_mode!(gui, _other_mode(ctrl.mode[])), help.mode_button.clicks))
     for (button, dir) in zip(help.step_buttons, (1, -1))
         push!(listeners, on(_ -> _change_step!(ctrl, dir), button.clicks))

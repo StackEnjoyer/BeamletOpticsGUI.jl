@@ -656,7 +656,8 @@ end
 
 Connects the overlay of the compact layout of the `gui` (see `_CompactOverlay`), except its help
 pill (see `_connect_help!`): "⋯" toggles the tool rail, which a press outside of it (unless a menu
-is open) and the key `Esc` close, like its popovers; the camera popover follows the mouse, the
+is open or the press is on the help card, which takes it) and the key `Esc` close, like its
+popovers; the camera popover follows the mouse, the
 parts follow the size of the window and their content.
 """
 function _connect_overlay!(gui::CompactView)

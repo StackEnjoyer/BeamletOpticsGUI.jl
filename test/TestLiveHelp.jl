@@ -197,6 +197,41 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "the help card lies over everything ($layout)" for layout in (:compact, :app)
+        gui, m = _fixture(; layout)
+        help = GUI._help_ui(gui)
+        z(scene) = Makie.translation(scene)[][3]
+        # a scene of its own, over the cards with their tooltips, the selection card, the window
+        # of the catalog and the other parts of the help, within the clip range of the camera
+        hz = z(help.card.outer.parent)
+        @test hz == GUI._HELP_Z < 10000
+        @test all(k -> hz > GUI._card_z(k) + GUI._CARD_TOOLTIP_DZ, 1:100)
+        @test all(c -> hz > z(c.scene), gui.cards.all)
+        @test hz > GUI._BROWSE_Z && hz > GUI._CATALOG_Z && hz > GUI._PROGRESS_Z
+        @test hz > z(GUI._catalog_window(gui).scene) && hz > z(help.pill.outer.parent)
+        # opaque: what it covers does not shine through
+        @test Makie.to_color(help.card.box.color[]).alpha == 1
+
+        # the presses and the scrolling on it reach nothing below it, e.g. the view cube (300)
+        @test GUI._HELP_PRIORITY > 300
+        seen = Ref(0)
+        on(_ -> (seen[] += 1; Consume(false)), ev(gui).mousebutton; priority = 300)
+        on(_ -> (seen[] += 1; Consume(false)), ev(gui).scroll; priority = 300)
+        _key!(gui, Keyboard.h)
+        card = GUI._overlay_rect(help.card)
+        _click!(gui, _center(card))
+        ev(gui).scroll[] = (0.0, 1.0)
+        @test seen[] == 0 && help.shown
+        # its close button still closes it
+        _click!(gui, _center(Rect2f(help.close_button.box.layoutobservables.computedbbox[])))
+        @test !help.shown
+        # closed, the presses at the same place pass
+        _click!(gui, _center(card))
+        ev(gui).scroll[] = (0.0, 1.0)
+        @test seen[] == 3
+        close(gui)
+    end
+
     @testset "floating cards keep off the help card" begin
         gui, m = _fixture()
         help = GUI._help_ui(gui)

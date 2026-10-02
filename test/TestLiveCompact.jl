@@ -275,11 +275,11 @@ const GUI = BeamletOpticsGUI
         GUI._park!(help.chips.outer)
         _tick!(gui)
         @test !_parked(help.chips)
-        # a press on the help card closes the open tool rail
+        # a press on the help card reaches nothing below it: the open tool rail stays open
         _key!(gui, Keyboard.h)
         o.more_button.active[] = true
         _click!(gui, _center(GUI._overlay_rect(help.card)))
-        @test !GUI._rail_open(o) && ctrl.help_shown
+        @test GUI._rail_open(o) && ctrl.help_shown
         close(gui)
     end
 
