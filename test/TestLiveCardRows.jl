@@ -219,7 +219,8 @@ const GUI = BeamletOpticsGUI
         _select!(gui, m)
         @test startswith(_text(gui, :beam), "1000 rays")
         GUI._update_inspector!(gui)
-        t = @elapsed GUI._update_inspector!(gui)
+        # the fastest of three: a single one can contain a pause of the garbage collector
+        t = minimum(@elapsed(GUI._update_inspector!(gui)) for _ in 1:3)
         @test t < 5e-3
         close(gui)
     end
