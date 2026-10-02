@@ -544,7 +544,8 @@ blue axis of the controls, like the keys in the rotate mode. Each input is recor
 history, invalid inputs are reported in the status line. The widgets of a pinned card act on its
 object, also if another object is selected. The card of the selected object has, below its rows,
 the `step` box of the keyboard step, e.g. `250 nm` or `50 µrad`, where the unit selects the move
-or rotate mode, and the "Move"/"Rotate" control, which shows and sets the mode of the controls (it
+or rotate mode (`pm`, `nm`, `µm`, `mm`, `cm` or `m`; `nrad`, `µrad`, `mrad`, `rad` or `deg`; the
+step is shown in the unit of its size, e.g. `5 mm` or `1 cm`), and the "Move"/"Rotate" control, which shows and sets the mode of the controls (it
 follows the key `m` and vice versa); a pinned card has them while its object is selected.
 Pinning does not change the card. "–" in the
 head collapses the card to its head, "+" expands it again. Clicks and drags on the card neither

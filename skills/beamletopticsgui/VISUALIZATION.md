@@ -36,7 +36,7 @@ beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength 
 the drawn curve, log scale; astigmatic beamlets: amplitude × beam radius). Of a group only the
 central beam; display only. Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
 show_polarization = true, show_beams = true, pol_λ = 1e-3, pol_amplitude = 2e-4))`.
-The card of the selected object also has, on its page "Pose", the keyboard step (e.g. `250 nm`) and a
+The card of the selected object also has, on its page "Pose", the keyboard step (e.g. `250 nm` or `50 µrad`; shown in the unit of its size, pm to m and nrad to mrad) and a
 "Move"/"Rotate" control (in sync with the key `m`); the page "Properties" lists the properties of
 the object (the same rows as the inspector of the app). Objects without a `labels` entry
 get automatic names ("Mirror 1", "Clip plane 2") in the cards, menus and tree. The card of a system

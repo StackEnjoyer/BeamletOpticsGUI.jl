@@ -567,8 +567,10 @@ The 3D view uses the controls of [`kinematic_controls!`](@ref), see
 [Manual tracing](@ref), `p`, `Delete`, `c` and `Shift+c` control the clip planes, see
 [Clip planes](@ref), `1` shows or hides the source markers, see
 [Movable sources in the live view](@ref), and `g` zooms to the selection, see [Camera tools](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
-`250 nm` or `50 µrad`, where the unit selects the move or rotate mode, see
-[Component card and component menu](@ref). The status line shows the
+`250 nm` or `50 µrad`, where the unit selects the move or rotate mode (`pm`, `nm`, `µm`, `mm`,
+`cm` or `m`; `nrad`, `µrad`, `mrad`, `rad` or `deg`), see
+[Component card and component menu](@ref). The step is shown in the unit of its size, e.g. `5 mm`,
+`1 cm` or `2 mrad`. The status line shows the
 pose of the moved component and its change since the window was opened. Names for the status line
 and the cards are passed via `labels`:
 
