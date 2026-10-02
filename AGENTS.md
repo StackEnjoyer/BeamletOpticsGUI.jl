@@ -14,7 +14,7 @@ This file is for **developing** the GUI. Guidance for **using** it lives in the 
 Evaluate every change against these principles. The "Gap" column is the planned work; do not
 describe it as available in docs or the skill.
 
-| # | Principle | Gap in 0.1 |
+| # | Principle | Gap in 0.2 |
 |---|---|---|
 | P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components can be added to and removed from the scene in the GUI. One view holds several systems with several beams each. | adding and removing components at runtime |
 | P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`, `_has_view`), only `Detector` has a view; tree icons per type are internal |
