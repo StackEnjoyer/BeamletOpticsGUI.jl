@@ -112,23 +112,23 @@ function _closest_on_segment(a, b, origin, dir)
 end
 
 """
-    _inspect_beam(gui)
+    _inspect_beam(gui; radius = _BEAM_PICK_RADIUS)
 
 Returns the point of the rendered beams of the `gui` under the cursor, i.e. on the segment whose
-projection is closest to the cursor within `_BEAM_PICK_RADIUS` pixels, or `nothing`. The result is
+projection is closest to the cursor within `radius` pixels, or `nothing`. The result is
 `(; point, direction, length, opl, w, R)`: the point closest to the camera ray through the cursor
 and the direction of its segment, the geometric and optical path length (Σ n·L) from the source
 [m], and for Gaussian beamlets the radius `w` and the curvature `R` of `gauss_parameters` at the
 point, otherwise `nothing`. While a solve runs in the background, which changes the beams, nothing
 is inspected.
 """
-function _inspect_beam(gui::LiveView)
+function _inspect_beam(gui::LiveView; radius::Real = _BEAM_PICK_RADIUS)
     # The beams are being traced by a solve in the background
     _running(gui) && return nothing
     scene = gui.ax.scene
     cursor = _px(scene)
     origin, dir = _cursor_ray(scene)
-    best, dmin = nothing, _BEAM_PICK_RADIUS
+    best, dmin = nothing, Float64(radius)
     # Beams that are switched off are hidden and untraced, see `_set_beam_on!`
     for (p, h) in zip(gui.pairs, gui.beam_handles)
         _beam_on(gui, p.second) || continue

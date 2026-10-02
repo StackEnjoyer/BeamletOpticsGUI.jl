@@ -120,7 +120,7 @@ component, its normal is the green axis. Moving a plane does not solve the syste
 | Input      | Action                                                  |
 |:-----------|:--------------------------------------------------------|
 | `p`        | Add a clip plane and select it                          |
-| `Delete`   | Remove the selected clip plane                          |
+| `Delete`   | Remove the selected clip plane (or the selected component, see [Adding and removing components](@ref components_page)) |
 | `c`        | Switch clipping on or off (all planes)                  |
 | `Shift+c`  | Flip the selected clip plane, i.e. show the other side  |
 
@@ -476,6 +476,13 @@ Saved views can be passed to the next session via `views`:
 gui = live_view(system, beam;
     views = ["top" => ([0.0, 0.05, 0.5], [0.0, 0.05, 0.0], [0.0, 1.0, 0.0])])
 ```
+
+## Adding and removing components
+
+Components can be added to a `System` of the view and removed again at runtime, from a catalog in
+the window or from code with [`add_component!`](@ref) and [`remove_component!`](@ref). See
+[Adding and removing components](@ref components_page) and the section of the same name in the docstring of
+[`live_view`](@ref).
 
 ## Exporting the changes
 

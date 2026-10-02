@@ -92,7 +92,7 @@ _list_shown(c::_DockedCard, obj) = c.properties_shown && !c.collapsed && _has_pr
 _hide_properties!(c::_DockedCard) = (_set_rows!(c.list, Tuple{String, String}[]); nothing)
 _card_boxes(c::_DockedCard) = c.textboxes
 # A collapsed card shows only its actions
-_declarations(c::_DockedCard, obj) = (_head_actions(obj), c.collapsed ? () : card_rows(obj))
+_declarations(c::_DockedCard, obj) = (_head_actions(obj), c.collapsed ? () : _card_rows(obj))
 
 # The widgets take the theme of the figure, texts and axis colors from the tokens of the app
 _card_style(c::_DockedCard, ::Type{Label}) = (; color = c.theme.text, fontsize = 12)

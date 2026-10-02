@@ -283,6 +283,26 @@ function add_tilt_controls!(gui, mirror)
 end
 ```
 
+## Recipe: a catalog entry for your type
+
+The catalog "Components" of the live view (where `add_controls!` places its widgets) lets the user
+pick a component, type its parameters and place it with the mouse. An own type joins it with a
+`CatalogEntry`: a name, a constructor that is called with the parameter values, and one
+`CatalogParam(name, default; unit, scale, keyword)` per number. The default is in the units of the
+constructor (SI), the box shows `value / scale` with the `unit`. A parameter with `keyword = :name` is
+passed as that keyword argument, the others positionally in order. The constructor should be a function
+or type that a script can call by name, since `export_changes` prints the call.
+
+```julia
+push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses",
+    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3)]))
+```
+
+A package adds its entries in the `__init__` of its package extension on BeamletOpticsGUI; views opened
+afterwards show them. One view gets other entries with `live_view(...; catalog = entries)`, none with
+`catalog = CatalogEntry[]`. The constructor returns the object in its construction pose; the catalog
+moves it to where it is placed.
+
 ## Pitfalls
 
 - Do not put a parameter without a scene object on a card; there is no `add_controls!(gui, title, obj)`.

@@ -30,6 +30,7 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "Live view" => "live_view.md",
+        "Adding and removing components" => "components.md",
         "Kinematic controls" => "kinematic_controls.md",
         "View cube" => "view_cube.md",
         "Cards and widgets" => "widgets.md",

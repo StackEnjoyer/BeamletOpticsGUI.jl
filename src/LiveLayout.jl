@@ -26,6 +26,11 @@ _on_selected!(::LiveView) = nothing
 _on_clipping!(::LiveView) = nothing
 _on_clip_planes_changed!(::LiveView) = nothing
 _on_hidden!(::LiveView) = nothing
+_on_components_changed!(::LiveView) = nothing
+# The detector panels of a layout are built with the view; panels of detectors that are added or
+# removed at runtime are not shown yet
+_add_detector_panel!(::LiveView, _) = nothing
+_remove_detector_panel!(::LiveView, _) = nothing
 
 _slot_error(gui::LiveView, what) = _slot_error(gui.layout, what)
 function _slot_error(layout::AbstractLiveLayout, what)

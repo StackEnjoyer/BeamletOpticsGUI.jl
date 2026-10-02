@@ -998,11 +998,13 @@ _points(h) = only(render_plots(h))[1][]
             @test maximum(abs.(GUI._normal(plane2) - view_dir)) < 1e-6
             @test _planes(gui) == GUI._plane3f.([plane, plane2])
 
-            # Delete with a component selected does nothing
-            gui.controls.selected[] = m
+            # Delete with a source selected keeps the planes and the source, see `remove_component!`
+            # for a selected component
+            src = last(gui.pairs[1])
+            gui.controls.selected[] = src
             _key!(gui, Keyboard.delete)
             @test length(gui.clip.planes) == 2
-            @test gui.controls.selected[] === m
+            @test gui.controls.selected[] === src
 
             # Delete removes the marker and the plane
             marker_plots = copy(render_plots(_handle(gui, plane2)))

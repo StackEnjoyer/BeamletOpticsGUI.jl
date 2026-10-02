@@ -189,6 +189,8 @@ function _on_shown!(gui::LiveView)
     _update_cards!(gui)
     _on_selected!(gui)
     _show_inspected!(gui, gui.objects.inspected)
+    # The system that gets the next component of the catalog, see `_target_system`
+    _refresh_catalog!(gui)
     return nothing
 end
 

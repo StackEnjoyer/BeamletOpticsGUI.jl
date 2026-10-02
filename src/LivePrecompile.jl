@@ -63,5 +63,14 @@
         gui.widgets.show_all_button.clicks[] += 1
         gui.widgets.orthographic_toggle.active[] = true
         close(gui)
+
+        # A component placed with the mouse in an empty system, then removed
+        gui = live_view(System(), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3)
+        _start_placement!(gui, lens)
+        events(gui.ax.scene).mouseposition[] = (10.0, 10.0)
+        _drop_placement!(gui)
+        remove_component!(gui, lens)
+        close(gui)
     end
 end

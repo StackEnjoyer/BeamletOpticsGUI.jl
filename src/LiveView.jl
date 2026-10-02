@@ -101,8 +101,9 @@ and optionally, with defaults for any layout,
 - hooks called by the shared logic: `_on_solved!(gui)` after a solve is shown,
   `_on_selected!(gui)` after the selection changed, `_on_clipping!(gui)` after clipping was
   switched, `_on_clip_planes_changed!(gui)` after a clip plane was added or removed,
-  `_on_hidden!(gui)` after objects were hidden or shown and `_on_pinned!(gui)` after a card was
-  pinned or unpinned
+  `_on_hidden!(gui)` after objects were hidden or shown, `_on_pinned!(gui)` after a card was
+  pinned or unpinned and `_on_components_changed!(gui)` after a component was added to or removed
+  from a system, see [`add_component!`](@ref)
 - which detector panels are computed and how their results are shown, for layouts that show only
   some of them: `_computed_panels(gui, preview)`, `_shown_panels(gui)` and
   `_apply_panel!(gui, p, field; coarse, preview)` (all panels by default), with the hooks
@@ -329,6 +330,28 @@ Base.@kwdef struct _BeamState
 end
 
 """
+    _ComponentState
+
+The components that were added to and removed from the systems of a `LiveView` at runtime, see
+[`add_component!`](@ref) and [`remove_component!`](@ref): the `render_kwargs` of `live_render!` of
+the systems, with which added components are rendered; the `catalog` of the view (see
+[`component_catalog`](@ref)); the `added` components that are still part of a system and the
+`removed` ones that the view started with, both in the order of the calls, with the `system` of
+each; the `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
+its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
+is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`.
+"""
+Base.@kwdef mutable struct _ComponentState
+    const render_kwargs::NamedTuple
+    const catalog::Vector{CatalogEntry}
+    const added::Vector{Any} = Any[]
+    const removed::Vector{Any} = Any[]
+    const system::IdDict{Any, Any} = IdDict{Any, Any}()
+    const origin::IdDict{Any, Any} = IdDict{Any, Any}()
+    placement::Any = nothing
+end
+
+"""
     _LayoutWidgets
 
 The widgets of a `LiveView` that its layout creates (see `_build_layout` and `_build_menus`) and
@@ -372,7 +395,8 @@ remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
 (`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
-`objects` (`_ObjectState`) and `beams` (`_BeamState`); the widgets that the layout creates are in `widgets`
+`objects` (`_ObjectState`), `beams` (`_BeamState`) and `components` (`_ComponentState`); the widgets
+that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. The
 objects of the `extras` kwarg are rendered, selectable and movable, but not part of any system,
@@ -406,6 +430,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     cards::_CardState
     objects::_ObjectState
     beams::_BeamState = _BeamState()
+    components::_ComponentState
     background_card::Any = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
@@ -448,6 +473,7 @@ end
 
 function Base.close(gui::LiveView)
     _cancel_solve!(gui)
+    _end_placement!(gui)
     close(gui.controls)
     isnothing(gui.widgets.view_cube) || close(gui.widgets.view_cube)
     foreach(_hide_card!, gui.cards.all)
@@ -706,7 +732,7 @@ its normal is the green axis. Moving a plane does not solve the systems. The key
 | key       | action                                   |
 |:----------|:-----------------------------------------|
 | `p`       | add a clip plane and select it           |
-| `Delete`  | remove the selected clip plane           |
+| `Delete`  | remove the selected clip plane (or the selected component, see "Adding and removing components") |
 | `c`       | switch clipping on or off (all planes)   |
 | `Shift+c` | flip the selected clip plane             |
 
@@ -800,6 +826,33 @@ toggle, optionally with a key (an entry of the tool rail, or an icon in the tool
 Widgets of a thing in the scene belong on its card, see [`card_rows`](@ref), own widget types on
 cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 
+# Adding and removing components
+
+The components of a `System` of the view can be changed at runtime, e.g. to build a setup from an
+empty `System()` and a source; a `StaticSystem` can not be changed. The catalog "Components" (an
+entry of the tool rail in the compact layout, a section of the left sidebar in the app layout, like
+the widgets of [`add_controls!`](@ref)) offers the components of the `catalog` kwarg, see
+[`component_catalog`](@ref): its menu selects a component, the boxes below take its parameters,
+e.g. the radii of a lens [mm], and "Place" attaches it to the mouse. An input that is no number,
+or that the constructor of the component rejects, is reported in the status line. The line "into"
+names the system that gets the component.
+
+The component then follows the mouse, drawn at half of its opacity, on the plane through the first
+source of its system with the `plane_normal` of the controls, in the orientation in which it was
+constructed. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
+local y-axis as constructed) along the beam. A left click drops it: it becomes part of its system,
+i.e. the system of the selected or inspected object when "Place" was pressed, else the first
+`System` of the view, all beams of that system are traced through it, and it is selected. `Esc`
+cancels the placement. Meanwhile the component is not traced, a drag still moves the camera, and a
+click selects nothing.
+
+The button "remove" below the rows of the card of a component, or the key `Delete` while it is
+selected, removes it from its system. An object of a group, an extra and a source can not be
+removed: they are kept, and the status line names the reason. Removing is not part of the undo
+history. From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
+[`export_changes`](@ref) lists the added components, with their constructor calls, and the removed
+ones. A `Detector` added at runtime is traced and shows its card, but gets no detector panel.
+
 # Keyword args
 
 - `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
@@ -862,6 +915,8 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   shows its progress window, see "Long solves"
 - `background_card = nothing`: an object, or a function `gui -> object or nothing`, whose card a
   click on the empty background shows, see "Background card"
+- `catalog = component_catalog()`: the components that the catalog "Components" offers, a vector of
+  [`CatalogEntry`](@ref); an empty vector shows no catalog, see "Adding and removing components"
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -893,6 +948,7 @@ function live_view(
         progress_delay::Real = 0.5,
         extras = [],
         background_card = nothing,
+        catalog = component_catalog(),
         kwargs...
     )
     isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
@@ -990,8 +1046,10 @@ function live_view(
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
-        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state, background_card,
-        widgets, layout = lay)
+        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state,
+        components = _ComponentState(; render_kwargs = (; sys_kw...),
+            catalog = CatalogEntry[catalog...]),
+        background_card, widgets, layout = lay)
     gui_ref[] = gui
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
@@ -1016,6 +1074,10 @@ function live_view(
     _connect_projection!(gui, orthographic)
     _connect_sources!(gui)
     _connect_layout!(gui)
+    # The catalog of components that can be added to the systems, see `add_component!`, and their
+    # placement with the mouse
+    _build_catalog!(gui)
+    _connect_placement!(gui)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The spectator mode hides the UI, also at a start with `spectator = true`

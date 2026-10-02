@@ -6,10 +6,10 @@ Clip planes of the live view
 const _MAX_CLIP_PLANES = 8
 
 const _LIVE_VIEW_HELP = _HelpSection[
+    "Edit" => [_HelpEntry(["Del"], "remove the selected component or clip plane")],
     "View" => [_HelpEntry(["1"], "source markers on/off")],
     "Clip planes" => [
         _HelpEntry(["P"], "add a clip plane"),
-        _HelpEntry(["Del"], "remove the selected one"),
         _HelpEntry(["C"], "clipping on/off"),
         _HelpEntry(["Shift", "C"], "flip the selected one"; combo = true)]]
 
@@ -161,8 +161,9 @@ end
     _clip_key!(gui::LiveView, key)
 
 Handles the clip plane keys of the `gui`: `p` adds a plane through the selected object (or the
-camera `lookat`) along the view direction, `Delete` removes the selected plane, `c` switches
-clipping on and off and `Shift+c` flips the selected plane. Returns whether the key was handled.
+camera `lookat`) along the view direction, `Delete` removes the selected plane, or the selected
+component from its system (see `_delete_selected!`), `c` switches clipping on and off and `Shift+c`
+flips the selected plane. Returns whether the key was handled.
 """
 function _clip_key!(gui::LiveView, key)
     ctrl = gui.controls
@@ -190,12 +191,22 @@ function _clip_key!(gui::LiveView, key)
         _add_clip_plane!(gui, point, lookat - eye)
         return true
     elseif key == Keyboard.delete
-        sel isa LiveClipPlane || return false
-        _remove_clip_plane!(gui, sel)
-        return true
+        return _delete_selected!(gui, sel)
     end
     return false
 end
+
+"""
+    _delete_selected!(gui, sel) -> Bool
+
+The key `Delete` on the selected object `sel` of the `gui`: removes a clip plane, or a component
+from its system, see `remove_component!`. A selection that can not be removed, e.g. a source, an
+extra or an object of a group, is kept, with the reason in the status line. Returns whether the key
+was handled, i.e. `false` without a selection.
+"""
+_delete_selected!(::LiveView, ::Nothing) = false
+_delete_selected!(gui::LiveView, plane::LiveClipPlane) = (_remove_clip_plane!(gui, plane); true)
+_delete_selected!(gui::LiveView, obj) = (_remove_selected!(gui, obj); true)
 
 """Connects the clip plane keys of the `gui`, see `_clip_key!`."""
 function _connect_clip_planes!(gui::LiveView)

@@ -69,6 +69,12 @@ card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text;
 card_actions(obj) = (CardWidget(Button; name = :hide, label = "hide",
     value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
 
+# The row "remove" of a component, below its other rows (see `_card_rows`): removes a top-level
+# object of a `System` from the view (see `remove_component!`) and names the reason in the status
+# line for any other object, e.g. an object of a group or an extra
+_remove_row() = CardRow(CardWidget(Button; name = :remove, label = "remove",
+    on = (gui, o, _) -> _remove_selected!(gui, o)))
+
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),
     CardWidget(Button; name = :remove, label = "remove", on = (gui, p, _) -> _remove_clip_plane!(gui, p)))
@@ -301,7 +307,8 @@ _part_parent(gui::LiveView, x) = get(gui.objects.parents, x, nothing)
 Maps each part of the top-level objects of the systems and the extras of the `gui` to the object it
 is a part of, recursively (see `_part_children` and `_part_parent`), and names the parts without a
 label and a name by their type and a running index, like `_name_objects!`, e.g. the lenses of a
-doublet. The systems do not change at runtime, hence this runs once per live view.
+doublet. Called when the view is built and after a component was added, see `add_component!`;
+entries, once made, are kept.
 """
 function _map_parts!(gui::LiveView)
     state = gui.objects

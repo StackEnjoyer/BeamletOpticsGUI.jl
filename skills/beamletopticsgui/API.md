@@ -22,6 +22,7 @@ Look up the docstring of any name before use, e.g.
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `export_changes`, `retrace!` |
+| Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `component_catalog` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
 | Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
@@ -45,7 +46,12 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization`, `show_beams`, `pol_λ`, `pol_amplitude`, `pol_scale` set the start state of the card toggles and sliders |
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
+| `catalog = component_catalog()` | the entries of the component catalog (`CatalogEntry`s); `CatalogEntry[]` shows no catalog |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
+
+`add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
+`translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
+The catalog "Components" in the window does the same with the mouse.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
 keyboard controls to a live-rendered system on its own, without `live_view`.

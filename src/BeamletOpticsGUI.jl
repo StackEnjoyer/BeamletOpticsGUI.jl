@@ -17,7 +17,8 @@ const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, card_rows, pose_card_rows,
        beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!,
-       add_controls!, add_tool!, retrace!
+       add_controls!, add_tool!, retrace!, add_component!, remove_component!, CatalogEntry,
+       CatalogParam, component_catalog
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -73,6 +74,9 @@ include("LiveHighlight.jl")
 include("LiveSelectionCard.jl")
 include("LiveSolveError.jl")
 include("LiveCustom.jl")
+include("LiveComponents.jl")
+include("LivePlacement.jl")
+include("LiveCatalog.jl")
 # agent skill of the package
 include("AgentSkill.jl")
 # precompiles the live view and the interaction call paths, must come last

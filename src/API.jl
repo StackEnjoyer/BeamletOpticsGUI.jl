@@ -359,3 +359,126 @@ also keep what the user is typing: the method for a `Textbox` does not change a 
 unless it is called with `force = true`, which the card does after an input was applied.
 """
 function card_show! end
+
+"""
+    add_component!(gui, obj; system = nothing, select = true, label = nothing) -> obj
+
+Adds the object `obj` (an `AbstractObject` or an object group) to a system of the
+[`live_view`](@ref) window `gui` at runtime: `obj` is pushed to the system, rendered and registered
+with the controls, i.e. it is selected, moved, hidden and exported like the components the view
+started with. Then the systems are solved again, or the beams are marked as outdated without auto
+tracing. Place `obj` before adding it, e.g. via `translate_to3d!`.
+
+`system` is the `System` of the `gui` that gets `obj`: by default the system of the selected or
+inspected object (or the inspected system itself), otherwise the first `System` of the view. All
+beams paired with that system are traced through `obj`. A `StaticSystem` can not be changed: it
+throws an `ArgumentError`, like a `system` that is not shown in the `gui` and an `obj` that the
+`gui` shows already. `select = true` selects `obj` afterwards (or shows its card if it is not
+movable), `label` names it like an entry of the `labels` kwarg of `live_view`.
+
+The components of the catalog are added this way once they are placed, see
+[`component_catalog`](@ref). [`remove_component!`](@ref) removes a component again,
+[`export_changes`](@ref) lists the added and removed components.
+
+```julia
+gui = live_view(System() => beam)
+lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+translate_to3d!(lens, [0, 0.1, 0])
+add_component!(gui, lens; label = "lens")
+```
+"""
+function add_component! end
+
+"""
+    remove_component!(gui, obj) -> obj
+
+Removes the object `obj` from its system in the [`live_view`](@ref) window `gui`, like "remove" on
+its card or the key `Delete` while it is selected: `obj` is deleted from the system, its plots, its
+cards and its entries of the undo history are removed, and the systems are solved again, or the
+beams are marked as outdated without auto tracing. Removing can not be undone; add the object
+again via [`add_component!`](@ref).
+
+`obj` is a top-level object (or object group) of a `System` of the `gui`. An object of a group can
+not be removed on its own, remove the group instead. It throws an `ArgumentError`, like an object
+of a `StaticSystem`, an extra, a source and an object that is not shown in the `gui`.
+"""
+function remove_component! end
+
+"""
+    CatalogParam(name, default; unit = "", scale = 1.0, keyword = nothing)
+
+A numeric parameter of a [`CatalogEntry`](@ref), passed to its constructor: the `default` value in
+the units of the constructor (SI in BeamletOptics, e.g. [m]), shown and entered in the catalog as
+`value / scale` with the `unit`, e.g. `CatalogParam("diameter", 25.4e-3; unit = "mm", scale = 1e-3)`
+for a box that shows `25.4` mm. A parameter with `keyword = :name` is passed as that keyword
+argument, the other parameters are passed as positional arguments in their order.
+"""
+struct CatalogParam
+    name::String
+    default::Float64
+    unit::String
+    scale::Float64
+    keyword::Union{Nothing, Symbol}
+end
+
+function CatalogParam(name::AbstractString, default::Real; unit::AbstractString = "",
+        scale::Real = 1.0, keyword::Union{Nothing, Symbol} = nothing)
+    (isfinite(scale) && scale != 0) ||
+        throw(ArgumentError("the scale of the parameter \"$name\" must be finite and not zero, got $scale"))
+    return CatalogParam(String(name), Float64(default), String(unit), Float64(scale), keyword)
+end
+
+"""
+    CatalogEntry(name, constructor; group = "Components", params = CatalogParam[], code_name = string(nameof(constructor)))
+
+An entry of the component catalog of [`live_view`](@ref), see [`component_catalog`](@ref): a
+component that the user picks, parametrizes and places in the 3D view. `constructor` is called with
+the values of the `params` (see [`CatalogParam`](@ref)) and returns the `AbstractObject` (or object
+group) to add, in the pose in which it is constructed; the catalog then moves it to where it is
+placed. `name` is shown in the catalog under the heading `group`.
+
+[`export_changes`](@ref) prints the component as the call `code_name(values...; keywords...)`,
+hence `constructor` should be a function or type that the user's script can call by that name,
+e.g. `ThinLens`, not an anonymous wrapper.
+
+```julia
+entry = CatalogEntry("Thin lens", ThinLens; group = "Lenses", params = [
+    CatalogParam("R1", 50e-3; unit = "mm", scale = 1e-3),
+    CatalogParam("R2", -50e-3; unit = "mm", scale = 1e-3),
+    CatalogParam("diameter", 25.4e-3; unit = "mm", scale = 1e-3),
+    CatalogParam("n", 1.5)])
+```
+"""
+struct CatalogEntry
+    name::String
+    group::String
+    constructor::Any
+    params::Vector{CatalogParam}
+    code_name::String
+end
+
+CatalogEntry(name::AbstractString, constructor; group::AbstractString = "Components",
+    params = CatalogParam[], code_name::AbstractString = string(nameof(constructor))) =
+    CatalogEntry(String(name), String(group), constructor, CatalogParam[params...], String(code_name))
+
+"""
+    component_catalog() -> Vector{CatalogEntry}
+
+The catalog of components that a [`live_view`](@ref) window offers by default (its `catalog`
+kwarg): the entries of BeamletOpticsGUI for the components of BeamletOptics, e.g. lenses, mirrors,
+beamsplitters and detectors, and the entries that packages added. The catalog is shown as
+"Components" where [`add_controls!`](@ref) places its widgets: the entry is chosen in a menu, its
+parameters are typed into boxes, and "Place" attaches the component to the mouse, see "Adding and
+removing components" of [`live_view`](@ref).
+
+A package with own components adds its entries (see [`CatalogEntry`](@ref)) to the returned
+vector, e.g. in the `__init__` of its package extension on BeamletOpticsGUI; views opened afterwards
+show them. A single view gets other entries via `live_view(...; catalog = entries)`, none with
+`catalog = CatalogEntry[]`.
+
+```julia
+push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses",
+    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3)]))
+```
+"""
+function component_catalog end

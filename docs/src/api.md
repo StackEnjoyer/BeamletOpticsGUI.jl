@@ -20,6 +20,16 @@ add_controls!
 add_tool!
 ```
 
+## Adding and removing components
+
+```@docs
+add_component!
+remove_component!
+CatalogEntry
+CatalogParam
+component_catalog
+```
+
 ## Interactive helpers
 
 ```@docs

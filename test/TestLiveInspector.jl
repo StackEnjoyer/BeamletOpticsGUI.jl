@@ -258,9 +258,10 @@ const GUI = BeamletOpticsGUI
         ctrl.selected[] = o.pd2
         notify(_w(gui, :panel_mode).clicks)
         @test occursin("no panel", gui.status.text[])
-        # the rows of `card_rows`, the same as on the floating cards
+        # the rows of `card_rows` and the row "remove" of a component, the same as on the floating
+        # cards
         key(c) = map(GUI._layout_key, GUI._declarations(c, o.pd))
-        @test length(GUI._declarations(gui.layout.inspector.card, o.pd)[2]) == length(card_rows(o.pd))
+        @test length(GUI._declarations(gui.layout.inspector.card, o.pd)[2]) == length(card_rows(o.pd)) + 1
         @test key(gui.layout.inspector.card) == key(gui.cards.selection)
         close(gui)
     end
@@ -422,8 +423,12 @@ const GUI = BeamletOpticsGUI
         # they stay those of its object when another one is selected
         ctrl.selected[] = o.pd
         @test c.list.rows == GUI._inspector_rows(gui, o.m)
-        # the list of the selection is shortened first, to make room for them
-        @test first(_rows(gui)) == first(GUI._inspector_rows(gui, o.pd))
+        # the list of the selection is shortened first, to make room for them: here, with the rows
+        # of the detector, down to nothing
+        full = GUI._inspector_rows(gui, o.pd)
+        @test length(_rows(gui)) < length(full)
+        @test isempty(_rows(gui)) || first(_rows(gui)) == first(full)
+        @test !GUI._overflows(gui)
         # a click on the chevron collapses them and does not select the object of the card
         _click!(gui, _center(_rect(c.properties_button.box)))
         @test !c.properties_shown && isempty(c.list.rows) && height(c.list.box) == 0

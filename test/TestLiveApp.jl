@@ -43,7 +43,7 @@ const GUI = BeamletOpticsGUI
         @test gui.layout.dock.shown
         @test isnothing(gui.widgets.menu)
         @test gui.sliders isa Makie.SliderGrid
-        @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters"]
+        @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters", "Components"]
         @test first.(gui.layout.sections[:right]) == ["Properties"]
         @test first.(gui.layout.dock_panels) == ["Detector 1"]
         @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels]
@@ -60,7 +60,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.sliders)
         @test !gui.layout.dock.shown
         @test !gui.layout.collapse.dock.active[]
-        @test first.(gui.layout.sections[:left]) == ["Objects"]
+        @test first.(gui.layout.sections[:left]) == ["Objects", "Components"]
         @test _height(gui.ax) > 650
         close(gui)
 
