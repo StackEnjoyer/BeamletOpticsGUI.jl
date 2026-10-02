@@ -231,12 +231,19 @@ function beam_card_rows(b)
     gen = _has_generating_beams(b) ? (CardWidget(Toggle; name = :show_beams,
         value = (gui, b) -> _generating_beams_on(gui, b),
         on = (gui, b, v) -> _set_generating_beams!(gui, b, v)), "beams") : ()
-    _polarizable(b) || return (CardRow("beam", on, "on", gen...),)
+    _polarizable(b) || return (CardRow("beam", on, "on", gen...), _flen_row())
     pol = CardWidget(Toggle; name = :polarization, value = (gui, b) -> _polarization_on(gui, b),
         on = (gui, b, v) -> _set_polarization!(gui, b, v))
     return (CardRow("beam", on, "on", gen..., pol, "polarization"),
-        _pol_slider_row("pol λ", :pol_wavelength, :λ), _pol_slider_row("pol amp", :pol_amplitude, :amp))
+        _pol_slider_row("pol λ", :pol_wavelength, :λ), _pol_slider_row("pol amp", :pol_amplitude, :amp),
+        _flen_row())
 end
+
+# The length with which the final rays of a beam are drawn [mm], see `_set_flen!`
+_flen_row() = CardRow(CardWidget(Label; text = "length", width = 48, halign = :left),
+    CardWidget(Textbox; name = :flen, placeholder = " ", width = 76,
+        value = (gui, b) -> _flen_string(gui, b), on = (gui, b, s) -> _apply_flen_input!(gui, b, s)),
+    "mm")
 
 # A slider of the polarization curve, see `_pol_view`: over 0…1, mapped logarithmically to the
 # range of the value `key`, which is shown as text next to it

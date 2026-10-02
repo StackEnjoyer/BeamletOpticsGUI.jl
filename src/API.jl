@@ -250,7 +250,7 @@ _card_cell(w::CardWidget) = w
 
 Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s, chosen by multiple
 dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams, beam groups and
-sources add the toggles of [`beam_card_rows`](@ref), a source whose rays can be regenerated (see
+sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length of the final rays), a source whose rays can be regenerated (see
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 the mode and the color scale of its detector panel, mechanics (`NonInteractableObject`, e.g. a
 `MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
@@ -303,6 +303,11 @@ beams and the polarization are drawn for its central beam, the one starting near
 the group. These change the display only. The initial states are set by the `live_view` keywords
 `beams_off` and `beam_kwargs` (`show_beams`, `show_polarization`, `pol_λ`, `pol_amplitude`,
 `pol_scale`).
+
+The last row, `length`, has a box with the length [mm] with which the final rays of the beam, i.e.
+those that hit nothing, are drawn (`flen` of `live_render!`: by default 1 m, of Gaussian beamlets
+0.1 m, or as given by the `beam_kwargs`). An input draws the beam and its overlays again with that
+length, nothing is solved; an input that is no positive number is reported in the status line.
 
 The card of an own beam type adds the rows after its own rows, e.g.
 

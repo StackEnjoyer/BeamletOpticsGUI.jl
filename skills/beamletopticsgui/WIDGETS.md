@@ -33,7 +33,8 @@ nothing to do).
 
 1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`;
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
-   `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams).
+   `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams, the box
+   `:flen` for the drawn length of rays that hit nothing).
 2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
 3. `value(gui, obj)` returns what the widget shows, in display units (mm, mrad, %); it must be cheap,

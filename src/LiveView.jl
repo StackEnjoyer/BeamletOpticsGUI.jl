@@ -312,7 +312,9 @@ end
     _BeamState
 
 The beams of a `LiveView` (the objects `last.(gui.pairs)`) as their cards switch them: the beams
-that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the handles of its
+that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the `kwargs` of
+`live_render!` of its handle in `gui.beam_handles` besides the style of the layout, with which it
+is rendered again for another length of its final rays (see `_set_flen!`); the handles of its
 overlays, the polarization curve in `pol` (see `_set_polarization!`) and the generating beams of a
 Gaussian beamlet in `gen` (see `_set_generating_beams!`), and the kwargs of `live_render!` of the
 overlays in `overlay_kwargs`, taken from the `beam_kwargs` of `live_view` without `render_every`,
@@ -322,6 +324,7 @@ values of the sliders of its polarization curve, see `_pol_view`.
 """
 Base.@kwdef struct _BeamState
     off::Base.IdSet{Any} = Base.IdSet{Any}()
+    kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
     pol::IdDict{Any, Any} = IdDict{Any, Any}()
     gen::IdDict{Any, Any} = IdDict{Any, Any}()
     overlay_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
@@ -995,9 +998,8 @@ function live_view(
         # initial states `show_polarization` and `show_beams` are kept with the kwargs of the
         # overlays, see `_BeamState`
         beam_state.overlay_kwargs[beam] = Base.structdiff(kw, NamedTuple{(:render_every,)})
-        # The planes of the beams are set explicitly by `_apply_clip_planes!`, see `clip_beams`
-        push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)...,
-            Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})..., clip_planes = Plane3f[]))
+        beam_state.kwargs[beam] = Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})
+        push!(beam_handles, _live_render_beam!(ax, lay, beam, beam_state.kwargs[beam]))
     end
 
     # The extras are moved and selected like the objects of the systems, but never traced

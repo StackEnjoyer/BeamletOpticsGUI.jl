@@ -30,7 +30,8 @@ solved, not drawn, rays removed from detectors; only the source marker stays), f
 beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true)`), for polarized
 beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength and amplitude of
 the drawn curve, log scale; astigmatic beamlets: amplitude × beam radius). Of a group only the
-central beam; display only. Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
+central beam; display only. The box `length` [mm] sets how long rays that hit nothing are drawn
+(`flen`). Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
 show_polarization = true, show_beams = true, pol_λ = 1e-3, pol_amplitude = 2e-4))`.
 The card of the selected object also has the keyboard step (e.g. `250 nm`) and a
 "Move"/"Rotate" control (in sync with the key `m`); every card of an object, also a pinned one, has
