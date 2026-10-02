@@ -927,7 +927,7 @@ selected, removes it from its system. An object of a group, an extra and a sourc
 removed: they are kept, and the status line names the reason. Removing is not part of the undo
 history. From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
 [`export_changes`](@ref) lists the added components, with their constructor calls, and the removed
-ones. A `Detector` added at runtime is traced and shows its card, but gets no detector panel.
+ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
 
 # Keyword args
 

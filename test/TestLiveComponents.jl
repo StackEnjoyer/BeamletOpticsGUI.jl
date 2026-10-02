@@ -11,7 +11,7 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live components" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no detector panels
+    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
         live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
 
@@ -253,6 +253,50 @@ const GUI = BeamletOpticsGUI
         @test_throws ArgumentError add_component!(gui, c; system = sys2)
         remove_component!(gui, b)
         @test sys2.objects == [m2] && length(sys1.objects) == 3
+        close(gui)
+    end
+
+    @testset "detector added at runtime, $layout" for layout in (:compact, :app)
+        sys = System([_mirror()])
+        gui = _live_view(sys => _beam(); layout)
+        tick!() = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1 / 60))
+        # on the reflected beam along +x
+        pd = Detector(5e-3)
+        zrotate3d!(pd, -π / 2)
+        translate3d!(pd, [0.1, 0.1, 0])
+        @test !haskey(gui.detectors.states, pd)
+        add_component!(gui, pd; label = "PD")
+        tick!()
+        # traced, with the page "Results" like the detectors the view started with
+        @test BMO.hit_count(pd) == 1
+        @test GUI._card_pages(pd) == (:pose, :results, :properties)
+        # its card, the card of the selection, shows its view, which is computed for its hits
+        @test _card(gui).page == :results
+        state = GUI._detector_state(gui, pd)
+        @test any(((p, _),) -> p === pd, GUI._shown_views(gui))
+        @test !state.stale && !isnothing(state.result)
+        # the solves empty it like the other detectors
+        GUI._resolve!(gui, nothing)
+        @test BMO.hit_count(pd) == 1
+
+        # pinned and removed: its cards are unpinned and the views forget it
+        GUI._toggle_pin!(gui, pd)
+        tick!()
+        @test GUI._is_pinned(gui, pd)
+        remove_component!(gui, pd)
+        tick!()
+        @test !GUI._is_pinned(gui, pd)
+        @test !haskey(gui.detectors.states, pd)
+        @test !any(((p, _),) -> p === pd, GUI._shown_views(gui))
+        @test BMO.hit_count(pd) == 0
+        # it is no longer traced
+        GUI._resolve!(gui, nothing)
+        @test BMO.hit_count(pd) == 0 && !haskey(gui.detectors.states, pd)
+        # and can be added again
+        add_component!(gui, pd)
+        tick!()
+        @test BMO.hit_count(pd) == 1
+        @test !GUI._detector_state(gui, pd).stale
         close(gui)
     end
 
