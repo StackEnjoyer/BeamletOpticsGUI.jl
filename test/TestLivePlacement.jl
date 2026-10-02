@@ -159,6 +159,55 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "only the central beam of a source" begin
+        # Rings of beams along +y, the outermost 10 mm beside the central beam
+        source = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 20e-3, 1e-6; num_rings = 2)
+        gauss = GaussianBeamlet([0.03, 0, 0], [0.0, 1, 0], 1e-6, 1e-3)
+        sys = System()
+        gui = live_view(sys => source, sys => gauss; trace_budget = Inf, throttle = false)
+        # from above, such that the beams of the source lie apart on the screen
+        set_view(gui.ax, [0.0, 0.05, 0.1], [0.0, 0.05, 0.0], [0.0, 1, 0])
+        central = GUI._central_beam(source)
+        @test collect(position(central)) ≈ [0.0, 0, 0] atol = 1e-12
+        outer = argmax(b -> abs(position(b)[1]), BMO.beams(source))
+        on_outer = collect(Float64, position(outer)) .+ [0, 0.05, 0]
+        @test abs(on_outer[1]) ≈ 10e-3 atol = 1e-4
+        # an outer beam is on the screen farther from the central one than the snap radius
+        apart = norm(_pixel(gui, on_outer) .- _pixel(gui, [0.0, 0.05, 0]))
+        @test apart > 3 * GUI._SNAP_RADIUS
+
+        lens = _lens()
+        R0 = _pose(lens)[2]
+        GUI._start_placement!(gui, lens)
+        p = gui.components.placement
+        # on an outer beam: a beam is under the cursor, but the component does not snap onto it
+        _mouse!(gui, on_outer)
+        @test !isnothing(GUI._inspect_beam(gui; radius = GUI._SNAP_RADIUS))
+        @test isnothing(GUI._inspect_beam(gui; radius = GUI._SNAP_RADIUS, central = true))
+        @test !p.snapped
+        @test _pose(lens)[1][1] ≈ on_outer[1] atol = 1e-3
+        @test _pose(lens)[1][3] ≈ 0 atol = 1e-9
+        # near the central beam
+        _mouse!(gui, [0.0, 0.05, 0]; shift = 5)
+        @test p.snapped
+        @test _pose(lens)[1][1] ≈ 0 atol = 1e-9
+        @test _pose(lens)[1][3] ≈ 0 atol = 1e-9
+        @test _pose(lens)[2] ≈ R0 atol = 1e-9
+        # near the chief ray of the Gaussian beamlet
+        _mouse!(gui, [0.03, 0.05, 0]; shift = 5)
+        @test p.snapped
+        @test _pose(lens)[1][1] ≈ 0.03 atol = 1e-9
+        GUI._cancel_placement!(gui)
+
+        # the segments of the source are those of its central beam
+        segs = GUI._central_segments(first(gui.beam_handles))
+        @test !isempty(segs)
+        @test all(s -> any(r -> r === s.ray, BMO.rays(central)), segs)
+        @test length(GUI._beam_segments(first(gui.beam_handles))) > length(segs)
+        @test isempty(GUI._central_segments(nothing))
+        close(gui)
+    end
+
     @testset "start, cancel and drop ($layout)" for layout in (:compact, :app)
         gui, sys, m = _fixture(; layout)
         ctrl = gui.controls

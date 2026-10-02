@@ -88,6 +88,15 @@ _beam_segments!(segs, beam, settings::NamedTuple) = _beam_segments!(segs, beam; 
 _beam_segments!(segs, bg::BMO.AbstractBeamGroup, settings::NamedTuple) =
     _beam_segments!(segs, bg; settings.flen, settings.render_every)
 
+"""
+Returns the segments of the central beam of the render handle `h`: of a beam group the segments of
+its `_central_beam`, also if `render_every` leaves that beam out, otherwise all segments, which
+follow the beam itself or the chief ray of a Gaussian beamlet.
+"""
+_central_segments(h::AbstractBeamRenderHandle) =
+    _beam_segments!(_BeamSegment[], _central_beam(rendered(h)); render_settings(h).flen)
+_central_segments(_) = _BeamSegment[]
+
 """Returns the distance of the point `p` from the segment `a`-`b` in 2D."""
 function _point_segment_distance(p, a, b)
     ab = (b[1] - a[1], b[2] - a[2])
@@ -112,17 +121,18 @@ function _closest_on_segment(a, b, origin, dir)
 end
 
 """
-    _inspect_beam(gui; radius = _BEAM_PICK_RADIUS)
+    _inspect_beam(gui; radius = _BEAM_PICK_RADIUS, central = false)
 
 Returns the point of the rendered beams of the `gui` under the cursor, i.e. on the segment whose
-projection is closest to the cursor within `radius` pixels, or `nothing`. The result is
+projection is closest to the cursor within `radius` pixels, or `nothing`. With `central`, only the
+central beam of each beam group is considered, see `_central_segments`. The result is
 `(; point, direction, length, opl, w, R)`: the point closest to the camera ray through the cursor
 and the direction of its segment, the geometric and optical path length (Σ n·L) from the source
 [m], and for Gaussian beamlets the radius `w` and the curvature `R` of `gauss_parameters` at the
 point, otherwise `nothing`. While a solve runs in the background, which changes the beams, nothing
 is inspected.
 """
-function _inspect_beam(gui::LiveView; radius::Real = _BEAM_PICK_RADIUS)
+function _inspect_beam(gui::LiveView; radius::Real = _BEAM_PICK_RADIUS, central::Bool = false)
     # The beams are being traced by a solve in the background
     _running(gui) && return nothing
     scene = gui.ax.scene
@@ -132,7 +142,7 @@ function _inspect_beam(gui::LiveView; radius::Real = _BEAM_PICK_RADIUS)
     # Beams that are switched off are hidden and untraced, see `_set_beam_on!`
     for (p, h) in zip(gui.pairs, gui.beam_handles)
         _beam_on(gui, p.second) || continue
-        for seg in _beam_segments(h)
+        for seg in (central ? _central_segments(h) : _beam_segments(h))
             # Segments behind the camera are not visible
             (dot(seg.a .- origin, dir) > 0 || dot(seg.b .- origin, dir) > 0) || continue
             pa = Makie.project(scene, :data, :pixel, Point3(seg.a))

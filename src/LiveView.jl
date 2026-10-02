@@ -840,11 +840,12 @@ names the system that gets the component.
 The component then follows the mouse, drawn at half of its opacity, on the plane through the first
 source of its system with the `plane_normal` of the controls, in the orientation in which it was
 constructed. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
-local y-axis as constructed) along the beam. A left click drops it: it becomes part of its system,
-i.e. the system of the selected or inspected object when "Place" was pressed, else the first
-`System` of the view, all beams of that system are traced through it, and it is selected. `Esc`
-cancels the placement. Meanwhile the component is not traced, a drag still moves the camera, and a
-click selects nothing.
+local y-axis as constructed) along the beam. Of a beam group, e.g. a `CollimatedSource`, it snaps
+only onto the central beam, and of a Gaussian beamlet onto its chief ray. A left click drops it:
+it becomes part of its system, i.e. the system of the selected or inspected object when "Place"
+was pressed, else the first `System` of the view, all beams of that system are traced through it,
+and it is selected. `Esc` cancels the placement. Meanwhile the component is not traced, a drag
+still moves the camera, and a click selects nothing.
 
 The button "remove" below the rows of the card of a component, or the key `Delete` while it is
 selected, removes it from its system. An object of a group, an extra and a source can not be

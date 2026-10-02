@@ -45,7 +45,8 @@ entries are
 
 A menu selects the entry, the boxes below take its parameters, and "Place" attaches the component
 to the mouse. A left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto
-the beam. The component that is being placed is not traced until it is dropped. See the section
+the beam; of a beam group only onto its central beam, of a Gaussian beamlet onto its chief ray. The
+component that is being placed is not traced until it is dropped. See the section
 "Adding and removing components" of [`live_view`](@ref) for the details of the placement.
 
 The button "remove" below the rows of the card of a component and the key `Delete` remove it again. The added and removed

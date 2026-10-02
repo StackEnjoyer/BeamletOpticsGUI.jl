@@ -78,7 +78,9 @@ end
 
 The pose of the component `p` for the current mouse position. Within `_SNAP_RADIUS` of a rendered
 beam, it snaps onto the beam: the position is the point of the beam under the cursor (see
-`_inspect_beam`) and the local y-axis, the optical axis as constructed, points along the beam. The
+`_inspect_beam`) and the local y-axis, the optical axis as constructed, points along the beam. Of
+a beam group, only the central beam takes part, and of a Gaussian beamlet its chief ray, such that
+the component sits on the axis of the source and not on one of its outer rays. The
 component is not traced while it is placed, hence the beams it snaps onto do not change. Elsewhere,
 the position is where the camera ray through the cursor meets the plane through `p.plane_point`
 with the `plane_normal` of the controls, in the orientation `p.R0` as constructed; the position is
@@ -86,7 +88,7 @@ kept if the ray does not meet the plane in front of the camera.
 """
 function _placement_pose(gui::LiveView, p::_Placement)
     ctrl = gui.controls
-    info = _inspect_beam(gui; radius = _SNAP_RADIUS)
+    info = _inspect_beam(gui; radius = _SNAP_RADIUS, central = true)
     if !isnothing(info)
         R = _align_rotation(p.R0[:, 2], info.direction, ctrl.rotation_axis) * p.R0
         return Point3{Float64}(info.point), R, true
