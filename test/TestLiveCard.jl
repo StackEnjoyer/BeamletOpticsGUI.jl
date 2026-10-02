@@ -43,16 +43,18 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
     _center(r) = Point2f(minimum(r) .+ Makie.widths(r) ./ 2)
     _away(x) = x.layoutobservables.suggestedbbox[] == GUI._CARD_AWAY
     _move!(gui, xy) = (events(gui.ax.scene).mouseposition[] = (Float64(xy[1]), Float64(xy[2])))
-    _press!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
-    _release!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
+    _press!(gui, button = Mouse.left) =
+        (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.press))
+    _release!(gui, button = Mouse.left) =
+        (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.release))
     _click!(gui, xy) = (_move!(gui, xy); _press!(gui); _release!(gui))
-    function _drag!(gui, a, b)
+    function _drag!(gui, a, b; button = Mouse.left)
         _move!(gui, a)
-        _press!(gui)
+        _press!(gui, button)
         for t in range(0, 1; length = 10)
             _move!(gui, a .+ t .* (b .- a))
         end
-        _release!(gui)
+        _release!(gui, button)
     end
     _eye(gui) = Vector{Float64}(cameracontrols(gui.ax.scene).eyeposition[])
     # The card lies inside the 3D view, with the margin
@@ -742,8 +744,8 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test state.opts.colorscale == :log
         v.log_toggle.active[] = false
 
-        # the wheel over the axis zooms the view and leaves the camera; a drag on the axis pans
-        # and moves neither the card nor the camera
+        # the wheel over the axis zooms the view and leaves the camera; a drag on the axis with
+        # the right button pans and moves neither the card nor the camera
         eye, p0 = _eye(gui), top_left(c)
         lims = GUI._shown_limits(v.ax)
         _move!(gui, _axis_center(v))
@@ -751,11 +753,23 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         _scroll!(gui, 1)
         zoomed = GUI._shown_limits(v.ax)
         @test zoomed[2] - zoomed[1] ≈ 0.9 * (lims[2] - lims[1]) && _eye(gui) ≈ eye
-        _drag!(gui, _axis_center(v), _axis_center(v) .+ Point2f(28, -14))
+        _drag!(gui, _axis_center(v), _axis_center(v) .+ Point2f(28, -14); button = Mouse.right)
         panned = GUI._shown_limits(v.ax)
         @test panned[1] ≈ zoomed[1] - 0.1 * (zoomed[2] - zoomed[1]) && panned[2] - panned[1] ≈ zoomed[2] - zoomed[1]
         @test isnothing(c.spot) && top_left(c) == p0 && _eye(gui) ≈ eye && ctrl.selected[] === pd
         @test !isnothing(state.opts.window)
+        # a drag with the left button zooms to the selected rectangle, which is the window of the
+        # field; Ctrl + click returns to the automatic one
+        _drag!(gui, _axis_center(v), _axis_center(v) .+ Point2f(56, 28))
+        selected = GUI._shown_limits(v.ax)
+        @test selected[1] ≈ (panned[1] + panned[2]) / 2 && selected[2] - selected[1] ≈ 0.2 * (panned[2] - panned[1])
+        @test collect(state.opts.window) ≈ 1e-3 .* collect(selected)
+        @test isnothing(c.spot) && top_left(c) == p0 && _eye(gui) ≈ eye && ctrl.selected[] === pd
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.press)
+        _click!(gui, _axis_center(v))
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.release)
+        @test isnothing(state.opts.window) && ctrl.selected[] === pd
+        GUI._set_view!(gui, pd; window = 1e-3 .* selected)
         v.fit_button.clicks[] += 1
         @test isnothing(state.opts.window)
         _tick!(gui)

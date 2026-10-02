@@ -341,6 +341,11 @@ const _VIEW_OVERLAY_DZ = 5.0f0
 # Zoom per step of the wheel and the longest pause between the presses of a double click [s]
 const _VIEW_ZOOM_SPEED = 0.1
 const _VIEW_DOUBLE_CLICK = 0.35
+# The rectangle of a zoom selection: its z above the plots, the opacity of its fill and the
+# smallest size [px] that zooms
+const _VIEW_SELECT_DZ = 4.5f0
+const _VIEW_SELECT_ALPHA = 0.2f0
+const _VIEW_SELECT_MIN = 4.0f0
 
 _no_options(; _...) = nothing
 _no_expanded(::Bool) = nothing
@@ -407,6 +412,9 @@ mutable struct _DetectorView
     const crosses::Vector{AbstractPlot}
     const profile_x::AbstractPlot
     const profile_z::AbstractPlot
+    # the rectangle of a zoom selection in the axis
+    const select_fill::AbstractPlot
+    const select_line::AbstractPlot
     # texts inside the frame of the axis and their pixel boxes in the frame
     const xlabels::AbstractPlot
     const zlabels::AbstractPlot
@@ -432,8 +440,10 @@ mutable struct _DetectorView
     zoomed::Bool
     refreshing::Bool
     last_error::Union{Nothing, String}
-    # mouse: the drag (start [px] and the limits then), whether it moved, the last press
+    # mouse: the pan (start [px] and the limits then), the start [px] of a zoom selection, whether
+    # the pan moved, the last press
     drag::Any
+    select::Union{Nothing, Point2f}
     dragged::Bool
     thumb_pressed::Bool
     last_press::Float64
@@ -537,6 +547,11 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     legend_z = text!(profiles_ax, corner; text = ["z"], color = t.gizmo[3], offset = (18, -4), legend...)
     foreach(p -> translate!(p, 0, 0, 2), (profile_x, profile_z))
     foreach(p -> translate!(p, 0, 0, _VIEW_OVERLAY_DZ), (legend_x, legend_z))
+    # The rectangle of a zoom selection does not count for the limits
+    select = (; visible = false, inspectable = false, xautolimits = false, yautolimits = false)
+    select_fill = poly!(ax, Rect2f(0, 0, 1, 1); color = (t.text, _VIEW_SELECT_ALPHA), select...)
+    select_line = lines!(ax, Point2f[]; color = t.text, linewidth = 1, select...)
+    foreach(p -> translate!(p, 0, 0, _VIEW_SELECT_DZ), (select_fill, select_line))
 
     # The texts inside the frame do not count for the limits, which they follow
     o = _VIEW_LABEL_OFFSET
@@ -554,10 +569,10 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
         header, controls, field_controls, log_toggle, profiles_toggle, fit_button, collapse_button,
         plots, ax, profiles_ax, metrics_label, Dict{Any, _Segmented}(), nothing, (),
         AbstractPlot[a.frame, b.frame], AbstractPlot[a.image, b.image], AbstractPlot[a.spots, b.spots], AbstractPlot[a.cross, b.cross],
-        profile_x, profile_z, xlabels, zlabels, xname, zname, status, Rect2f[],
+        profile_x, profile_z, select_fill, select_line, xlabels, zlabels, xname, zname, status, Rect2f[],
         _tree_font(ax.blockscene, :regular), Dict{String, Vec2f}(), false, "", nothing,
         _ViewOptions(), nothing, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, false,
-        false, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[])
+        false, nothing, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[])
 
     on(_ -> _update_decorations!(v), ax.finallimits)
     on(_ -> _update_decorations!(v), ax.scene.viewport)
@@ -810,6 +825,8 @@ function _set_kind!(v::_DetectorView, kind::_ViewKind)
     end
     _update!(v.ax.xtickcolor, look.tick)
     _update!(v.ax.ytickcolor, look.tick)
+    Makie.update!(v.select_fill; color = RGBAf(look.text.r, look.text.g, look.text.b, _VIEW_SELECT_ALPHA))
+    Makie.update!(v.select_line; color = look.text)
     _set_frames!(v, look.background)
     _show_field_controls!(v, _is_field(kind))
     return true
@@ -1006,6 +1023,7 @@ _limits_changed!(v::_DetectorView, ::_FieldKind) = (v.on_options(; window = 1e-3
 function _fit!(v::_DetectorView)
     v.zoomed = false
     v.drag = nothing
+    _end_selection!(v)
     _fit_kind!(v, v.kind)
     return nothing
 end
@@ -1023,10 +1041,48 @@ function _zoom!(v::_DetectorView, p::Point2f, factor::Real)
     x0, x1, z0, z1 = _shown_limits(v.ax)
     rx, rz = (p .- Makie.origin(vp)) ./ Makie.widths(vp)
     cx, cz = x0 + rx * (x1 - x0), z0 + rz * (z1 - z0)
-    lims = (cx - (cx - x0) * factor, cx + (x1 - cx) * factor, cz - (cz - z0) * factor, cz + (z1 - cz) * factor)
+    _zoom_to!(v, (cx - (cx - x0) * factor, cx + (x1 - cx) * factor, cz - (cz - z0) * factor, cz + (z1 - cz) * factor))
+    return nothing
+end
+
+# Shows the limits `lims` [mm] in the axis, unless they are too small
+function _zoom_to!(v::_DetectorView, lims::NTuple{4, Float64})
     (lims[2] - lims[1] > 1e-9 && lims[4] - lims[3] > 1e-9) || return nothing
     limits!(v.ax, lims...)
     _limits_changed!(v, v.kind)
+    return nothing
+end
+
+#=
+The limits [mm] of the zoom selection from its start to the figure pixel `p`. The scales of the
+axis are equal, such that only limits of the shape of its frame can be shown (a square for a
+square frame, like the grid of a field): the larger side of the drag sets the size of the
+selection, the other one follows from the shape of the frame.
+=#
+function _selection(v::_DetectorView, p::Point2f)
+    vp = v.ax.scene.viewport[]
+    start, size = Makie.Point2d(v.select), Makie.Vec2d(Makie.widths(vp))
+    d = (Makie.Point2d(p) .- start) ./ size
+    a = (start .- Makie.Point2d(Makie.origin(vp))) ./ size
+    b = a .+ maximum(abs, d) .* map(x -> x < 0 ? -1.0 : 1.0, d)
+    x0, x1, z0, z1 = _shown_limits(v.ax)
+    xa, xb = x0 + a[1] * (x1 - x0), x0 + b[1] * (x1 - x0)
+    za, zb = z0 + a[2] * (z1 - z0), z0 + b[2] * (z1 - z0)
+    return (min(xa, xb), max(xa, xb), min(za, zb), max(za, zb))
+end
+
+# Draws the rectangle of the zoom selection up to the figure pixel `p`
+function _show_selection!(v::_DetectorView, p::Point2f)
+    x0, x1, z0, z1 = _selection(v, p)
+    Makie.update!(v.select_fill; arg1 = Rect2f(x0, z0, x1 - x0, z1 - z0), visible = true)
+    Makie.update!(v.select_line; visible = true,
+        arg1 = Point2f[(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)])
+    return nothing
+end
+
+function _end_selection!(v::_DetectorView)
+    v.select = nothing
+    foreach(q -> Makie.update!(q; visible = false), (v.select_fill, v.select_line))
     return nothing
 end
 
@@ -1046,10 +1102,12 @@ Connects the `view` to its host: `on_options(; kind)`, `on_options(; colorscale)
 `on_options(; profiles)` or `on_options(; window)` is called with the option that the user changed
 (the switch, the toggles, zoom, pan and "fit"; `window` in [m], `nothing` for the automatic one),
 `on_expanded(::Bool)` by the chevrons and a click on the thumbnail. The mouse is taken from the
-`events` of the figure with listeners of the `priority`, which are returned: over the axis of the
-expanded view, the wheel zooms about the cursor, a drag with the left button pans and a double
-click fits the view, all consumed; a click on the thumbnail expands the view. Elsewhere, and over
-a thumbnail for the wheel, the events pass.
+`events` of the figure with listeners of the `priority`, which are returned. Over the axis of the
+expanded view it acts like on an `Axis` of Makie, all consumed: the wheel zooms about the cursor,
+a drag with the left button selects the rectangle to zoom to (of the shape of the frame, see
+`_selection`), a drag with the right button pans, and Ctrl + click or a double click fits the
+view. A click on the thumbnail expands the view. Elsewhere, and over a thumbnail for the wheel,
+the events pass.
 """
 function _connect_view!(v::_DetectorView, events; on_options, on_expanded, priority = 2)
     foreach(off, v.listeners)
@@ -1070,31 +1128,40 @@ function _on_scroll!(v::_DetectorView, events, (_, dy))
 end
 
 function _on_button!(v::_DetectorView, events, e)
-    e.button == Mouse.left || return Consume(false)
-    return _on_left!(v, Point2f(events.mouseposition[]), Val(e.action == Mouse.press))
+    p, press = Point2f(events.mouseposition[]), Val(e.action == Mouse.press)
+    e.button == Mouse.left && return _on_left!(v, p, press, _ctrl_held(events))
+    e.button == Mouse.right && return _on_right!(v, p, press)
+    return Consume(false)
 end
 
-function _on_left!(v::_DetectorView, p::Point2f, ::Val{true})
+_ctrl_held(events) = Keyboard.left_control in events.keyboardstate ||
+                     Keyboard.right_control in events.keyboardstate
+
+function _on_left!(v::_DetectorView, p::Point2f, ::Val{true}, ctrl::Bool)
     if _over_thumb(v, p)
         v.thumb_pressed = true
         return Consume(true)
     end
     (_over_axis(v, p) && !isnothing(v.kind)) || return Consume(false)
+    # the right button pans
+    isnothing(v.drag) || return Consume(true)
     now = time()
-    if now - v.last_press < _VIEW_DOUBLE_CLICK && norm(p - v.press_position) < 4
+    if ctrl || (now - v.last_press < _VIEW_DOUBLE_CLICK && norm(p - v.press_position) < 4)
         v.last_press = 0.0
         _fit!(v)
         return Consume(true)
     end
     v.last_press, v.press_position = now, p
-    v.drag, v.dragged = (p, _shown_limits(v.ax)), false
+    v.select = p
     return Consume(true)
 end
 
-function _on_left!(v::_DetectorView, p::Point2f, ::Val{false})
-    if !isnothing(v.drag)
-        v.drag = nothing
-        v.dragged && _limits_changed!(v, v.kind)
+function _on_left!(v::_DetectorView, p::Point2f, ::Val{false}, ::Bool)
+    if !isnothing(v.select)
+        selected = maximum(abs, p - v.select) >= _VIEW_SELECT_MIN
+        lims = _selection(v, p)
+        _end_selection!(v)
+        selected && _zoom_to!(v, lims)
         return Consume(true)
     elseif v.thumb_pressed
         v.thumb_pressed = false
@@ -1104,7 +1171,26 @@ function _on_left!(v::_DetectorView, p::Point2f, ::Val{false})
     return Consume(false)
 end
 
+function _on_right!(v::_DetectorView, p::Point2f, ::Val{true})
+    (_over_axis(v, p) && !isnothing(v.kind)) || return Consume(false)
+    # the left button selects
+    isnothing(v.select) || return Consume(true)
+    v.drag, v.dragged = (p, _shown_limits(v.ax)), false
+    return Consume(true)
+end
+
+function _on_right!(v::_DetectorView, ::Point2f, ::Val{false})
+    isnothing(v.drag) && return Consume(false)
+    v.drag = nothing
+    v.dragged && _limits_changed!(v, v.kind)
+    return Consume(true)
+end
+
 function _on_move!(v::_DetectorView, p::Point2f)
+    if !isnothing(v.select)
+        _show_selection!(v, p)
+        return Consume(true)
+    end
     isnothing(v.drag) && return Consume(false)
     (v.dragged || norm(p - first(v.drag)) > 2) || return Consume(true)
     v.dragged = true

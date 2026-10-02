@@ -92,8 +92,9 @@ a switch of the kinds, toggles "log" and "profiles" (field views only), button "
 z (blue) through the centroid. Kinds (first = default): rays (`RayHit`, `PolarizedRayHit`): "Spot"
 and "PSF" (`intensity` of the rays, normalized to its peak, metrics without power); Gaussian
 beamlets: "Intensity" (W/m², with power) and "Spot" (1/e² outlines). A kind that the hits do not
-offer falls back to the default; without hits the view reads "no hits". Wheel zooms about the
-cursor, drag pans, double click or "fit" resets; in a PSF or intensity view the field is recomputed
+offer falls back to the default; without hits the view reads "no hits". Mouse as on a Makie `Axis`: wheel zooms
+about the cursor, left drag selects the rectangle to zoom to (shape of the plot), right drag pans,
+Ctrl + click, double click or "fit" resets; in a PSF or intensity view the field is recomputed
 for the visible window on the full grid `n` once the mouse rests for `idle_delay`. A field costs
 about 14 ns · n² · hits per thread (n = 100, 1000 ray hits: about 150 ms on one thread, 9 ms with 32
 threads): start Julia with `julia -t auto`. Slow computations run in the background with the

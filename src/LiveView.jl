@@ -734,8 +734,10 @@ radius and the geometric radius of a spot diagram, or the power, the peak, the c
 floor of 1e-4 times its maximum, "profiles" adds an axis with the field along x (red) and z (blue)
 through the centroid.
 
-The mouse wheel zooms about the cursor, a drag pans, a double click or "fit" resets the view. A
-spot diagram only changes its limits. A field is computed again for the visible window on its full
+The mouse acts like on an `Axis` of Makie: the wheel zooms about the cursor, a drag with the left
+button selects the rectangle to zoom to (of the shape of the plot, i.e. a square in a square
+plot), a drag with the right button pans, and Ctrl + click, a double click or "fit" resets the
+view. A spot diagram only changes its limits. A field is computed again for the visible window on its full
 grid once the mouse rests for `idle_delay`, not per step of the wheel; "fit" returns to the
 automatic window around the beam, or to `x_min`, `x_max`, `z_min` and `z_max` if they are given.
 One field costs about 14 ns per pixel and hit on one thread, i.e. it grows with `n²` times the

@@ -61,7 +61,9 @@ GLMakie.activate!(; visible = false)
     _center(ax) = Point2f(Makie.origin(ax.scene.viewport[]) .+ Makie.widths(ax.scene.viewport[]) ./ 2)
     _move!(fig, p) = (events(fig).mouseposition[] = (Float64(p[1]), Float64(p[2])))
     _scroll!(fig, dy) = (events(fig).scroll[] = (0.0, Float64(dy)))
-    _button!(fig, action) = (events(fig).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, action))
+    _button!(fig, action, button = Mouse.left) =
+        (events(fig).mousebutton[] = Makie.MouseButtonEvent(button, action))
+    _ctrl!(fig, action) = (events(fig).keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, action))
     _limits(ax) = GUI._shown_limits(ax)
 
     # Pixel boxes in the frame of the texts that Makie draws inside the frame of the axis
@@ -513,24 +515,66 @@ GLMakie.activate!(; visible = false)
         _show!(v, gauss, GUI._ViewOptions(o; window = last(options[1])))
         @test collect(_limits(v.ax)) ≈ collect(zoomed)
 
-        # a drag pans, the window is reported when the button is released
+        # a drag with the right button pans, the window is reported when the button is released
         empty!(options)
         _move!(fig, _center(v.ax))
-        _button!(fig, Mouse.press)
+        _button!(fig, Mouse.press, Mouse.right)
         _move!(fig, _center(v.ax) .+ Point2f(28, -14))
         panned = _limits(v.ax)
         w = zoomed[2] - zoomed[1]
         @test collect(panned) ≈ collect(zoomed) .+ [-0.1w, -0.1w, 0.05w, 0.05w]
         @test isempty(options)
+        # the left button does not select meanwhile
+        _button!(fig, Mouse.press)
         _button!(fig, Mouse.release)
+        @test isnothing(v.select) && !isnothing(v.drag) && isempty(options)
+        _button!(fig, Mouse.release, Mouse.right)
         @test length(options) == 1 && collect(last(options[1])) ≈ 1e-3 .* collect(panned)
         @test isnothing(v.drag)
         _move!(fig, _center(v.ax) .+ Point2f(50, 50))
         @test _limits(v.ax) == panned
         @test camera.eyeposition[] == eye
 
-        # "fit" and a double click ask for the automatic window
-        _show!(v, gauss, GUI._ViewOptions(o; window = last(options[1])))
+        # a drag with the left button selects the rectangle to zoom to: the larger side of the drag
+        # sets its size, its shape is that of the frame of 280 px
+        empty!(options)
+        w, h = panned[2] - panned[1], panned[4] - panned[3]
+        a = _center(v.ax) .+ Point2f(-70, -70)
+        _move!(fig, a)
+        _button!(fig, Mouse.press)
+        @test v.select == a && !v.select_line.visible[] && !v.select_fill.visible[]
+        _move!(fig, a .+ Point2f(56, 28))
+        @test v.select_line.visible[] && v.select_fill.visible[]
+        @test collect(GUI._selection(v, a .+ Point2f(56, 28))) ≈
+              [panned[1] + 0.25w, panned[1] + 0.45w, panned[3] + 0.25h, panned[3] + 0.45h]
+        corners = v.select_line[1][]
+        @test corners[1] ≈ Point2f(panned[1] + 0.25w, panned[3] + 0.25h) && corners[3] ≈ Point2f(panned[1] + 0.45w, panned[3] + 0.45h)
+        # the right button does not pan meanwhile, and the limits stay until the release
+        _button!(fig, Mouse.press, Mouse.right)
+        _button!(fig, Mouse.release, Mouse.right)
+        @test isnothing(v.drag) && _limits(v.ax) == panned && isempty(options)
+        _button!(fig, Mouse.release)
+        selected = _limits(v.ax)
+        @test collect(selected) ≈ [panned[1] + 0.25w, panned[1] + 0.45w, panned[3] + 0.25h, panned[3] + 0.45h]
+        @test isnothing(v.select) && !v.select_line.visible[] && !v.select_fill.visible[]
+        @test length(options) == 1 && collect(last(options[1])) ≈ 1e-3 .* collect(selected)
+        @test camera.eyeposition[] == eye
+        # towards the bottom left, also beyond the frame
+        v.select = a
+        w, h = selected[2] - selected[1], selected[4] - selected[3]
+        @test collect(GUI._selection(v, a .+ Point2f(-14, -112))) ≈
+              [selected[1] - 0.15w, selected[1] + 0.25w, selected[3] - 0.15h, selected[3] + 0.25h]
+        v.select = nothing
+        # a selection of less than 4 px does not zoom
+        empty!(options)
+        _move!(fig, a .+ Point2f(40, 40))
+        _button!(fig, Mouse.press)
+        _move!(fig, a .+ Point2f(43, 38))
+        _button!(fig, Mouse.release)
+        @test _limits(v.ax) == selected && isempty(options) && !v.select_line.visible[]
+
+        # "fit", a double click and Ctrl + click ask for the automatic window
+        _show!(v, gauss, GUI._ViewOptions(o; window = 1e-3 .* selected))
         empty!(options)
         v.fit_button.clicks[] += 1
         @test options == Any[:window => nothing]
@@ -544,6 +588,13 @@ GLMakie.activate!(; visible = false)
             _button!(fig, Mouse.release)
         end
         @test options == Any[:window => nothing]
+        empty!(options)
+        _ctrl!(fig, Keyboard.press)
+        _button!(fig, Mouse.press)
+        @test options == Any[:window => nothing] && isnothing(v.select)
+        _button!(fig, Mouse.release)
+        _ctrl!(fig, Keyboard.release)
+        @test length(options) == 1
 
         # a spot diagram: zoom changes only the limits, which stay over new results until "fit"
         empty!(options)
@@ -563,9 +614,11 @@ GLMakie.activate!(; visible = false)
         lims = _limits(v.ax)
         _move!(fig, Point2f(maximum(Rect2f(v.ax.scene.viewport[]))) .+ Point2f(20, 0))
         _scroll!(fig, 1)
-        _button!(fig, Mouse.press)
-        _button!(fig, Mouse.release)
-        @test _limits(v.ax) == lims && isnothing(v.drag)
+        for button in (Mouse.left, Mouse.right)
+            _button!(fig, Mouse.press, button)
+            _button!(fig, Mouse.release, button)
+        end
+        @test _limits(v.ax) == lims && isnothing(v.drag) && isnothing(v.select)
 
         # the switch, the toggles and the chevrons
         v.switch.buttons[2].clicks[] += 1

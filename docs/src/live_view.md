@@ -173,8 +173,10 @@ by a red cross, are for alignment:
   and z, i.e. twice the standard deviation of the intensity along each axis
 - PSF: as the intensity, but without the power
 
-In the expanded view, the wheel zooms about the cursor, a drag pans, and a double click or "fit"
-resets the view. In a spot view, this only changes the limits. In a PSF or intensity view, the
+In the expanded view, the mouse acts like on an `Axis` of Makie: the wheel zooms about the cursor,
+a drag with the left button selects the rectangle to zoom to (of the shape of the plot, i.e. a
+square in a square plot), a drag with the right button pans, and Ctrl + click, a double click or
+"fit" resets the view. In a spot view, this only changes the limits. In a PSF or intensity view, the
 field is recomputed for the visible window on the full grid `n` once the mouse rests for
 `idle_delay`, not per wheel step. The cost of one field is proportional to `n² ·` the number of
 hits, about 14 ns per pixel and hit on one thread, e.g. about 150 ms for `n = 100` and 1000 ray

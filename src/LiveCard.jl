@@ -843,7 +843,7 @@ end
 """
 Returns `true` if the mouse of the `events` is over the handle of the shown card `c`, by which the
 mouse moves it (see `_drag_cards!`): the card except its actions, its tools, the parts below the
-head (the page bar, the rows, the view, where a drag pans, etc.) and its grip, i.e. its icon, its
+head (the page bar, the rows, the view, where a drag zooms or pans, etc.) and its grip, i.e. its icon, its
 title and the free room around them.
 """
 function _over_handle(c::_ComponentCard, events::Makie.Events)
