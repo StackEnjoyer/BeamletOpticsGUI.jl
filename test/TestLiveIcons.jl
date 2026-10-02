@@ -13,7 +13,15 @@ const GUI = BeamletOpticsGUI
             :clip_beams, :sources, :measure, :export, :panel_left, :panel_right, :panel_bottom,
             :help, :eye, :eye_off, :expand, :collapse, :lens, :mirror, :detector, :source, :group,
             :clip_plane, :mesh, :object, :system, :beamsplitter, :polarizer, :pin, :pinned, :chart,
-            :float, :dock, :warning, :more, :search, :tune, :close)
+            :float, :dock, :warning, :more, :search, :tune, :close,
+            # the entries of the component catalog
+            :thin_lens, :singlet, :doublet, :triplet, :round_mirror, :square_mirror, :rect_mirror,
+            :thin_mirror, :prism_mirror, :retroreflector, :spherical_mirror, :parabolic_mirror,
+            :offaxis_parabolic_mirror, :conic_mirror, :offaxis_conic_mirror, :ellipsoidal_mirror,
+            :offaxis_ellipsoidal_mirror, :hyperbolic_mirror, :offaxis_hyperbolic_mirror,
+            :thin_beamsplitter, :round_thin_beamsplitter, :plate_beamsplitter,
+            :round_plate_beamsplitter, :compensator, :prism, :polarization_filter,
+            :linear_polarizer)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)
