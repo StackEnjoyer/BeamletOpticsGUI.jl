@@ -37,7 +37,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `theme = :light` or `:dark` | colors of the whole window |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
 | `constraints = Dict(obj => (; move = (), rotate = (:x, :v)))` | lock axes of components |
-| `detectors = :auto`, a vector (`pd => :spot`, `pd => (:intensity, (; x_min, ...))`) or `[]` | detector panels |
+| `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; n, colorscale, colorrange, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries go to `BeamletOptics.intensity`; `history` throws `ArgumentError`) |
 | `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units); compact: entry "Sliders" of the tool rail, app: "Parameters" |
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
 | `extras = [housing => (; color = ...)]` | shown, movable, but never traced |

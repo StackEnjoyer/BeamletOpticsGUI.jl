@@ -3,12 +3,12 @@ name: beamletopticsgui
 description: Build, extend and debug the interactive GUI of BeamletOptics.jl with BeamletOpticsGUI.jl (Julia). Use when writing Julia code that uses live_view, kinematic_controls!, view_cube!, cards (card_rows, CardRow, CardWidget), add_panel!, add_controls! or add_tool!, or when the user wants an interactive window in which optical components are moved with the mouse and the beams and detectors update live.
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 metadata:
-  beamletopticsgui-version: "0.1"
+  beamletopticsgui-version: "0.2"
 ---
 
 You are helping the user with the interactive GUI **BeamletOpticsGUI.jl**: a Julia package that opens a
 GLMakie window for a BeamletOptics system, in which components are moved with the mouse and keyboard and
-the beams and detector panels update live. The optics is BeamletOptics (BMO); this skill covers only the GUI.
+the beams and the detector views on the detector cards update live. The optics is BeamletOptics (BMO); this skill covers only the GUI.
 
 When this Skill is active:
 
@@ -16,7 +16,7 @@ When this Skill is active:
   axis (+y), components, beams, `solve_system!`, detectors and the rendering functions (`render!`,
   `live_render!`, look, camera helpers) are described there. Use it for everything except the window. If it
   is not installed: `using BeamletOptics; BeamletOptics.install_agent_skill()`.
-- This skill describes BeamletOpticsGUI **0.1** (`beamletopticsgui-version` above). Check the installed
+- This skill describes BeamletOpticsGUI **0.2** (`beamletopticsgui-version` above). Check the installed
   version with `julia --project=<env> -e 'using BeamletOpticsGUI; println(pkgversion(BeamletOpticsGUI))'`.
   If its major or minor version differs, treat the signatures in these files as possibly outdated,
   confirm them with the docstrings and tell the user that
@@ -56,7 +56,10 @@ When this Skill is active:
   dropped.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
-- Analysis panels exist for `Detector` only; own panels are added with `add_panel!`.
+- The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for
+  views of own types. Own plots are added with `add_panel!`.
+- There are no detector panels beside the 3D view or in the dock and no `history` option: record
+  values in `on_change` and plot them in an `add_panel!` panel.
 
 Do not describe these as available.
 

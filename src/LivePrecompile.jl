@@ -45,8 +45,12 @@
         close(ctrl)
         update_render!(h)
 
-        gui = live_view(System([RoundPlanoMirror(25e-3, 5e-3), Detector(5e-3)]),
-            GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3))
+        # The compact layout, with the card of the detector pinned, i.e. with the view of its field
+        pd = Detector(5e-3)
+        translate3d!(pd, [0, 0.1, 0])
+        gui = live_view(System([RoundPlanoMirror(25e-3, 5e-3), pd]),
+            GaussianBeamlet([0.0, 0.05, 0], [0.0, 1, 0], 1e-6, 0.5e-3);
+            detectors = [pd => (:intensity, (; n = 16))], progress_delay = Inf)
         close(gui)
 
         # The app layout: toolbar, object tree (selection, eye, expander), slider and dock
@@ -54,7 +58,7 @@
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         gui = live_view(System([ObjectGroup([RoundPlanoMirror(25e-3, 5e-3)]), pd]),
-            Beam([0.0, 0, 0], [0.0, 1, 0]); layout = :app, trace_budget = Inf,
+            Beam([0.0, 0, 0], [0.0, 1, 0]); layout = :app, trace_budget = Inf, progress_delay = Inf,
             sliders = ["a" => (0:0.5:1, v -> nothing)], clip_planes = [[0, 0.1, 0] => [0, 0, 1]])
         tree = gui.layout.tree
         tree.clicked[] = pd

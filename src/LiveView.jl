@@ -1,12 +1,11 @@
-using Makie: Figure, Axis, Label, SliderGrid, GridLayout, DataAspect, Relative, colsize!, colgap!,
-             heatmap!, autolimits!, limits!, Button, Toggle, Textbox, Menu, rowgap!, linkxaxes!,
-             hidexdecorations!, hidespines!
+using Makie: Figure, Axis, Label, SliderGrid, GridLayout, Relative, colsize!, colgap!,
+             autolimits!, limits!, Button, Toggle, Textbox, Menu, rowgap!
 import InteractiveUtils
 
 """
     _SolveJob
 
-A solve of the systems (or a computation of the detector fields) of a `LiveView` in a background
+A solve of the systems (or a computation of the detector views) of a `LiveView` in a background
 task, see `_solve!` and `_run!`.
 
 # Fields
@@ -14,7 +13,7 @@ task, see `_solve!` and `_run!`.
 - `task`: runs `_compute` and returns its result
 - `done`: notified when `task` ends (or the wait of `_run!` times out)
 - `sinks`: the progress outputs of `task`, see `BMO.ProgressSink`: one per source, then one per
-  detector panel
+  computed detector view
 - `anchors`: the position of the progress window of each sink, i.e. of its source or detector
 - `apply`: shows the result of `task` in the live view, called on the render task
 - `obj`: the moved object, or `nothing`
@@ -52,13 +51,13 @@ A subtype `L <: AbstractLiveLayout` has the field `theme`, the color tokens of t
 and implements
 
 - `_build_layout(layout::L, fig, spec) -> NamedTuple`: creates the widgets in the `Figure` `fig`,
-  which `_figure(layout, size)` created. `spec` holds the inputs of `live_view`: `specs` (detector
-  panels, see `_panel_specs`), `slider_specs`, `labels`, `lighting`, `view_cube`, `auto_trace`,
-  `clip_beams`, `orthographic`, `show_sources` and `view_specs`. The result has the fields
+  which `_figure(layout, size)` created. `spec` holds the inputs of `live_view`: `slider_specs`,
+  `labels`, `lighting`, `view_cube`, `auto_trace`, `clip_beams`, `orthographic`, `show_sources` and
+  `view_specs`. The result has the fields
   - `ax`: the `LScene` of the 3D view, with `studio_lighting!` applied, and `cube`: its view cube
     or `nothing`
-  - `panels`: the `DetectorPanel`s of `spec.specs`, `sliders`: a `SliderGrid` of
-    `spec.slider_specs` or `nothing`, `status`: the `Label` of the status line
+  - `sliders`: a `SliderGrid` of `spec.slider_specs` or `nothing`, `status`: the `Label` of the
+    status line
   - the built-in tools by role, e.g. `trace_button` (anything with `clicks::Observable{Int}`) or
     `auto_trace_toggle` (anything with `active::Observable{Bool}`, initialized from `spec`), created
     by `_build_tools(layout, spec)`, see "Tools" below
@@ -104,10 +103,12 @@ and optionally, with defaults for any layout,
   `_on_hidden!(gui)` after objects were hidden or shown, `_on_pinned!(gui)` after a card was
   pinned or unpinned and `_on_components_changed!(gui)` after a component was added to or removed
   from a system, see [`add_component!`](@ref)
-- which detector panels are computed and how their results are shown, for layouts that show only
-  some of them: `_computed_panels(gui, preview)`, `_shown_panels(gui)` and
-  `_apply_panel!(gui, p, field; coarse, preview)` (all panels by default), with the hooks
-  `_on_solve_started!(gui)` and `_on_applied!(gui)` around a solve, see `LiveDock.jl`
+- the pages of the cards (see `_card_pages`), which every host of a card shows, and the detector
+  views on the page "Results" (see `_DetectorView`): the views of the floating cards are known to
+  the shared logic, a layout that shows views elsewhere, e.g. on its docked cards, returns them from
+  `_layout_views(gui)`, since only shown views are computed after a solve (see `_shown_views`),
+  calls `_redraw_views!(gui, pd)` and `_view_needed!(gui, pd)` when it shows one, and implements
+  `_pin_view!(gui, pd; expanded)` if it docks the cards that start pinned
 - `_show_hint(gui)`: how a hidden object is shown again, for the status line
 - colors of the 3D view: by default from the tokens of the `theme` (see `LiveLayout.jl`),
   `_clip_plane_color(layout)`, `_marker_stroke(layout)` (the outline of the handles of sources,
@@ -189,12 +190,13 @@ _UserParts() = _UserParts(_UserPanel[], _UserControls[], Textbox[], Menu[], Dict
 
 Tracing of a `LiveView`: the systems are solved after each change if `auto[]` (the `active`
 observable of the auto trace toggle) is `true`, otherwise only via the trace button, the key `t` or
-by switching auto tracing on. `stale` is `true` if the beams and detector panels do not match the
+by switching auto tracing on. `stale` is `true` if the beams and detector views do not match the
 current poses of the objects; the alpha of the beam plots before dimming is stored in
 `beam_alphas`. If solving takes longer than `budget` [s], the systems are solved once the movement
 pauses for `idle_delay` [s] (`pending`, the moved `pending_obj`, the time of the `last_change`);
-`solve_time`, `panel_time` and `preview_time` are the durations of the last solve, panel update
-and preview solve [s], `coarse` is `true` while the panels show a preview on a coarse grid.
+`solve_time`, `view_time` and `preview_time` are the durations of the last solve, computation of
+the detector views and preview solve [s], `coarse` is `true` while the views show a preview on a
+coarse grid.
 
 While moving, beam groups are solved only for their rendered beams if `preview_enabled`; `preview`
 is `true` from such a solve (of the moved `preview_obj`) until the full solve. A solve that takes
@@ -212,7 +214,7 @@ Base.@kwdef mutable struct _TraceState
     stale::Bool = false
     beam_alphas::IdDict{Any, Any} = IdDict{Any, Any}()
     solve_time::Float64 = 0.0
-    panel_time::Float64 = 0.0
+    view_time::Float64 = 0.0
     preview_time::Float64 = 0.0
     pending::Bool = false
     pending_obj::Any = nothing
@@ -355,6 +357,40 @@ Base.@kwdef mutable struct _ComponentState
 end
 
 """
+    _DetectorState
+
+The view of the detector `pd` of a `LiveView`, shared by all cards that show it (see
+`LiveDetectors.jl`): its options `opts` (a `_ViewOptions`), the `result` of its last computation (a
+`_ViewResult`, `nothing` before the first one) and whether it is `stale`, i.e. the hits of the
+detector or the options changed since. `window_changed` is the time of the last zoom or pan of a
+field view, whose recomputation waits until the mouse rests (`0.0` if none is pending), see
+`_set_view!`.
+"""
+mutable struct _DetectorState
+    const pd::BMO.Detector
+    opts::Any
+    result::Any
+    stale::Bool
+    window_changed::Float64
+end
+
+"""
+    _DetectorStates
+
+The detector views of a `LiveView`: the `states` per detector, created on demand (see
+`_detector_state`); `hits_valid` is `true` while the hits of the detectors are those of a complete
+solve, i.e. stale views can be computed from them; `start` holds the specs of the `detectors`
+kwarg of [`live_view`](@ref), whose cards start pinned, see `_detector_specs`; `registered` the
+views `(pd, view)` that are shown outside the cards and the layout, see `_register_view!`.
+"""
+Base.@kwdef mutable struct _DetectorStates
+    states::IdDict{Any, _DetectorState} = IdDict{Any, _DetectorState}()
+    hits_valid::Bool = false
+    start::Vector{Any} = Any[]
+    registered::Vector{Tuple{Any, Any}} = Tuple{Any, Any}[]
+end
+
+"""
     _LayoutWidgets
 
 The widgets of a `LiveView` that its layout creates (see `_build_layout` and `_build_menus`) and
@@ -392,14 +428,14 @@ end
     LiveView
 
 Interactive window returned by [`live_view`](@ref). The `Figure` is stored in `fig`, the `LScene`
-of the 3D view in `ax`, the `KinematicController` in `controls`, the detector `panels`, the
-`status` line and the `sliders` (or `nothing`). Use `display` to show the window and `close` to
+of the 3D view in `ax`, the `KinematicController` in `controls`, the `status` line and the
+`sliders` (or `nothing`). Use `display` to show the window and `close` to
 remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
 (`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
-`objects` (`_ObjectState`), `beams` (`_BeamState`) and `components` (`_ComponentState`); the widgets
-that the layout creates are in `widgets`
+`objects` (`_ObjectState`), `beams` (`_BeamState`), `detectors` (`_DetectorStates`) and `components`
+(`_ComponentState`); the widgets that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. The
 objects of the `extras` kwarg are rendered, selectable and movable, but not part of any system,
@@ -417,7 +453,6 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     system_handles::Vector{AbstractSystemRenderHandle}
     beam_handles::Vector{AbstractBeamRenderHandle}
     controls::KinematicController
-    panels::Vector{Any}
     status::Label
     sliders::Union{Nothing, SliderGrid}
     on_change::Function
@@ -433,6 +468,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     cards::_CardState
     objects::_ObjectState
     beams::_BeamState = _BeamState()
+    detectors::_DetectorStates = _DetectorStates()
     components::_ComponentState
     background_card::Any = nothing
     widgets::_LayoutWidgets
@@ -471,7 +507,8 @@ function Base.display(gui::LiveView; screen_config...)
 end
 
 function Base.show(io::IO, gui::LiveView)
-    print(io, "LiveView(", length(gui.pairs), " systems, ", length(gui.panels), " detector panels)")
+    print(io, "LiveView(", length(gui.pairs), " systems, ", length(_find_detectors(first.(gui.pairs))),
+        " detectors)")
 end
 
 function Base.close(gui::LiveView)
@@ -499,9 +536,9 @@ end
 Opens a complete interactive window for one or several pairs of `system` and `beam`. All systems
 and beams are live-rendered into the same `LScene`, see [`live_render!`](@ref), and can be moved
 with the [`kinematic_controls!`](@ref). After each change, all `Detector`s are emptied, all systems
-are solved again and the beams and detector panels are updated. Returns a `LiveView` with the
-fields `fig`, `ax`, `controls`, `panels`, `status` and `sliders`. Use `display(gui)` to show the
-window and `close(gui)` to remove the controls.
+are solved again and the beams and the shown detector views are updated. Returns a `LiveView` with
+the fields `fig`, `ax`, `controls`, `status` and `sliders`. Use `display(gui)` to show the window
+and `close(gui)` to remove the controls.
 
 Additional context, e.g. an optomechanical assembly from a CAD file, is passed via `extras`: these
 objects are rendered, selected, moved, hidden and exported like the components, but they are not
@@ -524,24 +561,28 @@ object and its actions:
   selected in the 3D view, but are still traced.
 - For a clip plane, "flip" and "remove" instead, like `Shift+c` and `Delete`.
 
-Below, `x`, `y`, `z` [mm] show the position of the object, `Enter` in a box moves the object to the
+Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of the object,
+"Properties" with its properties (see [`properties`](@ref), the same rows as in the inspector of
+the app layout) and, for a `Detector`, "Results" with its view between them, see "Detector view".
+A card with a single page, e.g. of an inspected point, has no page bar. A card opens on "Results"
+for a detector and on "Pose" for any other object; a pinned card keeps its page.
+
+On "Pose", `x`, `y`, `z` [mm] show the position of the object, `Enter` in a box moves the object to the
 typed absolute coordinate. `rx`, `ry` and `rv` [mrad] rotate the object about the red, green and
 blue axis of the controls, like the keys in the rotate mode. Each input is recorded in the undo
 history, invalid inputs are reported in the status line. The widgets of a pinned card act on its
 object, also if another object is selected. The card of the selected object has, below its rows,
 the `step` box of the keyboard step, e.g. `250 nm` or `50 µrad`, where the unit selects the move
-or rotate mode, and the "Move"/"Rotate" control, which shows and sets the mode of the controls (it
-follows the key `m` and vice versa); a pinned card has them while its object is selected. Below
-them, every card of an object has a "Properties" part, collapsed by default, which lists the
-properties of the object (see [`properties`](@ref)), the same rows as in the inspector of the app
-layout. The state of "Properties" is kept while the card follows the selection and when the card is
-pinned: pinning does not change the card. "–" in the
+or rotate mode (`pm`, `nm`, `µm`, `mm`, `cm` or `m`; `nrad`, `µrad`, `mrad`, `rad` or `deg`; the
+step is shown in the unit of its size, e.g. `5 mm` or `1 cm`), and the "Move"/"Rotate" control, which shows and sets the mode of the controls (it
+follows the key `m` and vice versa); a pinned card has them while its object is selected.
+Pinning does not change the card. "–" in the
 head collapses the card to its head, "+" expands it again. Clicks and drags on the card neither
 select objects nor move the camera, and while a box of the card has the focus, the keys of the 3D
 view are ignored. Further rows by type, see [`card_rows`](@ref): the number of rays of a source,
-the mode (`auto`, `spot`, `intensity`) and the log color scale of the panel of a `Detector` ("no
-panel" without one) and the opacity of mechanics. The card, the menus and the buttons take the
-colors of the `theme`.
+the signal of a `Detector` (the power or the number of rays of its view while one is shown,
+otherwise the number of its hits) and the opacity of mechanics. The card, the menus and the
+buttons take the colors of the `theme`.
 
 Objects without a `labels` entry are named by their type and a running index, e.g. "Mirror 1" or
 "Clip plane 2", in the card, the status line and the menus, like in the object tree of the app
@@ -662,21 +703,21 @@ e.g. the generating beams or the polarization curve of a beam, a clip plane or a
 
 If solving the systems takes longer than `trace_budget`, the objects still follow the mouse and the
 keys immediately, while the beams are dimmed. The systems are solved once the movement pauses for
-`idle_delay`. Likewise, detector panels that take longer than `trace_budget` show a preview on a
+`idle_delay`. Likewise, detector views that take longer than `trace_budget` show a preview on a
 coarse grid while objects are moved, which is refined once the movement pauses.
 
 With `preview = true`, beam groups rendered with `render_every > 1` are solved only for their
-rendered beams while objects are moved, and the titles of the detector panels end with
-"(preview)". The full beam group is solved once the movement pauses for `idle_delay`. The
+rendered beams while objects are moved, and the detector views are marked as a preview. The full
+beam group is solved once the movement pauses for `idle_delay`. The
 `trace_budget` applies to the preview solve while moving. `on_change` is only called after full
 solves.
 
 # Long solves
 
-A solve, or the computation of the detector panels, that takes longer than `progress_delay` runs
+A solve, or the computation of the detector views, that takes longer than `progress_delay` runs
 in the background: the camera can still be moved, the beams are dimmed and the status line shows
 "tracing". The loops that show a progress bar in the terminal, i.e. the tracing of a beam group
-and the field of a detector panel, show a small progress window in the 3D view next to their source
+and the field of a detector view, show a small progress window in the 3D view next to their source
 or detector once they have run for `progress_delay`, with the remaining time and a button "Cancel",
 connected to the source or detector by a line with a dot at its end, also when the window is kept
 at the edge of the view because the source lies outside of it;
@@ -704,25 +745,50 @@ the key `t`. The "Auto trace" toggle next to it switches auto tracing on or off,
 untraced: the beams are dimmed and the status line shows "not traced, press t to trace" until the
 first `t`, the button or switching auto tracing on solves the systems.
 
-# Detector panels
+# Detector view
 
-By default, one panel per `Detector` of all systems is shown next to the 3D view. The panel shows
-the intensity (`:intensity`) for Gaussian beamlet hits and the spot diagram (`:spot`) otherwise,
-together with the optical power or the number of hits in its title. The intensity is cropped
-automatically around the beam, unless `x_min`, `x_max`, `z_min` and `z_max` are given.
+The page "Results" of the card of a `Detector` shows what it measured in the last solve. Which
+views it offers follows from its hits; the first one is the default, a switch above the plot
+selects another:
 
-The subtitle of each panel shows its metrics, the centroid is marked by a red cross: the number of
-hits, the centroid, the RMS radius and the geometric radius of a spot diagram, or the power, the
-centroid, the 1/e² radii along x and z from the second moments and the peak of the intensity. The
-following options of the panel kwargs are not passed to `intensity`:
+- rays: "Spot", the spot diagram, and "PSF", the intensity of the coherent sum of the rays, which
+  BeamletOptics returns unscaled, hence normalized to its peak
+- Gaussian beamlets: "Intensity" [W/m²] with the optical power, and "Spot", the 1/e² outlines of
+  the beamlets
 
-- `colorscale = :linear`: `:log` shows `log10` of the intensity, with a floor of 1e-4 times the
-  maximum
-- `colorrange = nothing`: fixed color range of the intensity, in `log10` units for `:log`
-- `history = false`: adds an axis below the panel with the power (or the number of hits, black)
-  and the centroid x (red) and z (blue) over the last 300 full solves
-- `profiles = false`: adds an axis below the panel with the intensity along x (red) and z (blue)
-  through the centroid
+A kind that the hits do not offer falls back to their default and applies again once they offer it.
+The plot has equal scales in mm, the y axis on its right and its ticks and labels inside its frame;
+a red cross marks the centroid. Below it are the metrics: the number of hits, the centroid, the RMS
+radius and the geometric radius of a spot diagram, or the power, the peak, the centroid and the
+1/e² radii along x and z from the second moments of a field. "log" shows `log10` of a field with a
+floor of 1e-4 times its maximum, "profiles" adds an axis with the field along x (red) and z (blue)
+through the centroid.
+
+The mouse acts like on an `Axis` of Makie: the wheel zooms about the cursor, a drag with the left
+button selects the rectangle to zoom to (of the shape of the plot, i.e. a square in a square
+plot), a drag with the right button pans, and Ctrl + click, a double click or "fit" resets the
+view. A spot diagram only changes its limits. A field is computed again for the visible window on its full
+grid once the mouse rests for `idle_delay`, not per step of the wheel; "fit" returns to the
+automatic window around the beam, or to `x_min`, `x_max`, `z_min` and `z_max` if they are given.
+One field costs about 14 ns per pixel and hit on one thread, i.e. it grows with `n²` times the
+number of hits (`n = 100` and 1000 ray hits: about 150 ms); the computation uses all threads, start
+Julia with `julia -t auto`.
+
+The chevron of the view collapses it to a thumbnail with the kind, the power or the number of rays,
+the centroid and the radii; a click on the thumbnail expands it again. A floating card with an
+expanded view is resized by the grip at its bottom right corner. Only shown views are computed
+after a solve, i.e. those on the page "Results" of the card of the selection and of the pinned
+cards, a thumbnail on a grid of at most 48 points; a view that is shown later is computed from
+the hits of the last solve. Pin the card of a detector to keep its view, or list the detector in
+`detectors` to start with its card pinned.
+
+The options of a view in the `kwargs` of `detectors`, which are not passed to `intensity`:
+
+- `n = 100`: number of points per axis of a field
+- `colorscale = :linear`: `:log` starts with "log" on
+- `colorrange = nothing`: fixed color range of a field, in `log10` units for `:log`
+- `profiles = false`: starts with "profiles" on
+- `expanded = true`: `false` starts with the thumbnail
 
 # Clip planes
 
@@ -765,22 +831,21 @@ actions in the 3D view are unchanged:
 - right sidebar ("Properties"): the card of the selected object, docked instead of floating next
   to it: its name and type, the actions of the card (e.g. "hide", or "flip" and "remove" for a
   clip plane) and a pin, which pins a card to the object; below, the rows of the card (see
-  [`card_rows`](@ref), e.g. the pose, the ray slider of a source or the panel options of a
-  detector); then the step box, the mode and the properties of the object (see
-  [`properties`](@ref)). The pinned cards are docked below, one below the other, each with its own
-  head (icon, label, actions, float button, pin and chevron), its rows and, like a floating card, a
-  "Properties" part, collapsed by default, whose state moves with the card when it floats or is
-  docked. The sidebar does not scroll: if the
-  docked cards do not fit, the older ones collapse to their heads, then the property lists are
-  shortened. The float button of a docked
+  [`card_rows`](@ref), e.g. the pose or the ray slider of a source) on the pages of the card, like
+  on a floating card: "Pose" with the rows, the step box and the mode, "Results" with the view of
+  a detector, "Properties" with the properties of the object (see [`properties`](@ref)); without a
+  selection, a summary of the live view. The pinned cards are docked below, one below the other,
+  each with its own head (icon, label, actions, float button, pin and chevron) and its pages. A
+  detector view takes the width of the sidebar. The sidebar does not scroll: if the docked cards
+  do not fit, the older ones collapse to their heads, then the property lists are shortened and the
+  views shrink. The float button of a docked
   card moves it into the 3D view, where it floats next to its object like a pinned card of the
   compact layout; the dock button in its head moves it back to the end of the docked cards. A
-  card keeps its collapsed state when it moves; pinned again after it was unpinned, it starts
-  docked.
-- analysis dock below the 3D view: a tab per detector panel, a click on a tab shows its panel.
-  Only the panel of the active tab is computed after a solve, the other panels are computed when
-  their tab is opened; a collapsed dock computes none. Panels with `history = true` still record
-  every full solve. The history and profiles axes are shown beside the panel.
+  card keeps its collapsed state, its page and the state of its view when it moves; pinned again
+  after it was unpinned, it starts docked.
+- analysis dock below the 3D view: a tab per panel of [`add_panel!`](@ref), a click on a tab shows
+  its panel; only the panel of the active tab is updated after a solve, the others when their tab
+  is opened. Without such a panel the dock is collapsed.
 - status bar: the status line and the duration of the last solve, the number of rays and the
   projection
 - the help pill at the top left of the 3D view ("? h keys") with the chips of the mode and the
@@ -792,9 +857,9 @@ The component menu of the compact layout is replaced by the tree.
 
 # Compact layout
 
-With `layout = :compact`, the 3D view fills the window and the detector panels (and the panels of
-[`add_panel!`](@ref)) are on its right, in `gui.fig[1, 2]`, next to which users may add their own
-axes. There are no rows below the 3D view; everything else appears on demand over the 3D view:
+With `layout = :compact`, the 3D view fills the window; the panels of [`add_panel!`](@ref), if
+any, are on its right, in `gui.fig[1, 2]`. There are no rows below the 3D view; everything else
+appears on demand over the 3D view:
 
 - a help pill at the top left ("? h keys"); a click on it or the key `h` opens the help card
   below it, which lists the keys and mouse actions in sections (select, move or rotate, edit, view,
@@ -802,7 +867,8 @@ axes. There are no rows below the 3D view; everything else appears on demand ove
   The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
   (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
   leaves it. The spectator mode shows only the 3D view with this help: the tools, the status,
-  the view cube, the cards, the markers of the sources and the detector panels are hidden, in the app layout also the toolbar,
+  the view cube, the cards with their detector views, the markers of the sources and the panels of
+  [`add_panel!`](@ref) are hidden, in the app layout also the toolbar,
   the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
   progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
   as it was, e.g. a sidebar that was collapsed stays collapsed. A view can start in it with
@@ -822,8 +888,8 @@ popovers.
 
 # Own panels, controls and tools
 
-[`add_panel!`](@ref) adds an own panel (next to the 3D view below the detector panels, or a tab of
-the dock of the app layout), [`add_controls!`](@ref) own widgets (an entry of the tool rail that
+[`add_panel!`](@ref) adds an own panel (right of the 3D view, or a tab of the dock of the app
+layout), [`add_controls!`](@ref) own widgets (an entry of the tool rail that
 opens them in a popover, or a section of the left sidebar) and [`add_tool!`](@ref) a button or
 toggle, optionally with a key (an entry of the tool rail, or an icon in the toolbar). [`retrace!`](@ref) solves again after a change from code, e.g. from such a widget.
 Widgets of a thing in the scene belong on its card, see [`card_rows`](@ref), own widget types on
@@ -868,11 +934,13 @@ ones. A `Detector` added at runtime is traced and shows its card, but gets no de
 - `size`: size of the figure, by default `(1400, 800)` for `:compact` and `(1600, 950)` for `:app`
 - `auto_trace = true`: solves the systems at the start and after each change, otherwise only on
   request, see "Manual tracing"
-- `detectors = :auto`: all `Detector`s of all systems. Alternatively a vector of `pd`,
-  `pd => mode` or `pd => (mode, kwargs)`, where `mode` is `:auto`, `:spot` or `:intensity` and
-  `kwargs` are passed to `intensity`, e.g. `(; n = 200, x_min = -1e-3, x_max = 1e-3, ...)`,
-  except the panel options, e.g. `(; colorscale = :log, history = true)`, see "Detector panels".
-  An empty vector disables the panels.
+- `detectors = :auto`: every `Detector` has the page "Results" on its card, no card is pinned at
+  the start (also for `[]`). A vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the
+  cards of these detectors at the start and sets the options of their views: `kind` is `:auto`,
+  `:spot`, `:psf` or `:intensity`; `kwargs` holds the options of the view, e.g.
+  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are passed to `intensity`,
+  e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
+  part of the systems throws an `ArgumentError`.
 - `on_change = (gui, obj) -> nothing`: called after each full solve with the moved object, or
   `nothing` after a slider change, i.e. not after preview solves, see "Adaptive tracing"
 - `sliders = []`: vector of `"label" => (range, callback)` or `"label" => (range, callback, startvalue)`.
@@ -895,10 +963,10 @@ ones. A `Detector` added at runtime is traced and shows its card, but gets no de
   each pair, with which the source can be selected and moved like the components
 - `show_sources = true`: initial visibility of the source markers, which can be switched with the
   "Sources" toggle of the tool rail or the key `1`
-- `labels = Dict()`: `obj => "name"` for the status line, the titles of the detector panels, the
-  component menu and the variable names of [`export_changes`](@ref)
-- `trace_budget = 0.03`: [s] duration of a solve or panel update, above which tracing is deferred
-  or the panels show a preview, see "Adaptive tracing"
+- `labels = Dict()`: `obj => "name"` for the status line, the cards, the component menu and the
+  variable names of [`export_changes`](@ref)
+- `trace_budget = 0.03`: [s] duration of a solve or of the computation of the detector views, above
+  which tracing is deferred or the views show a preview, see "Adaptive tracing"
 - `idle_delay = 0.2`: [s] pause of the movement after which deferred tracing runs
 - `clip_planes = []`: initial clip planes, a vector of `point => normal`, e.g.
   `[[0, 0.1, 0] => [0, 1, 0]]`, see "Clip planes"
@@ -972,14 +1040,14 @@ function live_view(
     # several beams may share a system, which is rendered once
     systems = unique(objectid, first.(ps))
     extra_specs = _extra_specs(extras, systems)
-    specs = _panel_specs(detectors, systems)
+    detector_specs = _detector_specs(detectors, systems)
     slider_specs = [_slider_spec(s) for s in sliders]
     clip_specs = _clip_plane_specs(clip_planes)
     view_specs = _view_specs(views)
 
     lay = _live_layout(layout, theme)
     fig = _figure(lay, something(size, _default_size(lay)))
-    w = _build_layout(lay, fig, (; specs, slider_specs, labels, lighting, view_cube, auto_trace,
+    w = _build_layout(lay, fig, (; slider_specs, labels, lighting, view_cube, auto_trace,
         clip_beams, orthographic, show_sources, view_specs))
     ax = w.ax
     # Pose, keyboard step and hide button of the selected object, next to it in the 3D view
@@ -1046,7 +1114,7 @@ function live_view(
         menus.views_menu, view_cube = w.cube, w.info)
     trace = _TraceState(; auto = w.auto_trace_toggle.active, budget = trace_budget, idle_delay,
         preview_enabled = preview, progress = _ProgressOverlay(ax, lay.theme), progress_delay)
-    gui = LiveView(; fig, ax, pairs = ps, system_handles, beam_handles, controls, w.panels,
+    gui = LiveView(; fig, ax, pairs = ps, system_handles, beam_handles, controls,
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
@@ -1084,6 +1152,10 @@ function live_view(
     _connect_placement!(gui)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
+    # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,
+    # which computes their views
+    _init_detectors!(gui, detector_specs)
+    _pin_detectors!(gui)
     # The spectator mode hides the UI, also at a start with `spectator = true`
     push!(controls.listeners, on(v -> _on_spectator!(gui, v), controls.spectator))
     controls.spectator[] && _on_spectator!(gui, true)

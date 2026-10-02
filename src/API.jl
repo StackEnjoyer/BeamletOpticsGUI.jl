@@ -16,21 +16,22 @@ function kinematic_controls! end
     live_view(system, beam; kwargs...)
 
 Opens a complete interactive window for one or several pairs of `system` and `beam`: a 3D view in
-which all components can be moved via [`kinematic_controls!`](@ref), one panel per `Detector`
-(spot diagram or intensity), a status line and optional sliders. After each change, all detectors
-are emptied, all systems are solved again and the beams and panels are updated. Returns a
-`LiveView`, which can be shown via `display`.
+which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
+sliders. After each change, all detectors are emptied, all systems are solved again and the beams
+and the shown detector views are updated. Returns a `LiveView`, which can be shown via `display`.
 
-The detector panels show metrics (centroid, RMS or 1/e² radius, power), optionally on a
-logarithmic color scale with a history and profiles. A click on a beam shows its position, path
+The card of a `Detector` has a page "Results" with its detector view (spot diagram, PSF or
+intensity, with metrics such as centroid, RMS or 1/e² radius and power), which collapses to a
+thumbnail and, as a field, can be shown on a logarithmic color scale with profiles. A click on a beam shows its position, path
 length and, for Gaussian beamlets, its radius and curvature, the "measure" toggle measures
 distances and angles between components and beams. The key `g` zooms to the selection, "home",
 the "views" menu and "save view" set and store camera views. While moving, beam groups are solved
 only for their rendered beams (`preview = true`), the full group once the movement pauses.
 
-Main keyword arguments: `detectors` (`:auto`, a vector of `pd`, `pd => mode` or
-`pd => (mode, kwargs)`, or `[]`, with the panel options `colorscale`, `colorrange`, `history`
-and `profiles`), `on_change = (gui, obj) -> nothing` (called after full solves),
+Main keyword arguments: `detectors` (`:auto` or `[]`: every detector has its page "Results", no
+card is pinned at start; a vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the cards of
+these detectors at start, with `kind` one of `:auto`, `:spot`, `:psf` and `:intensity` and the
+options `n`, `colorscale`, `colorrange`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects that are rendered,
@@ -39,10 +40,11 @@ selected, moved and hidden like the components, but never traced, e.g. a housing
 `gui -> obj`, `nothing` for none) shows the card of an object without a place in the scene, e.g.
 an environment, after a click on the empty background while nothing is selected; its
 [`card_rows`](@ref) get `obj` itself. `layout = :app` arranges the window like an application, with a toolbar,
-collapsible sidebars (object tree with selection and visibility, sliders, properties of the
-selection), an analysis dock with a tab per detector panel (only the panel of the active tab is
-computed after a solve) and a status bar, in the colors of `theme = :light` or `:dark`; the default
-`layout = :compact` fills the window with the 3D view, places the panels on its right and shows the
+collapsible sidebars (object tree with selection and visibility, sliders, the cards of the
+selection and of pinned objects), an analysis dock with a tab per [`add_panel!`](@ref) (collapsed
+until the first one exists) and a status bar, in the colors of `theme = :light` or `:dark`; the
+default `layout = :compact` fills the window with the 3D view, places the panels of
+[`add_panel!`](@ref) in a column on its right and shows the
 tools, the status and the help on demand over the 3D view. The component
 cards and the progress window have the colors of the `theme` in both layouts. Own panels,
 widgets and tools are added to either layout via [`add_panel!`](@ref), [`add_controls!`](@ref)
@@ -65,9 +67,10 @@ function export_changes end
     add_panel!(f, gui, title::AbstractString; select = false) -> GridLayout
 
 Adds an own analysis panel named `title` to the [`live_view`](@ref) window `gui`, placed by its
-layout: with `layout = :compact` below the detector panels next to the 3D view (in a new column if
-there are none), with the title above it; with `layout = :app` as a new tab of the analysis dock,
-behind the tabs that exist (the active tab stays active unless `select = true`).
+layout: with `layout = :compact` in a column right of the 3D view (created by the first panel),
+with the title above it; with `layout = :app` as a new tab of the analysis dock, behind the tabs
+that exist (the active tab stays active unless `select = true`). The dock stays collapsed until the
+first panel exists.
 
 `f(layout)` builds the content into the given `GridLayout`, e.g. an `Axis` with plots, and may
 return a function `update(gui)`, which is called after each full solve (not after the preview
@@ -252,7 +255,8 @@ Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s,
 dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams, beam groups and
 sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length of the final rays), a source whose rays can be regenerated (see
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
-the mode and the color scale of its detector panel, mechanics (`NonInteractableObject`, e.g. a
+its signal (the power or the number of rays of its detector view while a view is shown, else the
+number of hits), mechanics (`NonInteractableObject`, e.g. a
 `MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
 (`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
 shows the number of its objects, the number of rays of its sources that are on and the duration of

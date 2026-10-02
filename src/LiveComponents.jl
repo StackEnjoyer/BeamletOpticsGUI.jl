@@ -57,13 +57,16 @@ _add_system(::LiveView, sys::BMO.AbstractSystem) = throw(ArgumentError(
 _add_system(::LiveView, x) =
     throw(ArgumentError("`system` must be a `System` of the live view, got a $(typeof(x))"))
 
-# Panels of the detectors among the rendered objects of a component, see `_add_detector_panel!`
-_add_panel_of!(gui::LiveView, pd::BMO.Detector) = _add_detector_panel!(gui, pd)
-_add_panel_of!(::LiveView, _) = nothing
-# A removed detector is no longer emptied by the solves: it keeps no hits, such that a panel it has
-# shows none
-_remove_panel_of!(gui::LiveView, pd::BMO.Detector) = (empty!(pd); _remove_detector_panel!(gui, pd))
-_remove_panel_of!(::LiveView, _) = nothing
+# A detector that is added gets the state of its view when its card first shows the page "Results",
+# see `_detector_state`. A removed one is no longer emptied by the solves: it keeps no hits, and
+# the view forgets it; its cards were unpinned before, see `remove_component!`
+function _forget_detector!(gui::LiveView, pd::BMO.Detector)
+    empty!(pd)
+    delete!(gui.detectors.states, pd)
+    filter!(((p, _),) -> p !== pd, gui.detectors.registered)
+    return nothing
+end
+_forget_detector!(::LiveView, _) = nothing
 
 # `origin` is `nothing` or `(; code, pose0)`: the constructor call of `obj` as Julia code and its
 # pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`
@@ -98,7 +101,6 @@ function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing
     isnothing(label) || (gui.labels[obj] = String(label))
     _name_objects!(gui)
     _map_parts!(gui)
-    foreach(leaf -> _add_panel_of!(gui, leaf), _leaves(obj))
     # A component the view started with, removed and added again, is no change
     i = findfirst(o -> o === obj, comp.removed)
     if isnothing(i)
@@ -227,7 +229,7 @@ function remove_component!(gui::LiveView, obj)
     ohs = filter(!isnothing, [_child_handle(ctrl.h, leaf) for leaf in leaves])
     remove_render!(h_sys, obj)
     foreach(oh -> delete!(ctrl.h, oh), ohs)
-    foreach(leaf -> _remove_panel_of!(gui, leaf), leaves)
+    foreach(leaf -> _forget_detector!(gui, leaf), leaves)
     if isnothing(added)
         push!(comp.removed, obj)
         comp.system[obj] = sys

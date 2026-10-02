@@ -28,8 +28,8 @@ object), its selection, its pin and its row in the object tree. Without such an 
 
 The card of the selected object shows the rows of `card_rows` below the head with the buttons of
 `card_actions`; the card of the selected object additionally has the step and the Move/Rotate
-control, and every card, also a pinned one, a collapsed "Properties" part (added by the live view,
-nothing to do).
+control on its page "Pose" (the rows of `card_rows`), and every card, also a pinned one, the page
+"Properties" (added by the live view, nothing to do).
 
 1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`;
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
@@ -321,4 +321,4 @@ moves it to where it is placed.
 - `interact3d(system, object, beam, ray)`: required.
 - `render!`: optional, how it is drawn.
 - `card_rows` (and `card_actions`): optional, its rows and buttons on the card.
-- `BeamletOptics.properties`: optional, the properties in the "Properties" part of the card.
+- `BeamletOptics.properties`: optional, the properties on the page "Properties" of the card.

@@ -1,6 +1,6 @@
 name = "BeamletOpticsGUI"
 uuid = "d62ba671-5e61-47cc-8a7f-19d21d414e61"
-version = "0.1.2"
+version = "0.2.1"
 authors = ["Hugo Uittenbosch <hugo.uittenbosch@dlr.de>, Oliver Kliebisch <oliver.kliebisch@dlr.de> and Thomas Dekorsy <thomas.dekorsy@dlr.de>"]
 
 [workspace]

@@ -48,10 +48,9 @@ card_rows(bs::BMO.AbstractBeamsplitter) = (pose_card_rows(bs)..., _beam_row(),
 # Polarizers: the transmission axis
 card_rows(p::Union{BMO.LinearPolarizer, BMO.PolarizationFilter}) =
     (pose_card_rows(p)..., _beam_row(), _text_row("axis", :axis, _axis_text))
-# Detectors: the hits of the last solve, the power, or the number of rays, of the detector panel and
-# the options of the panel, see `_panel_row`
-card_rows(pd::BMO.Detector) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _panel_text),
-    _panel_row())
+# Detectors: the hits of the last solve, the power, or the number of rays, of the view of the
+# detector; the view itself is on the page "Results" of the card, see `_has_view`
+card_rows(pd::BMO.Detector) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _signal_text))
 # Beams and beam groups: switched on and off, their polarization, see `beam_card_rows`
 card_rows(b::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (pose_card_rows(b)..., beam_card_rows(b)...)
 # Sources whose rays can be regenerated: wavelength, size and a slider for the number of rays
@@ -197,14 +196,21 @@ function _axis_text(gui::LiveView, p)
     return _deg_string(mod(atand(dot(a, cross(h, n)), dot(a, h)), 180)) * " from horizontal"
 end
 
-"""The power (intensity panels) or the number of rays (spot panels) of the detector panel of `pd`."""
-function _panel_text(gui::LiveView, pd)
-    i = findfirst(p -> p.pd === pd, gui.panels)
-    isnothing(i) && return "no panel, $(BMO.hit_count(pd)) hits"
-    return _metrics_text(gui.panels[i].metrics)
+"""
+The signal of the detector `pd` on its card: the power of a field view or the number of rays of a
+spot view, from the metrics of its view if it was computed for the hits of the last solve (i.e.
+while a view of `pd` is shown, see `_shown_views`), otherwise the number of its hits.
+"""
+function _signal_text(gui::LiveView, pd)
+    state = get(gui.detectors.states, pd, nothing)
+    (isnothing(state) || state.stale || isnothing(state.result)) && return _hits_text(pd)
+    return _signal_metric(state.result.metrics, pd)
 end
-_metrics_text(m::NamedTuple) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW" : "N = $(get(m, :n, 0))"
-_metrics_text(_) = "no hits"
+_signal_metric(m::NamedTuple, pd) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW" :
+                                    haskey(m, :n) ? "N = $(m.n)" : _hits_text(pd)
+_signal_metric(_, pd) = _hits_text(pd)
+
+_hits_text(pd) = (n = BMO.hit_count(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit" : "$n hits")
 
 _source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.wavelength(src))), $(_size_text(src))"
 _size_text(cs::BMO.CollimatedSource) = "⌀ $(_length_string(cs.diameter))"

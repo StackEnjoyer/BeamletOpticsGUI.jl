@@ -3,7 +3,7 @@
 BeamletOpticsGUI is the interactive GUI of [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl)
 (BMO), a package for non-sequential 3D ray and Gaussian beamlet tracing. It opens a window in which a BMO
 system and its beams are drawn, the components are moved and rotated with the mouse and keyboard, and
-the beams and detector panels are updated after each change:
+the beams and the detector views on the cards of the detectors are updated after each change:
 
 ```julia
 using GLMakie, BeamletOptics, BeamletOpticsGUI
@@ -48,9 +48,9 @@ Features in the column "Gap" are planned and are not available.
 | # | Principle | State today | Gap |
 |---|---|---|---|
 | P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components can be added and removed in the GUI. One view holds several systems with several beams each. | Met: `live_view(sys1 => b1, sys1 => b2, sys2 => b3)`, solving via `solve_system!`, components of a `System` are added from a catalog and removed at runtime, see [Adding and removing components](@ref components_page). | A `Detector` added at runtime gets no detector panel. Adding and removing is not part of the undo history. Sources, extras and the objects of a `StaticSystem` are fixed when the view starts. |
-| P2 | The layout is built from widgets, one per BeamletOptics type. Widgets without a type are generic windows. | Met for cards (`card_rows` per type: objects, lenses, beamsplitters, polarizers, detectors, sources, Gaussians, systems) and for generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | The analysis panels are hard-wired to `Detector`. The icon per type in the object tree is internal. |
+| P2 | The layout is built from widgets, one per BeamletOptics type. Widgets without a type are generic windows. | Met for cards (`card_rows` per type: objects, lenses, beamsplitters, polarizers, detectors, sources, Gaussians, systems) and for generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | The detector view on the card is hard-wired to `Detector`. The icon per type in the object tree is internal. |
 | P3 | Any layout can be assembled from the widgets and presented to the user. | Not met: there are two fixed layouts, chosen by `layout = :compact` or `layout = :app`. | Public widget blocks (tree, inspector, dock, toolbar) and a public layout interface. |
-| P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads. | Met for cards: `card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`, from a package extension on BeamletOpticsGUI, see [Cards and widgets](@ref). | No own analysis panel per type (see P2). No public icon per type. |
+| P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads. | Met for cards: `card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`, from a package extension on BeamletOpticsGUI, see [Cards and widgets](@ref). | No own result view per type (see P2). No public icon per type. |
 
 The split of the GUI from BeamletOptics changed no behavior. The gaps are closed one after the other in
 the order P3, P2 and P4, P1, each with its own plan.

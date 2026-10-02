@@ -34,7 +34,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         return m, pd
     end
     _gauss() = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
-    _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf), kwargs)...)
+    _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf, detectors = []), kwargs)...)
     _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0))
     # a click on the pin toggle of the card `c`
     _pin!(c) = (c.pin_button.active[] = !c.pin_button.active[])
@@ -43,16 +43,18 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
     _center(r) = Point2f(minimum(r) .+ Makie.widths(r) ./ 2)
     _away(x) = x.layoutobservables.suggestedbbox[] == GUI._CARD_AWAY
     _move!(gui, xy) = (events(gui.ax.scene).mouseposition[] = (Float64(xy[1]), Float64(xy[2])))
-    _press!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
-    _release!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
+    _press!(gui, button = Mouse.left) =
+        (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.press))
+    _release!(gui, button = Mouse.left) =
+        (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.release))
     _click!(gui, xy) = (_move!(gui, xy); _press!(gui); _release!(gui))
-    function _drag!(gui, a, b)
+    function _drag!(gui, a, b; button = Mouse.left)
         _move!(gui, a)
-        _press!(gui)
+        _press!(gui, button)
         for t in range(0, 1; length = 10)
             _move!(gui, a .+ t .* (b .- a))
         end
-        _release!(gui)
+        _release!(gui, button)
     end
     _eye(gui) = Vector{Float64}(cameracontrols(gui.ax.scene).eyeposition[])
     # The card lies inside the 3D view, with the margin
@@ -151,33 +153,67 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test !c.scene.visible[]
     end
 
-    @testset "part of the selection: step, mode and properties" begin
+    @testset "pages: pose and properties, step and mode" begin
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss(); labels = Dict(m => "M1"), size = (1600, 1000))
         ctrl = gui.controls
         c = gui.cards.selection
+        # no page bar and no view without an object
+        @test isnothing(c.bar) && isnothing(c.bar_part) && isnothing(c.view) && isempty(c.bars)
         _select!(gui, m)
         _tick!(gui)
-        # step and mode below the rows, the properties collapsed by default
+        # the page bar below the head; the page of the pose with the rows, step and mode
+        @test c.pages == (:pose, :properties) && c.page == :pose
+        @test c.bar.keys == [:pose, :properties] && c.bar.selected[] == :pose
+        @test [b.label[] for b in c.bar.buttons] == ["Pose", "Properties"]
+        @test !_away(c.bar_part) && !_away(c.rows) && !_away(c.step) && _away(c.properties)
+        @test maximum(_rect(c.bar_part))[2] < minimum(_rect(c.head))[2]
+        @test maximum(_rect(c.rows))[2] < minimum(_rect(c.bar_part))[2]
+        @test maximum(_rect(c.step))[2] < minimum(_rect(c.rows))[2]
+        @test Makie.widths(_rect(c.bar_part))[1] > 60
         @test c.mode.selected[] == :move && c.mode.keys == [:move, :rotate]
-        @test !_away(c.step) && !c.properties_shown && _away(c.properties)
-        @test c.properties_button.icon[] === GUI._icon(:expand)
-        h0 = Makie.widths(_rect(c.background))[2]
-        # expanded: the rows of the inspector below the step, the card grows
-        notify(c.properties_button.clicks)
-        @test c.properties_shown && !_away(c.properties) && c.properties_button.icon[] === GUI._icon(:collapse)
+        # the bar and the page inside the card
+        inside(x) = all(minimum(_rect(x)) .>= minimum(_rect(c.background))) &&
+                    all(maximum(_rect(x)) .<= maximum(_rect(c.background)))
+        @test inside(c.bar_part) && inside(c.rows) && inside(c.step)
+        # no disclosure "Properties" on a floating card
+        @test !any(f -> hasfield(typeof(c), f), (:disclosure, :properties_button, :properties_shown))
+        @test isempty(c.list.rows)
+
+        # a click on "Properties" shows the page with the rows of the inspector, without step and mode
+        _click!(gui, _center(_rect(c.bar.buttons[2])))
+        @test c.page == :properties && c.bar.selected[] == :properties && ctrl.selected[] === m
+        @test _away(c.rows) && _away(c.step) && !_away(c.properties) && !_away(c.bar_part)
         @test c.list.rows == GUI._inspector_rows(gui, m) && !isempty(c.list.rows)
-        @test maximum(_rect(c.list.box))[2] < minimum(_rect(c.step))[2]
-        @test Makie.widths(_rect(c.background))[2] > h0
+        @test maximum(_rect(c.list.box))[2] < minimum(_rect(c.bar_part))[2]
         # the list fills the card, which contains it
-        @test all(minimum(_rect(c.list.box)) .>= minimum(_rect(c.background)))
-        @test all(maximum(_rect(c.list.box)) .<= maximum(_rect(c.background)))
+        @test inside(c.list.box)
+        @test Makie.widths(_rect(c.list.box))[1] ≈ Makie.widths(_rect(c.background))[1] - 2 * GUI._CARD_PADDING
         @test _inside(gui)
-        # the state stays with the card when another object is selected
+        # the page stays while the card shows the same object: after a move and a tick
+        translate3d!(m, [0.0, 0.0, 0.01])
+        set_view(gui.ax, [0.3, -0.2, 0.3], [0.0, 0.1, 0.0], [0.0, 0, 1])
+        _tick!(gui)
+        @test c.page == :properties && !_away(c.properties)
+        # collapsed to the head: without the bar and the page
+        notify(c.collapse_button.clicks)
+        @test _away(c.bar_part) && _away(c.properties)
+        notify(c.collapse_button.clicks)
+        @test !_away(c.bar_part) && !_away(c.properties)
+        # a page that the object does not have is ignored
+        GUI._set_page!(gui, c, :results)
+        @test c.page == :properties
+
+        # another object: its default page and its pages, a detector has the page "Results"
         _select!(gui, pd)
         _tick!(gui)
-        @test gui.cards.selection === c && c.properties_shown
-        @test c.list.rows == GUI._inspector_rows(gui, pd)
+        @test gui.cards.selection === c && c.pages == (:pose, :results, :properties) && c.page == :results
+        @test [b.label[] for b in c.bar.buttons] == ["Pose", "Results", "Properties"]
+        @test c.bar.selected[] == :results
+        # the bar of the mirror is kept for the next object with its pages, away
+        @test length(c.bars) == 2 && count(!_away, first.(values(c.bars))) == 1
+        _click!(gui, _center(_rect(c.bar.buttons[1])))
+        @test c.page == :pose && !_away(c.rows) && !_away(c.step) && _away(c.view_part)
         # a click on "Rotate" sets the mode of the controls, the key `m` sets it back
         _click!(gui, _center(_rect(c.mode.buttons[2])))
         @test ctrl.mode[] == :rotate && c.mode.selected[] == :rotate
@@ -187,46 +223,41 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         # a step in an angle unit switches to the rotate mode
         c.step_box.stored_string[] = "1 mrad"
         @test ctrl.mode[] == :rotate && c.mode.selected[] == :rotate
-        # collapsed again
-        notify(c.properties_button.clicks)
-        @test !c.properties_shown && _away(c.properties) && !_away(c.step)
 
-        # pinning does not change the card: the object is still selected, the card stands for the
-        # card of the selection, with step, mode and the expanded properties
-        notify(c.properties_button.clicks)
+        # pinning does not change the card: the object is still selected, the card keeps its page
+        _click!(gui, _center(_rect(c.bar.buttons[3])))
         _tick!(gui)
+        @test c.page == :properties && c.list.rows == GUI._inspector_rows(gui, pd)
         size0 = Makie.widths(_rect(c.background))
         _pin!(c)
         _tick!(gui)
-        @test c.pinned && c.scene.visible[] && c.properties_shown
-        @test !_away(c.step) && !_away(c.disclosure) && !_away(c.properties) && !_away(c.rows)
+        @test c.pinned && c.scene.visible[] && c.page == :properties
+        @test !_away(c.bar_part) && !_away(c.properties) && _away(c.rows) && _away(c.step)
         @test Makie.widths(_rect(c.background)) == size0
         @test c.list.rows == GUI._inspector_rows(gui, pd)
-        # the new card of the selection has its own state, collapsed
+        # the new card of the selection has its own state: the default page of its object
         _select!(gui, m)
         _tick!(gui)
         c2 = gui.cards.selection
-        @test c2 !== c && !c2.properties_shown && !_away(c2.step) && _away(c2.properties)
-        @test !_away(c2.disclosure)
+        @test c2 !== c && c2.page == :pose && !_away(c2.step) && _away(c2.properties)
         @test c2.mode.selected[] == ctrl.mode[]
-        # step and mode belong to the selection: the pinned card of another object keeps its rows
-        # and its properties only, the disclosure below the rows
-        @test _away(c.step) && !_away(c.disclosure) && !_away(c.properties)
-        @test maximum(_rect(c.disclosure))[2] < minimum(_rect(c.rows))[2]
-        @test maximum(_rect(c.list.box))[2] < minimum(_rect(c.disclosure))[2]
-        @test c.list.rows == GUI._inspector_rows(gui, pd)
-        # its disclosure collapses and expands the properties of its own object
-        notify(c.properties_button.clicks)
+        @test c.page == :properties && c.list.rows == GUI._inspector_rows(gui, pd)
+        # step and mode belong to the selection: the pinned card of another object shows its rows
+        # only on the page of the pose
+        _click!(gui, _center(_rect(c.bar.buttons[1])))
         _tick!(gui)
-        @test !c.properties_shown && _away(c.properties) && !_away(c.disclosure) && !c2.properties_shown
-        notify(c.properties_button.clicks)
-        _tick!(gui)
-        @test c.properties_shown && !_away(c.properties) && c.list.rows == GUI._inspector_rows(gui, pd)
+        @test c.page == :pose && c2.page == :pose && !_away(c.rows) && _away(c.step)
         # selected again, e.g. by a click on the card: step and mode are back
         _select!(gui, pd)
         _tick!(gui)
         @test !_away(c.step) && !c2.scene.visible[]
-        @test maximum(_rect(c.disclosure))[2] < minimum(_rect(c.step))[2]
+        @test maximum(_rect(c.step))[2] < minimum(_rect(c.rows))[2]
+        # unpinned: a spare card again, which the next pin shows on the default page of its object
+        _pin!(c)
+        @test !c.pinned && c.page == :pose
+        GUI._toggle_pin!(gui, pd)
+        pinned = only(filter(x -> x.pinned, gui.cards.all))
+        @test pinned.page == :results && pinned.view isa GUI._DetectorView
         close(gui)
     end
 
@@ -662,32 +693,204 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         close(gui)
     end
 
-    @testset "panel rows of detectors" begin
+    @testset "page Results of detectors" begin
+        _results_view(args...; kwargs...) = _live_view(args...; throttle = false, progress_delay = Inf,
+            size = (1600, 1000), kwargs...)
+        _scroll!(gui, dy) = (events(gui.ax.scene).scroll[] = (0.0, Float64(dy)))
+        _axis_center(v) = _center(Rect2f(v.ax.scene.viewport[]))
+        top_left(c) = Point2f(minimum(_rect(c.background))[1], maximum(_rect(c.background))[2])
+        _grip(c) = Point2f(maximum(_rect(c.background))[1] - 5, minimum(_rect(c.background))[2] + 5)
+
         m, pd = _fixture()
+        # a detector off the beam path
         pd2 = Detector(5e-3)
         translate3d!(pd2, [0, 0.3, 0.2])
-        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd])
-        c = gui.cards.selection
-        p = only(gui.panels)
-        # the pose rows, the beam, the signal, then the mode and the color scale of the panel
-        @test length(card_rows(pd)) == length(pose_card_rows(pd)) + 3
+        gui = _results_view(System([m, pd, pd2]), _gauss(); labels = Dict(pd => "PD"))
+        c, ctrl = gui.cards.selection, gui.controls
+        ev = events(gui.ax.scene)
+        # the rows of a detector: its pose, the beam and the signal
+        @test length(card_rows(pd)) == length(pose_card_rows(pd)) + 2
+        # nothing is shown or computed without a selected detector
+        @test isnothing(GUI._card_view(c)) && isempty(GUI._shown_views(gui))
+        _select!(gui, m)
+        _tick!(gui)
+        @test isnothing(c.view) && isempty(GUI._shown_views(gui)) && isempty(c.grip[])
+
+        # the card of a selected detector opens on the page "Results" with the expanded view
         _select!(gui, pd)
         _tick!(gui)
-        mode, log = _w(c, :panel_mode), _w(c, :panel_log)
-        @test _pose(c, 1) isa Textbox && mode isa Button && log isa Toggle
-        @test mode.label[] == "auto" && !log.active[]
-        # a click on the button cycles the mode, the toggle switches the color scale
-        _click!(gui, _center(_rect(mode)))
-        @test p.mode == :spot && mode.label[] == "spot"
-        @test gui.controls.selected[] === pd
-        log.active[] = true
-        @test p.colorscale == :log
-        # a detector without a panel: the same widgets, the inputs only show a message
+        v = c.view
+        @test c.page == :results && v isa GUI._DetectorView && v.expanded && c.view_expanded
+        @test GUI._card_view(c) === v && only(GUI._shown_views(gui)) == (pd, v)
+        @test !_away(c.view_part) && !_away(c.bar_part) && _away(c.rows) && _away(c.step) && _away(c.properties)
+        @test c.view_size == GUI._CARD_VIEW_SIZE && v.ax.width[] == 280 && v.ax.height[] == 280
+        # computed from the hits of the last solve and shown
+        state = GUI._detector_state(gui, pd)
+        @test !state.stale && state.result.n == state.opts.n
+        @test v.result === state.result && GUI._kind_name(v.kind) == :intensity && v.name == "PD"
+        # the view below the page bar, inside the card, at its left edge below the icon
+        r, bg = Rect2f(v.full.layoutobservables.computedbbox[]), _rect(c.background)
+        @test maximum(r)[2] < minimum(_rect(c.bar_part))[2]
+        @test all(minimum(r) .>= minimum(bg)) && all(maximum(r) .<= maximum(bg))
+        @test minimum(r)[1] ≈ minimum(bg)[1] + GUI._CARD_PADDING
+        @test Makie.widths(bg)[2] ≈ GUI._card_size(c)[2] && GUI._card_size(c)[2] > 280 + Makie.widths(_rect(c.head))[2]
+        @test _inside(gui)
+        # its switch takes the clicks: the kind is an option of the detector
+        _click!(gui, _center(_rect(v.switch.buttons[2])))
+        @test state.opts.kind == :spot && GUI._kind_name(v.kind) == :spot && ctrl.selected[] === pd
+        GUI._set_view!(gui, pd; kind = :auto)
+        @test GUI._kind_name(v.kind) == :intensity
+        v.log_toggle.active[] = true
+        @test state.opts.colorscale == :log
+        v.log_toggle.active[] = false
+
+        # the wheel over the axis zooms the view and leaves the camera; a drag on the axis with
+        # the right button pans and moves neither the card nor the camera
+        eye, p0 = _eye(gui), top_left(c)
+        lims = GUI._shown_limits(v.ax)
+        _move!(gui, _axis_center(v))
+        @test !GUI._over_handle(c, ev) && GUI._over_card(c, ev)
+        _scroll!(gui, 1)
+        zoomed = GUI._shown_limits(v.ax)
+        @test zoomed[2] - zoomed[1] ≈ 0.9 * (lims[2] - lims[1]) && _eye(gui) ≈ eye
+        _drag!(gui, _axis_center(v), _axis_center(v) .+ Point2f(28, -14); button = Mouse.right)
+        panned = GUI._shown_limits(v.ax)
+        @test panned[1] ≈ zoomed[1] - 0.1 * (zoomed[2] - zoomed[1]) && panned[2] - panned[1] ≈ zoomed[2] - zoomed[1]
+        @test isnothing(c.spot) && top_left(c) == p0 && _eye(gui) ≈ eye && ctrl.selected[] === pd
+        @test !isnothing(state.opts.window)
+        # a drag with the left button zooms to the selected rectangle, which is the window of the
+        # field; Ctrl + click returns to the automatic one
+        _drag!(gui, _axis_center(v), _axis_center(v) .+ Point2f(56, 28))
+        selected = GUI._shown_limits(v.ax)
+        @test selected[1] ≈ (panned[1] + panned[2]) / 2 && selected[2] - selected[1] ≈ 0.2 * (panned[2] - panned[1])
+        @test collect(state.opts.window) ≈ 1e-3 .* collect(selected)
+        @test isnothing(c.spot) && top_left(c) == p0 && _eye(gui) ≈ eye && ctrl.selected[] === pd
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.press)
+        _click!(gui, _axis_center(v))
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.release)
+        @test isnothing(state.opts.window) && ctrl.selected[] === pd
+        GUI._set_view!(gui, pd; window = 1e-3 .* selected)
+        v.fit_button.clicks[] += 1
+        @test isnothing(state.opts.window)
+        _tick!(gui)
+
+        # the chevron of the view collapses it to the thumbnail, which the card remembers
+        h0 = Makie.widths(_rect(c.background))[2]
+        @test length(c.grip[]) == 6
+        _click!(gui, _center(_rect(v.collapse_button.box)))
+        @test !v.expanded && !c.view_expanded && GUI._card_view(c) === v
+        @test GUI._view_size(v)[2] ≈ GUI._THUMB_SIZE
+        @test Makie.widths(_rect(c.background))[2] < h0 - 150 && isempty(c.grip[])
+        @test all(maximum(Rect2f(v.thumb.layoutobservables.computedbbox[])) .<= maximum(_rect(c.background)))
+        # a click on the thumbnail expands it again, and so does its chevron
+        sleep(0.3)  # later than a double click
+        _click!(gui, _center(Rect2f(v.thumb_ax.scene.viewport[])))
+        @test v.expanded && c.view_expanded && Makie.widths(_rect(c.background))[2] ≈ h0
+        @test isnothing(c.spot) && ctrl.selected[] === pd
+        notify(v.collapse_button.clicks)
+        @test !c.view_expanded
+        _click!(gui, _center(_rect(v.expand_button.box)))
+        @test v.expanded && c.view_expanded && length(c.grip[]) == 6
+
+        # the page chosen by a click stays while the card shows the same object
+        _click!(gui, _center(_rect(c.bar.buttons[1])))
+        @test c.page == :pose && isnothing(GUI._card_view(c)) && isempty(GUI._shown_views(gui))
+        @test _away(c.view_part) && !_away(c.rows) && isempty(c.grip[]) && c.view === v
+        # a view that is not shown is not computed by a solve, but when it is shown again
+        r0 = state.result
+        GUI._resolve!(gui, nothing)
+        _tick!(gui)
+        @test c.page == :pose && state.stale && state.result === r0
+        _click!(gui, _center(_rect(c.bar.buttons[2])))
+        @test c.page == :results && !state.stale && state.result !== r0 && v.result === state.result
+        # neither is the view of a collapsed card
+        notify(c.collapse_button.clicks)
+        @test isnothing(GUI._card_view(c)) && _away(c.view_part) && isempty(c.grip[])
+        r0 = state.result
+        GUI._resolve!(gui, nothing)
+        @test state.stale && state.result === r0
+        notify(c.collapse_button.clicks)
+        @test GUI._card_view(c) === v && !state.stale && v.result === state.result
+
+        # the grip at the bottom right corner resizes the expanded view; the card keeps its place
+        _tick!(gui)
+        p0 = top_left(c)
+        _move!(gui, _grip(c))
+        @test GUI._over_grip(c, ev) && !GUI._over_handle(c, ev)
+        _drag!(gui, _grip(c), _grip(c) .+ Point2f(60, -40))
+        @test c.view_size ≈ Vec2f(340, 320) && v.ax.width[] ≈ 340 && v.ax.height[] ≈ 320
+        @test Makie.widths(Rect2f(v.ax.scene.viewport[])) ≈ Vec2f(340, 320)
+        @test isnothing(c.spot) && _eye(gui) ≈ eye && ctrl.selected[] === pd
+        @test top_left(c) ≈ p0
+        @test maximum(_rect(c.background))[1] ≈ p0[1] + 340 + 2 * GUI._CARD_PADDING
+        # clamped: each side at least 160 px, at most such that the card fits into the 3D view
+        _drag!(gui, _grip(c), _grip(c) .+ Point2f(-600, 600))
+        @test c.view_size == Vec2f(GUI._CARD_VIEW_MIN) && v.ax.width[] == 160 && v.ax.height[] == 160
+        _drag!(gui, _grip(c), _grip(c) .+ Point2f(3000, -3000))
+        vp = Rect2f(gui.ax.scene.viewport[])
+        @test Makie.widths(_rect(c.background)) ≈ Makie.widths(vp) .- 2 * GUI._CARD_MARGIN
+        @test c.view_size[1] ≈ Makie.widths(vp)[1] - 2 * GUI._CARD_MARGIN - 2 * GUI._CARD_PADDING
+        @test _inside(gui)
+        _drag!(gui, _grip(c), _grip(c) .+ (Point2f(minimum(_rect(c.background))[1] + 216, maximum(_rect(c.background))[2] - 300) .- _grip(c)))
+        size0 = c.view_size
+        @test 160 < size0[1] < 400
+
+        # pinning keeps the page, the expanded state and the size of the view
+        notify(v.collapse_button.clicks)
+        _pin!(c)
+        _tick!(gui)
+        @test c.pinned && c.page == :results && c.view === v && !c.view_expanded && c.view_size == size0
+        @test GUI._card_view(c) === v
+        notify(v.expand_button.clicks)
+        @test v.ax.width[] ≈ size0[1] && v.ax.height[] ≈ size0[2]
+        # the selection gets another card; a second detector has its own view and state
         _select!(gui, pd2)
         _tick!(gui)
-        @test _w(c, :panel_mode) === mode && mode.label[] == "no panel" && !log.active[]
-        notify(mode.clicks)
-        @test occursin("no panel", gui.status.text[]) && p.mode == :spot
+        c2 = gui.cards.selection
+        v2 = c2.view
+        @test c2 !== c && c2.page == :results && v2 isa GUI._DetectorView && v2 !== v && v2.expanded
+        @test c2.view_size == GUI._CARD_VIEW_SIZE
+        @test Set(GUI._shown_views(gui)) == Set([(pd, v), (pd2, v2)])
+        @test isnothing(v2.kind) && isnothing(GUI._detector_state(gui, pd2).result.kind)
+        @test !GUI._overlaps(_rect(c.background), _rect(c2.background))
+        # a press on the view of a pinned card does not select its object
+        _click!(gui, _axis_center(v))
+        @test ctrl.selected[] === pd2
+        # a solve computes both shown views
+        r0 = state.result
+        GUI._resolve!(gui, nothing)
+        @test state.result !== r0 && !state.stale && v.result === state.result
+        # another object without a view: the view of the card is removed, with its listeners
+        n = length(Makie.Observables.listeners(ev.scroll))
+        _select!(gui, m)
+        _tick!(gui)
+        @test isnothing(c2.view) && c2.page == :pose && only(GUI._shown_views(gui)) == (pd, v)
+        @test length(Makie.Observables.listeners(ev.scroll)) < n
+        @test isempty(v2.listeners)
+        # the cards are hidden while a menu is open: no view is shown, afterwards it is again
+        gui.widgets.menu.is_open[] = true
+        _tick!(gui)
+        @test isempty(GUI._shown_views(gui))
+        gui.widgets.menu.is_open[] = false
+        _tick!(gui)
+        @test only(GUI._shown_views(gui)) == (pd, v) && c.view_shown
+        # unpinned: the card is a spare card without a view
+        _pin!(c)
+        @test !c.pinned && isnothing(c.view) && isempty(GUI._shown_views(gui)) && isempty(v.listeners)
+        @test c.view_expanded && c.view_size == GUI._CARD_VIEW_SIZE
+        close(gui)
+
+        # ray hits: the spot diagram first, the PSF by the switch
+        m, pd = _fixture()
+        src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
+        gui = _results_view(System([m, pd]), src; preview = false)
+        c = gui.cards.selection
+        _select!(gui, pd)
+        _tick!(gui)
+        v = c.view
+        @test GUI._kind_name(v.kind) == :spot && v.switch.keys == [:spot, :psf]
+        _click!(gui, _center(_rect(v.switch.buttons[2])))
+        @test GUI._kind_name(v.kind) == :psf && GUI._detector_state(gui, pd).opts.kind == :psf
         close(gui)
     end
 
@@ -738,8 +941,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test c.title.text[] == "Beam" && c.icon[] === GUI._icon(:trace)
         @test _text(c, :at) == "(0.000, 50.000, 0.000) mm" && _text(c, :path) == "50.000 mm"
         @test isnothing(_w(c, :w)) && isnothing(_w(c, :hide)) && _away(c.step)
-        # no properties of a point
-        @test _away(c.disclosure) && _away(c.properties)
+        # a card with one page: no page bar, no properties of a point
+        @test c.pages == (:pose,) && c.page == :pose && isnothing(c.bar) && isnothing(c.bar_part)
+        @test all(_away, first.(values(c.bars))) && _away(c.properties) && !_away(c.rows)
         @test length(c.link[]) == 2
         # the next inspection replaces it, with the rows of a Gaussian beamlet
         GUI._show_inspection!(gui, _info(0.06; w = 1e-3, R = 0.0))

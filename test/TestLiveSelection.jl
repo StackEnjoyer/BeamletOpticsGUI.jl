@@ -171,10 +171,10 @@ const GUI = BeamletOpticsGUI
         @test endswith(GUI._card_widget(card, :solve).text[], "ms")
         @test GUI._card_widget(card, :hide).label[] == "hide"
         @test isnothing(GUI._card_widget(card, :x))
-        # the properties of the card show a summary of the system
-        GUI._toggle_properties!(gui, card)
+        # the page "Properties" of the card shows a summary of the system
+        GUI._set_page!(gui, card, :properties)
         @test ("Objects", "2") in card.list.rows
-        GUI._toggle_properties!(gui, card)
+        GUI._set_page!(gui, card, :pose)
         # the card lies next to the bounding box of the objects of the system
         corners = GUI._card_corners(gui, card, sys)
         lo, hi = extrema(p -> p[1], corners)
@@ -223,7 +223,9 @@ const GUI = BeamletOpticsGUI
         @test insp.name.text[] == "System 1"
         @test tree.selected === h
         @test GUI._card_widget(insp.card, :objects).text[] == "3"
+        GUI._set_page!(gui, insp.card, :properties)
         @test ("Sources", "1") in insp.list.rows
+        GUI._set_page!(gui, insp.card, :pose)
         # no card floats in the 3D view
         @test !gui.cards.selection.scene.visible[]
         # the expander still expands and collapses it

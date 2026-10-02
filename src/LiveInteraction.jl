@@ -85,10 +85,28 @@ function _fmt_sigdigits(x)
     return isinteger(v) && abs(v) < 1e15 ? string(Int(v)) : string(v)
 end
 
-"""Returns the current keyboard step of the `mode`, in nm for the move and µrad for the rotate mode."""
+# Units of the keyboard steps (`factor => unit`, from small to large)
+const _STEP_LENGTH_UNITS = (1e-12 => "pm", 1e-9 => "nm", 1e-6 => "µm", 1e-3 => "mm",
+    1e-2 => "cm", 1.0 => "m")
+const _STEP_ANGLE_UNITS = (1e-9 => "nrad", 1e-6 => "µrad", 1e-3 => "mrad")
+
+"""
+Formats `x` with 3 significant digits in the largest of the `units` in which it is at least 1, e.g.
+0.005 m as 5 mm and 0.01 m as 1 cm, or in the smallest unit.
+"""
+function _step_unit_string(x, units)
+    i = something(findlast(u -> round(x / first(u), sigdigits = 3) >= 1, units), 1)
+    factor, unit = units[i]
+    return "$(_fmt_sigdigits(x / factor)) $unit"
+end
+
+"""
+Returns the current keyboard step of the `mode` in the unit of its size: pm to m for the move and
+nrad to mrad for the rotate mode.
+"""
 function _step_string(mode::Symbol, fine_step, fine_angle)
-    return mode == :move ? "$(_fmt_sigdigits(fine_step * 1e9)) nm" :
-           "$(_fmt_sigdigits(fine_angle * 1e6)) µrad"
+    return mode == :move ? _step_unit_string(fine_step, _STEP_LENGTH_UNITS) :
+           _step_unit_string(fine_angle, _STEP_ANGLE_UNITS)
 end
 
 const _SPECTATOR_HINT = "spectator mode, v: edit, h: show controls"

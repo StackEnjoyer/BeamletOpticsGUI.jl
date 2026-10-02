@@ -1,6 +1,9 @@
 # order or inclusion matters!
 include(joinpath(@__DIR__, "TestLiveProgress.jl"))
 include(joinpath(@__DIR__, "TestLiveIcons.jl"))
+include(joinpath(@__DIR__, "TestLiveDetectorView.jl"))
+include(joinpath(@__DIR__, "TestLiveCardPages.jl"))
+include(joinpath(@__DIR__, "TestLiveDetectors.jl"))
 include(joinpath(@__DIR__, "TestLiveCard.jl"))
 include(joinpath(@__DIR__, "TestLiveCardRows.jl"))
 include(joinpath(@__DIR__, "TestLiveBeamSwitch.jl"))

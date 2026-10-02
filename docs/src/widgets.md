@@ -54,7 +54,7 @@ The recipes below define the methods directly in a script, which works the same 
 
 The card of a selected object shows the rows of [`card_rows`](@ref) below its head with the actions
 of [`card_actions`](@ref), and, only on the card of the selection, the step, the Move/Rotate control
-and the collapsed "Properties" part, which the live view adds. To add rows for an own type:
+and the page "Properties", which the live view adds. The rows are the page "Pose" of the card. To add rows for an own type:
 
 1. Define a method `BeamletOpticsGUI.card_rows(x::MyType)`. For a movable object, start from
    `pose_card_rows(x)...` ([`pose_card_rows`](@ref)), which gives the position and rotation boxes.
@@ -115,7 +115,7 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
 ```
 
 The types of BeamletOptics have such methods as well, e.g. the ray count slider of a source or the
-mode of the panel of a `Detector`.
+signal of a `Detector`.
 
 ## Recipe: a card for your system type
 
@@ -339,7 +339,7 @@ end
 - `interact3d(system, object, beam, ray)`: required, see Core design page of BeamletOptics.
 - `render!`: optional, how the component is drawn.
 - `card_rows` (and `card_actions`): optional, its rows and buttons on the card of the live view.
-- `BeamletOptics.properties`: optional, the properties listed in the "Properties" part of the card
+- `BeamletOptics.properties`: optional, the properties listed on the page "Properties" of the card
   and of the inspector, see `properties`.
 
 ## Reference

@@ -14,10 +14,12 @@ Layout of `live_view(...; layout = :app)`, an application window around the 3D v
 
 - a toolbar at the top, an ordered list of groups of entries, see `_add_toolbar_entry!`
 - the left sidebar, a stack of titled sections ("OBJECTS" with the object tree, see `_tree_rows`,
-  "PARAMETERS" with the sliders), and the right sidebar ("PROPERTIES": the inspector, see
-  `_Inspector`), see `_add_sidebar_section!`
-- the analysis dock below the 3D view, a tab per detector panel (or other panel, see
-  `_add_dock_panel!`), of which only the active one is shown and computed, see `_DockTabs`
+  "PARAMETERS" with the sliders), and the right sidebar ("PROPERTIES": the inspector with the card
+  of the selected object and the pinned cards, each with its pages, e.g. the page "Results" with
+  the view of a detector, see `_Inspector`), see `_add_sidebar_section!`
+- the analysis dock below the 3D view, a tab per panel of [`add_panel!`](@ref) (see
+  `_add_dock_panel!`), of which only the active one is shown and updated, see `_DockTabs`; it has
+  no tabs and stays collapsed until a panel is added
 - the status bar with the status line and an info label (last trace, number of rays, projection)
 - the `help` over the 3D view, like in the compact layout: the help pill at its top left, the
   chips of the mode and the keyboard step and the help card, see `_HelpUI`
@@ -153,10 +155,9 @@ function _set_spectator_ui!(gui::AppView, on::Bool)
     _set_shown!(layout.left, !on && layout.collapse.left.active[])
     _set_shown!(layout.right, !on && layout.collapse.right.active[])
     _update_dock!(layout)
-    if !on
-        _refresh_inspector!(gui; force = true)
-        _refresh_dock!(gui)
-    end
+    # Also when the UI is hidden: the detector views of the inspector are not shown then
+    _refresh_inspector!(gui; force = true)
+    on || _refresh_dock!(gui)
     return nothing
 end
 
@@ -293,8 +294,8 @@ function _build_layout(layout::AppLayout, fig, spec)
         SliderGrid(g[1, 1], first.(spec.slider_specs)...; tellwidth = false)
     end
     inspector = _build_inspector!(layout)
-    # Analysis dock
-    panels = _build_dock!(layout, spec)
+    # Analysis dock, without tabs until a panel is added, i.e. collapsed
+    _build_dock!(layout)
     _update_dock!(layout)
     # Status bar
     sb_box = Box(root[4, 1]; color = t.background, cornerradius = 0)
@@ -305,7 +306,7 @@ function _build_layout(layout::AppLayout, fig, spec)
     info = Label(sb[1, 2], ""; halign = :right, color = t.muted)
     # Help over the 3D view
     layout.help = _HelpUI(_overlay_scene(fig), t, ax)
-    return (; ax, cube, panels, sliders, status, tb.trace_button, tb.auto_trace_toggle,
+    return (; ax, cube, sliders, status, tb.trace_button, tb.auto_trace_toggle,
         tb.clip_beams_toggle, tb.orthographic_toggle, tb.sources_toggle, inspector.step_box,
         tb.export_button, tb.show_all_button, tb.measure_toggle, tb.home_button,
         tb.save_view_button, info)
@@ -399,7 +400,15 @@ in the toolbar group `:user` at the end of the toolbar
 =#
 
 _mark_panel_stale!(gui::AppView, p::_UserPanel) = (push!(gui.layout.tabs.stale, p); nothing)
-_results_valid(gui::AppView) = gui.layout.tabs.hits_valid && !_running(gui) && !gui.trace.preview
+# A panel whose tab is opened later reads the detectors and beams of the last solve: not after a
+# cancelled or failed one, whose hits are incomplete
+_results_valid(gui::AppView) = gui.detectors.hits_valid && !_running(gui) && !gui.trace.preview
+
+# A panel that is updated is not stale anymore, e.g. one whose tab was opened while a solve ran
+function _update_user_panel!(gui::AppView, p::_UserPanel)
+    delete!(gui.layout.tabs.stale, p)
+    return invoke(_update_user_panel!, Tuple{LiveView, _UserPanel}, gui, p)
+end
 
 """
 Adds the panel as a tab of the dock: the content is built into the shown tab, then the previously
@@ -425,7 +434,6 @@ end
 function _refresh_tab!(gui::AppView, p::_UserPanel)
     _results_valid(gui) || return nothing
     _update_user_panel!(gui, p)
-    delete!(gui.layout.tabs.stale, p)
     return nothing
 end
 
