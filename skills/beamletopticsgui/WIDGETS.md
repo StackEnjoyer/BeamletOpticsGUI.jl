@@ -287,16 +287,25 @@ end
 ## Recipe: a catalog entry for your type
 
 The catalog "Components" of the live view (a movable window, opened with the key `Insert`) lets the user
-pick a component, type its parameters and place it with the mouse. An own type joins it with a
-`CatalogEntry`: a name, a constructor that is called with the parameter values, and one
-`CatalogParam(name, default; unit, scale, keyword)` per number. The default is in the units of the
-constructor (SI), the box shows `value / scale` with the `unit`. A parameter with `keyword = :name` is
-passed as that keyword argument, the others positionally in order. The constructor should be a function
-or type that a script can call by name, since `export_changes` prints the call.
+pick a component by the icon of its group and its tile, type its parameters and place it with the mouse.
+An own type joins it with a
+`CatalogEntry(name, constructor; group, params, code_name, icon)`: a name, a constructor that is called
+with the parameter values, one `CatalogParam(name, default; unit, scale, keyword)` per number and one
+`CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword)` per refractive index. The default
+of a number is in the units of the constructor (SI), the box shows `value / scale` with the `unit`. A
+glass is chosen in a menu of the glasses of `catalog_glasses()` and "constant" (a box for the number,
+default `n`); the constructor gets the glass as stored there (a `SellmeierEquation`) or `λ -> n`. A
+parameter with `keyword = :name` is passed as that keyword argument, the others positionally in order.
+The constructor should be a function or type that a script can call by name, since `export_changes`
+prints the call. `group` is a built-in group ("Lenses", "Mirrors", "Curved mirrors", "Beamsplitters",
+"Prisms", "Polarizers", "Detectors") or a new one; `icon` is the name of an icon as for `add_tool!`
+(e.g. `:singlet`, `:round_mirror`, `:prism`) or a `Makie.BezierPath`, by default the icon of the group.
 
 ```julia
-push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses",
-    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3)]))
+push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses", icon = :singlet,
+    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3), CatalogGlass()]))
+# an own glass, as `name => n(λ)`: a SellmeierEquation, a DiscreteRefractiveIndex or a named function
+push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))
 ```
 
 A package adds its entries in the `__init__` of its package extension on BeamletOpticsGUI; views opened

@@ -27,7 +27,9 @@ add_component!
 remove_component!
 CatalogEntry
 CatalogParam
+CatalogGlass
 component_catalog
+catalog_glasses
 ```
 
 ## Interactive helpers

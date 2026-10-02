@@ -144,6 +144,8 @@ the shared logic and [`add_tool!`](@ref) use it like them.
 - `color`: the background while neither hovered nor active (transparent by default),
   `cornerradius = 6`, `padding = (8, 12, 5, 5)`, `size`: the width and height, fixed if given
 - `icon_size = 18`, `fontsize = 13`, `icon_color = t.text`, `label_color = t.text`
+- `tile_width`: a tile of this width [px] instead, with the label below the icon, wrapped to the
+  tile, e.g. an entry of the component catalog
 
 # Fields
 
@@ -163,17 +165,19 @@ function _OverlayItem(pos, t::NamedTuple; icon::Union{Symbol, BezierPath},
         label::AbstractString = "", trailing::AbstractString = "", toggle::Bool = false,
         active::Bool = false, color = _TRANSPARENT, cornerradius::Real = 6,
         padding = (8, 12, 5, 5), size = nothing, icon_size::Real = 18, fontsize::Real = 13,
-        icon_color = t.text, label_color = t.text)
+        icon_color = t.text, label_color = t.text, tile_width = nothing)
     clicks, active, hovered = Observable(0), Observable(active), Observable(false)
     c0, ch, ca = _rgba(color), _rgba(t.hover), _rgba(t.accent_soft)
     fi, fl, fa = _rgba(icon_color), _rgba(label_color), _rgba(t.accent)
     background = Observable(c0)
     icon_fg, label_fg = Observable(fi), Observable(fl)
+    tile = !isnothing(tile_width)
     # The background fills the cell of `pos`, e.g. the width of the tool rail, under the icon and
     # the label
-    box = Box(pos; color = background, strokewidth = 0, cornerradius, width = size, height = size)
-    g = GridLayout(pos; alignmode = Outside(padding...), default_colgap = 10,
-        halign = isnothing(size) ? :left : :center)
+    box = Box(pos; color = background, strokewidth = 0, cornerradius,
+        width = tile ? tile_width : size, height = size)
+    g = GridLayout(pos; alignmode = Outside(padding...), default_colgap = 10, default_rowgap = 3,
+        halign = (isnothing(size) && !tile) ? :left : :center, valign = tile ? :top : :center)
     holder = Box(g[1, 1]; width = icon_size, height = icon_size, visible = false)
     center = Makie.lift(r -> Point2f(Makie.origin(r) .+ Makie.widths(r) ./ 2), holder.blockscene,
         holder.layoutobservables.computedbbox)
@@ -181,6 +185,11 @@ function _OverlayItem(pos, t::NamedTuple; icon::Union{Symbol, BezierPath},
         color = icon_fg, markerspace = :pixel, inspectable = false)
     text = if isempty(label)
         Observable(String(label))
+    elseif tile
+        # below the icon, wrapped to the width of the tile
+        Label(g[2, 1], label; _card_style(t, Label)..., fontsize, color = label_fg,
+            halign = :center, justification = :center, word_wrap = true,
+            width = tile_width - padding[1] - padding[2]).text
     else
         Label(g[1, 2], label; _card_style(t, Label)..., fontsize, color = label_fg,
             halign = :left).text

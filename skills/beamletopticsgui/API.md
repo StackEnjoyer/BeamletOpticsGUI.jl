@@ -22,7 +22,7 @@ Look up the docstring of any name before use, e.g.
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `export_changes`, `retrace!` |
-| Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `component_catalog` |
+| Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
 | Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
@@ -52,9 +52,14 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
 `translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
-at the mouse with the key `Insert` or with the toggle "Components" among the tools. "Place" attaches
-the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the selected
-component.
+at the mouse with the key `Insert` or with the toggle "Components" among the tools. Its icons select a
+group (lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
+component (all components of BeamletOptics with a constructor of numbers and glasses), its form takes
+the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,
+N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. "Place"
+attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
+selected component. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
+refractive index as `λ -> n`.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
 keyboard controls to a live-rendered system on its own, without `live_view`.

@@ -144,7 +144,7 @@ function _show_catalog!(gui::LiveView, shown::Bool; at = nothing)
         _show_catalog_target!(gui, w.widget)
     else
         foreach(tb -> tb.focused[] && Makie.defocus!(tb), w.widget.boxes)
-        w.widget.menu.is_open[] && (w.widget.menu.is_open[] = false)
+        foreach(m -> m.is_open[] && (m.is_open[] = false), w.widget.menus)
     end
     (isnothing(w.tool) || w.tool.active[] == shown) || (w.tool.active[] = shown)
     _arrange_catalog!(gui)
@@ -169,14 +169,21 @@ end
 
 Connects the window `w` of the catalog of the `gui`: its close button hides it, a drag at its head
 moves it (it stays inside the 3D view), the key `Insert` (`_CATALOG_KEY`) shows it at the mouse
-unless a textbox or menu takes the keyboard, and it follows the 3D view every frame. The presses on
+unless a textbox or menu takes the keyboard, and it follows the 3D view every frame, at which its
+form is built again and settled if needed, see `_flush_catalog_form!` and `_settle_catalog_form!`.
+The presses on
 the window are kept from the controls and the camera like those on the cards, see `_over_catalog`.
 """
 function _connect_catalog_window!(gui::LiveView, w::_CatalogWindow)
     ev = events(gui.ax.scene)
     listeners = gui.controls.listeners
     push!(listeners, on(_ -> _show_catalog!(gui, false), w.close_button.clicks))
-    push!(listeners, on(_ -> _arrange_catalog!(gui), ev.tick))
+    push!(listeners, on(ev.tick) do _
+        _flush_catalog_form!(gui, w.widget)
+        _settle_catalog_form!(w.widget)
+        _arrange_catalog!(gui)
+        return nothing
+    end)
     # The mouse and the corner of the window at the press on its head
     drag = Ref{Any}(nothing)
     push!(listeners, on(ev.mousebutton; priority = _CATALOG_PRIORITY) do event

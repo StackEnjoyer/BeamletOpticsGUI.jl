@@ -907,10 +907,12 @@ a window over the 3D view, in both layouts: the key `Insert` opens it with its t
 the mouse (a window that is open moves there), the toggle "Components" among the tools (tool rail
 or toolbar) opens and closes it, and so does its close button. A drag at its head moves it; it
 stays inside the 3D view. It offers the components of the `catalog` kwarg, see
-[`component_catalog`](@ref): its menu selects a component, the boxes below take its parameters,
-e.g. the radii of a lens [mm], and "Place" attaches it to the mouse; the window stays open. An
-input that is no number, or that the constructor of the component rejects, is reported in the
-status line. The line "into" names the system that gets the component.
+[`component_catalog`](@ref): the icons at its top select a group, e.g. the lenses, the tiles below
+a component of the group, e.g. a doublet. The boxes of the form take its numbers, e.g. the radii of
+a lens [mm], and a menu selects its glass among those of [`catalog_glasses`](@ref) or "constant",
+for which a box takes a constant refractive index. "Place" attaches the component to the mouse; the
+window stays open. An input that is no number, or that the constructor of the component rejects,
+is reported in the status line. The line "into" names the system that gets the component.
 
 The component then follows the mouse, drawn at half of its opacity, on the plane through the first
 source of its system with the `plane_normal` of the controls, in the orientation in which it was

@@ -438,47 +438,106 @@ function CatalogParam(name::AbstractString, default::Real; unit::AbstractString 
 end
 
 """
-    CatalogEntry(name, constructor; group = "Components", params = CatalogParam[], code_name = string(nameof(constructor)))
+    CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword = nothing)
+
+The glass of a [`CatalogEntry`](@ref), passed to its constructor as the refractive index `n(λ)`:
+the catalog shows a menu of the glasses of [`catalog_glasses`](@ref) and "constant", for which a
+box takes a constant refractive index with the default `n`. `default` is the name of the glass that
+is chosen at first, or `"constant"`; a name that [`catalog_glasses`](@ref) does not hold throws an
+`ArgumentError`. `name` and `keyword` as for [`CatalogParam`](@ref).
+
+The constructor gets the glass as it is stored in [`catalog_glasses`](@ref), e.g. a
+`SellmeierEquation`, and for "constant" a function `λ -> n`, which every constructor of
+BeamletOptics with a refractive index takes.
+"""
+struct CatalogGlass
+    name::String
+    default::String
+    n::Float64
+    keyword::Union{Nothing, Symbol}
+end
+
+function CatalogGlass(name::AbstractString = "glass"; default::AbstractString = "N-BK7", n::Real = 1.5,
+        keyword::Union{Nothing, Symbol} = nothing)
+    default == _GLASS_CONSTANT || _glass(default)
+    (isfinite(n) && n > 0) ||
+        throw(ArgumentError("the refractive index of the parameter \"$name\" must be positive, got $n"))
+    return CatalogGlass(String(name), String(default), Float64(n), keyword)
+end
+
+"""
+    CatalogEntry(name, constructor; group = "Components", params = [], code_name = string(nameof(constructor)), icon = nothing)
 
 An entry of the component catalog of [`live_view`](@ref), see [`component_catalog`](@ref): a
 component that the user picks, parametrizes and places in the 3D view. `constructor` is called with
-the values of the `params` (see [`CatalogParam`](@ref)) and returns the `AbstractObject` (or object
-group) to add, in the pose in which it is constructed; the catalog then moves it to where it is
-placed. `name` is shown in the catalog under the heading `group`.
+the values of the `params` (numbers, see [`CatalogParam`](@ref), and glasses, see
+[`CatalogGlass`](@ref)) and returns the `AbstractObject` (or object group) to add, in the pose in
+which it is constructed; the catalog then moves it to where it is placed.
+
+The catalog shows the entries by their `group`, each as a tile with its `name` and its `icon`: the
+name of an icon of the live view as for [`add_tool!`](@ref) (e.g. `:lens`, an unknown name throws
+an `ArgumentError`) or an own `Makie.BezierPath`. An entry without an icon shows the icon of its
+group; a group that is not one of the built-in ones shows the icon of its first entry that has one.
 
 [`export_changes`](@ref) prints the component as the call `code_name(values...; keywords...)`,
 hence `constructor` should be a function or type that the user's script can call by that name,
 e.g. `ThinLens`, not an anonymous wrapper.
 
 ```julia
-entry = CatalogEntry("Thin lens", ThinLens; group = "Lenses", params = [
+entry = CatalogEntry("Thin lens", ThinLens; group = "Lenses", icon = :lens, params = [
     CatalogParam("R1", 50e-3; unit = "mm", scale = 1e-3),
     CatalogParam("R2", -50e-3; unit = "mm", scale = 1e-3),
     CatalogParam("diameter", 25.4e-3; unit = "mm", scale = 1e-3),
-    CatalogParam("n", 1.5)])
+    CatalogGlass()])
 ```
 """
 struct CatalogEntry
     name::String
     group::String
     constructor::Any
-    params::Vector{CatalogParam}
+    params::Vector{Union{CatalogParam, CatalogGlass}}
     code_name::String
+    icon::Union{Nothing, Symbol, Makie.BezierPath}
 end
 
-CatalogEntry(name::AbstractString, constructor; group::AbstractString = "Components",
-    params = CatalogParam[], code_name::AbstractString = string(nameof(constructor))) =
-    CatalogEntry(String(name), String(group), constructor, CatalogParam[params...], String(code_name))
+function CatalogEntry(name::AbstractString, constructor; group::AbstractString = "Components",
+        params = CatalogParam[], code_name::AbstractString = string(nameof(constructor)),
+        icon::Union{Nothing, Symbol, Makie.BezierPath} = nothing)
+    # an unknown name throws
+    icon isa Symbol && _icon(icon)
+    return CatalogEntry(String(name), String(group), constructor,
+        Union{CatalogParam, CatalogGlass}[params...], String(code_name), icon)
+end
+
+"""
+    catalog_glasses() -> Vector{Pair{String, Any}}
+
+The glasses that the component catalog of [`live_view`](@ref) offers for the entries with a
+[`CatalogGlass`](@ref), as `name => n`, where `n(λ)` is the refractive index at the wavelength `λ`
+[m] as BeamletOptics takes it, e.g. a `SellmeierEquation`. The built-in glasses are common optical
+glasses and crystals with the dispersion formulas of the database refractiveindex.info: N-BK7,
+fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2, N-BAF10 and N-LAK22.
+
+A package adds its glasses to the returned vector; views opened afterwards show them.
+[`export_changes`](@ref) prints a `SellmeierEquation` and a `DiscreteRefractiveIndex` as their
+constructor call and any other glass via `repr`, hence an own glass should be one of the two or a
+named function.
+
+```julia
+push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))
+```
+"""
+function catalog_glasses end
 
 """
     component_catalog() -> Vector{CatalogEntry}
 
 The catalog of components that a [`live_view`](@ref) window offers by default (its `catalog`
-kwarg): the entries of BeamletOpticsGUI for the components of BeamletOptics, e.g. lenses, mirrors,
-beamsplitters and detectors, and the entries that packages added. The catalog is shown as
-"Components" where [`add_controls!`](@ref) places its widgets: the entry is chosen in a menu, its
-parameters are typed into boxes, and "Place" attaches the component to the mouse, see "Adding and
-removing components" of [`live_view`](@ref).
+kwarg): the entries of BeamletOpticsGUI for the components of BeamletOptics (lenses, mirrors,
+beamsplitters, prisms, polarizers and the detector) and the entries that packages added. The
+catalog is the window "Components" over the 3D view: the entry is chosen by its group and its tile,
+its parameters are typed into boxes, its glass is chosen in a menu, and "Place" attaches the
+component to the mouse, see "Adding and removing components" of [`live_view`](@ref).
 
 A package with own components adds its entries (see [`CatalogEntry`](@ref)) to the returned
 vector, e.g. in the `__init__` of its package extension on BeamletOpticsGUI; views opened afterwards

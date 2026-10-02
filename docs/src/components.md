@@ -34,17 +34,25 @@ systems, the keyword `system` of [`add_component!`](@ref) selects the target.
 The catalog "Components" is a window over the 3D view in both layouts. The key `Insert` opens it
 with its top left corner at the mouse, the toggle "Components" among the tools (the tool rail of
 the compact layout, the toolbar of the app layout) opens and closes it. A drag at its head moves
-it. The built-in entries are
+it. The built-in entries are all components of BeamletOptics whose constructor takes numbers and
+glasses:
 
 | group | entries |
 |:--|:--|
-| Lenses | Thin lens, Spherical lens |
-| Mirrors | Round mirror, Square mirror |
-| Beamsplitters | Thin beamsplitter, Cube beamsplitter |
+| Lenses | Thin lens, Singlet (`SphericalLens`), Doublet, Triplet |
+| Mirrors | Round mirror, Square mirror, Rectangular mirror, Thin mirror (`SquarePlanoMirror2D`), Prism mirror, Retroreflector |
+| Curved mirrors | Spherical, Parabolic, Conic, Ellipsoidal and Hyperbolic mirror, the last four also off-axis |
+| Beamsplitters | Thin beamsplitter, Round thin beamsplitter, Plate beamsplitter, Round plate beamsplitter, Cube beamsplitter, Compensator plate |
 | Prisms | Right-angle prism |
+| Polarizers | Polarization filter, Round filter, Linear polarizer |
 | Detectors | Detector |
 
-A menu selects the entry, the boxes below take its parameters, and "Place" attaches the component
+The icons at the top of the window select the group, the tiles below the entry. The boxes of the
+form take its numbers; the other arguments of the constructor keep their defaults, e.g. the
+`thickness` and the `hole_diameter` of a curved mirror. An entry with a refractive index has a menu
+of glasses instead of a number: N-BK7, fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2,
+N-BAF10 and N-LAK22 with their dispersion (see [`catalog_glasses`](@ref)), and "constant" with a box
+for a constant refractive index. "Place" attaches the component
 to the mouse; the window stays open, e.g. to place several components. A left click
 drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
 only onto its central beam, of a Gaussian beamlet onto its chief ray. The component that is being
@@ -53,7 +61,9 @@ placed is not traced until it is dropped. See the section "Adding and removing c
 
 The button "remove" at the end of the page "Pose" of the card of a component and the key `Delete`
 remove it again. The added and removed
-components are part of the code of [`export_changes`](@ref).
+components are part of the code of [`export_changes`](@ref), which writes a glass as its
+`SellmeierEquation` and a constant refractive index as `λ -> n`, such that the code runs without
+BeamletOpticsGUI.
 
 Limits of this version:
 
@@ -63,17 +73,23 @@ Limits of this version:
 
 ## Own catalog entries
 
-A [`CatalogEntry`](@ref) is data: a name, a constructor and the [`CatalogParam`](@ref)s that are
-passed to it. The same entry builds the object and the constructor call in the code of
-[`export_changes`](@ref), hence the constructor should be a function or type that a script can call
-by name. A package with own components adds its entries to [`component_catalog`](@ref), e.g. in the
-`__init__` of its package extension on BeamletOpticsGUI (see [Cards and widgets](@ref)); a single
-view gets other entries via the keyword `catalog`:
+A [`CatalogEntry`](@ref) is data: a name, a constructor and the parameters that are passed to it,
+numbers ([`CatalogParam`](@ref)) and glasses ([`CatalogGlass`](@ref)). The same entry builds the
+object and the constructor call in the code of [`export_changes`](@ref), hence the constructor
+should be a function or type that a script can call by name. Its `group` is one of the built-in
+groups or a new one; its `icon` is the name of an icon of the live view, as for
+[`add_tool!`](@ref), or an own `Makie.BezierPath`, and the icon of its group without one. A package
+with own components adds its entries to [`component_catalog`](@ref) and its glasses to
+[`catalog_glasses`](@ref), e.g. in the `__init__` of its package extension on BeamletOpticsGUI (see
+[Cards and widgets](@ref)); a single view gets other entries via the keyword `catalog`:
 
 ```julia
-# `MyLens(f)` builds the component, `f` is shown in mm
-push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses",
-    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3)]))
+# `MyLens(f, n)` builds the component, `f` is shown in mm, `n` is chosen among the glasses
+push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses", icon = :singlet,
+    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3), CatalogGlass()]))
+
+# an own glass in the menu of every entry with a glass
+push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))
 
 # only these entries in one view; `catalog = CatalogEntry[]` shows no catalog
 entries = [CatalogEntry("Round mirror", RoundPlanoMirror; group = "Mirrors", params = [
@@ -89,5 +105,7 @@ add_component!
 remove_component!
 CatalogEntry
 CatalogParam
+CatalogGlass
 component_catalog
+catalog_glasses
 ```

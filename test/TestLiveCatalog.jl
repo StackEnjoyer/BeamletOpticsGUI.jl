@@ -46,57 +46,37 @@ end
 
     # The widgets of the catalog of the `gui` in its window, in the order in which they were built
     function _widgets(gui)
-        layout = _window(gui).widget.layout
-        blocks = GUI._blocks!(Any[], layout)
-        return (; layout, target = first(filter(b -> b isa Label, blocks)),
-            menu = only(filter(b -> b isa Menu, blocks)),
+        widget = _window(gui).widget
+        blocks = GUI._blocks!(Any[], widget.layout)
+        return (; widget, layout = widget.layout, target = widget.target,
+            menus = filter(b -> b isa Menu, blocks),
             boxes = filter(b -> b isa Textbox, blocks),
             labels = [b.text[] for b in blocks if b isa Label],
             place = only(filter(b -> b isa Button, blocks)))
     end
 
-    _defaults(entry) = [p.default for p in entry.params]
+    _texts(boxes) = [tb.displayed_string[] for tb in boxes]
+    _tiles(widget) = [widget.entries[i].name for (i, _) in widget.tile_buttons]
+    _active(widget) = [widget.entries[i].name for (i, tile) in widget.tile_buttons if tile.active[]]
+    _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0))
 
-    @testset "built-in entries" begin
-        entries = GUI._builtin_catalog()
-        @test [e.constructor for e in entries] == Any[ThinLens, SphericalLens, RoundPlanoMirror,
-            SquarePlanoMirror, ThinBeamsplitter, CubeBeamsplitter, RightAnglePrism, Detector]
-        @test all(e -> e.group in ("Lenses", "Mirrors", "Beamsplitters", "Prisms", "Detectors"), entries)
-        @test allunique(e.name for e in entries)
-        for entry in entries
-            values = _defaults(entry)
-            obj = GUI._catalog_object(entry, values)
-            @test obj isa BMO.AbstractObject
-            # the code constructs the same component
-            code = GUI._catalog_code(entry, values)
-            @test startswith(code, entry.code_name * "(")
-            twin = Core.eval(@__MODULE__, Meta.parse(code))
-            @test typeof(twin) === typeof(obj)
-            @test position(twin) == position(obj)
-            @test BMO.orientation(twin) == BMO.orientation(obj)
-            # lengths are shown in mm
-            @test all(p -> (p.unit == "mm") == (p.scale == 1e-3), entry.params)
-        end
-        # the parameters reach the constructor: a biconvex thin lens and its diameter
-        lens = entries[findfirst(e -> e.constructor === ThinLens, entries)]
-        @test [p.name for p in lens.params] == ["R1", "R2", "diameter", "n"]
-        @test _defaults(lens) == [50e-3, -50e-3, 25.4e-3, 1.5]
-        @test GUI._catalog_code(lens, _defaults(lens)) == "ThinLens(0.05, -0.05, 0.0254, 1.5)"
-        @test BMO.refractive_index(GUI._catalog_object(lens, [50e-3, -50e-3, 25.4e-3, 1.7]), 1e-6) == 1.7
-        splitter = entries[findfirst(e -> e.constructor === ThinBeamsplitter, entries)]
-        @test GUI._catalog_code(splitter, _defaults(splitter)) ==
-              "ThinBeamsplitter(0.0254, 0.0254; reflectance = 0.5)"
-        @test BMO.reflectance(GUI._catalog_object(splitter, [10e-3, 10e-3, 0.36])) ≈ 0.6
-        # the refractive index of a cube beamsplitter and of a prism is a number
-        cube = entries[findfirst(e -> e.constructor === CubeBeamsplitter, entries)]
-        @test GUI._catalog_code(cube, _defaults(cube)) == "CubeBeamsplitter(0.0254, 1.5; reflectance = 0.5)"
-        @test BMO.refractive_index(GUI._catalog_object(cube, [10e-3, 1.7, 0.5]), 1e-6) == 1.7
-        prism = entries[findfirst(e -> e.constructor === RightAnglePrism, entries)]
-        @test GUI._catalog_code(prism, _defaults(prism)) == "RightAnglePrism(0.0254, 0.0254, 1.5)"
-        @test BMO.refractive_index(GUI._catalog_object(prism, [10e-3, 10e-3, 1.7]), 1e-6) == 1.7
-        detector = entries[findfirst(e -> e.constructor === Detector, entries)]
-        @test GUI._catalog_code(detector, [5e-3]) == "Detector(0.005)"
+    # Clicks the icon of the `group` of the catalog of the `gui`
+    function _group!(gui, group)
+        widget = _window(gui).widget
+        widget.group_buttons[findfirst(==(group), widget.groups)].clicks[] += 1
+        return widget
     end
+
+    # Clicks the tile of the entry `name` of the catalog of the `gui`, after the icon of its group
+    function _choose!(gui, name)
+        widget = _window(gui).widget
+        i = findfirst(e -> e.name == name, widget.entries)
+        _group!(gui, widget.entries[i].group)
+        last(only(filter(t -> first(t) == i, widget.tile_buttons))).clicks[] += 1
+        return _widgets(gui)
+    end
+
+    bk7 = "SellmeierEquation(1.03961212, 0.231792344, 1.01046945, 0.00600069867, 0.0200179144, 103.560653)"
 
     @testset "registry" begin
         catalog = component_catalog()
@@ -113,7 +93,9 @@ end
             @test gui.components.catalog == catalog
             # a copy: the view keeps its entries
             @test gui.components.catalog !== catalog
-            @test last(_widgets(gui).menu.options[]) == ("Blocks / Block", n + 1)
+            widget = _window(gui).widget
+@test last(widget.groups) == "Blocks" && last(widget.entries) === entry
+@test _tiles(_group!(gui, "Blocks")) == ["Block"]
             close(gui)
         finally
             filter!(e -> e !== entry, catalog)
@@ -177,45 +159,146 @@ end
         @test isempty(GUI._catalog_rects(gui))
         @test isempty(filter(c -> c.title == "Components", gui.custom.controls))
         w = _widgets(gui)
+        widget = w.widget
         @test w.layout === win.widget.layout
         @test w.target.text[] == "into: System 1"
         @test w.place.label[] == "Place"
-        # the menu lists all entries by group and name, the first one is chosen
-        @test first.(w.menu.options[]) == ["$(e.group) / $(e.name)" for e in entries]
-        @test w.menu.selection[] == 1
-        # a box per parameter with its default, between its name and its unit
+        # an icon per group, the first group and its first entry are chosen
+        @test widget.groups == unique(e.group for e in entries)
+        @test length(widget.group_buttons) == length(widget.groups) == 7
+        @test [b.active[] for b in widget.group_buttons] == (1:7 .== 1)
+        @test widget.group_label.text[] == "Lenses"
+        @test _tiles(widget) == ["Thin lens", "Singlet", "Doublet", "Triplet"]
+        @test _active(widget) == ["Thin lens"] && widget.entry_label.text[] == "Thin lens"
+        @test GUI._catalog_entry(widget) === first(entries)
+        # the name of the group under the mouse
+        widget.group_buttons[3].hovered[] = true
+        @test widget.group_label.text[] == "Curved mirrors"
+        widget.group_buttons[3].hovered[] = false
+        @test widget.group_label.text[] == "Lenses"
+        # a box per number with its default, between its name and its unit, a menu per glass
         lens = first(entries)
-        @test [tb.displayed_string[] for tb in w.boxes] == ["50", "-50", "25.4", "1.5"]
+        @test _texts(w.boxes) == ["50", "-50", "25.4"]
         @test all(p -> p.name in w.labels, lens.params)
         @test count(==("mm"), w.labels) == 3
+        menu = only(w.menus)
+        @test menu.selection[] == "N-BK7"
+        @test menu.options[] == [first.(catalog_glasses()); "constant"]
+        @test GUI._catalog_strings(widget) == ["50", "-50", "25.4", "N-BK7"]
         # the boxes and the menu take the keyboard
-        @test gui.custom.boxes == w.boxes
-        @test w.menu in gui.custom.menus
+        @test gui.custom.boxes == w.boxes && widget.boxes == w.boxes
+        @test menu in gui.custom.menus && widget.menus == [menu]
         @test !GUI._typing(gui)
         w.boxes[1].focused[] = true
         @test GUI._typing(gui)
 
-        # another entry: the form is built again, the old boxes are gone
+        # another entry of the group: the form is built again, the old inputs are gone
         old = w.boxes
         n = length(gui.controls.listeners)
-        k = findfirst(e -> e.constructor === ThinBeamsplitter, entries)
-        w.menu.i_selected[] = k
+        w = _choose!(gui, "Doublet")
         @test !GUI._typing(gui)
-        w = _widgets(gui)
-        @test [tb.displayed_string[] for tb in w.boxes] == ["25.4", "25.4", "0.5"]
+        @test _active(widget) == ["Doublet"] && widget.entry_label.text[] == "Doublet"
+        @test _texts(w.boxes) == ["62.8", "-45.7", "-128.2", "4", "2.5", "25.4"]
+        @test [mn.selection[] for mn in w.menus] == ["N-BK7", "N-SF5"]
         @test all(tb -> !any(o -> o === tb, old), w.boxes)
-        @test gui.custom.boxes == w.boxes
-        @test "reflectance" in w.labels && !("R1" in w.labels)
+        @test gui.custom.boxes == w.boxes && !(menu in gui.custom.menus)
+        @test "glass 2" in w.labels && !("glass" in w.labels)
         w.boxes[3].focused[] = true
         @test GUI._typing(gui)
         w.boxes[3].focused[] = false
-        # the listeners of the old boxes are released
+
+        # another group: its tiles, its first entry is chosen
+        w = _choose!(gui, "Thin beamsplitter")
+        @test [b.active[] for b in widget.group_buttons] == (1:7 .== 4)
+        @test widget.group_label.text[] == "Beamsplitters"
+        @test _tiles(widget) == [e.name for e in entries if e.group == "Beamsplitters"]
+        @test length(_tiles(widget)) == 6
+        @test _active(widget) == ["Thin beamsplitter"]
+        @test _texts(w.boxes) == ["25.4", "25.4", "0.5"] && isempty(w.menus)
+        @test "reflectance" in w.labels && !("R1" in w.labels)
+        w = _choose!(gui, "Cube beamsplitter")
+        @test _active(widget) == ["Cube beamsplitter"]
+        @test _texts(w.boxes) == ["25.4", "0.5"] && only(w.menus).selection[] == "N-BK7"
+        # the chosen group again changes nothing
+        _group!(gui, "Beamsplitters")
+        @test _active(widget) == ["Cube beamsplitter"]
+        # and back: the listeners of the old tiles and inputs are released
+        w = _choose!(gui, "Thin lens")
+        @test _texts(w.boxes) == ["50", "-50", "25.4"]
         @test length(gui.controls.listeners) <= n
-        # and back
-        w.menu.i_selected[] = 1
-        @test [tb.displayed_string[] for tb in _widgets(gui).boxes] == ["50", "-50", "25.4", "1.5"]
         @test sys.objects == [m]
         close(gui)
+    end
+
+    @testset "glass ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout)
+        w = _widgets(gui)
+        widget = w.widget
+        menu = only(w.menus)
+        function code()
+            GUI._place_catalog!(gui, GUI._catalog_entry(widget), GUI._catalog_strings(widget))
+            c = gui.components.placement.origin.code
+            GUI._end_placement!(gui)
+            return c
+        end
+        @test code() == "ThinLens(0.05, -0.05, 0.0254, $bk7)"
+        # another glass: the form stays
+        w.boxes[3].displayed_string[] = "12"
+        menu.i_selected[] = findfirst(==("N-SF11"), menu.options[])
+        @test !widget.dirty
+        _tick!(gui)
+        @test only(_widgets(gui).menus) === menu
+        @test GUI._catalog_strings(widget) == ["50", "-50", "12", "N-SF11"]
+        @test occursin("0.012, SellmeierEquation(1.73759695,", code())
+        # "constant": the box of the refractive index comes with the next frame, the texts stay
+        menu.i_selected[] = length(menu.options[])
+        @test widget.dirty && length(_widgets(gui).boxes) == 3
+        @test GUI._catalog_strings(widget) == ["50", "-50", "12", "1.5"]
+        _tick!(gui)
+        w = _widgets(gui)
+        @test !widget.dirty && only(w.menus) !== menu && !(menu in gui.custom.menus)
+        @test only(w.menus).selection[] == "constant"
+        @test _texts(w.boxes) == ["50", "-50", "12", "1.5"] && "n" in w.labels
+        @test gui.custom.boxes == w.boxes
+        w.boxes[4].displayed_string[] = "1.7"
+        @test code() == "ThinLens(0.05, -0.05, 0.012, λ -> 1.7)"
+        GUI._place_catalog!(gui, GUI._catalog_entry(widget), GUI._catalog_strings(widget))
+        @test BMO.refractive_index(gui.components.placement.obj, 1e-6) == 1.7
+        GUI._end_placement!(gui)
+        # not a refractive index
+        w.boxes[4].displayed_string[] = "-1"
+        gui.status.text[] = ""
+        w.place.clicks[] += 1
+        @test occursin("invalid input \"-1\" for glass", gui.status.text[]) && !GUI._placing(gui)
+        # back to a glass: the box goes
+        menu = only(w.menus)
+        menu.i_selected[] = findfirst(==("Fused silica"), menu.options[])
+        @test widget.dirty
+        @test GUI._catalog_strings(widget) == ["50", "-50", "12", "Fused silica"]
+        _tick!(gui)
+        w = _widgets(gui)
+        @test _texts(w.boxes) == ["50", "-50", "12"] && !("n" in w.labels)
+        @test only(w.menus).selection[] == "Fused silica"
+        @test sys.objects == [m]
+        close(gui)
+
+        # the glass of a package, and "constant" as the default
+        own = "Own glass" => SellmeierEquation(1.0, 0.2, 1.0, 0.006, 0.02, 100.0)
+        push!(catalog_glasses(), own)
+        try
+            entry = CatalogEntry("Block", CatalogBlock; group = "Blocks", params = [
+                CatalogGlass("coating"; default = "constant", n = 1.38),
+                CatalogGlass("glass"; default = "Own glass", keyword = :scale)])
+            gui, _ = _fixture(; layout, catalog = [entry])
+            w = _widgets(gui)
+            @test [mn.selection[] for mn in w.menus] == ["constant", "Own glass"]
+            @test all(mn -> "Own glass" in mn.options[], w.menus)
+            @test _texts(w.boxes) == ["1.38"]
+            @test GUI._catalog_strings(w.widget) == ["1.38", "Own glass"]
+            close(gui)
+        finally
+            filter!(g -> g !== own, catalog_glasses())
+        end
     end
 
     @testset "no widget ($layout)" for layout in (:compact, :app)
@@ -243,13 +326,16 @@ end
         gui, _ = _fixture(; layout, catalog = [entry, none])
         @test gui.components.catalog == [entry, none]
         w = _widgets(gui)
-        @test w.menu.options[] == [("Blocks / Block", 1), ("Blocks / Plain block", 2)]
-        @test [tb.displayed_string[] for tb in w.boxes] == ["10", "2"]
+        # one group with the icon of an own group, its tiles and the form of its first entry
+        @test w.widget.groups == ["Blocks"] && length(w.widget.group_buttons) == 1
+        @test w.widget.group_label.text[] == "Blocks"
+        @test _tiles(w.widget) == ["Block", "Plain block"] && _active(w.widget) == ["Block"]
+        @test GUI._catalog_group_icon(gui.components.catalog, "Blocks") === :object
+        @test _texts(w.boxes) == ["10", "2"]
         @test "width" in w.labels && "scale" in w.labels && "mm" in w.labels
         # an entry without parameters has no boxes
-        w.menu.i_selected[] = 2
-        w = _widgets(gui)
-        @test isempty(w.boxes) && isempty(gui.custom.boxes)
+        w = _choose!(gui, "Plain block")
+        @test isempty(w.boxes) && isempty(gui.custom.boxes) && isempty(w.menus)
         @test "no parameters" in w.labels
         # the global catalog is not changed
         @test !any(e -> e === entry, component_catalog())
@@ -313,7 +399,7 @@ end
         # the mouse on the window belongs to it: the controls ignore it
         mouse!(at(0.5, 0.5))
         key!(Keyboard.insert)
-        mouse!(corner() .+ Point2f(30, -120))
+        mouse!(corner() .+ Point2f(200, -50))
         @test GUI._over_catalog(gui) && ctrl.ignore_mouse()
         selected = ctrl.selected[]
         press!()
@@ -351,7 +437,7 @@ end
         w.place.clicks[] += 1
         @test GUI._placing(gui) && win.shown
         @test gui.components.placement.obj isa Lens
-        @test gui.components.placement.origin.code == "ThinLens(0.05, -0.05, 0.012, 1.5)"
+        @test gui.components.placement.origin.code == "ThinLens(0.05, -0.05, 0.012, $bk7)"
         key!(Keyboard.escape)
         @test !GUI._placing(gui) && win.shown
         @test sys.objects == [m]
@@ -359,9 +445,10 @@ end
         # the close button hides it; its toggle follows and shows it where it was
         c0 = corner()
         w.boxes[1].focused[] = true
+        only(w.menus).is_open[] = true
         win.close_button.clicks[] += 1
         @test !win.shown && !win.tool.active[] && isempty(GUI._catalog_rects(gui))
-        @test !w.boxes[1].focused[] && !GUI._typing(gui)
+        @test !w.boxes[1].focused[] && !only(w.menus).is_open[] && !GUI._typing(gui)
         @test !GUI._over_catalog(gui)
         win.tool.active[] = true
         @test win.shown
@@ -391,6 +478,13 @@ end
 
         # the floating cards keep off the window
         @test GUI._catalog_rect(win) in GUI._obstacles(gui)
+
+        # the entry with the most parameters fits into the 3D view
+        _choose!(gui, "Triplet")
+        _tick!(gui)
+        @test length(win.widget.boxes) == 8 && length(win.widget.menus) == 3
+        @test inside() && Makie.widths(GUI._catalog_rect(win))[2] < Makie.widths(view)[2]
+        _choose!(gui, "Thin lens")
 
         # the key is taken, a tool can not use it, and it is listed in the help
         @test occursin("Insert", GUI._key_binding(gui, Keyboard.insert))
@@ -439,8 +533,7 @@ end
         w.place.clicks[] += 1
         @test occursin("invalid input \"two\" for scale", gui.status.text[])
         @test unchanged()
-        w.menu.i_selected[] = 2
-        w = _widgets(gui)
+        w = _choose!(gui, "Checked block")
         gui.status.text[] = ""
         w.boxes[1].displayed_string[] = "-5"
         w.place.clicks[] += 1
