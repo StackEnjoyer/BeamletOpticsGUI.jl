@@ -2,7 +2,7 @@
 Catalog of the components that can be added to the systems of the live view, see
 `component_catalog` and `CatalogEntry`: the entries of the components of BeamletOptics, the
 registry of all entries, the step from an entry and its values to the object and its code, and the
-widget "Components", built where the layout places controls (see `add_controls!`).
+widgets of the catalog, which its window shows, see `LiveCatalogWindow.jl`.
 =#
 
 #=
@@ -183,15 +183,16 @@ end
 Widget
 =#
 
-# The title of the controls of the catalog, see `add_controls!`
+# The title of the window of the catalog and the name of the tool that shows it
 const _CATALOG_TITLE = "Components"
-# The key of "Place" of the catalog, the counterpart of `Delete`; Makie's `Camera3D` binds almost
-# all letters
+# The key that opens the window of the catalog at the mouse, the counterpart of `Delete`; Makie's
+# `Camera3D` binds almost all letters
 const _CATALOG_KEY = Keyboard.insert
 
 # The keys of a view with a catalog, in the help of the controls, see `_help_sections`
 const _CATALOG_HELP = _HelpSection["Components" => [
-    _HelpEntry(["Ins"], "place the component of the catalog"),
+    _HelpEntry(["Ins"], "open the catalog at the mouse"),
+    _HelpEntry([:mouse => "drag"], "head of the catalog: move it"),
     _HelpEntry([:mouse => "move"], "while placing: near a beam, snap onto it"),
     _HelpEntry([:mouse => "click"], "while placing: drop it, Esc cancels")]]
 # Widths of the menu of the entries and of the boxes of the parameters [px]
@@ -201,14 +202,15 @@ const _CATALOG_BOX_WIDTH = 70
 """
     _CatalogWidget
 
-The widgets of the catalog of a `LiveView`, in the `layout` of its controls (see
-`_build_catalog!`): the label `target` of the system that gets the component, the `menu` of the
+The widgets of the catalog of a `LiveView`, in the `layout` of the body of its window (see
+`_build_catalog!`), in the colors of the theme tokens `theme`: the label `target` of the system that gets the component, the `menu` of the
 `entries`, the `form` with a row per parameter of the chosen entry, whose `boxes` hold the values,
 and the button `place`. The form is built again when another entry is chosen, see
 `_build_catalog_form!`.
 """
 mutable struct _CatalogWidget
     const layout::GridLayout
+    const theme::NamedTuple
     const entries::Vector{CatalogEntry}
     const target::Label
     const menu::Menu
@@ -227,44 +229,47 @@ _catalog_strings(w::_CatalogWidget) = String[tb.displayed_string[] for tb in w.b
     _build_catalog!(gui)
 
 Builds the catalog of the `gui` (`gui.components.catalog`, see [`component_catalog`](@ref)) as the
-controls "Components", where its layout places controls (see [`add_controls!`](@ref)): the line
+window "Components" (see `_CatalogWindow`), which floats over the 3D view in every layout: the line
 "into: <system>" with the system that gets the component (see `_target_system`), the menu of the
 entries ("group / name"), a box per parameter of the chosen entry with its default, and the button
-"Place", see `_place_catalog!`. The key `Insert` (`_CATALOG_KEY`) presses "Place", also while the
-catalog is not shown, unless a textbox or menu takes the keyboard; it is listed in the help with
-the mouse while placing (`_CATALOG_HELP`). Nothing is built for an empty catalog and for a view
-without a `System`, to which components can be added.
+"Place", see `_place_catalog!`. The window is hidden at first; the toggle "Components" among the
+tools of the layout (see [`add_tool!`](@ref)) shows and hides it, the key `Insert` shows it at the
+mouse, see `_connect_catalog_window!`. Both are listed in the help with the mouse while placing
+(`_CATALOG_HELP`). Nothing is built for an empty catalog and for a view without a `System`, to
+which components can be added.
 """
 function _build_catalog!(gui::LiveView)
     entries = gui.components.catalog
     (isempty(entries) || isempty(_mutable_systems(gui))) && return nothing
-    add_controls!(gui, _CATALOG_TITLE) do layout
-        target = Label(layout[1, 1], ""; halign = :left)
-        options = [("$(e.group) / $(e.name)", i) for (i, e) in enumerate(entries)]
-        menu = Menu(layout[2, 1]; options, default = first(first(options)),
-            width = _CATALOG_MENU_WIDTH, halign = :left)
-        form = _catalog_form(layout)
-        place = Button(layout[4, 1]; label = "Place (Ins)", halign = :left)
-        w = _CatalogWidget(layout, entries, target, menu, place, form, Textbox[])
-        # The boxes of the first form are registered with the controls, once they are built
-        _fill_catalog_form!(gui, w; register = false)
-        listeners = gui.controls.listeners
-        push!(listeners, on(_ -> _build_catalog_form!(gui, w), menu.selection))
-        push!(listeners, on(place.clicks) do _
-            _show_catalog_target!(gui, w)
-            _place_catalog!(gui, _catalog_entry(w), _catalog_strings(w))
-        end)
-        push!(listeners, on(events(gui.ax.scene).keyboardbutton; priority = 200) do event
-            (event.action == Keyboard.press && event.key == _CATALOG_KEY) || return Consume(false)
-            gui.controls.ignore_keys() && return Consume(false)
-            place.clicks[] += 1
-            return Consume(true)
-        end)
-        append!(gui.controls.help_extra, _CATALOG_HELP)
-        _update_help!(gui.controls)
-        # The target follows the selection and the inspection, see `_refresh_catalog!`
-        return g -> _show_catalog_target!(g, w)
-    end
+    t = gui.layout.theme
+    scene, part, head, close_button, body = _catalog_window_parts(gui.fig, t)
+    target = Label(body[1, 1], ""; _card_style(t, Label)..., halign = :left)
+    options = [("$(e.group) / $(e.name)", i) for (i, e) in enumerate(entries)]
+    menu = Menu(body[2, 1]; options, default = first(first(options)), _card_style(t, Menu)...,
+        width = _CATALOG_MENU_WIDTH, halign = :left)
+    form = _catalog_form(body)
+    place = Button(body[4, 1]; label = "Place", _card_style(t, Button)..., halign = :left)
+    widget = _CatalogWidget(body, t, entries, target, menu, place, form, Textbox[])
+    _fill_catalog_form!(gui, widget)
+    _register_widget!(gui, menu)
+    w = _CatalogWindow(scene, part, head, close_button, widget, false, nothing, nothing)
+    gui.components.window = w
+    listeners = gui.controls.listeners
+    push!(listeners, on(_ -> _build_catalog_form!(gui, widget), menu.selection))
+    push!(listeners, on(place.clicks) do _
+        _show_catalog_target!(gui, widget)
+        _place_catalog!(gui, _catalog_entry(widget), _catalog_strings(widget))
+    end)
+    _connect_catalog_window!(gui, w)
+    # The toggle of the layout, among its tools
+    w.tool = add_tool!((g, shown) -> _show_catalog!(g, shown), gui, _CATALOG_TITLE; icon = :lens,
+        toggle = true, tooltip = "$_CATALOG_TITLE (Ins)")
+    append!(gui.controls.help_extra, _CATALOG_HELP)
+    _update_help!(gui.controls)
+    # The presses on the new widgets are kept from the camera, see `_shield_cards!`
+    _shield_cards!(gui)
+    _show_catalog_target!(gui, widget)
+    _arrange_catalog!(gui)
     return nothing
 end
 
@@ -273,9 +278,8 @@ Shows the system that gets the next component in the catalog of the `gui` again,
 system was inspected, see `_on_shown!`; nothing without a catalog.
 """
 function _refresh_catalog!(gui::LiveView)
-    for c in gui.custom.controls
-        c.title == _CATALOG_TITLE && _run_update!(gui, c, c.update)
-    end
+    w = _catalog_window(gui)
+    isnothing(w) || _show_catalog_target!(gui, w.widget)
     return nothing
 end
 
@@ -289,29 +293,32 @@ end
 # Gap between the name, the box and the unit of a parameter in the form of the catalog [px]
 const _CATALOG_GAP = 8
 
-# The layout of the form of the catalog in the `layout` of its controls, see `_CatalogWidget`
+# The layout of the form of the catalog in the `layout` of its widgets, see `_CatalogWidget`
 _catalog_form(layout::GridLayout) =
     GridLayout(layout[3, 1]; halign = :left, default_rowgap = 6, default_colgap = _CATALOG_GAP)
 
 """
-    _fill_catalog_form!(gui, w; register = true)
+    _fill_catalog_form!(gui, w)
 
 Builds the rows of the form of the catalog widget `w` for its chosen entry: per parameter its
 name, a `Textbox` with the default and the unit. The boxes take the keyboard like those of the
-controls (see `_register_widget!`) if `register`.
+controls, see `_register_widget!`.
 """
-function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget; register::Bool = true)
+function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget)
     params = _catalog_entry(w).params
+    t = w.theme
+    label = (; _card_style(t, Label)..., halign = :left)
     # An empty layout has no size
-    isempty(params) && Label(w.form[1, 1], "no parameters"; halign = :left)
+    isempty(params) && Label(w.form[1, 1], "no parameters"; label..., color = t.muted)
     for (i, p) in enumerate(params)
         s = _catalog_string(p)
-        Label(w.form[i, 1], p.name; halign = :left)
+        Label(w.form[i, 1], p.name; label...)
         # An emptied box shows the default as its placeholder, see `_catalog_value`
-        tb = Textbox(w.form[i, 2]; stored_string = s, placeholder = s, width = _CATALOG_BOX_WIDTH)
-        Label(w.form[i, 3], p.unit; halign = :left)
+        tb = Textbox(w.form[i, 2]; stored_string = s, placeholder = s, _card_style(t, Textbox)...,
+            width = _CATALOG_BOX_WIDTH)
+        Label(w.form[i, 3], p.unit; label...)
         push!(w.boxes, tb)
-        register && _register_widget!(gui, tb)
+        _register_widget!(gui, tb)
     end
     _settle_catalog_form!(gui, w)
     return nothing
@@ -373,14 +380,12 @@ layout, see `_fill_catalog_form!`.
 """
 function _build_catalog_form!(gui::LiveView, w::_CatalogWidget)
     _release_catalog_boxes!(gui, w)
-    # Like `add_controls!`: blocks are only added to parts that are attached to the figure
-    _with_ui(gui) do
-        foreach(delete!, _blocks!(Any[], w.form))
-        # A new layout instead of the empty rows and columns of the old one
-        _GLB.remove_from_gridlayout!(_GLB.gridcontent(w.form))
-        w.form = _catalog_form(w.layout)
-        _fill_catalog_form!(gui, w)
-        _on_controls_added!(gui)
-    end
+    foreach(delete!, _blocks!(Any[], w.form))
+    # A new layout instead of the empty rows and columns of the old one
+    _GLB.remove_from_gridlayout!(_GLB.gridcontent(w.form))
+    w.form = _catalog_form(w.layout)
+    _fill_catalog_form!(gui, w)
+    # The presses on the new boxes are kept from the camera, see `_shield_cards!`
+    _shield_cards!(gui)
     return nothing
 end

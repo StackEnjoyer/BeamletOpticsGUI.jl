@@ -44,9 +44,10 @@ const GUI = BeamletOpticsGUI
         @test !gui.layout.dock.shown
         @test isnothing(gui.widgets.menu)
         @test gui.sliders isa Makie.SliderGrid
-        @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters", "Components"]
+        @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters"]
         @test first.(gui.layout.sections[:right]) == ["Properties"]
-        @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels]
+        # the built-in groups and the one of the own tools, with the toggle of the catalog
+        @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels, :user]
         @test occursin("1 ray", gui.widgets.info.text[])
         @test occursin("perspective", gui.widgets.info.text[])
         close(gui)
@@ -58,7 +59,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.sliders)
         @test !gui.layout.dock.shown
         @test !gui.layout.collapse.dock.active[]
-        @test first.(gui.layout.sections[:left]) == ["Objects", "Components"]
+        @test first.(gui.layout.sections[:left]) == ["Objects"]
         @test _height(gui.ax) > 650
         close(gui)
 
@@ -547,7 +548,9 @@ const GUI = BeamletOpticsGUI
 
     @testset "slots" begin
         m, pd = _fixture()
-        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [])
+        # without the catalog, whose toggle is in a group of its own, the one of the own tools
+        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [],
+            catalog = CatalogEntry[])
         # a new toolbar group after the built-in ones
         b = Button(GUI._add_toolbar_entry!(gui, :custom); label = "Mine")
         @test first.(gui.layout.groups[(end - 1):end]) == [:panels, :custom]

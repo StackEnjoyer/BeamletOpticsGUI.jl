@@ -79,6 +79,7 @@ include("LiveCustom.jl")
 include("LiveComponents.jl")
 include("LivePlacement.jl")
 include("LiveCatalog.jl")
+include("LiveCatalogWindow.jl")
 # agent skill of the package
 include("AgentSkill.jl")
 # precompiles the live view and the interaction call paths, must come last

@@ -42,11 +42,11 @@ end
         return gui, sys, m, sys2, m2
     end
 
-    _controls(gui) = filter(c -> c.title == "Components", gui.custom.controls)
+    _window(gui) = GUI._catalog_window(gui)
 
-    # The widgets of the catalog of the `gui`, in the order in which they were built
+    # The widgets of the catalog of the `gui` in its window, in the order in which they were built
     function _widgets(gui)
-        layout = only(_controls(gui)).layout
+        layout = _window(gui).widget.layout
         blocks = GUI._blocks!(Any[], layout)
         return (; layout, target = first(filter(b -> b isa Label, blocks)),
             menu = only(filter(b -> b isa Menu, blocks)),
@@ -171,18 +171,15 @@ end
     @testset "widget ($layout, $theme)" for (layout, theme) in ((:compact, :light), (:app, :dark))
         gui, sys, m = _fixture(; layout, theme)
         entries = gui.components.catalog
-        @test length(_controls(gui)) == 1
+        # the window of both layouts, hidden at first, with the toggle of the layout that shows it
+        win = _window(gui)
+        @test win isa GUI._CatalogWindow && !win.shown && !win.tool.active[]
+        @test isempty(GUI._catalog_rects(gui))
+        @test isempty(filter(c -> c.title == "Components", gui.custom.controls))
         w = _widgets(gui)
-        if layout == :compact
-            # an entry of the tool rail, which opens the catalog in a popover
-            item, _ = only(gui.layout.overlay.sections)
-            @test item.label[] == "Components"
-        else
-            # a section of the left sidebar
-            @test last(gui.layout.sections[:left]) == ("Components" => w.layout)
-        end
+        @test w.layout === win.widget.layout
         @test w.target.text[] == "into: System 1"
-        @test w.place.label[] == "Place (Ins)"
+        @test w.place.label[] == "Place"
         # the menu lists all entries by group and name, the first one is chosen
         @test first.(w.menu.options[]) == ["$(e.group) / $(e.name)" for e in entries]
         @test w.menu.selection[] == 1
@@ -225,18 +222,18 @@ end
         # an empty catalog
         gui, _ = _fixture(; layout, catalog = CatalogEntry[])
         @test isempty(gui.components.catalog)
-        @test isempty(_controls(gui))
+        @test isnothing(_window(gui))
         @test isempty(gui.custom.boxes)
         close(gui)
         # no system that components can be added to
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf)
-        @test isempty(_controls(gui))
+        @test isnothing(_window(gui))
         close(gui)
         # an empty system gets one
         gui = live_view(System() => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf)
-        @test length(_controls(gui)) == 1
+        @test !isnothing(_window(gui))
         close(gui)
     end
 
@@ -276,44 +273,140 @@ end
         close(gui)
     end
 
-    @testset "the key Insert ($layout)" for layout in (:compact, :app)
-        gui, sys, m = _fixture(; layout)
+    @testset "window ($layout, $theme)" for (layout, theme) in ((:compact, :light), (:app, :dark))
+        gui, sys, m = _fixture(; layout, theme)
+        ctrl = gui.controls
+        ev = events(gui.ax.scene)
+        win = _window(gui)
         w = _widgets(gui)
-        key!(key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
-        # presses "Place": the chosen entry with the values of its boxes follows the mouse
+        key!(key) = (ev.keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
+        mouse!(p) = (ev.mouseposition[] = (Float64(p[1]), Float64(p[2])))
+        press!() = (ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
+        release!() = (ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
+        view = Rect2f(Makie.viewport(gui.ax.scene)[])
+        at(fx, fy) = Point2f(minimum(view) .+ Makie.widths(view) .* Point2f(fx, fy))
+        corner() = (r = GUI._catalog_rect(win); Point2f(minimum(r)[1], maximum(r)[2]))
+        inside() = (r = GUI._catalog_rect(win); all(minimum(r) .>= minimum(view)) && all(maximum(r) .<= maximum(view)))
+
+        # the key Insert shows the window with its top left corner at the mouse
+        p = at(0.3, 0.8)
+        mouse!(p)
+        key!(Keyboard.insert)
+        @test win.shown && win.tool.active[]
+        @test corner() ≈ p atol = 0.5
+        @test inside() && GUI._catalog_rects(gui) == [GUI._catalog_rect(win)]
+        size = Makie.widths(GUI._catalog_rect(win))
+        @test all(size .> 100)
+        # nothing is placed by the key
+        @test !GUI._placing(gui) && sys.objects == [m]
+        # again, elsewhere: the window moves there; near an edge it stays inside the 3D view
+        p = at(0.5, 0.5)
+        mouse!(p)
+        key!(Keyboard.insert)
+        @test corner() ≈ p atol = 0.5
+        mouse!(at(0.99, 0.02))
+        key!(Keyboard.insert)
+        @test inside() && Makie.widths(GUI._catalog_rect(win)) ≈ size
+        @test maximum(GUI._catalog_rect(win))[1] ≈ maximum(view)[1] - GUI._OVERLAY_MARGIN atol = 0.5
+        @test minimum(GUI._catalog_rect(win))[2] ≈ minimum(view)[2] + GUI._OVERLAY_MARGIN atol = 0.5
+
+        # the mouse on the window belongs to it: the controls ignore it
+        mouse!(at(0.5, 0.5))
+        key!(Keyboard.insert)
+        mouse!(corner() .+ Point2f(30, -120))
+        @test GUI._over_catalog(gui) && ctrl.ignore_mouse()
+        selected = ctrl.selected[]
+        press!()
+        release!()
+        @test ctrl.selected[] === selected
+        mouse!(at(0.05, 0.05))
+        @test !GUI._over_catalog(gui)
+
+        # a drag at the head moves the window
+        c0 = corner()
+        handle = c0 .+ Point2f(60, -22)
+        @test GUI._over_catalog_handle(win, handle)
+        mouse!(handle)
+        press!()
+        mouse!(handle .+ Point2f(-80, 45))
+        @test corner() ≈ c0 .+ Point2f(-80, 45) atol = 0.5
+        mouse!(handle .+ Point2f(-40, 20))
+        release!()
+        @test corner() ≈ c0 .+ Point2f(-40, 20) atol = 0.5
+        # released: the mouse no longer moves it
+        mouse!(handle .+ Point2f(100, 100))
+        @test corner() ≈ c0 .+ Point2f(-40, 20) atol = 0.5
+        # dragged beyond the 3D view, it stays inside
+        mouse!(corner() .+ Point2f(60, -22))
+        press!()
+        mouse!(Point2f(minimum(view) .- 500))
+        release!()
+        @test inside()
+        # the close button is no handle
+        close_rect = Rect2f(win.close_button.box.layoutobservables.computedbbox[])
+        @test !GUI._over_catalog_handle(win, Point2f(minimum(close_rect) .+ Makie.widths(close_rect) ./ 2))
+
+        # "Place" places the chosen entry with the values of its boxes, the window stays
         w.boxes[3].displayed_string[] = "12"
-        clicks = w.place.clicks[]
-        key!(Keyboard.insert)
-        @test w.place.clicks[] == clicks + 1
-        @test GUI._placing(gui)
-        lens = gui.components.placement.obj
-        @test lens isa Lens
+        w.place.clicks[] += 1
+        @test GUI._placing(gui) && win.shown
+        @test gui.components.placement.obj isa Lens
         @test gui.components.placement.origin.code == "ThinLens(0.05, -0.05, 0.012, 1.5)"
-        # again: a new component replaces the one that is being placed
-        key!(Keyboard.insert)
-        @test GUI._placing(gui) && gui.components.placement.obj !== lens
         key!(Keyboard.escape)
-        @test !GUI._placing(gui)
+        @test !GUI._placing(gui) && win.shown
         @test sys.objects == [m]
-        # not while a box takes the keyboard
+
+        # the close button hides it; its toggle follows and shows it where it was
+        c0 = corner()
+        w.boxes[1].focused[] = true
+        win.close_button.clicks[] += 1
+        @test !win.shown && !win.tool.active[] && isempty(GUI._catalog_rects(gui))
+        @test !w.boxes[1].focused[] && !GUI._typing(gui)
+        @test !GUI._over_catalog(gui)
+        win.tool.active[] = true
+        @test win.shown
+        @test corner() ≈ c0 atol = 0.5
+        win.tool.active[] = false
+        @test !win.shown
+        # without the mouse in the 3D view, the key shows it where it was
+        mouse!(Point2f(-10, -10))
+        key!(Keyboard.insert)
+        @test win.shown
+        @test corner() ≈ c0 atol = 0.5
+
+        # not while a box takes the keyboard, and not in the spectator mode, which hides the window
+        win.close_button.clicks[] += 1
         w.boxes[1].focused[] = true
         key!(Keyboard.insert)
-        @test !GUI._placing(gui)
+        @test !win.shown
         w.boxes[1].focused[] = false
+        key!(Keyboard.insert)
+        @test win.shown
+        GUI._set_spectator!(ctrl, true)
+        GUI._arrange_catalog!(gui)
+        @test isempty(GUI._catalog_rects(gui)) && !GUI._over_catalog(gui)
+        GUI._set_spectator!(ctrl, false)
+        GUI._arrange_catalog!(gui)
+        @test GUI._catalog_rects(gui) == [GUI._catalog_rect(win)]
+
+        # the floating cards keep off the window
+        @test GUI._catalog_rect(win) in GUI._obstacles(gui)
+
         # the key is taken, a tool can not use it, and it is listed in the help
         @test occursin("Insert", GUI._key_binding(gui, Keyboard.insert))
         @test_throws ArgumentError add_tool!(g -> nothing, gui, "x"; key = Keyboard.insert)
         sections = GUI._help_sections(gui.controls)
         components = only(filter(s -> s.first == "Components", sections)).second
-        @test first(components).keys == ["Ins"]
+        @test first(components).keys == ["Ins"] && occursin("open the catalog", first(components).text)
+        @test any(e -> occursin("move it", e.text), components)
         @test any(e -> occursin("snap", e.text), components)
         @test any(e -> occursin("Esc cancels", e.text), components)
         close(gui)
 
         # a view without a catalog has neither the key nor the section
-        gui, _ = _fixture(; layout, catalog = CatalogEntry[])
-        key!(Keyboard.insert)
-        @test !GUI._placing(gui)
+        gui, _ = _fixture(; layout, theme, catalog = CatalogEntry[])
+        events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.insert, Keyboard.press)
+        @test isnothing(_window(gui)) && isempty(GUI._catalog_rects(gui)) && !GUI._over_catalog(gui)
         @test !any(s -> s.first == "Components", GUI._help_sections(gui.controls))
         close(gui)
     end

@@ -345,7 +345,8 @@ the systems, with which added components are rendered; the `catalog` of the view
 `removed` ones that the view started with, both in the order of the calls, with the `system` of
 each; the `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
-is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`.
+is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`; the
+`window` of the catalog (a `_CatalogWindow`), `nothing` for a view without a catalog.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -355,6 +356,7 @@ Base.@kwdef mutable struct _ComponentState
     const system::IdDict{Any, Any} = IdDict{Any, Any}()
     const origin::IdDict{Any, Any} = IdDict{Any, Any}()
     placement::Any = nothing
+    window::Any = nothing
 end
 
 """
@@ -900,14 +902,15 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 # Adding and removing components
 
 The components of a `System` of the view can be changed at runtime, e.g. to build a setup from an
-empty `System()` and a source; a `StaticSystem` can not be changed. The catalog "Components" (an
-entry of the tool rail in the compact layout, a section of the left sidebar in the app layout, like
-the widgets of [`add_controls!`](@ref)) offers the components of the `catalog` kwarg, see
+empty `System()` and a source; a `StaticSystem` can not be changed. The catalog "Components" is
+a window over the 3D view, in both layouts: the key `Insert` opens it with its top left corner at
+the mouse (a window that is open moves there), the toggle "Components" among the tools (tool rail
+or toolbar) opens and closes it, and so does its close button. A drag at its head moves it; it
+stays inside the 3D view. It offers the components of the `catalog` kwarg, see
 [`component_catalog`](@ref): its menu selects a component, the boxes below take its parameters,
-e.g. the radii of a lens [mm], and "Place" attaches it to the mouse. The key `Insert` presses
-"Place", also while the catalog is not shown. An input that is no number, or that the constructor
-of the component rejects, is reported in the status line. The line "into" names the system that
-gets the component.
+e.g. the radii of a lens [mm], and "Place" attaches it to the mouse; the window stays open. An
+input that is no number, or that the constructor of the component rejects, is reported in the
+status line. The line "into" names the system that gets the component.
 
 The component then follows the mouse, drawn at half of its opacity, on the plane through the first
 source of its system with the `plane_normal` of the controls, in the orientation in which it was

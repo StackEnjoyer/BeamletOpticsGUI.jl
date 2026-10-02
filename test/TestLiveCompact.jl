@@ -179,7 +179,7 @@ const GUI = BeamletOpticsGUI
 
     @testset "own tools, controls and sliders in the rail" begin
         n = Ref(0)
-        # without the catalog, whose controls "Components" are a section of the rail as well
+        # without the catalog, whose toggle "Components" is a tool of the rail as well
         gui, _, _ = _fixture(; sliders = ["gap" => (0:0.1:1, v -> (n[] += 1))],
             catalog = CatalogEntry[])
         o = gui.layout.overlay

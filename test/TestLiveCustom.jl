@@ -12,7 +12,7 @@ const GUI = BeamletOpticsGUI
 
     # Rays along +y, the mirror at 45° reflects them along +x onto the detector. The source is a
     # beam group, which is solved as a preview while moving, see `preview`. Without the catalog,
-    # whose controls "Components" are tested in TestLiveCatalog.jl: the controls here are the own ones
+    # whose toggle "Components" is tested in TestLiveCatalog.jl: the tools here are the own ones
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))

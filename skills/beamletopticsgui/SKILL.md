@@ -50,8 +50,8 @@ When this Skill is active:
 ## Limits of the current version
 
 - Extras and sources are fixed when the view starts (extras can be hidden). Components of a `System` can
-  be added and removed at runtime, with these limits: a `Detector` added at runtime gets no detector
-  panel; adding and removing is not part of the undo history; a `StaticSystem`, sources and objects
+  be added and removed at runtime, with these limits: adding and removing is not part of the undo
+  history; a `StaticSystem`, sources and objects
   inside a group cannot be added or removed; a component that is being placed is not traced until it is
   dropped.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks

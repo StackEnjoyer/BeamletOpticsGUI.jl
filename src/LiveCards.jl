@@ -184,10 +184,10 @@ end
     _obstacles(gui) -> Vector{Rect2f}
 
 The screen rectangles [figure px] that the floating cards of the `gui` keep off, see `_avoid`: the
-view cube, if any, and the parts of the layout over the 3D view that are shown, see
-`_layout_obstacles`.
+view cube, if any, the parts of the layout over the 3D view that are shown, see
+`_layout_obstacles`, and the window of the catalog while it is shown, see `_CatalogWindow`.
 """
-_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui)]
+_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui); _catalog_rects(gui)]
 
 """
     _layout_obstacles(gui) -> Vector{Rect2f}
@@ -946,7 +946,8 @@ function _shield_cards!(gui::LiveView)
     listeners = gui.controls.listeners
     foreach(off, gui.cards.shield)
     filter!(l -> !any(s -> s === l, gui.cards.shield), listeners)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) || _over_layout(gui)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
+                 _over_catalog(gui) || _over_layout(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
         on(_ -> Consume(over()), ev.scroll; priority = 1)]
     append!(listeners, gui.cards.shield)
@@ -974,7 +975,7 @@ elsewhere ends the input into the textboxes of the cards, also if the controls c
 function _connect_cards!(gui::LiveView)
     ctrl = gui.controls
     ev = events(gui.ax.scene)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) || _over_catalog(gui)
     ctrl.ignore_mouse = () -> over() || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))

@@ -31,9 +31,10 @@ systems, the keyword `system` of [`add_component!`](@ref) selects the target.
 
 ## The catalog and the placement
 
-The catalog "Components" is an entry of the tool rail in the compact layout and a section of the left
-sidebar in the app layout, i.e. where [`add_controls!`](@ref) places its widgets. The built-in
-entries are
+The catalog "Components" is a window over the 3D view in both layouts. The key `Insert` opens it
+with its top left corner at the mouse, the toggle "Components" among the tools (the tool rail of
+the compact layout, the toolbar of the app layout) opens and closes it. A drag at its head moves
+it. The built-in entries are
 
 | group | entries |
 |:--|:--|
@@ -44,18 +45,18 @@ entries are
 | Detectors | Detector |
 
 A menu selects the entry, the boxes below take its parameters, and "Place" attaches the component
-to the mouse. The key `Insert` presses "Place", also while the catalog is not shown. A left click
+to the mouse; the window stays open, e.g. to place several components. A left click
 drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
 only onto its central beam, of a Gaussian beamlet onto its chief ray. The component that is being
 placed is not traced until it is dropped. See the section "Adding and removing components" of
 [`live_view`](@ref) for the details of the placement.
 
-The button "remove" below the rows of the card of a component and the key `Delete` remove it again. The added and removed
+The button "remove" at the end of the page "Pose" of the card of a component and the key `Delete`
+remove it again. The added and removed
 components are part of the code of [`export_changes`](@ref).
 
 Limits of this version:
 
-- A `Detector` that is added at runtime is traced and has a card, but gets no detector panel.
 - Adding and removing is not part of the undo history.
 - A `StaticSystem` can not be changed. Sources and objects inside a group can not be added or
   removed, remove the group instead.

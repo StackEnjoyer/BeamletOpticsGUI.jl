@@ -73,7 +73,8 @@ describe it as available in docs or the skill.
   `retrace!`, own widgets.
 - `src/LiveComponents.jl`: `add_component!`, `remove_component!` (components added to and removed
   from a `System` at runtime). `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
-  `component_catalog`) and its widget. `src/LivePlacement.jl`: placing a new component with the
+  `component_catalog`) and its widgets, `src/LiveCatalogWindow.jl`: its window over the 3D view.
+  `src/LivePlacement.jl`: placing a new component with the
   mouse, with snapping onto beams.
 - `src/LiveMarkers.jl`: clip planes and source markers.
 - `docs/`: Documenter site. `skills/beamletopticsgui/`: the agent skill.
