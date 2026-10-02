@@ -571,10 +571,10 @@ function _parse_step(s::AbstractString)
     x = parse(Float64, m.captures[1])
     x > 0 || return nothing
     unit = replace(m.captures[2], "u" => "µ", "μ" => "µ")
-    units = Dict("nm" => (:move, 1e-9), "µm" => (:move, 1e-6), "mm" => (:move, 1e-3),
-        "cm" => (:move, 1e-2), "m" => (:move, 1.0), "µrad" => (:rotate, 1e-6),
-        "mrad" => (:rotate, 1e-3), "rad" => (:rotate, 1.0), "deg" => (:rotate, deg2rad(1)),
-        "°" => (:rotate, deg2rad(1)))
+    units = Dict("pm" => (:move, 1e-12), "nm" => (:move, 1e-9), "µm" => (:move, 1e-6),
+        "mm" => (:move, 1e-3), "cm" => (:move, 1e-2), "m" => (:move, 1.0),
+        "nrad" => (:rotate, 1e-9), "µrad" => (:rotate, 1e-6), "mrad" => (:rotate, 1e-3),
+        "rad" => (:rotate, 1.0), "deg" => (:rotate, deg2rad(1)), "°" => (:rotate, deg2rad(1)))
     haskey(units, unit) || return nothing
     mode, factor = units[unit]
     return mode, x * factor

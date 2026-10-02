@@ -458,6 +458,18 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test GUI._next_step(1e-7, -1) ≈ 5e-8
         @test GUI._next_step(1.0, -1) ≈ 0.5
 
+        # the step is shown in the unit of its size
+        _step(x) = GUI._step_string(:move, x, 0.0)
+        @test _step.([1e-12, 5e-10, 1e-9, 5e-7]) == ["1 pm", "500 pm", "1 nm", "500 nm"]
+        @test _step.([1e-6, 2.5e-4, 1e-3, 5e-3]) == ["1 µm", "250 µm", "1 mm", "5 mm"]
+        @test _step.([1e-2, 0.5, 1.0, 12.0]) == ["1 cm", "50 cm", "1 m", "12 m"]
+        # rounding errors of the 1-2-5 sequence, and steps below the smallest unit
+        @test _step(0.9999999e-3) == "1 mm" && _step(5e-13) == "0.5 pm"
+        @test foldl((x, _) -> GUI._next_step(x, 1), 1:19; init = 5e-9) |> _step == "1 cm"
+        _angle(x) = GUI._step_string(:rotate, 0.0, x)
+        @test _angle.([1e-9, 5e-5, 1e-3, 0.5, π / 4]) ==
+              ["1 nrad", "50 µrad", "1 mrad", "500 mrad", "785 mrad"]
+
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, fine_step = 10e-9, fine_angle = 10e-6)

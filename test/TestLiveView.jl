@@ -420,6 +420,8 @@ _points(h) = only(render_plots(h))[1][]
         @test GUI._parse_step("250 nm")[1] == :move
         @test GUI._parse_step("250 nm")[2] ≈ 250e-9
         @test GUI._parse_step("0.5um")[2] ≈ 0.5e-6
+        @test GUI._parse_step("5 pm") == (:move, 5e-12)
+        @test GUI._parse_step("2 nrad") == (:rotate, 2e-9)
         @test GUI._parse_step("1e-3 m")[2] ≈ 1e-3
         @test GUI._parse_step("2 deg")[2] ≈ deg2rad(2)
         @test GUI._parse_step("3 mrad")[1] == :rotate
@@ -560,10 +562,12 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.trace.job === job
         _key!(gui, Keyboard.escape)
         @test gui.trace.job === job && !istaskdone(job.task)
-        # the button "Cancel" of the progress window cancels after the current item
-        tick!()
+        # the button "Cancel" of the progress window cancels after the current item. The window
+        # appears once the loop has run for `progress_delay`, which starts later than the job on a
+        # busy machine
         progress = gui.trace.progress
-        @test progress.visible[] && !progress.hovered[]
+        @test waitfor(() -> (tick!(); progress.visible[]))
+        @test !progress.hovered[]
         r = GUI._cancel_rect(progress)
         p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
         events(scene).mouseposition[] = (p[1], p[2])
@@ -585,8 +589,7 @@ _points(h) = only(render_plots(h))[1][]
         job = slow_job()
         @test !GUI._run!(gui, job, GUI._TRACING)
         GUI._set_spectator!(gui.controls, true)
-        tick!()
-        @test progress.visible[]
+        @test waitfor(() -> (tick!(); progress.visible[]))
         r = GUI._cancel_rect(progress)
         p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
         events(scene).mouseposition[] = (p[1], p[2])
