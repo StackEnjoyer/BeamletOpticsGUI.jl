@@ -73,7 +73,8 @@ and optionally, with defaults for any layout,
 
 - `_figure(layout::L, size)`: the `Figure`, and `_default_size(layout::L)`: its size unless given
 - `_connect_layout!(gui::LiveView{L})`: connects the widgets that only the layout has, e.g.
-  collapsing; its listeners belong in `gui.controls.listeners`
+  collapsing; its listeners belong in `gui.controls.listeners`; `_close_layout!(gui)` stops what
+  runs besides them when the view is closed, e.g. timers
 - where the controls of the selected object are shown, i.e. the widgets that
   [`card_actions`](@ref) and [`card_rows`](@ref) declare, built by the same code for any host (see
   `_AbstractCard`): by default on the floating card next to the object (`_ComponentCard`), which
@@ -514,6 +515,7 @@ end
 function Base.close(gui::LiveView)
     _cancel_solve!(gui)
     _end_placement!(gui)
+    _close_layout!(gui)
     close(gui.controls)
     isnothing(gui.widgets.view_cube) || close(gui.widgets.view_cube)
     foreach(_hide_card!, gui.cards.all)

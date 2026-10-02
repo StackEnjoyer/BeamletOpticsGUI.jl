@@ -245,7 +245,11 @@ const GUI = BeamletOpticsGUI
             # the toast takes no clicks and is no obstacle of the cards
             gui.status.text[] = "shown"
             @test !(GUI._overlay_rect(o.toast) in GUI._overlay_rects(o))
+            # a closed view leaves no timer behind
+            @test o.toast_deadline.timer isa Timer
             close(gui)
+            @test isnothing(o.toast_deadline.timer) && isnothing(o.camera_deadline.timer)
+            @test !isfinite(o.toast_deadline.at)
         finally
             GUI._TOAST_SECONDS[] = old
         end

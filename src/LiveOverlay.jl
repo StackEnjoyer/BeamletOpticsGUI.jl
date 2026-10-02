@@ -67,6 +67,14 @@ end
 """Cancels the scheduled `action` of `d`."""
 _cancel!(d::_Deadline) = (d.at = Inf; nothing)
 
+"""Cancels the scheduled `action` of `d` and stops its timer, e.g. of a view that is closed."""
+function _stop!(d::_Deadline)
+    d.at = Inf
+    isnothing(d.timer) || close(d.timer)
+    d.timer = nothing
+    return nothing
+end
+
 function _arm!(d::_Deadline, delay::Real)
     d.fire = time() + delay
     d.timer = Timer(max(delay, 1.0e-3)) do _
@@ -616,6 +624,10 @@ end
 #=
 Hooks of the compact layout, see `AbstractLiveLayout`
 =#
+
+# A closed view leaves no timer behind, e.g. the one that hides the toast
+_close_layout!(gui::CompactView) =
+    (foreach(_stop!, (gui.layout.overlay.toast_deadline, gui.layout.overlay.camera_deadline)); nothing)
 
 _layout_obstacles(gui::CompactView) =
     [_overlay_rects(gui.layout.overlay); _help_rects(gui.layout.help)]

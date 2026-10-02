@@ -22,6 +22,7 @@ _figure(::AbstractLiveLayout, size) = Figure(; size)
 
 # Optional parts of the layout interface, see `AbstractLiveLayout`
 _connect_layout!(::LiveView) = nothing
+_close_layout!(::LiveView) = nothing
 _on_selected!(::LiveView) = nothing
 _on_clipping!(::LiveView) = nothing
 _on_clip_planes_changed!(::LiveView) = nothing
