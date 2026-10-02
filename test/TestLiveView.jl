@@ -475,6 +475,11 @@ _points(h) = only(render_plots(h))[1][]
         @test !gui.trace.coarse
         @test size(_field(gui)[3]) == (40, 40)
         @test !_is_preview(gui)
+        # the refinement measures the views again, a fast view is no longer previewed
+        @test gui.trace.view_time < 0.5
+        _key!(gui, Keyboard.left)
+        @test !gui.trace.coarse
+        @test size(_field(gui)[3]) == (40, 40)
         close(gui)
     end
 

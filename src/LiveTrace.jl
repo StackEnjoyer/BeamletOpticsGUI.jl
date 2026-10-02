@@ -449,9 +449,15 @@ function _solve!(gui::LiveView, obj; coarse = false, preview = false)
     return done
 end
 
-"""Shows the results `r.results` of the detector views `r.requests`, which refine a coarse preview."""
+"""
+Shows the results `r.results` of the detector views `r.requests`, which refine a coarse preview, and
+measures the `view_time` again: otherwise a single slow update, e.g. the first one, which includes
+compilation, would keep the views coarse.
+"""
 function _refine!(gui::LiveView, r)
+    t1 = time_ns()
     foreach((request, result) -> _apply_view!(gui, request, result), r.requests, r.results)
+    gui.trace.view_time = r.field_time + 1e-9 * (time_ns() - t1)
     gui.trace.coarse = false
     return nothing
 end
