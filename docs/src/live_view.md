@@ -516,7 +516,8 @@ The 3D view uses the controls of [`kinematic_controls!`](@ref), see
 [Kinematic controls](@ref). In addition, the key `t` solves the systems immediately, see
 [Manual tracing](@ref), `p`, `Delete`, `c` and `Shift+c` control the clip planes, see
 [Clip planes](@ref), `1` shows or hides the source markers, see
-[Movable sources in the live view](@ref), and `g` zooms to the selection, see [Camera tools](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
+[Movable sources in the live view](@ref), `g` zooms to the selection, see [Camera tools](@ref), and
+`Insert` places the component of the catalog, see [Adding and removing components](@ref components_page). The keyboard step can be typed into the box `step` of the component card, e.g.
 `250 nm` or `50 µrad`, where the unit selects the move or rotate mode, see
 [Component card and component menu](@ref). The status line shows the
 pose of the moved component and its change since the window was opened. Names for the status line

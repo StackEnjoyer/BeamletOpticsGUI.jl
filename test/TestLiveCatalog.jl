@@ -182,7 +182,7 @@ end
             @test last(gui.layout.sections[:left]) == ("Components" => w.layout)
         end
         @test w.target.text[] == "into: System 1"
-        @test w.place.label[] == "Place"
+        @test w.place.label[] == "Place (Ins)"
         # the menu lists all entries by group and name, the first one is chosen
         @test first.(w.menu.options[]) == ["$(e.group) / $(e.name)" for e in entries]
         @test w.menu.selection[] == 1
@@ -273,6 +273,48 @@ end
         @test w.target.text[] == "into: Main"
         gui.controls.selected[] = nothing
         @test w.target.text[] == "into: Main"
+        close(gui)
+    end
+
+    @testset "the key Insert ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout)
+        w = _widgets(gui)
+        key!(key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
+        # presses "Place": the chosen entry with the values of its boxes follows the mouse
+        w.boxes[3].displayed_string[] = "12"
+        clicks = w.place.clicks[]
+        key!(Keyboard.insert)
+        @test w.place.clicks[] == clicks + 1
+        @test GUI._placing(gui)
+        lens = gui.components.placement.obj
+        @test lens isa Lens
+        @test gui.components.placement.origin.code == "ThinLens(0.05, -0.05, 0.012, 1.5)"
+        # again: a new component replaces the one that is being placed
+        key!(Keyboard.insert)
+        @test GUI._placing(gui) && gui.components.placement.obj !== lens
+        key!(Keyboard.escape)
+        @test !GUI._placing(gui)
+        @test sys.objects == [m]
+        # not while a box takes the keyboard
+        w.boxes[1].focused[] = true
+        key!(Keyboard.insert)
+        @test !GUI._placing(gui)
+        w.boxes[1].focused[] = false
+        # the key is taken, a tool can not use it, and it is listed in the help
+        @test occursin("Insert", GUI._key_binding(gui, Keyboard.insert))
+        @test_throws ArgumentError add_tool!(g -> nothing, gui, "x"; key = Keyboard.insert)
+        sections = GUI._help_sections(gui.controls)
+        components = only(filter(s -> s.first == "Components", sections)).second
+        @test first(components).keys == ["Ins"]
+        @test any(e -> occursin("snap", e.text), components)
+        @test any(e -> occursin("Esc cancels", e.text), components)
+        close(gui)
+
+        # a view without a catalog has neither the key nor the section
+        gui, _ = _fixture(; layout, catalog = CatalogEntry[])
+        key!(Keyboard.insert)
+        @test !GUI._placing(gui)
+        @test !any(s -> s.first == "Components", GUI._help_sections(gui.controls))
         close(gui)
     end
 

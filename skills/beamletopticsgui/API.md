@@ -51,7 +51,9 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
 `translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
-The catalog "Components" in the window does the same with the mouse.
+The catalog "Components" in the window does the same with the mouse: "Place" (key `Insert`)
+attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
+selected component.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
 keyboard controls to a live-rendered system on its own, without `live_view`.

@@ -833,9 +833,10 @@ empty `System()` and a source; a `StaticSystem` can not be changed. The catalog 
 entry of the tool rail in the compact layout, a section of the left sidebar in the app layout, like
 the widgets of [`add_controls!`](@ref)) offers the components of the `catalog` kwarg, see
 [`component_catalog`](@ref): its menu selects a component, the boxes below take its parameters,
-e.g. the radii of a lens [mm], and "Place" attaches it to the mouse. An input that is no number,
-or that the constructor of the component rejects, is reported in the status line. The line "into"
-names the system that gets the component.
+e.g. the radii of a lens [mm], and "Place" attaches it to the mouse. The key `Insert` presses
+"Place", also while the catalog is not shown. An input that is no number, or that the constructor
+of the component rejects, is reported in the status line. The line "into" names the system that
+gets the component.
 
 The component then follows the mouse, drawn at half of its opacity, on the plane through the first
 source of its system with the `plane_normal` of the controls, in the orientation in which it was

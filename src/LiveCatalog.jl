@@ -185,6 +185,15 @@ Widget
 
 # The title of the controls of the catalog, see `add_controls!`
 const _CATALOG_TITLE = "Components"
+# The key of "Place" of the catalog, the counterpart of `Delete`; Makie's `Camera3D` binds almost
+# all letters
+const _CATALOG_KEY = Keyboard.insert
+
+# The keys of a view with a catalog, in the help of the controls, see `_help_sections`
+const _CATALOG_HELP = _HelpSection["Components" => [
+    _HelpEntry(["Ins"], "place the component of the catalog"),
+    _HelpEntry([:mouse => "move"], "while placing: near a beam, snap onto it"),
+    _HelpEntry([:mouse => "click"], "while placing: drop it, Esc cancels")]]
 # Widths of the menu of the entries and of the boxes of the parameters [px]
 const _CATALOG_MENU_WIDTH = 216
 const _CATALOG_BOX_WIDTH = 70
@@ -221,8 +230,10 @@ Builds the catalog of the `gui` (`gui.components.catalog`, see [`component_catal
 controls "Components", where its layout places controls (see [`add_controls!`](@ref)): the line
 "into: <system>" with the system that gets the component (see `_target_system`), the menu of the
 entries ("group / name"), a box per parameter of the chosen entry with its default, and the button
-"Place", see `_place_catalog!`. Nothing is built for an empty catalog and for a view without a
-`System`, to which components can be added.
+"Place", see `_place_catalog!`. The key `Insert` (`_CATALOG_KEY`) presses "Place", also while the
+catalog is not shown, unless a textbox or menu takes the keyboard; it is listed in the help with
+the mouse while placing (`_CATALOG_HELP`). Nothing is built for an empty catalog and for a view
+without a `System`, to which components can be added.
 """
 function _build_catalog!(gui::LiveView)
     entries = gui.components.catalog
@@ -233,7 +244,7 @@ function _build_catalog!(gui::LiveView)
         menu = Menu(layout[2, 1]; options, default = first(first(options)),
             width = _CATALOG_MENU_WIDTH, halign = :left)
         form = _catalog_form(layout)
-        place = Button(layout[4, 1]; label = "Place", halign = :left)
+        place = Button(layout[4, 1]; label = "Place (Ins)", halign = :left)
         w = _CatalogWidget(layout, entries, target, menu, place, form, Textbox[])
         # The boxes of the first form are registered with the controls, once they are built
         _fill_catalog_form!(gui, w; register = false)
@@ -243,6 +254,14 @@ function _build_catalog!(gui::LiveView)
             _show_catalog_target!(gui, w)
             _place_catalog!(gui, _catalog_entry(w), _catalog_strings(w))
         end)
+        push!(listeners, on(events(gui.ax.scene).keyboardbutton; priority = 200) do event
+            (event.action == Keyboard.press && event.key == _CATALOG_KEY) || return Consume(false)
+            gui.controls.ignore_keys() && return Consume(false)
+            place.clicks[] += 1
+            return Consume(true)
+        end)
+        append!(gui.controls.help_extra, _CATALOG_HELP)
+        _update_help!(gui.controls)
         # The target follows the selection and the inspection, see `_refresh_catalog!`
         return g -> _show_catalog_target!(g, w)
     end

@@ -42,7 +42,7 @@ When this Skill is active:
    `constraints`, `on_change` as needed (`API.md`).
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
    controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components can be added
-   to and removed from a system in the window (catalog "Components", key `Delete`) or from code with
+   to and removed from a system in the window (catalog "Components", keys `Insert` and `Delete`) or from code with
    `add_component!` and `remove_component!` (`API.md`).
 4) Export the alignment found in the window with `export_changes(gui)` (the button "Export" does the
    same) and paste it into the script that builds the system.
