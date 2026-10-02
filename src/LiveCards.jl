@@ -230,6 +230,7 @@ function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{
     pose = _card_pose(obj)
     if c.pose === nothing || c.pose[1] !== obj
         _build_content!(gui, c, obj)
+        _build_pages!(gui, c, obj)
     end
     # Another object or a new pose, e.g. after a move by a program
     if c.pose === nothing || c.pose[1] !== obj || c.pose[2] != pose
@@ -245,8 +246,9 @@ function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{
     view = Rect2f(Makie.viewport(scene)[])
     sel = _screen_rect(scene, corners, obj)
     c.auto_collapsed = false
-    c.step_shown, c.has_properties = _shows_step(gui, c, obj), _has_properties(obj)
+    c.step_shown = _shows_step(gui, c, obj)
     _fit_properties!(c)
+    _fit_view!(c, view)
     size = _card_size(c)
     p = isnothing(c.spot) ? _avoid(_card_position(sel, size, view), size, view, obstacles) :
         _spot_position(c.spot, size, view)
@@ -260,6 +262,161 @@ function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{
     push!(obstacles, rect)
     _update!(c.link, [_link_anchor(scene, corners, obj), Point2f(minimum(rect) .+ size ./ 2)])
     _update!(c.scene.visible, true)
+    _show_view!(gui, c, obj)
+    return nothing
+end
+
+#=
+Pages of a floating card, see `_card_pages`, and the view of its page "Results"
+=#
+
+"""
+    _build_pages!(gui, c, obj)
+
+Shows the pages of the new object `obj` of the floating card `c`: its page bar (see `_show_bar!`),
+its default page (see `_default_page`), unless the card is pinned and has the page that it showed
+before, e.g. a card that was docked on this page, and the view of an object with a view, see
+`_build_view!`.
+"""
+function _build_pages!(gui::LiveView, c::_ComponentCard, obj)
+    pages = _card_pages(obj)
+    (c.pinned && c.page in pages) || (c.page = _default_page(obj))
+    _show_bar!(gui, c, pages)
+    _build_view!(gui, c, obj)
+    return nothing
+end
+
+"""
+Shows the page bar of the `pages` on the card `c` of the `gui`, built when the card first gets an
+object with these pages; none for a single page.
+"""
+function _show_bar!(gui::LiveView, c::_ComponentCard, pages::Tuple)
+    c.pages = pages
+    if length(pages) > 1
+        c.bar_part, c.bar = get!(() -> _new_bar!(gui, c, pages), c.bars, pages)
+        _update!(c.bar.selected, c.page)
+    else
+        c.bar_part, c.bar = nothing, nothing
+    end
+    return nothing
+end
+
+function _new_bar!(gui::LiveView, c::_ComponentCard, pages::Tuple)
+    part = _card_part(c.scene)
+    bar = _page_bar!(part[1, 1], c.theme, pages; selected = c.page)
+    # as wide as its buttons: the free layout of the card has no width to fill
+    bar.grid.tellwidth[] = true
+    push!(gui.controls.listeners, on(page -> _set_page!(gui, c, page), bar.selected))
+    # The new buttons come before the mouse shield of the cards
+    _shield_cards!(gui)
+    return (part, bar)
+end
+
+"""
+    _set_page!(gui, c, page)
+
+Shows the `page` of the floating card `c` of the `gui`, one of its `pages`, e.g. after a click on
+its page bar: ends the input into the textboxes of the page before, fills the property list of the
+page "Properties" and lays out the cards again, which computes a view that is shown now, see
+`_show_view!`.
+"""
+function _set_page!(gui::LiveView, c::_ComponentCard, page::Symbol)
+    (c.page === page || !(page in c.pages)) && return nothing
+    c.page = page
+    isnothing(c.bar) || _update!(c.bar.selected, page)
+    _defocus_card!(c)
+    _refresh_selection_part!(gui, c, _card_object(gui, c))
+    _update_cards!(gui)
+    return nothing
+end
+
+"""
+    _build_view!(gui, c, obj)
+
+Replaces the view of the floating card `c` by one of its new object `obj`, if `obj` has a view (see
+`_has_view`), in the state `view_expanded` and of the size `view_size` of the card. The widgets of
+the view set the options of the view of `obj` (see `_set_view!`), its chevrons and its thumbnail
+expand and collapse it, see `_expand_view!`.
+"""
+function _build_view!(gui::LiveView, c::_ComponentCard, obj)
+    _drop_view!(gui, c)
+    _has_view(obj) || return nothing
+    c.view_part = _card_part(c.scene)
+    view = _DetectorView(c.view_part, c.theme; expanded = c.view_expanded, width = c.view_size[1],
+        height = c.view_size[2])
+    append!(gui.controls.listeners, _connect_view!(view, events(gui.ax.scene);
+        on_options = (; changes...) -> _set_view!(gui, obj; changes...),
+        on_expanded = expanded -> _expand_view!(gui, c, obj, expanded)))
+    c.view = view
+    # The new widgets come before the mouse shield of the cards
+    _shield_cards!(gui)
+    return nothing
+end
+
+"""Removes the view of the floating card `c` of the `gui`, if any, with its listeners."""
+function _drop_view!(gui::LiveView, c::_ComponentCard)
+    view = c.view
+    c.view, c.view_shown, c.view_switches = nothing, false, 0
+    isnothing(view) && return nothing
+    filter!(l -> !any(x -> x === l, view.listeners), gui.controls.listeners)
+    _delete_view!(view)
+    return nothing
+end
+
+"""
+Expands the view of `obj` on the card `c` of the `gui`, or collapses it to its thumbnail; the card
+remembers the state. An expanded view is computed on the full grid, if it was not, see
+`_view_needed!`.
+"""
+function _expand_view!(gui::LiveView, c::_ComponentCard, obj, expanded::Bool)
+    c.view_expanded = expanded
+    _set_expanded!(c.view, expanded)
+    _update_cards!(gui)
+    _view_needed!(gui, obj)
+    return nothing
+end
+
+"""
+    _show_view!(gui, c, obj)
+
+Called when the card `c` of `obj` was laid out: if it shows its view now and did not before (a new
+object, the page "Results", an expanded or a pinned card), the view shows the stored result of
+`obj` and is computed if that is stale, see `_view_needed!`. The switches of the view, which are
+built with its results, come before the mouse shield of the cards.
+"""
+function _show_view!(gui::LiveView, c::_ComponentCard, obj)
+    shown = !isnothing(_card_view(c))
+    if shown && !c.view_shown
+        c.view_shown = true
+        _redraw_views!(gui, obj)
+        _view_needed!(gui, obj)
+    end
+    c.view_shown = shown
+    n = isnothing(c.view) ? 0 : length(c.view.switches)
+    if n != c.view_switches
+        c.view_switches = n
+        _shield_cards!(gui)
+    end
+    return nothing
+end
+
+"""
+    _fit_view!(c, view::Rect2f)
+    _set_view_size!(c, size, view::Rect2f)
+
+Sets the size of the axis of the expanded view of the card `c` to its `view_size`, or to the new
+`size` [px], which the card remembers: within the bounds of the 3D view `view`, see `_view_bounds`.
+"""
+function _fit_view!(c::_ComponentCard, view::Rect2f)
+    _has_grip(c) || return nothing
+    lo, hi = _view_bounds(c, view)
+    _resize_view!(c.view, clamp.(c.view_size, lo, hi)...)
+    return nothing
+end
+function _set_view_size!(c::_ComponentCard, size::Vec2f, view::Rect2f)
+    lo, hi = _view_bounds(c, view)
+    c.view_size = clamp.(size, lo, hi)
+    _resize_view!(c.view, c.view_size...)
     return nothing
 end
 
@@ -485,6 +642,7 @@ function _toggle_pinned!(gui::LiveView, c::_ComponentCard)
         obj = c.obj
         c.pinned, c.obj, c.spot = false, nothing, nothing
         _hide_card!(c)
+        _reset_pages!(gui, c)
         # the plots of an inspected point or a measurement, unless it is still pinned elsewhere,
         # e.g. after it was docked, see `_forget!`
         _is_pinned(gui, obj) || _forget!(gui, obj)
@@ -496,6 +654,17 @@ function _toggle_pinned!(gui::LiveView, c::_ComponentCard)
     _show_head!(c)
     _update_cards!(gui)
     _on_pinned!(gui)
+    return nothing
+end
+
+"""
+Makes the unpinned card `c` of the `gui` a spare card again (see `_spare_card!`): without a view,
+and with the state of a new card, i.e. the page of the pose and an expanded view of the default size.
+"""
+function _reset_pages!(gui::LiveView, c::_ComponentCard)
+    _drop_view!(gui, c)
+    c.pose = nothing
+    c.page, c.view_expanded, c.view_size = :pose, true, _CARD_VIEW_SIZE
     return nothing
 end
 
@@ -540,10 +709,17 @@ _toggle_pin!(::LiveView, ::Nothing) = nothing
     _pin!(gui, obj)
     _pin!(gui, c::_ComponentCard, obj)
 
-Pins a floating card to `obj`: the card `c`, by default a spare card (see `_spare_card!`), see
-`_toggle_pin!`. The card is placed next to `obj`, also if the mouse moved it before.
+Pins a floating card to `obj`: the card `c`, by default a spare card (see `_spare_card!`) on the
+default page of `obj` (see `_default_page`), see `_toggle_pin!`. The card is placed next to `obj`,
+also if the mouse moved it before. The card `c` keeps its `page`, if `obj` has it, the state
+`view_expanded` and the size `view_size` of its view, which a caller may set before, e.g. to those
+of a docked card.
 """
-_pin!(gui::LiveView, obj) =_pin!(gui, _spare_card!(gui), obj)
+function _pin!(gui::LiveView, obj)
+    c = _spare_card!(gui)
+    c.page = _default_page(obj)
+    return _pin!(gui, c, obj)
+end
 function _pin!(gui::LiveView, c::_ComponentCard, obj)
     c.pinned, c.obj, c.key, c.pose, c.spot = true, obj, nothing, nothing, nothing
     _show_head!(c)
@@ -593,16 +769,15 @@ end
 """
     _connect_card!(gui, c)
 
-Connects the head and the part of the selection (step, mode and the disclosure of the properties,
-see `_connect_selection_part!`) of the card `c` of the `gui`; the declared widgets are connected
-when they are built, see `_build_content!`.
+Connects the head and the part of the selection (step and mode, see `_connect_selection_part!`) of
+the card `c` of the `gui`; the declared widgets are connected when they are built, see
+`_build_content!`, the page bar and the view when the card gets its object, see `_build_pages!`.
 """
 function _connect_card!(gui::LiveView, c::_ComponentCard)
     listeners = gui.controls.listeners
     push!(listeners, on(_ -> _toggle_collapsed!(gui, c), c.collapse_button.clicks))
     # The toggle switches itself, `_toggle_pinned!` sets it to the state of the card
     push!(listeners, on(v -> v == _pin_state(c) || _toggle_pinned!(gui, c), c.pin_button.active))
-    push!(listeners, on(_ -> _toggle_properties!(gui, c), c.properties_button.clicks))
     push!(listeners, on(_ -> _browse_parent!(gui, _card_object(gui, c)), c.back_button.clicks))
     _connect_selection_part!(gui, c)
     _connect_dock_button!(gui, c, c.dock_button)
@@ -694,7 +869,8 @@ function _inspector_rows(gui::LiveView, ::Nothing)
     objects = sum(h -> length(render_children(h)), gui.system_handles; init = 0)
     rows = Tuple{String, String}[
         ("Systems", string(length(gui.system_handles))), ("Objects", string(objects)),
-        ("Sources", string(length(_sources(gui)))), ("Detector panels", string(length(gui.panels))),
+        ("Sources", string(length(_sources(gui)))),
+        ("Detectors", string(length(_find_detectors(first.(gui.pairs))))),
         ("Clip planes", string(length(gui.clip.planes))),
         ("Last trace", gui.trace.solve_time > 0 ? _ms_string(gui.trace.solve_time) : "–")]
     return rows
@@ -712,19 +888,20 @@ _shows_step(gui::LiveView, c::_ComponentCard, obj) = c === gui.cards.selection |
     (_selection_card_shown(gui) && !c.transient && obj === gui.controls.selected[])
 
 """
-Returns `true` if the floating card of `obj` has the disclosure row "Properties" (see
-`_show_properties!`): any object, but no inspected point, measurement or other `_InfoItem`.
+Returns `true` if the card of `obj` has the page "Properties" with the list of its properties (see
+`_show_properties!` and `_card_pages`): any object, but no inspected point, measurement or other
+`_InfoItem`.
 """
 _has_properties(_) = true
 
 """
     _refresh_selection_part!(gui, c, obj)
 
-Shows the properties of `obj` in the property list of the card `c` while they are expanded (see
-`_toggle_properties!` and `_list_shown`), otherwise empties the list, see `_hide_properties!`. For
-all cards with a list of their own (see `_has_list`): the floating cards and the docked pinned
-cards of the app layout. Nothing for the docked card of the selection, whose properties the
-inspector lists itself, see `_refresh_inspector!`.
+Shows the properties of `obj` in the property list of the card `c` while it is shown (see
+`_list_shown`: on the page "Properties" of a floating card), otherwise empties the list, see
+`_hide_properties!`. For the cards with a list of their own (see `_has_list`), i.e. the floating
+cards; the docked cards of the app layout list the properties themselves, see
+`_refresh_inspector!`.
 """
 function _refresh_selection_part!(gui::LiveView, c::_AbstractCard, obj)
     _has_list(c) || return nothing
@@ -733,28 +910,13 @@ function _refresh_selection_part!(gui::LiveView, c::_AbstractCard, obj)
 end
 _refresh_selection_part!(::LiveView, ::_AbstractCard, ::Nothing) = nothing
 
-# A card with the fields `list`, `properties_button` and `properties_shown`
+# A card with a property list `list` of its own
 _has_list(::_AbstractCard) = false
 _has_list(::_ComponentCard) = true
-# The list of the card `c` shows the properties of `obj`
-_list_shown(c::_AbstractCard, obj) = c.properties_shown && _has_properties(obj)
+# A floating card lists the properties on its page "Properties"
+_list_shown(c::_ComponentCard, obj) = c.page === :properties && _has_properties(obj)
 # The list of a floating card that is not shown is moved away with its part, see `_lower_parts`
 _hide_properties!(::_AbstractCard) = nothing
-
-"""
-Expands the properties of the card `c` of the `gui` below its disclosure row, or collapses them
-again, on a floating card (see `_ComponentCard`) and on a docked pinned card of the app layout. The
-state stays with the card when another object is selected, when the card is pinned and when it is
-docked or floated. The host of the card then lays it out again, see `_on_properties_toggled!`.
-"""
-function _toggle_properties!(gui::LiveView, c::_AbstractCard)
-    c.properties_shown = !c.properties_shown
-    _show_properties_state!(c.properties_button, c.properties_shown)
-    _refresh_selection_part!(gui, c, _card_object(gui, c))
-    _on_properties_toggled!(gui, c)
-    return nothing
-end
-_on_properties_toggled!(gui::LiveView, ::_AbstractCard) = _update_cards!(gui)
 
 # The button that docks the pinned card `c` in the sidebar, if the layout has one, see `_card_tools!`
 _connect_dock_button!(::LiveView, ::_ComponentCard, ::Nothing) = nothing
@@ -795,7 +957,8 @@ _outside_view(::LiveView) = false
 
 Connects the cards of the `gui`: their widgets, their update every frame and the mouse. Presses on
 a card reach its widgets only: the controls ignore them (`ignore_mouse`) and the camera does not
-get them, see `_shield_cards!`; a drag at its head moves the card, see `_drag_cards!`. A press
+get them, see `_shield_cards!`; a drag at its head moves the card, see `_drag_cards!`, a drag at
+its grip resizes its view, see `_resize_cards!`. A press
 elsewhere ends the input into the textboxes of the cards, also if the controls consume it.
 """
 function _connect_cards!(gui::LiveView)
@@ -811,6 +974,7 @@ function _connect_cards!(gui::LiveView)
         return Consume(false)
     end)
     _drag_cards!(gui)
+    _resize_cards!(gui)
     _click_cards!(gui)
     _shield_cards!(gui)
     _update_cards!(gui)
@@ -922,3 +1086,62 @@ function _drag_cards!(gui::LiveView)
     return nothing
 end
 
+"""
+    _resize_cards!(gui)
+
+Connects the mouse to the grips of the floating cards of the `gui`, at their bottom right corner
+while their expanded view is shown (see `_over_grip`): a drag changes the size of the axis of the
+view (`view_size`, which the card remembers) within the bounds of the 3D view, see
+`_set_view_size!`. During the drag the card keeps its top left corner, such that the grip follows
+the mouse; afterwards it is placed next to its object again, unless the mouse moved it to a `spot`
+before. The listeners come with those of `_drag_cards!`, before the widgets of the cards and the
+mouse shield.
+"""
+function _resize_cards!(gui::LiveView)
+    ev = events(gui.ax.scene)
+    listeners = gui.controls.listeners
+    # The card, the mouse, the size of the axis and the top left corner of the card at the press,
+    # and the spot of the card before
+    drag = Ref{Any}(nothing)
+    function finish!()
+        c, _, _, _, spot = drag[]
+        drag[] = nothing
+        c.spot = spot
+        _update_cards!(gui)
+        return nothing
+    end
+    push!(listeners, on(ev.mousebutton, priority = 2) do event
+        event.button == Mouse.left || return Consume(false)
+        if event.action == Mouse.press
+            i = findlast(c -> _over_grip(c, ev), gui.cards.all)
+            isnothing(i) && return Consume(false)
+            c = gui.cards.all[i]
+            r = c.background.layoutobservables.suggestedbbox[]
+            drag[] = (c, Point2f(ev.mouseposition[]), Vec2f(c.view.ax.width[], c.view.ax.height[]),
+                Point2f(minimum(r)[1], maximum(r)[2]), c.spot)
+            return Consume(true)
+        elseif event.action == Mouse.release && !isnothing(drag[])
+            finish!()
+            return Consume(true)
+        end
+        return Consume(false)
+    end)
+    push!(listeners, on(ev.mouseposition, priority = 2) do xy
+        isnothing(drag[]) && return Consume(false)
+        c, start, size0, p0, _ = drag[]
+        # the card lost its view, e.g. with another selection by a key
+        if !_has_grip(c)
+            finish!()
+            return Consume(false)
+        end
+        d = Point2f(xy) - start
+        view = Rect2f(Makie.viewport(gui.ax.scene)[])
+        # the mouse moves the bottom right corner: to the right and down
+        _set_view_size!(c, Vec2f(size0[1] + d[1], size0[2] - d[2]), view)
+        size = _card_size(c)
+        c.spot = _card_spot(_spot_position(_card_spot(p0, size, view), size, view), size, view)
+        _update_cards!(gui)
+        return Consume(true)
+    end)
+    return nothing
+end

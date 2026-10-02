@@ -28,7 +28,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd2, [0, 0.3, 0.2])
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9)
         gui = live_view(System([group, m, pd, bs, pd2]), beam; trace_budget = Inf, layout = :app,
-            throttle = false, labels = Dict(pd => "PD1"), detectors = [pd],
+            throttle = false, labels = Dict(pd => "PD1"),
             clip_planes = [[0, 0.1, 0] => [0, 0, 1]], kwargs...)
         return gui, (; l1, l2, group, m, pd, bs, pd2, beam)
     end
@@ -40,6 +40,8 @@ const GUI = BeamletOpticsGUI
     _w(gui, name) = GUI._card_widget(gui.layout.inspector.card, name)
     _rect(x) = x.layoutobservables.computedbbox[]
     _center(r) = Point2f(minimum(r) .+ Makie.widths(r) ./ 2)
+    _height(x) = Makie.widths(_rect(x))[2]
+    _visible(b) = b.blockscene.visible[]
     _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0))
     # A left click at the figure pixel `xy`: mouse events like those of a window
     function _click!(gui, xy)
@@ -48,6 +50,17 @@ const GUI = BeamletOpticsGUI
         for action in (Mouse.press, Mouse.release)
             ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, action)
         end
+        return nothing
+    end
+    # A click on the `page` of the page bar of the docked card `c`
+    _page!(c, page) = notify(c.bar.buttons[findfirst(==(page), c.bar.keys)].clicks)
+    # The parts of the docked card `c` that are shown, see `_DockedCard`
+    _parts(c) = [name for name in (:bar_part, :rows_part, :step_part, :view_part, :properties_part)
+                 if !isnothing(getfield(c, name)) && getfield(c, name).shown]
+    # Selects `obj` and opens the page "Properties" of the inspector
+    function _properties!(gui, obj)
+        gui.controls.selected[] = obj
+        _page!(gui.layout.inspector.card, :properties)
         return nothing
     end
 
@@ -69,75 +82,121 @@ const GUI = BeamletOpticsGUI
     @testset "selection" begin
         gui, o = _fixture()
         insp = gui.layout.inspector
+        card = insp.card
         ctrl = gui.controls
-        # nothing selected: a summary
+        # nothing selected: the step and a summary, no page bar
         @test insp.name.text[] == "No selection"
+        @test _parts(card) == [:step_part, :properties_part]
         @test _value(gui, "Systems") == "1"
         @test _value(gui, "Objects") == "6"
         @test _value(gui, "Sources") == "1"
-        @test _value(gui, "Detector panels") == "1"
         @test _value(gui, "Clip planes") == "1"
         @test endswith(_value(gui, "Last trace"), "ms")
+        @test _visible(insp.step_box) && _visible(insp.list.box)
         # without a selection, the docked card is empty and has no height
-        @test isempty(insp.card.widgets) && isempty(insp.card.rows.content)
+        @test isempty(card.widgets) && isempty(card.rows.content)
         @test !insp.pin.box.visible[]
-        # a lens: header, the rows of its card (the pose) and its properties below them
+        # a lens: header and the page "Pose" with the rows of its card (the pose), the step and
+        # the mode
         ctrl.selected[] = o.l1
         @test insp.name.text[] == "Lens 1"
         @test insp.type.text[] == "Lens"
         @test insp.icon[] === GUI._icon(:lens)
+        @test card.pages == (:pose, :properties) && card.page == :pose
+        @test card.bar.keys == [:pose, :properties] && card.bar.selected[] == :pose
+        @test [b.label[] for b in card.bar.buttons] == ["Pose", "Properties"]
+        @test _parts(card) == [:bar_part, :rows_part, :step_part]
         @test _w(gui, :y).displayed_string[] == "40.0"
         @test _w(gui, :hide) isa Button && _w(gui, :hide).label[] == "hide"
         @test all(k -> _w(gui, k) isa Textbox, (:x, :y, :z, :rx, :ry, :rv))
-        @test isnothing(_w(gui, :panel_mode))
         @test insp.pin.box.visible[] && !insp.pin.active[]
-        @test _value(gui, "Thickness") == "4 mm"
-        @test _value(gui, "n(λ₀)") == "1.5"
-        @test isnothing(_value(gui, "Position"))   # in the pose rows
-        @test isnothing(_value(gui, "Type"))       # in the header
-        # the actions in the header, the rows below it, the properties below the rows
-        @test minimum(_rect(insp.card.actions))[1] > maximum(_rect(insp.name))[1] - 1
-        @test maximum(_rect(insp.card.rows))[2] < minimum(_rect(insp.type))[2]
-        @test maximum(_rect(insp.list.box))[2] < minimum(_rect(insp.card.rows))[2]
+        # the properties are on their own page: the list is empty and has no height
+        @test isempty(_rows(gui)) && _height(insp.list.box) == 0 && !_visible(insp.list.box)
+        # the actions in the header, the page bar below it, then the rows, then step and mode
+        @test minimum(_rect(card.actions))[1] > maximum(_rect(insp.name))[1] - 1
+        @test maximum(_rect(card.bar.grid))[2] < minimum(_rect(insp.type))[2]
+        @test maximum(_rect(card.rows))[2] < minimum(_rect(card.bar.grid))[2]
+        @test maximum(_rect(insp.step_box))[2] < minimum(_rect(card.rows))[2]
         # the boxes fill the width of the sidebar, inside of it
         sidebar = _rect(gui.layout.right.box)
         @test maximum(_rect(_w(gui, :z)))[1] <= maximum(sidebar)[1]
         @test minimum(_rect(_w(gui, :x)))[1] >= minimum(sidebar)[1]
-        # a group
+        # the page "Properties": the list instead of the rows and the step, which are hidden and
+        # laid out off-screen, where they take no clicks
+        _page!(card, :properties)
+        @test card.page == :properties && card.bar.selected[] == :properties
+        @test _parts(card) == [:bar_part, :properties_part]
+        @test _value(gui, "Thickness") == "4 mm"
+        @test _value(gui, "n(λ₀)") == "1.5"
+        @test isnothing(_value(gui, "Position"))   # in the pose rows
+        @test isnothing(_value(gui, "Type"))       # in the header
+        @test _visible(insp.list.box) && _height(insp.list.box) == length(_rows(gui)) * GUI._PROPERTY_ROW
+        @test maximum(_rect(insp.list.box))[2] < minimum(_rect(card.bar.grid))[2]
+        @test Makie.widths(_rect(insp.list.box))[1] ≈ Makie.widths(_rect(insp.grid))[1]
+        @test _w(gui, :y) isa Textbox && !_visible(_w(gui, :y)) && maximum(_rect(_w(gui, :y)))[1] < 0
+        @test !_visible(insp.step_box) && maximum(_rect(insp.step_box))[1] < 0
+        # the page stays while the same object is shown, e.g. after a solve
+        GUI._resolve!(gui, nothing)
+        @test card.page == :properties && _value(gui, "Thickness") == "4 mm"
+        # and back
+        _page!(card, :pose)
+        @test _parts(card) == [:bar_part, :rows_part, :step_part] && isempty(_rows(gui))
+        @test _visible(_w(gui, :y)) && _visible(insp.step_box)
+        @test minimum(_rect(_w(gui, :x)))[1] >= minimum(sidebar)[1]
+        # another object opens on its default page; a group
+        _page!(card, :properties)
         ctrl.selected[] = o.group
+        @test card.page == :pose && isempty(_rows(gui))
         @test insp.name.text[] == "ObjectGroup 1"
         @test insp.icon[] === GUI._icon(:group)
+        _page!(card, :properties)
         @test _value(gui, "Parts") == "2"
         # the source
-        ctrl.selected[] = o.beam
+        _properties!(gui, o.beam)
         @test insp.icon[] === GUI._icon(:source)
         @test _value(gui, "Wavelength") == "633 nm"
         @test _value(gui, "Direction") == "(0, 1, 0)"
         # a beamsplitter, with its own icon
-        ctrl.selected[] = o.bs
+        _properties!(gui, o.bs)
         @test insp.icon[] === GUI._icon(:beamsplitter)
         @test GUI._tree_kind(o.bs) == :beamsplitter
         @test _value(gui, "Reflectance") == "0.3"
         @test GUI._tree_kind(RoundLinearPolarizer(25e-3, 1e-3, 1e-3, λ -> 1.5)) == :polarizer
         @test GUI._tree_kind(PolarizationFilter(1e-2)) == :polarizer
         # a clip plane
-        ctrl.selected[] = gui.clip.planes[1]
+        _properties!(gui, gui.clip.planes[1])
         @test insp.name.text[] == "Clip plane 1"
         @test insp.icon[] === GUI._icon(:clip_plane)
         @test _value(gui, "Normal") == "(0, 0, 1)"
         @test isnothing(_w(gui, :hide)) && _w(gui, :flip) isa Button && _w(gui, :remove) isa Button
-        # the detector: hits and the options of its panel
+        # the detector opens on its results and has a third page
         ctrl.selected[] = o.pd
         @test insp.name.text[] == "PD1"
+        @test card.pages == (:pose, :results, :properties) && card.page == :results
+        @test [b.label[] for b in card.bar.buttons] == ["Pose", "Results", "Properties"]
+        @test _parts(card) == [:bar_part, :view_part]
+        _page!(card, :properties)
         @test _value(gui, "Hits") == "1"
         @test _value(gui, "Size") == "(5, 5) mm"
-        @test _w(gui, :panel_mode).label[] == "auto" && !_w(gui, :panel_log).active[]
+        # the bars of the sets of pages are built once
+        @test length(card.bars) == 2
+        ctrl.selected[] = o.l1
+        @test length(card.bars) == 2 && card.bar.keys == [:pose, :properties]
+        # an inspected system has no pose, its rows are on the page "Pose"
+        GUI._inspect!(gui, gui.system_handles[1])
+        @test insp.name.text[] == "System 1" && card.page == :pose
+        @test GUI._card_widget(card, :objects).text[] == "6"
+        _page!(card, :properties)
+        @test ("Sources", "1") in _rows(gui)
         # deselected: the summary again, the widgets of the card are removed
-        blocks = copy(insp.card.blocks)
+        ctrl.selected[] = o.pd
+        blocks = copy(card.blocks)
         ctrl.selected[] = nothing
         @test insp.name.text[] == "No selection"
-        @test isempty(insp.card.blocks) && isempty(insp.card.widgets)
+        @test isempty(card.blocks) && isempty(card.widgets)
         @test all(b -> b.parent === nothing, blocks)
+        @test _parts(card) == [:step_part, :properties_part] && _value(gui, "Systems") == "1"
+        @test _visible(insp.step_box) && !any(_visible, card.bar.buttons)
         close(gui)
     end
 
@@ -145,11 +204,12 @@ const GUI = BeamletOpticsGUI
         gui, o = _fixture()
         insp, ctrl = gui.layout.inspector, gui.controls
         plots = (insp.list.labels, insp.list.values, insp.list.lines)
-        n = length(gui.fig.scene.children)
-        ctrl.selected[] = o.pd
+        _properties!(gui, o.pd)
         blocks = copy(insp.card.blocks)
+        view = insp.card.view
         @test !isempty(blocks)
-        # a move updates the values, the widgets and plots stay
+        # a move updates the values, the widgets and plots stay; the widgets of the page "Pose"
+        # take inputs while another page is shown
         _w(gui, :z).stored_string[] = "10"
         @test _value(gui, "Hits") == "0"
         @test _w(gui, :z).displayed_string[] == "10.0"
@@ -162,12 +222,12 @@ const GUI = BeamletOpticsGUI
         GUI._update_inspector!(gui)
         @test _w(gui, :z).displayed_string[] == "2.0"
         translate3d!(o.pd, [0, 0, -0.002])
-        # another detector keeps the widgets, too
+        # another detector keeps the widgets, the page bar and the view
+        bar = insp.card.bar
         ctrl.selected[] = o.pd2
-        @test insp.card.blocks == blocks
-        @test _w(gui, :panel_mode).label[] == "no panel"
+        @test insp.card.blocks == blocks && insp.card.bar === bar && insp.card.view === view
         # the list has a constant number of plots
-        ctrl.selected[] = o.l1
+        _properties!(gui, o.l1)
         @test (insp.list.labels, insp.list.values, insp.list.lines) === plots
         @test length(insp.list.box.blockscene.plots) == 4   # with the (invisible) box
         # collapsed, the inspector is not updated; it is refreshed when shown again
@@ -215,53 +275,104 @@ const GUI = BeamletOpticsGUI
         insp = gui.layout.inspector
         # the step box of the inspector is the keyboard step
         @test gui.widgets.step_box === insp.step_box
-        gui.controls.selected[] = o.m
+        _properties!(gui, o.m)
         GUI._refresh_inspector!(gui)
         rows = _rows(gui)
         @test rows == GUI._inspector_rows(gui, o.m) && !isempty(rows)
-        close(gui)
-        # the floating card of the compact layout shows the same rows for the same object
-        gui, o = _fixture(layout = :compact)
-        c = gui.cards.selection
-        gui.controls.selected[] = o.m
-        GUI._update_selection_box!(gui.controls)
-        notify(c.properties_button.clicks)
-        _tick!(gui)
-        @test c.list.rows == rows
+        # the pages and the rows of `card_rows` are those of the floating cards
+        @test insp.card.pages == GUI._card_pages(o.m)
+        key(c) = map(GUI._layout_key, GUI._declarations(c, o.pd))
+        @test length(GUI._declarations(insp.card, o.pd)[2]) == length(card_rows(o.pd))
+        @test key(insp.card) == key(gui.cards.selection)
         close(gui)
     end
 
-    @testset "detector panel rows" begin
+    @testset "page Results of a detector" begin
         gui, o = _fixture()
-        ctrl = gui.controls
-        p = only(gui.panels)
+        insp, ctrl = gui.layout.inspector, gui.controls
+        card = insp.card
+        state = GUI._detector_state(gui, o.pd)
+        # no view is shown, none is built or computed
+        @test isnothing(card.view) && isempty(GUI._layout_views(gui)) && isempty(GUI._shown_views(gui))
+        @test state.stale && isnothing(state.result)
+        # a click on the detector shows its results in the expanded view, computed from the hits of
+        # the last solve
         ctrl.selected[] = o.pd
-        mode, log = _w(gui, :panel_mode), _w(gui, :panel_log)
-        @test p.mode == :auto && mode.label[] == "auto"
-        # the panel mode cycles, the color scale is switched, both in place
-        notify(mode.clicks)
-        @test p.mode == :spot && mode.label[] == "spot"
-        @test p.scatter_plot.visible[]
-        notify(mode.clicks)
-        @test p.mode == :intensity && mode.label[] == "intensity"
-        @test p.heat_plot.visible[]
-        log.active[] = true
-        @test p.colorscale == :log
-        notify(mode.clicks)
-        @test p.mode == :auto
-        # the rows show the state of the panel when selected again
-        ctrl.selected[] = nothing
-        p.colorscale = :linear
+        view = card.view
+        @test card.page == GUI._default_page(o.pd) == :results
+        @test view isa GUI._DetectorView && view.expanded && card.view_expanded
+        @test GUI._layout_views(gui) == [(o.pd, view)] && GUI._shown_views(gui) == [(o.pd, view)]
+        @test !state.stale && GUI._kind_name(state.result.kind) == :spot
+        @test view.result === state.result && view.name == "PD1" && view.kind == GUI._SpotKind()
+        @test _visible(view.ax) && view.switch.keys == [:spot, :psf]
+        # as wide as the sidebar, its axis as high as wide; below the page bar
+        w = Makie.widths(_rect(insp.grid))[1]
+        @test view.ax.width[] == w && view.ax.height[] == w && card.view_height == w
+        @test GUI._view_size(view)[1] ≈ w
+        @test minimum(_rect(view.ax))[1] >= minimum(_rect(gui.layout.right.box))[1]
+        @test maximum(_rect(view.ax))[1] <= maximum(_rect(gui.layout.right.box))[1]
+        @test maximum(_rect(view.full))[2] < minimum(_rect(card.bar.grid))[2]
+        @test !GUI._overflows(gui)
+        # a solve computes the shown view
+        r = state.result
+        GUI._resolve!(gui, nothing)
+        @test state.result !== r && !state.stale && view.result === state.result
+        # the widgets of the view set its options
+        view.log_toggle.active[] = true
+        @test state.opts.colorscale == :log
+        view.switch.selected[] = :psf
+        @test state.opts.kind == :psf && GUI._kind_name(state.result.kind) == :psf
+        @test view.kind == GUI._PSFKind()
+        view.switch.selected[] = :spot
+        @test view.kind == GUI._SpotKind()
+        # the wheel over the view zooms its axis, not the camera of the 3D view
+        cam = cameracontrols(gui.ax.scene)
+        eye, limits = cam.eyeposition[], view.ax.finallimits[]
+        ev = events(gui.fig.scene)
+        ev.mouseposition[] = Tuple(_center(Rect2f(view.ax.scene.viewport[])))
+        ev.scroll[] = (0.0, 1.0)
+        @test view.ax.finallimits[] != limits && cam.eyeposition[] == eye
+        # collapsed to the thumbnail by its chevron and expanded again; the card remembers it
+        h = GUI._view_size(view)[2]
+        notify(view.collapse_button.clicks)
+        @test !view.expanded && !card.view_expanded && GUI._view_size(view)[2] < h
+        @test GUI._layout_views(gui) == [(o.pd, view)]
+        ctrl.selected[] = o.l1
         ctrl.selected[] = o.pd
-        @test !_w(gui, :panel_log).active[]
-        # a detector without a panel: the inputs only show a message
+        @test card.view === view && !view.expanded
+        notify(view.expand_button.clicks)
+        @test view.expanded && card.view_expanded && GUI._view_size(view)[2] ≈ h
+        # a view that is not shown is not computed: another page
+        _page!(card, :pose)
+        @test isempty(GUI._layout_views(gui)) && !_visible(view.ax) && maximum(_rect(view.ax))[1] < 0
+        @test _visible(_w(gui, :x)) && _visible(insp.step_box)
+        GUI._resolve!(gui, nothing)
+        @test state.stale
+        # shown again, it is computed from the hits of the last solve
+        _page!(card, :results)
+        @test GUI._layout_views(gui) == [(o.pd, view)] && !state.stale && view.result === state.result
+        @test _visible(view.ax) && !_visible(_w(gui, :x)) && !_visible(insp.step_box)
+        # another detector takes the view: without hits here
         ctrl.selected[] = o.pd2
-        notify(_w(gui, :panel_mode).clicks)
-        @test occursin("no panel", gui.status.text[])
-        # the rows of `card_rows`, the same as on the floating cards
-        key(c) = map(GUI._layout_key, GUI._declarations(c, o.pd))
-        @test length(GUI._declarations(gui.layout.inspector.card, o.pd)[2]) == length(card_rows(o.pd))
-        @test key(gui.layout.inspector.card) == key(gui.cards.selection)
+        @test card.view === view && card.page == :results
+        @test GUI._layout_views(gui) == [(o.pd2, view)]
+        @test view.name == GUI._label(gui, o.pd2) != "PD1" && isnothing(view.kind) && isnothing(view.switch)
+        @test isempty(GUI._detector_state(gui, o.pd2).result.kinds)
+        # an object without a view hides it, no selection too
+        ctrl.selected[] = o.m
+        @test isempty(GUI._layout_views(gui)) && !_visible(view.ax)
+        ctrl.selected[] = o.pd
+        @test GUI._layout_views(gui) == [(o.pd, view)] && view.name == "PD1" && view.result === state.result
+        ctrl.selected[] = nothing
+        @test isempty(GUI._layout_views(gui)) && !_visible(view.ax)
+        # not while the sidebar is collapsed: shown again, the view is computed
+        ctrl.selected[] = o.pd
+        gui.layout.collapse.right.active[] = false
+        @test isempty(GUI._layout_views(gui))
+        GUI._resolve!(gui, nothing)
+        @test state.stale
+        gui.layout.collapse.right.active[] = true
+        @test GUI._layout_views(gui) == [(o.pd, view)] && !state.stale && view.result === state.result
         close(gui)
     end
 
@@ -328,13 +439,17 @@ const GUI = BeamletOpticsGUI
         @test GUI._card_widget(c, :hide) isa Button && GUI._card_widget(c, :x) isa Textbox
         @test c.head.title.text[] == "Mirror 1" && c.head.icon[] === GUI._icon(:mirror)
         @test c.head.pin.active[]
+        # with the pages of its object, like the inspector, but without the step
+        @test c.pages == (:pose, :properties) && c.page == :pose && isnothing(c.step_part)
+        @test _parts(c) == [:bar_part, :rows_part]
         # it stays when the selection changes, the pin of the inspector follows the selection
         ctrl.selected[] = o.pd
         @test !insp.pin.active[] && only(insp.pinned) === c
-        # a second pinned card below the first
+        # a second pinned card below the first, on the page that the inspector shows
         insp.pin.active[] = true
         c2 = insp.pinned[2]
-        @test c2.obj === o.pd && GUI._card_widget(c2, :panel_mode) isa Button
+        @test c2.obj === o.pd && c2.page == :results && c2.view isa GUI._DetectorView
+        @test GUI._card_widget(c2, :signal) isa Label
         @test maximum(_rect(c2.parent))[2] <= minimum(_rect(c.parent))[2]
         # the first card may have collapsed to make room, see `_fit_pinned!`; expanded again
         c.collapsed && notify(c.head.collapse.clicks)
@@ -351,9 +466,9 @@ const GUI = BeamletOpticsGUI
         # collapsed to the head and the actions, expanded again
         notify(c.head.collapse.clicks)
         @test c.collapsed && isempty(c.rows.content) && GUI._card_widget(c, :hide) isa Button
-        @test c.head.collapse.icon[] === GUI._icon(:expand)
+        @test c.head.collapse.icon[] === GUI._icon(:expand) && isempty(_parts(c))
         notify(c.head.collapse.clicks)
-        @test !c.collapsed && GUI._card_widget(c, :x) isa Textbox
+        @test !c.collapsed && GUI._card_widget(c, :x) isa Textbox && _parts(c) == [:bar_part, :rows_part]
         # the pin of a pinned card unpins it, the next card moves up
         c.head.pin.active[] = false
         @test only(insp.pinned) === c2 && !GUI._is_pinned(gui, o.m)
@@ -397,93 +512,165 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "properties on docked pinned cards" begin
+    @testset "pages of docked pinned cards" begin
         gui, o = _fixture()
         insp, ctrl = gui.layout.inspector, gui.controls
-        height(b) = Makie.widths(_rect(b))[2]
         ctrl.selected[] = o.m
         GUI._toggle_pin!(gui, o.m)
         c = only(insp.pinned)
-        # the card of the selection has no list of its own: the inspector lists its properties
-        @test !GUI._has_list(insp.card) && isnothing(insp.card.list)
-        # the disclosure row below the rows, collapsed: the list is empty and has no height
-        @test GUI._has_list(c) && c.properties_part.shown && !c.properties_shown
-        @test c.properties_button.icon[] === GUI._icon(:expand)
-        @test isempty(c.list.rows) && height(c.list.box) == 0
-        @test maximum(_rect(c.properties_button.box))[2] <= minimum(_rect(c.rows))[2]
-        @test minimum(_rect(c.properties_button.box))[1] >= minimum(_rect(gui.layout.right.box))[1]
-        # expanded by its chevron: the properties of its object, below the disclosure row
-        notify(c.properties_button.clicks)
-        @test c.properties_shown && c.properties_button.icon[] === GUI._icon(:collapse)
+        # a list of its own, on its page "Properties": empty and without a height on the page "Pose"
+        @test c.list !== insp.list && c.page == :pose
+        @test isempty(c.list.rows) && _height(c.list.box) == 0 && !_visible(c.list.box)
+        # the page bar below the head, above the rows, inside the sidebar
+        @test maximum(_rect(c.bar.grid))[2] <= minimum(_rect(c.head.title))[2]
+        @test maximum(_rect(c.rows))[2] <= minimum(_rect(c.bar.grid))[2]
+        @test minimum(_rect(c.bar.grid))[1] >= minimum(_rect(gui.layout.right.box))[1]
+        # the page "Properties": the properties of its object below the page bar
+        _page!(c, :properties)
+        @test c.page == :properties && _parts(c) == [:bar_part, :properties_part]
         @test c.list.rows == GUI._inspector_rows(gui, o.m) && !isempty(c.list.rows)
-        @test height(c.list.box) == length(c.list.rows) * GUI._PROPERTY_ROW
-        @test maximum(_rect(c.list.box))[2] <= minimum(_rect(c.properties_button.box))[2]
+        @test _height(c.list.box) == length(c.list.rows) * GUI._PROPERTY_ROW
+        @test maximum(_rect(c.list.box))[2] <= minimum(_rect(c.bar.grid))[2]
+        @test !_visible(GUI._card_widget(c, :x))
         @test !GUI._overflows(gui)
+        # the page of the inspector is its own
+        @test insp.card.page == :pose && isempty(_rows(gui))
         # they stay those of its object when another one is selected
-        ctrl.selected[] = o.pd
+        _properties!(gui, o.pd)
         @test c.list.rows == GUI._inspector_rows(gui, o.m)
         # the list of the selection is shortened first, to make room for them
         @test first(_rows(gui)) == first(GUI._inspector_rows(gui, o.pd))
-        # a click on the chevron collapses them and does not select the object of the card
-        _click!(gui, _center(_rect(c.properties_button.box)))
-        @test !c.properties_shown && isempty(c.list.rows) && height(c.list.box) == 0
+        # a click on the page bar switches the page and does not select the object of the card
+        _click!(gui, _center(_rect(c.bar.buttons[1])))
+        @test c.page == :pose && isempty(c.list.rows) && _height(c.list.box) == 0
+        @test _visible(GUI._card_widget(c, :x))
         @test ctrl.selected[] === o.pd
-        notify(c.properties_button.clicks)
-        # a collapsed card shows neither the disclosure row nor the list
+        @test !GUI._over_free(c, _center(_rect(c.bar.buttons[2])))
+        _page!(c, :properties)
+        # a collapsed card shows neither the page bar nor the list, and remembers its page
         notify(c.head.collapse.clicks)
-        @test c.collapsed && !c.properties_part.shown && isempty(c.list.rows)
-        @test !c.properties_button.box.blockscene.visible[]
-        @test maximum(_rect(c.properties_button.box))[1] < 0
+        @test c.collapsed && isempty(_parts(c)) && isempty(c.list.rows)
+        @test !any(_visible, c.bar.buttons) && maximum(_rect(c.bar.buttons[1]))[1] < 0
         notify(c.head.collapse.clicks)
-        @test !c.collapsed && c.properties_part.shown && c.properties_shown
+        @test !c.collapsed && c.page == :properties && _parts(c) == [:bar_part, :properties_part]
         @test c.list.rows == GUI._inspector_rows(gui, o.m)
-        @test c.properties_button.box.blockscene.visible[]
+        @test all(_visible, c.bar.buttons)
 
-        # the state moves with the card: floated with expanded properties
+        # floated and docked again: on the same page
+        buttons = copy(c.bar.buttons)
         notify(c.head.float.clicks)
         _tick!(gui)
         f = only(GUI._floating_cards(gui, o.m))
+        @test f.page == :properties
         @test isempty(insp.pinned) && c.list.box.parent === nothing
-        @test f.properties_shown && f.properties_button.icon[] === GUI._icon(:collapse)
-        @test f.list.rows == GUI._inspector_rows(gui, o.m)
-        # docked again with collapsed properties
-        notify(f.properties_button.clicks)
+        @test all(b -> b.parent === nothing, buttons) && isnothing(c.bar)
         notify(f.dock_button.clicks)
         d = only(insp.pinned)
-        @test !d.properties_shown && isempty(d.list.rows) && d.properties_button.icon[] === GUI._icon(:expand)
-        # and back and forth with expanded ones
-        notify(d.properties_button.clicks)
-        notify(d.head.float.clicks)
-        _tick!(gui)
-        f = only(GUI._floating_cards(gui, o.m))
-        @test f.properties_shown
-        notify(f.dock_button.clicks)
-        d = only(insp.pinned)
-        @test d.properties_shown && d.list.rows == GUI._inspector_rows(gui, o.m)
-        @test d.properties_button.icon[] === GUI._icon(:collapse)
+        @test d.obj === o.m && d.page == :properties && !isempty(d.list.rows)
 
-        # three pinned cards with expanded properties fit into the sidebar: the older ones collapse,
-        # the lists are shortened
+        # three pinned cards on the page "Properties" fit into the sidebar: the older ones
+        # collapse, the lists are shortened
+        _page!(d, :properties)
         for obj in (o.pd, o.bs)
             GUI._toggle_pin!(gui, obj)
-            notify(last(insp.pinned).properties_button.clicks)
+            _page!(last(insp.pinned), :properties)
         end
-        @test length(insp.pinned) == 3 && last(insp.pinned).properties_shown && !last(insp.pinned).collapsed
+        @test length(insp.pinned) == 3 && last(insp.pinned).page == :properties && !last(insp.pinned).collapsed
         @test GUI._overflow(gui) <= 0.5
         GUI._update_inspector!(gui; force = true)
         @test GUI._overflow(gui) <= 0.5
-        # the card of an item without properties, e.g. a measurement, has no disclosure row
+        # the card of an item without properties, e.g. a measurement, has a single page: no page bar
         gui.widgets.measure_toggle.active[] = true
         GUI._add_measure_point!(gui, BMO.position(o.m), o.m)
         GUI._add_measure_point!(gui, BMO.position(o.pd), o.pd)
         GUI._info_card(gui).pin_button.active[] = true
         item = last(insp.pinned)
-        @test item.obj isa GUI._Measurement && !item.properties_part.shown
+        @test item.obj isa GUI._Measurement && GUI._card_pages(item.obj) == (:pose,)
+        @test !item.bar_part.shown && isnothing(item.bar) && !item.properties_part.shown
         # unpinned: its blocks are removed
         d = first(insp.pinned)
-        box, button = d.list.box, d.properties_button.box
+        box, buttons = d.list.box, copy(d.bar.buttons)
         GUI._toggle_pin!(gui, d.obj)
-        @test !(d in insp.pinned) && box.parent === nothing && button.parent === nothing
+        @test !(d in insp.pinned) && box.parent === nothing && all(b -> b.parent === nothing, buttons)
+        close(gui)
+    end
+
+    @testset "detector view on docked pinned cards" begin
+        gui, o = _fixture()
+        insp, ctrl = gui.layout.inspector, gui.controls
+        state = GUI._detector_state(gui, o.pd)
+        w = Makie.widths(_rect(insp.grid))[1]
+        # the card pinned to the selected detector opens on the page of the inspector, with a view
+        # of its own; both show the result of the detector, which is computed once
+        ctrl.selected[] = o.pd
+        r = state.result
+        GUI._toggle_pin!(gui, o.pd)
+        d = only(insp.pinned)
+        view = d.view
+        @test d.page == :results && view isa GUI._DetectorView && view !== insp.card.view
+        @test view.expanded && d.view_expanded
+        @test GUI._layout_views(gui) == [(o.pd, insp.card.view), (o.pd, view)]
+        @test state.result === r && view.result === r && insp.card.view.result === r
+        @test maximum(_rect(view.full))[2] < minimum(_rect(d.bar.grid))[2]
+        # the views get lower while the sidebar has no room for both
+        @test GUI._overflow(gui) <= 0.5
+        @test insp.card.view_height < w && insp.card.view_height >= GUI._DOCKED_VIEW_MIN
+        @test insp.card.view.ax.height[] == insp.card.view_height && insp.card.view.ax.width[] == w
+        GUI._update_inspector!(gui; force = true)
+        @test GUI._overflow(gui) <= 0.5
+        # and grow back once it has: the thumbnail of the pinned card needs less
+        notify(view.collapse_button.clicks)
+        @test !view.expanded && !d.view_expanded && GUI._layout_views(gui)[2] == (o.pd, view)
+        @test insp.card.view_height == w && insp.card.view.ax.height[] == w
+        notify(view.expand_button.clicks)
+        @test view.expanded && d.view_expanded && insp.keep === d
+        @test insp.card.view_height < w && GUI._overflow(gui) <= 0.5
+        # the view of the selection is hidden with its page
+        ctrl.selected[] = o.m
+        @test GUI._layout_views(gui) == [(o.pd, view)] && d.view_height == w
+        # a solve computes the view of the pinned card
+        GUI._resolve!(gui, nothing)
+        @test state.result !== r && !state.stale && view.result === state.result
+        # a click on the view or on the page bar does not select the object of the card
+        @test !GUI._over_free(d, _center(Rect2f(view.ax.scene.viewport[])))
+        @test GUI._over_free(d, _center(_rect(d.head.title)))
+        _click!(gui, _center(Rect2f(view.ax.scene.viewport[])))
+        @test ctrl.selected[] === o.m
+        # a collapsed card does not show its view, which is not computed then
+        notify(d.head.collapse.clicks)
+        @test d.collapsed && isempty(GUI._layout_views(gui)) && !_visible(view.ax)
+        GUI._resolve!(gui, nothing)
+        @test state.stale
+        notify(d.head.collapse.clicks)
+        @test !d.collapsed && GUI._layout_views(gui) == [(o.pd, view)] && !state.stale
+        @test view.result === state.result && _visible(view.ax)
+        # nor on another page
+        _page!(d, :properties)
+        @test isempty(GUI._layout_views(gui)) && d.list.rows == GUI._inspector_rows(gui, o.pd)
+        _page!(d, :results)
+        @test GUI._layout_views(gui) == [(o.pd, view)]
+        # floated: the docked card is removed with its view and the listeners of the view
+        listeners = copy(d.view_listeners)
+        @test !isempty(listeners) && all(l -> any(k -> k === l, ctrl.listeners), listeners)
+        GUI._float!(gui, o.pd)
+        @test !(d in insp.pinned) && isnothing(d.view) && view.ax.parent === nothing
+        @test !any(l -> any(k -> k === l, ctrl.listeners), listeners)
+        @test isempty(GUI._layout_views(gui))
+        # docked again: a new card with a view on the page "Results"
+        GUI._dock!(gui, o.pd)
+        d = last(insp.pinned)
+        @test d.obj === o.pd && d.page == :results && d.view isa GUI._DetectorView
+        @test GUI._layout_views(gui) == [(o.pd, d.view)] && d.view.result === state.result
+        # older cards collapse for an expanded view, like for a card that is expanded
+        for obj in (o.m, o.bs, o.pd2, o.l1)
+            GUI._toggle_pin!(gui, obj)
+        end
+        @test GUI._overflow(gui) <= 0.5 && !last(insp.pinned).collapsed
+        @test count(c -> c.collapsed, insp.pinned) >= 1
+        # unpinned
+        view = d.view
+        GUI._toggle_pin!(gui, o.pd)
+        @test isnothing(d.view) && view.ax.parent === nothing && isempty(GUI._layout_views(gui))
         close(gui)
     end
 
@@ -717,6 +904,16 @@ const GUI = BeamletOpticsGUI
         box.focused[] = true
         ctrl.selected[] = o.pd
         @test !box.focused[] && !GUI._typing(gui)
+        # and so does another page, which hides the boxes
+        ctrl.selected[] = o.m
+        box = _w(gui, :x)
+        box.focused[] = true
+        _page!(gui.layout.inspector.card, :properties)
+        @test !box.focused[] && !GUI._typing(gui)
+        _page!(gui.layout.inspector.card, :pose)
+        gui.widgets.step_box.focused[] = true
+        _page!(gui.layout.inspector.card, :properties)
+        @test !gui.widgets.step_box.focused[] && !GUI._typing(gui)
         close(gui)
     end
 

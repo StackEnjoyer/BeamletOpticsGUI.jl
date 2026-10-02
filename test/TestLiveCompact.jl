@@ -50,8 +50,17 @@ const GUI = BeamletOpticsGUI
         @test gui.widgets.menu isa Makie.Menu && gui.widgets.views_menu isa Makie.Menu
         close(gui)
 
-        # the detector panels stay in fig[1, 2]
+        # also with detectors: their views are on their cards
+        gui, _, pd = _fixture()
+        @test size(gui.fig.layout) == (1, 1) && isnothing(gui.layout.panels)
+        GUI._pin_view!(gui, pd)
+        @test size(gui.fig.layout) == (1, 1) && GUI._is_pinned(gui, pd)
+        @test only(GUI._floating_cards(gui, pd)).page == :results
+        close(gui)
+
+        # the panels of `add_panel!` are in fig[1, 2]
         gui, _, _ = _fixture()
+        add_panel!(layout -> Axis(layout[1, 1]), gui, "Panel")
         root = gui.fig.layout
         @test size(root) == (1, 2)
         # the 3D view, and the panels with the background box of their collapsible part
@@ -270,6 +279,8 @@ const GUI = BeamletOpticsGUI
 
     @testset "spectator mode: only the 3D view and the help" begin
         gui, m, _ = _fixture()
+        panel_axis = Ref{Any}(nothing)
+        add_panel!(layout -> (panel_axis[] = Axis(layout[1, 1])), gui, "Panel")
         o, help, ctrl = gui.layout.overlay, gui.layout.help, gui.controls
         cube = gui.widgets.view_cube
         fig = Rect2f(gui.fig.scene.viewport[])
@@ -294,8 +305,8 @@ const GUI = BeamletOpticsGUI
         @test ctrl.spectator[] && o.hidden
         # the 3D view fills the window: the panels are collapsed, hidden and off-screen
         @test same(view(), fig) && !gui.layout.panel_part.shown
-        @test !gui.panels[1].ax.blockscene.visible[]
-        @test maximum(_rect(gui.panels[1].ax))[1] < 0
+        @test !panel_axis[].blockscene.visible[]
+        @test maximum(_rect(panel_axis[]))[1] < 0
         # no tools, no status, no view cube, no cards
         @test all(_parked, parts)
         @test !cube.scene.visible[] && isempty(GUI._obstacles(cube))
@@ -327,7 +338,7 @@ const GUI = BeamletOpticsGUI
         _tick!(gui)
         @test !ctrl.spectator[] && !o.hidden
         @test same(view(), v0) && gui.layout.panel_part.shown
-        @test gui.panels[1].ax.blockscene.visible[] && minimum(_rect(gui.panels[1].ax))[1] > 0
+        @test panel_axis[].blockscene.visible[] && minimum(_rect(panel_axis[]))[1] > 0
         @test o.more_button.active[] && same(GUI._overlay_rect(o.more), rects[1])
         @test same(GUI._overlay_rect(o.rail), rects[2])
         @test cube.scene.visible[] && !isempty(GUI._obstacles(cube))
@@ -382,7 +393,7 @@ const GUI = BeamletOpticsGUI
         notify(gui.layout.help.spectator_button.clicks)
         _tick!(gui)
         @test !gui.controls.spectator[] && !o.hidden && !_parked(o.more)
-        @test gui.widgets.view_cube.scene.visible[] && gui.layout.panel_part.shown
+        @test gui.widgets.view_cube.scene.visible[] && isnothing(gui.layout.panel_part)
         close(gui)
 
         # a panel added in the spectator mode to a view without panels stays hidden until it is left

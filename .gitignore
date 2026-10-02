@@ -1,3 +1,5 @@
 Manifest.toml
 /docs/build/
 /plans/
+/scripts/
+/.vscode/

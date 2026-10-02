@@ -14,12 +14,12 @@ This file is for **developing** the GUI. Guidance for **using** it lives in the 
 Evaluate every change against these principles. The "Gap" column is the planned work; do not
 describe it as available in docs or the skill.
 
-| # | Principle | Gap in 0.1 |
+| # | Principle | Gap in 0.2 |
 |---|---|---|
 | P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components can be added to and removed from the scene in the GUI. One view holds several systems with several beams each. | adding and removing components at runtime |
-| P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | analysis panels are hard-wired to `Detector`; tree icons per type are internal |
+| P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`, `_has_view`), only `Detector` has a view; tree icons per type are internal |
 | P3 | Any layout can be assembled from the widgets and presented to the user. Layouts are composed in code from public widget blocks; `:compact` and `:app` are two such compositions. | the layout interface `AbstractLiveLayout` is internal, the widgets have no public constructors |
-| P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads (`card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`; a component package adds them in a package extension on BeamletOpticsGUI). | own analysis panels and icons per type |
+| P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads (`card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`; a component package adds them in a package extension on BeamletOpticsGUI). | own views (the page "Results") and icons per type |
 
 **Rules that follow from them:**
 
@@ -51,15 +51,19 @@ describe it as available in docs or the skill.
 - `src/LiveHandles.jl`: `LiveSystemHandle`, the GUI's system handle on BMO's render handle
   protocol (combines systems, source markers, clip planes and extras), and small pose helpers.
 - `src/LiveView.jl`: `LiveView{L}` and its state structs (`_TraceState`, `_ClipState`,
-  `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_LayoutWidgets`), `live_view`,
+  `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_DetectorStates`, `_LayoutWidgets`), `live_view`,
   and the docstring of `AbstractLiveLayout` (the layout interface).
 - `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes, the collapsible parts of the
   layouts (`_LayoutPart`, `_set_shown!`: the only way to collapse a part of the figure layout) and
   the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,
   `src/LiveApp.jl`, `src/LiveAppTree.jl`, `src/LiveDock.jl`, `src/LiveInspector.jl`: the two layouts.
 - `src/LiveCard.jl`, `src/LiveCards.jl`, `src/LiveCardRows.jl`: cards and the card API.
-- `src/LiveTrace.jl`, `src/LivePanels.jl`, `src/LiveProgress.jl`: solving, detector panels,
-  progress window. `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
+  `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Results", "Properties").
+- `src/LiveDetectorView.jl`: the view of a detector on the page "Results" of its card: the kinds
+  of views per type of hits (spot diagram, PSF, intensity), their results and metrics, and the
+  widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of the view per detector,
+  its computation only while it is shown, and the `detectors` kwarg.
+- `src/LiveTrace.jl`, `src/LiveProgress.jl`: solving, progress window. `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
 - `src/LiveSelectionCard.jl`: the small menu of a click on a group ("Select", "More") and the selection card of groups (browsing their parts level by level).
   `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts).

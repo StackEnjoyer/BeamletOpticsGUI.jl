@@ -39,24 +39,22 @@ const GUI = BeamletOpticsGUI
         @test gui isa GUI.LiveView
         @test gui.layout isa GUI.AppLayout
         @test Tuple(gui.fig.scene.viewport[].widths) == (1600, 950)
-        @test length(gui.panels) == 1
-        @test gui.layout.dock.shown
+        # the results of the detector are on its card: the dock has no tab and starts collapsed
+        @test isempty(gui.layout.dock_panels) && isempty(gui.layout.tabs.bar.titles)
+        @test !gui.layout.dock.shown
         @test isnothing(gui.widgets.menu)
         @test gui.sliders isa Makie.SliderGrid
         @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters"]
         @test first.(gui.layout.sections[:right]) == ["Properties"]
-        @test first.(gui.layout.dock_panels) == ["Detector 1"]
         @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels]
         @test occursin("1 ray", gui.widgets.info.text[])
         @test occursin("perspective", gui.widgets.info.text[])
-        @test sprint(show, gui) == "LiveView(1 systems, 1 detector panels)"
         close(gui)
 
-        # without detectors and sliders the dock is collapsed, the 3D view fills the height
+        # without sliders, the 3D view fills the height between the toolbar and the status bar
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [],
             size = (1280, 800))
-        @test isempty(gui.panels)
         @test isnothing(gui.sliders)
         @test !gui.layout.dock.shown
         @test !gui.layout.collapse.dock.active[]
@@ -88,7 +86,7 @@ const GUI = BeamletOpticsGUI
         @test gui.status.color[] == t.text
         close(gui)
 
-        # the colors of the 3D view and of the panels follow the theme
+        # the colors of the 3D view and of the detector view follow the theme
         _rgb(c) = RGBf(Makie.to_color(c))
         _plots(gui, obj) = render_plots(only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj))
         _detector_color(gui, pd) = _rgb(first(p for p in _plots(gui, pd) if p isa Makie.Mesh).color[])
@@ -110,8 +108,13 @@ const GUI = BeamletOpticsGUI
         @test dark.cards.selection.background.strokevisible[] && dark.cards.selection.background.strokecolor[] == t.border
         @test dark.cards.selection.background.color[] == t.sidebar
         @test dark.widgets.trace_button.plots[3].backgroundcolor[] == t.tooltip
-        px, pz = filter(p -> p isa Makie.Lines, only(dark.panels).profiles_ax.scene.plots)
-        @test (px.color[], pz.color[]) == (t.gizmo[1], t.gizmo[3])
+        # the detector view of the inspector: the spots in the text color, the profiles in the red
+        # and blue of the gizmo
+        dark.controls.selected[] = pd
+        view = dark.layout.inspector.card.view
+        @test view isa GUI._DetectorView && view.theme == t
+        @test all(p -> p.color[] == t.text, view.spots)
+        @test (view.profile_x.color[], view.profile_z.color[]) == (t.gizmo[1], t.gizmo[3])
         close(dark)
         # the light theme keeps the colors of the compact layout
         m, pd = _fixture()
@@ -217,6 +220,13 @@ const GUI = BeamletOpticsGUI
         @test gui.layout.inspector.mode.selected[] == :rotate
         # the step box is in the inspector, not on a card
         @test gui.widgets.step_box !== gui.cards.selection.step_box
+        # the pages of the card: a mirror opens on its pose, a detector on its results
+        @test card.pages == (:pose, :properties) && card.page == :pose
+        @test card.rows_part.shown && card.step_part.shown && !card.view_part.shown
+        gui.controls.selected[] = pd
+        @test card.pages == (:pose, :results, :properties) && card.page == :results
+        @test card.view_part.shown && card.view isa GUI._DetectorView && !card.rows_part.shown
+        @test GUI._layout_views(gui) == [(pd, card.view)]
         # no component menu, the eyes of the tree and "show all" in its title replace it
         @test gui.widgets.show_all_button isa GUI._IconButton
         close(gui)
@@ -369,6 +379,10 @@ const GUI = BeamletOpticsGUI
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
             sliders = ["a" => (0:0.1:1, v -> nothing)])
         layout = gui.layout
+        # a panel in the dock, which shows it
+        axis = Ref{Any}(nothing)
+        add_panel!(l -> (axis[] = Axis(l[1, 1]); nothing), gui, "Own")
+        @test layout.dock.shown
         w0, h0 = _width(gui.ax), _height(gui.ax)
         box = gui.widgets.step_box
         layout.collapse.right.active[] = false
@@ -383,7 +397,7 @@ const GUI = BeamletOpticsGUI
         layout.collapse.dock.active[] = false
         @test !layout.dock.shown
         @test _height(gui.ax) > h0 + 200
-        @test !gui.panels[1].ax.blockscene.visible[]
+        @test !axis[].blockscene.visible[]
         # restored
         foreach(t -> t.active[] = true, layout.collapse)
         @test layout.left.shown && layout.right.shown && layout.dock.shown
@@ -391,7 +405,15 @@ const GUI = BeamletOpticsGUI
         @test _height(gui.ax) ≈ h0
         @test box.blockscene.visible[]
         @test minimum(box.layoutobservables.computedbbox[])[1] > 0
-        @test gui.panels[1].ax.scene.visible[]
+        @test axis[].scene.visible[]
+        # the detector view of the inspector is not shown while the sidebar is collapsed
+        gui.controls.selected[] = pd
+        view = layout.inspector.card.view
+        @test GUI._shown_views(gui) == [(pd, view)] && view.ax.blockscene.visible[]
+        layout.collapse.right.active[] = false
+        @test isempty(GUI._shown_views(gui)) && !view.ax.blockscene.visible[]
+        layout.collapse.right.active[] = true
+        @test GUI._shown_views(gui) == [(pd, view)] && view.ax.blockscene.visible[]
         close(gui)
     end
 
@@ -400,6 +422,9 @@ const GUI = BeamletOpticsGUI
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
             sliders = ["a" => (0:0.1:1, v -> nothing)])
         layout, ctrl, help = gui.layout, gui.controls, gui.layout.help
+        # a panel in the dock, which shows it
+        axis = Ref{Any}(nothing)
+        add_panel!(l -> (axis[] = Axis(l[1, 1]); nothing), gui, "Own")
         cube = gui.widgets.view_cube
         ev = events(gui.fig.scene)
         fig = Rect2f(gui.fig.scene.viewport[])
@@ -419,11 +444,14 @@ const GUI = BeamletOpticsGUI
         # the left sidebar is collapsed before, a card is pinned in the right one
         layout.collapse.left.active[] = false
         GUI._toggle_pin!(gui, m)
+        GUI._toggle_pin!(gui, pd)
+        pinned_view = last(layout.inspector.pinned).view
+        @test GUI._shown_views(gui) == [(pd, pinned_view)]
         v1 = view()
         ortho = gui.widgets.orthographic_toggle
         button = bbox(ortho.box)
-        blocks = (gui.status, gui.widgets.step_box, ortho.box, gui.panels[1].ax,
-            only(layout.inspector.pinned).head.title)
+        blocks = (gui.status, gui.widgets.step_box, ortho.box, axis[],
+            first(layout.inspector.pinned).head.title, pinned_view.ax)
 
         _key!(gui, Keyboard.v)
         @test ctrl.spectator[] && layout.ui_hidden
@@ -431,6 +459,8 @@ const GUI = BeamletOpticsGUI
         @test same(view(), fig)
         # hidden and off-screen, where they take no clicks
         @test all(b -> !b.blockscene.visible[] && maximum(bbox(b))[1] < 0, blocks)
+        # no detector view is shown, i.e. none is computed
+        @test isempty(GUI._shown_views(gui))
         active = ortho.active[]
         click!(center(button))
         @test ortho.active[] == active
@@ -459,7 +489,8 @@ const GUI = BeamletOpticsGUI
         @test same(bbox(ortho.box), button) && cube.scene.visible[]
         click!(center(button))
         @test ortho.active[] != active
-        @test only(layout.inspector.pinned).obj === m
+        @test [c.obj for c in layout.inspector.pinned] == [m, pd]
+        @test GUI._shown_views(gui) == [(pd, pinned_view)]
         close(gui)
 
         # a view started in the spectator mode starts without the UI
@@ -470,7 +501,9 @@ const GUI = BeamletOpticsGUI
             layout.right, layout.dock))
         @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
         GUI._set_spectator!(gui.controls, false)
-        @test all(p -> p.shown, (layout.bar, layout.status_bar, layout.left, layout.right, layout.dock))
+        @test all(p -> p.shown, (layout.bar, layout.status_bar, layout.left, layout.right))
+        # the dock has no panels
+        @test !layout.dock.shown
         close(gui)
 
         # panels, controls and tools added in the spectator mode are hidden until it is left, e.g.
@@ -491,7 +524,7 @@ const GUI = BeamletOpticsGUI
         @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
         GUI._set_spectator!(gui.controls, false)
         @test visible(button[]) && visible(tool.box) && "Mine" in first.(layout.sections[:left])
-        @test "Own" in first.(layout.dock_panels)
+        @test first.(layout.dock_panels) == ["Own"] && layout.dock.shown && visible(axis[])
         close(gui)
 
         # controls added while the left sidebar is collapsed by its toggle

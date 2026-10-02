@@ -46,11 +46,12 @@ function record_power!(gui, obj)
     return nothing
 end
 
-## Interactive window, `layout = :app` opens it as an application window
+## Interactive window, `layout = :app` opens it as an application window. The card of the
+## photodiode starts pinned with its expanded intensity view (page "Results")
 gui = live_view(system, beam; size = (1200, 700), detectors = [pd => (:intensity, full_area)],
     on_change = record_power!, layout = :compact)
 
-# The optical power as an own panel: below the detector panel, or a tab in the app layout
+# The optical power as an own panel: a column right of the 3D view, or a tab in the app layout
 add_panel!(gui, "Optical power") do layout
     ax = Axis(layout[1, 1]; xlabel = "Update", ylabel = "P [mW]")
     pts = Observable(copy(power))

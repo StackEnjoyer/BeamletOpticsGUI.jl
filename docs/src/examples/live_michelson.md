@@ -74,7 +74,7 @@ Errors in the callback are logged once and do not interrupt the interaction.
 
 ## Opening the interactive window
 
-A single call of [`live_view`](@ref) opens a complete interactive window for the system and the beam: the 3D view, one panel per `Detector` and a status line. The detector panel shows the intensity for Gaussian beamlets and the spot diagram for rays, together with the optical power or the number of rays in its title. By default, the intensity is cropped around the beam, here the full detector area is evaluated instead. The optical power is plotted by an own panel, added via [`add_panel!`](@ref): the `do` block builds an axis into the layout of the panel and returns the function that updates the plot after each full solve:
+A single call of [`live_view`](@ref) opens a complete interactive window for the system and the beam: the 3D view and a status line. The card of every `Detector` has a page "Results" with its detector view, the intensity for Gaussian beamlets or the spot diagram and PSF for rays, together with the optical power or the number of rays. With `detectors = [pd => (:intensity, full_area)]`, the card of the photodiode starts pinned with the expanded intensity view. By default, the intensity is cropped around the beam, here the full detector area is evaluated instead, which is also the area that "fit" shows. The optical power is plotted by an own panel, added via [`add_panel!`](@ref): the `do` block builds an axis into the layout of the panel and returns the function that updates the plot after each full solve:
 
 ```julia
 gui = live_view(system, beam; size = (1200, 700), detectors = [pd => (:intensity, full_area)],
@@ -88,12 +88,12 @@ end
 display(gui)
 ```
 
-The panel is placed by the layout of the window: below the detector panel in the default
+The panel is placed by the layout of the window: in a column right of the 3D view in the default
 `layout = :compact`, as a tab of the analysis dock with `layout = :app`. There, the panel is only
 updated while its tab is shown, which is why the power is recorded by `on_change`, which runs after
 every full solve.
 
-After each change, `live_view` empties all detectors, solves the system again and updates the beam and the detector panels. There is no need to call `solve_system!` or `update_render!` manually. The figure, the 3D view and the controls are available as `gui.fig`, `gui.ax` and `gui.controls`, e.g. to add static context via `render!(gui.ax, ...)`. Several systems can be shown in the same view via `live_view(system1 => beam1, system2 => beam2)`, and sliders for custom parameters can be added via the `sliders` keyword argument.
+After each change, `live_view` empties all detectors, solves the system again and updates the beam and the shown detector views. There is no need to call `solve_system!` or `update_render!` manually. The figure, the 3D view and the controls are available as `gui.fig`, `gui.ax` and `gui.controls`, e.g. to add static context via `render!(gui.ax, ...)`. Several systems can be shown in the same view via `live_view(system1 => beam1, system2 => beam2)`, and sliders for custom parameters can be added via the `sliders` keyword argument.
 
 ## Controls
 

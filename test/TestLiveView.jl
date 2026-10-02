@@ -42,51 +42,87 @@ _points(h) = only(render_plots(h))[1][]
     # The tests expect each change to be solved immediately. Adaptive tracing depends on the
     # measured solve time, which exceeds the default `trace_budget` on slow runners (e.g. CI with
     # coverage), hence it is disabled unless a test sets `trace_budget` itself.
-    _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf), kwargs)...)
+    #
+    # The tests observe the hits of the detectors through their views, which are only computed
+    # while they are shown: a view per detector is registered in a figure of its own.
+    function _live_view(args...; kwargs...)
+        gui = live_view(args...; merge((; trace_budget = Inf), kwargs)...)
+        for pd in _detectors(gui)
+            GUI._register_view!(gui, pd, GUI._DetectorView(GridLayout(Figure()[1, 1]), gui.layout.theme))
+        end
+        # a view that was computed in the background, e.g. while it was compiled
+        while GUI._running(gui)
+            wait(gui.trace.job.done)
+            GUI._poll_job!(gui)
+        end
+        return gui
+    end
+    _detectors(gui) = GUI._find_detectors(first.(gui.pairs))
+    # What the view of the `k`-th detector shows: the result, its kind, the points of a spot
+    # diagram [mm], the field `(x, z, I)` and whether it is a preview
+    _result(gui, k = 1) = GUI._detector_state(gui, _detectors(gui)[k]).result
+    _kind(gui, k = 1) = GUI._kind_name(_result(gui, k).kind)
+    _xy(gui, k = 1) = [Point2f(1e3 * q[1], 1e3 * q[2]) for q in _result(gui, k).data]
+    _field(gui, k = 1) = _result(gui, k).data
+    _is_preview(gui, k = 1) = _result(gui, k).coarse || _result(gui, k).preview
+    _pinned(gui, obj) = any(c -> c.pinned && c.obj === obj, gui.cards.all)
 
-    @testset "construction and panels" begin
+    @testset "construction and detector views" begin
         m, pd = _fixture()
         sys = System([m, pd])
         gauss = _gauss()
         gui = _live_view(sys, gauss)
         @test gui isa GUI.LiveView
-        @test length(gui.panels) == 1
-        @test occursin("Detector 1: P =", gui.panels[1].ax.title[])
-        @test occursin("mW", gui.panels[1].ax.title[])
-        @test gui.panels[1].heat_plot.visible[]
-        @test !gui.panels[1].scatter_plot.visible[]
-        @test sprint(show, gui) == "LiveView(1 systems, 1 detector panels)"
+        @test !hasfield(typeof(gui), :panels)
+        @test _kind(gui) == :intensity
+        @test _result(gui).metrics.P ≈ optical_power(pd)
+        # no card is pinned at the start
+        @test !any(c -> c.pinned, gui.cards.all) && isempty(gui.detectors.start)
+        @test sprint(show, gui) == "LiveView(1 systems, 1 detectors)"
         @test isnothing(gui.sliders)
         close(gui)
 
         m, pd = _fixture()
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = _live_view(System([m, pd]) => cs)
-        @test occursin("40 rays", gui.panels[1].ax.title[])
-        @test gui.panels[1].scatter_plot.visible[]
-        @test length(gui.panels[1].xy[]) == 40
+        @test _kind(gui) == :spot
+        @test length(_xy(gui)) == 40
         close(gui)
 
-        # explicit modes and kwargs, a solved beam can not be reused for new objects
+        # explicit kinds and kwargs pin the card of the detector, a solved beam can not be reused
+        # for new objects
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss();
             detectors = [pd => (:intensity, (; n = 20, x_min = -2.5e-3, x_max = 2.5e-3,
                 z_min = -2.5e-3, z_max = 2.5e-3))])
-        @test size(gui.panels[1].heat_I[]) == (20, 20)
-        @test gui.panels[1].heat_x[] ≈ collect(LinRange(-2.5f0, 2.5f0, 20))
+        @test size(_field(gui)[3]) == (20, 20)
+        @test _field(gui)[1] ≈ LinRange(-2.5e-3, 2.5e-3, 20)
+        @test _pinned(gui, pd) && only(gui.detectors.start).pd === pd
+        card = only(filter(c -> c.pinned, gui.cards.all))
+        @test card.page == :results && card.view_expanded && !isnothing(GUI._card_view(card))
         close(gui)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => :spot])
-        @test gui.panels[1].scatter_plot.visible[]
+        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:spot, (; expanded = false))])
+        @test _kind(gui) == :spot && _pinned(gui, pd)
+        @test !only(filter(c -> c.pinned, gui.cards.all)).view_expanded
+        close(gui)
+        # a vector of pairs with different values, i.e. a `Vector{Pair{Detector, Any}}`
+        pd2 = Detector(5e-3)
+        translate3d!(pd2, [0.2, 0.1, 0])
+        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:intensity, (; n = 20)), pd2 => :spot])
+        @test _pinned(gui, pd) && _pinned(gui, pd2)
         close(gui)
 
-        # no panels
+        # no pinned cards
         gui = _live_view(System([m, pd]), _gauss(); detectors = [])
-        @test isempty(gui.panels)
+        @test !any(c -> c.pinned, gui.cards.all)
         close(gui)
 
         @test_throws ArgumentError _live_view()
         @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = [pd => :fancy])
         @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = :none)
+        # the history of the former panels is recorded in `on_change` and plotted by `add_panel!`
+        @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = [pd => (:spot, (; history = true))])
+        @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = [pd => (:intensity, (; colorscale = :sqrt))])
     end
 
     @testset "shared detector is emptied once per solve" begin
@@ -96,8 +132,8 @@ _points(h) = only(render_plots(h))[1][]
         b1 = Beam([0.0, 0, 0], [0.0, 1, 0])
         b2 = Beam([0.05, 0.1, 0.001], [1.0, 0, 0])
         gui = _live_view(sys1 => b1, sys2 => b2; throttle = false, mode = :rotate, fine_angle = 1e-3)
-        @test length(gui.panels) == 1 # deduplicated
-        @test sprint(show, gui) == "LiveView(2 systems, 1 detector panels)"
+        @test length(_detectors(gui)) == 1 # deduplicated
+        @test sprint(show, gui) == "LiveView(2 systems, 1 detectors)"
         # both systems and the markers of both sources are handled by one controller
         @test length(render_children(gui.controls.h)) == 5
         @test length(BMO.hits(pd)) == 2
@@ -130,11 +166,11 @@ _points(h) = only(render_plots(h))[1][]
         n0 = n_calls[]
         _select!(gui)
         @test gui.controls.selected[] === m
-        x0 = _mean_x(gui.panels[1].xy[])
+        x0 = _mean_x(_xy(gui))
         _key!(gui, Keyboard.left)
         @test n_calls[] == n0 + 1
         @test length(BMO.hits(pd)) == 1
-        x1 = _mean_x(gui.panels[1].xy[])
+        x1 = _mean_x(_xy(gui))
         @test abs(x1 - x0) > 1 # [mm], 20 mrad deflection over 100 mm
         @test startswith(gui.status.text[], "$(nameof(typeof(m))) 1 at (")
 
@@ -143,10 +179,8 @@ _points(h) = only(render_plots(h))[1][]
         gui.controls.fine_step = 0.1
         @test_logs _key!(gui, Keyboard.page_up)
         @test isnothing(BMO.hits(pd))
-        @test gui.panels[1].ax.title[] == "Detector 1: no hits"
-        @test !gui.panels[1].scatter_plot.visible[]
-        @test !gui.panels[1].heat_plot.visible[]
-        @test isempty(gui.panels[1].xy[])
+        @test isnothing(_result(gui).kind) && isempty(_result(gui).kinds)
+        @test isnothing(_result(gui).error)
 
         # close removes all listeners
         n1 = n_calls[]
@@ -168,13 +202,13 @@ _points(h) = only(render_plots(h))[1][]
         @test isempty(called) # not called at construction
         @test length(gui.sliders.sliders) == 1
         n0 = n_calls[]
-        z0 = gui.panels[1].xy[][1][2]
+        z0 = _xy(gui)[1][2]
         gui.sliders.sliders[1].value[] = 1.0
         @test isempty(called) # throttled until the next tick
         notify(events(gui.ax.scene).tick)
         @test called == [1.0]
         @test n_calls[] == n0 + 1
-        z1 = gui.panels[1].xy[][1][2]
+        z1 = _xy(gui)[1][2]
         @test abs(abs(z1 - z0) - 1) < 1e-3 # [mm]
         # no update without changes
         notify(events(gui.ax.scene).tick)
@@ -275,7 +309,7 @@ _points(h) = only(render_plots(h))[1][]
         @test _points(gui.beam_handles[1])[1] ≈ Point3f(0, 1e-3, 0)
         @test startswith(gui.status.text[], "Beam 1 at (")
         # rotate the source, the spot moves on the detector
-        x0 = _mean_x(gui.panels[1].xy[])
+        x0 = _mean_x(_xy(gui))
         _key!(gui, Keyboard.m)
         _key!(gui, Keyboard.page_up)
         _key!(gui, Keyboard.m)
@@ -293,11 +327,11 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref[] = gui
         _select!(gui)
         @test gui.controls.selected[] === cs
-        z0 = sum(p -> p[2], gui.panels[1].xy[]) / 40
+        z0 = sum(p -> p[2], _xy(gui)) / 40
         _key!(gui, Keyboard.page_up) # along the vertical axis
         @test collect(BMO.position(cs)) ≈ [0, 0, 1e-3]
         @test length(BMO.hits(pd)) == 40
-        @test sum(p -> p[2], gui.panels[1].xy[]) / 40 ≈ z0 + 1 atol = 1e-3 # [mm]
+        @test sum(p -> p[2], _xy(gui)) / 40 ≈ z0 + 1 atol = 1e-3 # [mm]
         close(gui)
 
         # hide and show the markers via the toggle and the key `1`, a selected source is deselected.
@@ -349,7 +383,7 @@ _points(h) = only(render_plots(h))[1][]
             fine_step = 1e-3, labels = Dict(m => "Mirror 1", pd => "PD"),
             pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
-        @test startswith(gui.panels[1].ax.title[], "PD: ")
+        @test GUI._label(gui, pd) == "PD"
         _select!(gui)
         _key!(gui, Keyboard.up)
         @test startswith(gui.status.text[], "Mirror 1 at (")
@@ -386,6 +420,8 @@ _points(h) = only(render_plots(h))[1][]
         @test GUI._parse_step("250 nm")[1] == :move
         @test GUI._parse_step("250 nm")[2] ≈ 250e-9
         @test GUI._parse_step("0.5um")[2] ≈ 0.5e-6
+        @test GUI._parse_step("5 pm") == (:move, 5e-12)
+        @test GUI._parse_step("2 nrad") == (:rotate, 2e-9)
         @test GUI._parse_step("1e-3 m")[2] ≈ 1e-3
         @test GUI._parse_step("2 deg")[2] ≈ deg2rad(2)
         @test GUI._parse_step("3 mrad")[1] == :rotate
@@ -420,27 +456,32 @@ _points(h) = only(render_plots(h))[1][]
         @test _points(gui.beam_handles[1]) != pts0
         close(gui)
 
-        # slow panels: a coarse preview while moving, refined once the movement pauses
+        # slow views: a coarse preview while moving, refined once the movement pauses
         m, pd = _fixture()
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), _gauss(); throttle = false, mode = :rotate,
             fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; n = 40))],
             trace_budget = 0.5, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
-        @test size(gui.panels[1].heat_I[]) == (40, 40)
-        # pretend that the solve is fast and the panels are slow, independent of the machine
+        @test size(_field(gui)[3]) == (40, 40)
+        # pretend that the solve is fast and the views are slow, independent of the machine
         gui.trace.solve_time = 0.0
-        gui.trace.panel_time = 1.0
+        gui.trace.view_time = 1.0
         _select!(gui)
         _key!(gui, Keyboard.left)
         @test gui.trace.coarse
-        @test size(gui.panels[1].heat_I[]) == (16, 16)
-        @test endswith(gui.panels[1].ax.title[], "(preview)")
+        @test size(_field(gui)[3]) == (16, 16)
+        @test _is_preview(gui)
         gui.trace.last_change -= 1
         notify(events(gui.ax.scene).tick)
         @test !gui.trace.coarse
-        @test size(gui.panels[1].heat_I[]) == (40, 40)
-        @test !endswith(gui.panels[1].ax.title[], "(preview)")
+        @test size(_field(gui)[3]) == (40, 40)
+        @test !_is_preview(gui)
+        # the refinement measures the views again, a fast view is no longer previewed
+        @test gui.trace.view_time < 0.5
+        _key!(gui, Keyboard.left)
+        @test !gui.trace.coarse
+        @test size(_field(gui)[3]) == (40, 40)
         close(gui)
     end
 
@@ -521,10 +562,12 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.trace.job === job
         _key!(gui, Keyboard.escape)
         @test gui.trace.job === job && !istaskdone(job.task)
-        # the button "Cancel" of the progress window cancels after the current item
-        tick!()
+        # the button "Cancel" of the progress window cancels after the current item. The window
+        # appears once the loop has run for `progress_delay`, which starts later than the job on a
+        # busy machine
         progress = gui.trace.progress
-        @test progress.visible[] && !progress.hovered[]
+        @test waitfor(() -> (tick!(); progress.visible[]))
+        @test !progress.hovered[]
         r = GUI._cancel_rect(progress)
         p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
         events(scene).mouseposition[] = (p[1], p[2])
@@ -546,8 +589,7 @@ _points(h) = only(render_plots(h))[1][]
         job = slow_job()
         @test !GUI._run!(gui, job, GUI._TRACING)
         GUI._set_spectator!(gui.controls, true)
-        tick!()
-        @test progress.visible[]
+        @test waitfor(() -> (tick!(); progress.visible[]))
         r = GUI._cancel_rect(progress)
         p = Point2f(minimum(Makie.viewport(scene)[])) .+ minimum(r) .+ Makie.widths(r) ./ 2
         events(scene).mouseposition[] = (p[1], p[2])
@@ -573,18 +615,18 @@ _points(h) = only(render_plots(h))[1][]
         gui.controls.before_change = hook
         @test waitfor(() -> (tick!(); !GUI._running(gui)))
 
-        # a real solve: the sinks trace the source, then compute the field of the panel, and the
+        # a real solve: the sinks trace the source, then compute the view of the detector, and the
         # result is shown once the job is done (at once or in the background)
         job = GUI._start_job(gui, r -> nothing, nothing, gui.pairs, gui.beam_handles;
             timing = :solve_time)
         r = fetch(job.task)
         @test job.anchors == [Point3f(position(src)), Point3f(position(pd))]
-        @test length(r.fields) == 1
+        @test length(r.results) == 1 && only(r.requests).pd === pd
         gui.trace.progress_delay = 0.0
         GUI._trace!(gui)
         @test waitfor(() -> (tick!(); !GUI._running(gui)))
         @test !gui.trace.stale
-        @test occursin("Detector 1", gui.panels[1].ax.title[])
+        @test !GUI._detector_state(gui, pd).stale
         close(gui)
 
         @test GUI._progress_label((; desc = "Tracing beams", count = 42, n = 100, t0 = 0.0),
@@ -594,13 +636,14 @@ _points(h) = only(render_plots(h))[1][]
         @test GUI._duration_string(125) == "2:05"
     end
 
-    @testset "panel power matches optical_power" begin
+    @testset "power of a view matches optical_power" begin
         m, pd = _fixture()
         # small area and coarse grid, such that the edges contribute to the integral
         area = (; n = 5, x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, area)])
         P = optical_power(pd; area...)
-        @test gui.panels[1].ax.title[] == "Detector 1: P = $(GUI._fmt3(1e3 * P)) mW"
+        @test _result(gui).metrics.P ≈ P
+        @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)
     end
 
@@ -655,7 +698,7 @@ _points(h) = only(render_plots(h))[1][]
             R0 = Matrix{Float64}(BMO.orientation(m))
             n_hits = length(BMO.hits(pd))
             pts0 = copy(_points(bh))
-            xy0 = copy(gui.panels[1].xy[])
+            xy0 = copy(_xy(gui))
             _key!(gui, Keyboard.left)
             # the object moves, but nothing is solved
             @test Matrix{Float64}(BMO.orientation(m)) ≈ BMO.rotate3d([0, 0, 1], 1e-2) * R0
@@ -666,7 +709,7 @@ _points(h) = only(render_plots(h))[1][]
             @test n_calls[] == 1
             @test length(BMO.hits(pd)) == n_hits
             @test _points(bh) == pts0
-            @test gui.panels[1].xy[] == xy0
+            @test _xy(gui) == xy0
             @test gui.trace.stale
             @test occursin("outdated, press t to trace", gui.status.text[])
             @test startswith(gui.status.text[], "$(nameof(typeof(m))) 1 at (")
@@ -677,7 +720,7 @@ _points(h) = only(render_plots(h))[1][]
             @test n_calls[] == 2
             @test !gui.trace.stale
             @test only(render_plots(bh)).alpha[] ≈ 1.0
-            pts_gui, n_gui, xy_gui = copy(_points(bh)), length(BMO.hits(pd)), copy(gui.panels[1].xy[])
+            pts_gui, n_gui, xy_gui = copy(_points(bh)), length(BMO.hits(pd)), copy(_xy(gui))
             spot_gui = _spot(pd)
             @test xy_gui != xy0
             pts, n, spot = _fresh(sys, pd)
@@ -692,7 +735,7 @@ _points(h) = only(render_plots(h))[1][]
             notify(gui.widgets.trace_button.clicks)
             @test n_calls[] == 3
             @test !gui.trace.stale
-            pts_gui, xy_gui2 = copy(_points(bh)), copy(gui.panels[1].xy[])
+            pts_gui, xy_gui2 = copy(_points(bh)), copy(_xy(gui))
             @test xy_gui2 != xy_gui
             pts, n, spot = _fresh(sys, pd)
             @test n == 1
@@ -721,7 +764,7 @@ _points(h) = only(render_plots(h))[1][]
             # the view starts untraced
             GUI._trace!(gui)
             @test n_calls[] == 1
-            xy0 = copy(gui.panels[1].xy[])
+            xy0 = copy(_xy(gui))
             p0 = Vector{Float64}(BMO.position(pd))
             gui.sliders.sliders[1].value[] = 1.0
             notify(events(gui.ax.scene).tick)
@@ -731,7 +774,7 @@ _points(h) = only(render_plots(h))[1][]
             shift = Vector{Float64}(Makie.translation(pd_plot)[])
             @test isapprox(shift, BMO.position(pd) - p0; atol = 1e-9)
             @test n_calls[] == 1
-            @test gui.panels[1].xy[] == xy0
+            @test _xy(gui) == xy0
             @test gui.trace.stale
             @test gui.status.text[] == "outdated, press t to trace"
 
@@ -740,7 +783,7 @@ _points(h) = only(render_plots(h))[1][]
             @test gui.trace.auto[]
             @test n_calls[] == 2
             @test !gui.trace.stale
-            @test gui.panels[1].xy[] != xy0
+            @test _xy(gui) != xy0
 
             # auto tracing resumes
             gui.controls.selected[] = m
@@ -1116,35 +1159,6 @@ _points(h) = only(render_plots(h))[1][]
         close(gui)
     end
 
-    @testset "spot panel limits" begin
-        # A single ray gives a zero-width spot diagram, which must not collapse the limits
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]))
-        p = gui.panels[1]
-        @test length(p.xy[]) == 1
-        for lims in (p.ax.targetlimits[], p.ax.finallimits[])
-            @test all(isfinite, lims.origin) && all(isfinite, lims.widths)
-            @test all(lims.widths .>= 2e-3 * (1 - 1e-6))
-        end
-        close(gui)
-
-        # Many spots keep the limits of `autolimits!`
-        m, pd = _fixture()
-        cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
-        gui = _live_view(System([m, pd]) => cs)
-        p = gui.panels[1]
-        lims = p.ax.targetlimits[]
-        autolimits!(p.ax)
-        @test p.ax.targetlimits[] == lims
-        close(gui)
-
-        # Only the degenerate axis is padded, by half the extent of the other axis
-        ax = Axis(Figure()[1, 1])
-        GUI._pad_degenerate_limits!(ax, [Point2f(1, 0), Point2f(1, 2)])
-        lims = ax.targetlimits[]
-        @test lims.origin ≈ [0.0, 1 - 1.05] && lims.widths ≈ [2.0, 2 * 1.05]
-    end
-
     @testset "initial view from the Front-Right-Top corner" begin
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false)
@@ -1404,7 +1418,7 @@ _points(h) = only(render_plots(h))[1][]
             on_change = (g, obj) -> (n_calls[] += 1))
         @test gui.trace.preview_enabled
         @test length(BMO.hits(pd)) == 40
-        @test !endswith(gui.panels[1].ax.title[], "(preview)")
+        @test !_is_preview(gui)
         n0 = n_calls[]
         gui.controls.selected[] = m
         _key!(gui, Keyboard.up)
@@ -1412,7 +1426,7 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.trace.preview
         @test findall(_traced, BMO.beams(cs)) == collect(1:5:40)
         @test length(BMO.hits(pd)) == 8
-        @test endswith(gui.panels[1].ax.title[], "8 rays (preview)")
+        @test _result(gui).metrics.n == 8 && _is_preview(gui)
         @test n_calls[] == n0
         pts = copy(_points(gui.beam_handles[1]))
         # still moving
@@ -1424,7 +1438,7 @@ _points(h) = only(render_plots(h))[1][]
         @test !gui.trace.preview
         @test all(_traced, BMO.beams(cs))
         @test length(BMO.hits(pd)) == 40
-        @test gui.panels[1].ax.title[] == "Detector 1: 40 rays"
+        @test _result(gui).metrics.n == 40 && !_is_preview(gui)
         @test n_calls[] == n0 + 1
         # the beam plot shows the same rendered subset
         @test _points(gui.beam_handles[1]) == pts
@@ -1467,104 +1481,52 @@ _points(h) = only(render_plots(h))[1][]
             gui.controls.selected[] = m
             _key!(gui, Keyboard.up)
             @test !gui.trace.preview
-            @test !endswith(gui.panels[1].ax.title[], "(preview)")
+            @test !_is_preview(gui)
             close(gui)
         end
     end
 
-    @testset "detector metrics" begin
-        # synthetic spot
-        c = (0.3e-3, -0.2e-3)
-        pts = [Point2(c[1] + dx, c[2] + dz) for (dx, dz) in ((1e-3, 0), (-1e-3, 0), (0, 2e-3), (0, -2e-3))]
-        mt = GUI._spot_metrics(pts)
-        @test mt.n == 4
-        @test abs(mt.cx - c[1]) < 1e-9 && abs(mt.cz - c[2]) < 1e-9
-        @test abs(mt.rms - sqrt(2.5) * 1e-3) < 1e-9
-        @test abs(mt.rmax - 2e-3) < 1e-9
-
-        # ray hits of a panel
+    @testset "detector views" begin
+        # ray hits: the metrics of the spot diagram
         m, pd = _fixture()
         gui = _live_view(System([m, pd]) => _source())
-        p = gui.panels[1]
         spots = BMO.spot_diagram(pd)
         cx, cz = sum(q -> q[1], spots) / 40, sum(q -> q[2], spots) / 40
-        @test abs(p.metrics.cx - cx) < 1e-9 && abs(p.metrics.cz - cz) < 1e-9
-        @test abs(p.metrics.rms - sqrt(sum(q -> (q[1] - cx)^2 + (q[2] - cz)^2, spots) / 40)) < 1e-9
-        @test p.metrics.n == 40
-        @test p.centroid[] ≈ [Point2f(1e3 * cx, 1e3 * cz)]
-        @test startswith(p.ax.subtitle[], "N = 40, c = (")
-        @test occursin("rms ", p.ax.subtitle[])
-        @test isnothing(p.profiles_ax) && isempty(p.history_axes)
+        mt = _result(gui).metrics
+        @test abs(mt.cx - cx) < 1e-9 && abs(mt.cz - cz) < 1e-9 && mt.n == 40
+        @test GUI._signal_text(gui, pd) == "N = 40"
+        # the PSF of the rays, normalized to its peak
+        GUI._set_view!(gui, pd; kind = :psf)
+        @test _kind(gui) == :psf && maximum(_field(gui)[3]) ≈ 1
         close(gui)
 
         # Gaussian beamlet: power and 1/e² radius
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss())
-        p = gui.panels[1]
-        @test isapprox(p.metrics.P, optical_power(pd); rtol = 1e-3)
+        mt = _result(gui).metrics
+        @test isapprox(mt.P, optical_power(pd); rtol = 1e-3)
         # waist 0.5 mm at the source, 200 mm to the detector
         zR = π * 0.5e-3^2 / 1e-6
         w = 0.5e-3 * sqrt(1 + (0.2 / zR)^2)
-        @test isapprox(p.metrics.wx, w; rtol = 0.02)
-        @test isapprox(p.metrics.wz, w; rtol = 0.02)
-        @test abs(p.metrics.cx) < 1e-6 && abs(p.metrics.cz) < 1e-6
-        @test p.metrics.peak ≈ maximum(BMO.intensity(pd)[3])
-        @test startswith(p.ax.subtitle[], "P = ")
+        @test isapprox(mt.wx, w; rtol = 0.02) && isapprox(mt.wz, w; rtol = 0.02)
+        @test mt.peak ≈ maximum(BMO.intensity(pd)[3])
         close(gui)
 
-        # logarithmic color scale with a floor, fixed color range
+        # the options of the `detectors` kwarg
         m, pd = _fixture()
-        # an area of ±5 w, where the floor applies
-        area = (; n = 20, x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; area..., colorscale = :log))])
-        p = gui.panels[1]
-        _, _, I = BMO.intensity(pd; area...)
-        Imax = maximum(I)
-        @test p.heat_I[] ≈ Float32.(log10.(max.(I, 1e-4 * Imax)))
-        @test minimum(p.heat_I[]) ≈ log10(1e-4 * Imax) rtol = 1e-5
-        @test collect(p.heat_plot.colorrange[]) ≈ [log10(1e-4 * Imax), log10(Imax)]
-        close(gui)
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; n = 20, colorrange = (0, 5)))])
-        @test collect(gui.panels[1].heat_plot.colorrange[]) == [0, 5]
-        @test size(gui.panels[1].heat_I[]) == (20, 20)
-        close(gui)
-        @test_throws ArgumentError _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; colorscale = :sqrt))])
-
-        # history: one point per solve, at most 300
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            fine_step = 1e-4, detectors = [pd => (:spot, (; history = true))])
-        p = gui.panels[1]
-        @test length(p.history_axes) == 2
-        @test length(p.history_value[]) == 1
-        gui.controls.selected[] = m
-        _key!(gui, Keyboard.up)
-        _key!(gui, Keyboard.up)
-        @test length(p.history_value[]) == 3
-        @test last(p.history_value[]) == Point2f(3, 1)
-        @test last(p.history_cx[]) ≈ Point2f(3, 1e3 * p.metrics.cx)
-        @test p.history_axes[1].ylabel[] == "N"
-        for _ in 1:310
-            GUI._resolve!(gui, nothing)
-        end
-        @test length(p.history_value[]) == 300
-        @test length(p.history_cz[]) == 300
-        @test first(p.history_value[])[1] == 14 && last(p.history_value[])[1] == 313
+        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity,
+            (; n = 20, colorscale = :log, colorrange = (0, 5), profiles = true, x_min = -2.5e-3, x_max = 2.5e-3))])
+        opts = GUI._detector_state(gui, pd).opts
+        @test opts.n == 20 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
+        @test opts.kwargs == (; x_min = -2.5e-3, x_max = 2.5e-3)
+        @test size(_field(gui)[3]) == (20, 20)
         close(gui)
 
-        # profiles through the centroid
+        # a view that is not shown is not computed
         m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; n = 30, profiles = true, history = true))])
-        p = gui.panels[1]
-        @test !isnothing(p.profiles_ax)
-        @test length(p.profiles_ax.scene.plots) == 2
-        x, z, I = BMO.intensity(pd; n = 30)
-        i, j = argmin(abs.(x .- p.metrics.cx)), argmin(abs.(z .- p.metrics.cz))
-        @test p.profile_x[] ≈ [Point2f(1e3 * x[k], I[k, j]) for k in 1:30]
-        @test p.profile_z[] ≈ [Point2f(1e3 * z[k], I[i, k]) for k in 1:30]
-        @test p.history_axes[1].ylabel[] == "P [mW]"
-        @test last(p.history_value[])[2] ≈ 1e3 * p.metrics.P
+        gui = live_view(System([m, pd]), _gauss(); trace_budget = Inf)
+        @test isempty(GUI._shown_views(gui)) && isempty(gui.detectors.states)
+        @test GUI._signal_text(gui, pd) == "1 hit"
         close(gui)
     end
 
@@ -1739,7 +1701,6 @@ _points(h) = only(render_plots(h))[1][]
         @test _rgb(o.rail.box.strokecolor[]) == _rgb(t.border)
         @test _rgb(dark.widgets.auto_trace_toggle.box.color[]) == _rgb(t.accent_soft)
         @test Makie.Colors.alpha(Makie.to_color(dark.widgets.measure_toggle.box.color[])) == 0
-        @test _rgb(dark.panels[1].ax.backgroundcolor[]) == _rgb(t.view)
         @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
         @test all(==(_rgb(t.marker_stroke)), _strokes(dark, only(dark.clip.planes), beam))

@@ -16,31 +16,49 @@ Docked cards: the card of the selection in the inspector and the pinned cards be
 
 A card docked in the "Properties" section of the app layout, the counterpart of the floating
 `_ComponentCard` (see `_AbstractCard`): the widgets declared by [`card_actions`](@ref) (in
-`actions`, in the head) and [`card_rows`](@ref) (in `rows`, below the head), built by the same code
-as the floating cards (see `_build_content!`), but in the colors of the `theme` of the app and with
-the textboxes and sliders filling the width of the sidebar (see `_cell_attributes`). It is either
+`actions`, in the head) and [`card_rows`](@ref) (in `rows`), built by the same code as the floating
+cards (see `_build_content!`), but in the colors of the `theme` of the app and with the textboxes
+and sliders filling the width of the sidebar (see `_cell_attributes`). It is either
 
 - the card of the selection (`pinned = false`), whose head is the header of the inspector, see
   `_Inspector`, or
 - a card `pinned` to the object `obj`, stacked below the inspector with its own `head` (icon,
   title, float button, pin and collapse chevron, built by the shared parts of `LiveCard.jl`), see
   `_dock_pinned!`; a `collapsed` card shows only its head and its actions. The float button moves
-  it into the 3D view as a floating `_ComponentCard`, see `_float!`. Below its rows it has the
-  disclosure row "Properties" (`properties_button`) and the `list` of the properties of its object,
-  like a floating card (see `_toggle_properties!`): the list is filled while `properties_shown`,
-  both are in the collapsible `properties_part`, which a collapsed card does not show. For the
-  card of the selection these are `nothing`: the inspector lists its properties.
+  it into the 3D view as a floating `_ComponentCard`, see `_float!`.
 
-`header` and `parent` hold the layouts of the head and of the card: the actions are placed in the
-rows `actions_rows` of column 3 of the `header`, the rows in the row `rows_row` of the `parent`.
-The fields `widgets` to `pose` are those of `_ComponentCard`.
+Like a floating card, it shows one `page` of its object at a time (see `_card_pages` and
+`_show_page!`), chosen in the page bar `bar` below its head; a card with a single page has no bar.
+The bar and the content of the pages are collapsible parts (`_LayoutPart`s) in the rows of the
+`parent` from `first_row` on, one below the other:
+
+- `bar_part`: the page bar, a `_Segmented` per set of pages (`bars`, built when first needed), of
+  which the one of the `pages` of the object is shown
+- `rows_part` (page "Pose"): the `rows` of [`card_rows`](@ref)
+- `step_part` (page "Pose", only on the card of the selection, else `nothing`): the keyboard step
+  and the mode of the controls, the widgets `step` of `_selection_part!`; also shown without a
+  selection
+- `view_part` (page "Results"): the `view` of the results of a detector (a `_DetectorView`, built
+  when the page is first shown) as wide as the sidebar; `view_expanded` is its state (expanded or
+  the thumbnail), `view_height` the height of the axis of the expanded view, which is as high as
+  wide unless the sidebar has no room for it, see `_fit_views!`; `view_obj` is the object that the
+  view shows, `shown_view` the one whose view was shown by the last refresh, see
+  `_announce_views!`
+- `properties_part` (page "Properties"): the `list` of the properties of the object; on the card
+  of the selection, the summary of the live view without a selection
+
+The rows of the parts that are not shown have neither a height nor a gap (`gap` between the shown
+ones), see `_set_rowgaps!`. `header` and `parent` hold the layouts of the head and of the card: the
+actions are placed in the rows `actions_rows` of column 3 of the `header`. The fields `widgets` to
+`pose` are those of `_ComponentCard`.
 """
 mutable struct _DockedCard <: _AbstractCard
     const header::GridLayout
     const parent::GridLayout
     const theme::NamedTuple
     const actions_rows::UnitRange{Int}
-    const rows_row::Int
+    const first_row::Int
+    const gap::Float32
     actions::GridLayout
     rows::GridLayout
     widgets::Vector{Tuple{Any, CardWidget}}
@@ -55,41 +73,76 @@ mutable struct _DockedCard <: _AbstractCard
     collapsed::Bool
     # the parts of the head of a pinned card, `nothing` for the card of the selection
     head::Any
-    # the properties of a pinned card, `nothing` for the card of the selection
-    properties_part::Union{Nothing, _LayoutPart}
-    properties_button::Union{Nothing, _IconButton}
-    list::Union{Nothing, _PropertyList}
-    properties_shown::Bool
+    # the page that is shown, the pages of the shown bar and the bars per set of pages
+    page::Symbol
+    pages::Tuple{Vararg{Symbol}}
+    const bars::Dict{Any, _Segmented}
+    bar::Union{Nothing, _Segmented}
+    const bar_part::_LayoutPart
+    const rows_part::_LayoutPart
+    const step_part::Union{Nothing, _LayoutPart}
+    const view_part::_LayoutPart
+    const properties_part::_LayoutPart
+    # the step box and the mode of the card of the selection, `nothing` for a pinned card
+    const step::Any
+    const list::_PropertyList
+    view::Union{Nothing, _DetectorView}
+    view_expanded::Bool
+    view_height::Float32
+    view_obj::Any
+    shown_view::Any
+    view_listeners::Vector{Any}
 end
 
-# Positions of the actions in the header and of the rows in the card
+# Positions of the actions in the header and of the rows in their part of the card
 _docked_actions(c::_DockedCard) = _docked_actions(c.header, c.actions_rows)
 _docked_actions(header::GridLayout, rows::UnitRange{Int}) = GridLayout(header[rows, 3]; default_colgap = 4)
-_docked_rows_layout(parent::GridLayout, row::Int) =
-    GridLayout(parent[row, 1]; default_rowgap = 4, tellwidth = false)
+_docked_rows_layout(part::_LayoutPart) =
+    GridLayout(part.grid[1, 1]; default_rowgap = 4, tellwidth = false)
+
+"""
+Returns a collapsible part of a docked card in the `row` of its layout `parent`, see `_LayoutPart`:
+its row has no height while the part is not shown.
+"""
+function _docked_part(parent::GridLayout, row::Int; kwargs...)
+    box = Box(parent[row, 1]; visible = false)
+    # content that is narrower than the sidebar, e.g. the thumbnail of a view, starts at its left edge
+    grid = GridLayout(parent[row, 1]; tellwidth = false, halign = :left, kwargs...)
+    return _LayoutPart(parent, (row, 1), s -> rowsize!(parent, row, s), Auto(), box, grid, true)
+end
 
 function _DockedCard(header::GridLayout, parent::GridLayout, theme::NamedTuple;
-        actions_rows::UnitRange{Int} = 1:2, rows_row::Int = 2)
-    return _DockedCard(header, parent, theme, actions_rows, rows_row,
-        _docked_actions(header, actions_rows), _docked_rows_layout(parent, rows_row),
+        actions_rows::UnitRange{Int} = 1:2, first_row::Int = 2, gap::Real = 4, selection::Bool = true)
+    t = theme
+    row = Ref(first_row - 1)
+    part(; kwargs...) = _docked_part(parent, row[] += 1; kwargs...)
+    bar_part, rows_part = part(), part()
+    step_part = selection ? part(; default_colgap = 6) : nothing
+    view_part, properties_part = part(), part()
+    # Step and mode like on the floating card of the selection, see `_selection_part!`
+    step = selection ? _selection_part!(step_part.grid, properties_part.grid[1, 1], t) : nothing
+    list = selection ? step.list : _PropertyList(properties_part.grid[1, 1]; label_color = t.muted,
+        value_color = t.text, line_color = RGBAf(Makie.to_color(t.border)))
+    rowgap!(parent, gap)
+    return _DockedCard(header, parent, t, actions_rows, first_row, gap,
+        _docked_actions(header, actions_rows), _docked_rows_layout(rows_part),
         Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing, false, nothing, false, nothing,
-        false, nothing, nothing, nothing, nothing, false)
+        false, nothing, :pose, (), Dict{Any, _Segmented}(), nothing, bar_part, rows_part, step_part,
+        view_part, properties_part, step, list, nothing, true, 0.0f0, nothing, nothing, Any[])
 end
 
 function _new_parts!(c::_DockedCard)
     for part in (c.actions, c.rows)
         _GLB.remove_from_gridlayout!(_GLB.gridcontent(part))
     end
-    c.actions, c.rows = _docked_actions(c), _docked_rows_layout(c.parent, c.rows_row)
+    c.actions, c.rows = _docked_actions(c), _docked_rows_layout(c.rows_part)
     return nothing
 end
 
 _card_object(gui::LiveView, c::_DockedCard) = c.pinned ? c.obj : _shown_object(gui)
-# The properties of a docked pinned card, see `_refresh_selection_part!`: the list of a collapsed
-# card and of collapsed properties is empty, i.e. it has no height
-_has_list(c::_DockedCard) = !isnothing(c.list)
-_list_shown(c::_DockedCard, obj) = c.properties_shown && !c.collapsed && _has_properties(obj)
-_hide_properties!(c::_DockedCard) = (_set_rows!(c.list, Tuple{String, String}[]); nothing)
+# The properties of a docked card are on its page "Properties", see `_show_page!`
+_refresh_selection_part!(::LiveView, ::_DockedCard, _) = nothing
+_refresh_selection_part!(::LiveView, ::_DockedCard, ::Nothing) = nothing
 _card_boxes(c::_DockedCard) = c.textboxes
 # A collapsed card shows only its actions
 _declarations(c::_DockedCard, obj) = (_head_actions(obj), c.collapsed ? () : card_rows(obj))
@@ -109,8 +162,229 @@ _fill_width(::Type{<:Union{Textbox, Slider}}, attributes) =
 _fill_width(::Type, attributes) = attributes
 
 #=
+Pages of a docked card
+=#
+
+# The collapsible parts of the card `c`, in the order of their rows
+_card_parts(c::_DockedCard) = _LayoutPart[p for p in (c.bar_part, c.rows_part, c.step_part,
+    c.view_part, c.properties_part) if !isnothing(p)]
+
+"""
+    _set_rowgaps!(grid::GridLayout, shown, gap)
+
+Sets the gaps of the rows of the `grid` such that only the rows that are `shown` (a `Bool` per row)
+are `gap` pixels apart: a row without a height takes no gap either. Only changed gaps update the
+layout.
+"""
+function _set_rowgaps!(grid::GridLayout, shown::Vector{Bool}, gap::Real)
+    for i in 1:(length(shown) - 1)
+        g = Fixed(shown[i] && any(@view shown[(i + 1):end]) ? gap : 0)
+        grid.addedrowgaps[i] == g || rowgap!(grid, i, g)
+    end
+    return nothing
+end
+
+# The rows of the layout of the card `c` that are shown: its head, its parts and, below the card of
+# the selection, the pinned cards
+function _set_card_gaps!(gui::AppView, c::_DockedCard)
+    shown = Bool[fill(true, c.first_row - 1); [p.shown for p in _card_parts(c)]; _rows_below(gui, c)]
+    _set_rowgaps!(c.parent, shown, c.gap)
+    return nothing
+end
+_rows_below(gui::AppView, c::_DockedCard) = c.pinned ? Bool[] : Bool[!isempty(gui.layout.inspector.pinned)]
+
+# The pages of the card of `obj`, none without an object
+_docked_pages(::Nothing) = ()
+_docked_pages(obj) = _card_pages(obj)
+
+"""
+    _show_page!(gui::AppView, c::_DockedCard, obj)
+
+Shows the page `c.page` of the docked card `c` for its object `obj` (`nothing`: no selection): the
+page bar if `obj` has several pages (see `_card_pages`), and of the parts of the card only those of
+the page, see `_DockedCard`. A collapsed card shows none of them. Without a selection, the card of
+the selection shows the keyboard step and the summary of the live view. Only changes update the
+layout.
+"""
+function _show_page!(gui::AppView, c::_DockedCard, obj)
+    pages = _docked_pages(obj)
+    (isempty(pages) || c.page in pages) || (c.page = first(pages))
+    open = !isnothing(obj) && !c.collapsed
+    _show_bar!(gui, c, pages, open)
+    _set_shown!(c.rows_part, open && c.page === :pose && !isempty(c.rows.content))
+    _show_step!(c, c.step_part, isnothing(obj) || c.page === :pose)
+    _show_view!(gui, c, obj, open && c.page === :results)
+    _show_list!(gui, c, obj, isnothing(obj) ? !c.pinned : (open && c.page === :properties))
+    _set_card_gaps!(gui, c)
+    return nothing
+end
+
+# The page bar of the `pages`, `shown` if there are several
+function _show_bar!(gui::AppView, c::_DockedCard, pages::Tuple, shown::Bool)
+    shown = shown && length(pages) > 1
+    if shown && (pages != c.pages || isnothing(c.bar))
+        # blocks can only be added to a part that is attached to the figure
+        _set_shown!(c.bar_part, true)
+        isnothing(c.bar) || _view_detach!(c.bar.grid)
+        c.bar = get!(() -> _docked_bar!(gui, c, pages), c.bars, pages)
+        _view_attach!(c.bar_part.grid, 1, 1, c.bar.grid, true)
+        c.pages = pages
+    end
+    _set_shown!(c.bar_part, shown)
+    shown && _update!(c.bar.selected, c.page)
+    return nothing
+end
+
+function _docked_bar!(gui::AppView, c::_DockedCard, pages::Tuple)
+    bar = _page_bar!(c.bar_part.grid[1, 1], c.theme, pages; selected = c.page)
+    on(page -> _set_page!(gui, c, page), bar.selected)
+    return bar
+end
+
+"""
+    _set_page!(gui::AppView, c::_DockedCard, page::Symbol)
+
+Shows the `page` of the docked card `c`, e.g. after a click on its page bar. The page stays while
+the card shows the same object. A pinned card whose page is switched stays expanded, older ones
+collapse to make room, see `_fit_pinned!`.
+"""
+function _set_page!(gui::AppView, c::_DockedCard, page::Symbol)
+    c.page === page && return nothing
+    # A focused box of the page that is left would keep the keyboard
+    foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
+    c.page = page
+    (c.pinned && !c.collapsed) && (gui.layout.inspector.keep = c)
+    _refresh_inspector!(gui; force = true)
+    return nothing
+end
+
+_show_step!(::_DockedCard, ::Nothing, ::Bool) = nothing
+function _show_step!(c::_DockedCard, part::_LayoutPart, shown::Bool)
+    box = c.step.step_box
+    (!shown && box.focused[]) && Makie.defocus!(box)
+    _set_shown!(part, shown)
+    return nothing
+end
+
+# The properties of `obj` (the summary of the live view for `nothing`) while their page is shown
+function _show_list!(gui::AppView, c::_DockedCard, obj, shown::Bool)
+    # an empty list has no height: emptied before its part is detached from the layout
+    (shown || isempty(c.list.rows)) || _set_rows!(c.list, Tuple{String, String}[])
+    _set_shown!(c.properties_part, shown)
+    shown && _set_rows!(c.list, _inspector_rows(gui, obj))
+    return nothing
+end
+
+#=
+Detector view on the page "Results" of a docked card
+=#
+
+# Height of the axis of an expanded view in the sidebar at least [px], see `_fit_views!`
+const _DOCKED_VIEW_MIN = 160.0f0
+
+# Inner width of the right sidebar [px], the width of the docked cards
+function _docked_width(gui::AppView)
+    w = Float32(Makie.widths(gui.layout.inspector.grid.layoutobservables.computedbbox[])[1])
+    return w > 1 ? w : 280.0f0
+end
+
+"""
+    _show_view!(gui::AppView, c::_DockedCard, obj, shown::Bool)
+
+Shows the detector view of `obj` on the docked card `c`, or hides it: the view is built when it is
+first shown (see `_DetectorView`), in the state `c.view_expanded` and as wide as the sidebar; the
+card of the selection keeps its view for the next detector. The result is shown by
+`_announce_views!`.
+"""
+function _show_view!(gui::AppView, c::_DockedCard, obj, shown::Bool)
+    _set_shown!(c.view_part, shown)
+    shown || return nothing
+    w = _docked_width(gui)
+    isnothing(c.view) && _build_view!(gui, c, w)
+    view = c.view
+    if c.view_obj !== obj
+        # the limits that the mouse set belong to the detector before
+        c.view_obj, c.shown_view, view.zoomed = obj, nothing, false
+    end
+    _set_expanded!(view, c.view_expanded)
+    c.view_height = c.view_height > 0 ? clamp(c.view_height, min(_DOCKED_VIEW_MIN, w), w) : w
+    _resize_view!(view, w, c.view_height)
+    return nothing
+end
+
+function _build_view!(gui::AppView, c::_DockedCard, w::Real)
+    view = _DetectorView(c.view_part.grid, c.theme; expanded = c.view_expanded, width = w, height = w)
+    c.view = view
+    c.view_listeners = _connect_view!(view, events(gui.ax.scene);
+        on_options = (; changes...) -> _set_view!(gui, c.view_obj; changes...),
+        on_expanded = expanded -> _set_view_expanded!(gui, c, expanded))
+    append!(gui.controls.listeners, c.view_listeners)
+    return view
+end
+
+"""
+Expands the view of the docked card `c` or collapses it to its thumbnail, by its chevrons or a
+click on the thumbnail. The card remembers the state; a pinned card whose view is expanded stays
+expanded, older ones collapse to make room, see `_fit_pinned!`. An expanded view is computed on
+its full grid, see `_view_needed!`.
+"""
+function _set_view_expanded!(gui::AppView, c::_DockedCard, expanded::Bool)
+    c.view_expanded = expanded
+    _set_expanded!(c.view, expanded)
+    (expanded && c.pinned) && (gui.layout.inspector.keep = c)
+    _refresh_inspector!(gui)
+    _view_needed!(gui, c.view_obj)
+    return nothing
+end
+
+"""Removes the detector view of the docked card `c` with its listeners, see `_delete_view!`."""
+function _remove_view!(gui::AppView, c::_DockedCard)
+    isnothing(c.view) && return nothing
+    filter!(l -> !any(v -> v === l, c.view_listeners), gui.controls.listeners)
+    _delete_view!(c.view)
+    empty!(c.view_listeners)
+    c.view, c.view_obj, c.shown_view = nothing, nothing, nothing
+    return nothing
+end
+
+# Whether the docked card `c` shows its detector view: on its page "Results", not collapsed, in a
+# sidebar that is shown
+_view_shown(gui::AppView, c::_DockedCard) =
+    gui.layout.right.shown && c.view_part.shown && !isnothing(c.view)
+
+# The docked cards of the `gui`: the card of the selection and the pinned ones
+_docked_cards(gui::AppView) = _DockedCard[gui.layout.inspector.card; gui.layout.inspector.pinned]
+
+# The views of the inspector card and of the docked pinned cards that are shown, see `_shown_views`
+_layout_views(gui::AppView) =
+    Tuple{Any, Any}[(c.view_obj, c.view) for c in _docked_cards(gui) if _view_shown(gui, c)]
+
+"""
+    _announce_views!(gui::AppView)
+
+Shows the stored result in the views of the docked cards that became shown since the last refresh
+(built for another detector, page switched to "Results", card expanded, sidebar shown again, card
+pinned), see `_redraw_views!`, and computes it if it is stale, see `_view_needed!`. Views that stay
+shown are updated by the solves.
+"""
+function _announce_views!(gui::AppView)
+    for c in _docked_cards(gui)
+        pd = _view_shown(gui, c) ? c.view_obj : nothing
+        pd === c.shown_view && continue
+        c.shown_view = pd
+        isnothing(pd) && continue
+        _redraw_views!(gui, pd)
+        _view_needed!(gui, pd)
+    end
+    return nothing
+end
+
+#=
 Inspector
 =#
+
+# Row of the pinned cards in the layout of the inspector, below the parts of the card of the selection
+const _PINNED_ROW = 7
 
 """
     _Inspector
@@ -122,17 +396,18 @@ to bottom:
   `_label`) and its type, the actions of its card (e.g. hide) and the `pin` toggle, which pins a
   card to the object below the inspector (see `_toggle_pin!`); the icon, the name and the pin are
   built by the shared parts of the cards, see `_card_icon!`
-- the docked `card` of the selected object: the rows of [`card_rows`](@ref), e.g. the pose, see
-  `_DockedCard`
-- the part of the selection, built and connected like on the floating card of the selection (see
-  `_selection_part!` and `_connect_selection_part!`): the `step_box` and the mode as a segmented
-  control (`mode`), bound to the `mode` of the controls, then the `list` of the properties of the
-  object, see `BeamletOptics.properties` and `_show_properties!`; without a selection, a summary
-  of the live view
+- the docked `card` of the selected object with its pages, like a floating card (see `_DockedCard`
+  and `_card_pages`): below the page bar, on the page "Pose" the rows of [`card_rows`](@ref) and
+  the part of the selection, built and connected like on the floating card of the selection (see
+  `_selection_part!` and `_connect_selection_part!`), i.e. the `step_box` and the mode as a
+  segmented control (`mode`), bound to the `mode` of the controls; on the page "Results" the view
+  of a detector (see `_DetectorView`); on the page "Properties" the `list` of the properties of the
+  object, see `BeamletOptics.properties` and `_inspector_rows`. Without a selection, there is no
+  page bar: the step, the mode and a summary of the live view are shown
 - the `pinned` cards in the layout `pinned_grid`, one below the other in the order of pinning,
-  each with its own head, see `_dock_pinned!`. The "Properties" section is formed by the card of
-  the selection and the docked pinned cards; a pinned card can float next to its object in the 3D
-  view instead, see `_float!` and `_dock!`.
+  each with its own head and its own pages, see `_dock_pinned!`. The "Properties" section is formed
+  by the card of the selection and the docked pinned cards; a pinned card can float next to its
+  object in the 3D view instead, see `_float!` and `_dock!`.
 
 The inspector is updated on events only (see `_refresh_inspector!`): the selection, moves, solves
 and inputs. The widgets of the card are only rebuilt if the selected object declares others, e.g.
@@ -185,21 +460,15 @@ function _build_inspector!(layout::AppLayout)
     back.box.visible[] = false
     rowgap!(header, 0)
     colsize!(header, 2, Auto(false))
-    card = _DockedCard(header, g, t)
-    # The part of the selection like on the floating card: step and mode, below a line the properties
-    pose = GridLayout(g[3, 1]; default_colgap = 6, tellwidth = false)
-    Box(g[4, 1]; height = 1, color = t.border, strokewidth = 0)
-    step_box, mode, list = _selection_part!(pose, g[5, 1], t)
-    # Pinned cards, see `_dock_pinned!`
-    pinned_grid = GridLayout(g[6, 1]; default_rowgap = 10, tellwidth = false)
-    # the rows of the card are empty without a selection, see `_refresh_inspector!`, and there are
-    # no pinned cards yet
-    rowsize!(g, 2, Fixed(0))
-    rowsize!(g, 6, Fixed(0))
-    rowgap!(g, 10)
-    layout.inspector = _Inspector(g, icon, icon_color, name, type, pin, back, card, step_box, mode, list,
-        pinned_grid, _DockedCard[], nothing, true, nothing, (Dict{String, Float32}(), Dict{String, Float32}()))
-    return (; step_box)
+    # The card of the selection with its pages below the header, see `_DockedCard`
+    card = _DockedCard(header, g, t; first_row = 2, gap = 10)
+    # Pinned cards, see `_dock_pinned!`; there are none yet
+    pinned_grid = GridLayout(g[_PINNED_ROW, 1]; default_rowgap = 10, tellwidth = false)
+    rowsize!(g, _PINNED_ROW, Fixed(0))
+    layout.inspector = _Inspector(g, icon, icon_color, name, type, pin, back, card, card.step.step_box,
+        card.step.mode, card.list, pinned_grid, _DockedCard[], nothing, true, nothing,
+        (Dict{String, Float32}(), Dict{String, Float32}()))
+    return (; card.step.step_box)
 end
 
 #=
@@ -212,9 +481,8 @@ Pinned cards of the app layout, docked below the inspector
 Pins a card to `obj` in the app layout: a `_DockedCard` at the end of the pinned cards of the
 inspector, below a line, with its own head (icon, title, actions, float button, pin and collapse
 chevron, see the shared parts `_card_icon!`, `_card_title!`, `_card_float!`, `_card_pin!` and
-`_card_collapse!`), the rows of `obj` and, below them, the disclosure row "Properties" and the
-property list of the floating cards (see `_properties_disclosure!` and `_PropertyList`), collapsed
-by default. The float button moves it into the 3D view, see `_float!`;
+`_card_collapse!`) and the pages of `obj` like a floating card (see `_card_pages`), on the page
+`_default_page(obj)`. The float button moves it into the 3D view, see `_float!`;
 the pin unpins it, see `_unpin!`; the chevron collapses it to its head. Its widgets are built by
 `_refresh_inspector!`.
 """
@@ -231,41 +499,38 @@ function _dock_pinned!(gui::AppView, obj)
     colgap!(header, 4, 2)
     colgap!(header, 5, 2)
     colsize!(header, 2, Auto(false))
-    c = _DockedCard(header, g, t; actions_rows = 1:1, rows_row = 3)
-    c.pinned, c.obj = true, obj
-    # The properties below the rows, a part that a collapsed card does not show, see `_refresh_pinned!`
-    box = Box(g[4, 1]; visible = false)
-    part = GridLayout(g[4, 1]; default_rowgap = 2, tellwidth = false)
-    c.properties_part = _LayoutPart(g, (4, 1), s -> rowsize!(g, 4, s), Auto(), box, part, true)
-    c.properties_button = _properties_disclosure!(part[1, 1], t)
-    # The list fills the width of the sidebar, not only that of the disclosure row
-    colsize!(part, 1, Relative(1))
-    c.list = _PropertyList(part[2, 1]; label_color = t.muted, value_color = t.text,
-        line_color = RGBAf(Makie.to_color(t.border)))
+    # The page bar and the parts of the pages below the head, which a collapsed card does not show
+    c = _DockedCard(header, g, t; actions_rows = 1:1, first_row = 3, selection = false)
+    c.pinned, c.obj, c.page = true, obj, _default_page(obj)
     listeners = Any[
         on(_ -> _float!(gui, obj), float.clicks),
         on(v -> v || _unpin!(gui, obj), pin.active),
-        on(_ -> _toggle_collapsed!(gui, c), collapse.clicks),
-        on(_ -> _toggle_properties!(gui, c), c.properties_button.clicks)]
+        on(_ -> _toggle_collapsed!(gui, c), collapse.clicks)]
     c.head = (; icon, icon_color, title, float, pin, collapse, line, listeners,
         widths = Dict{String, Float32}())
     _show_kind!(icon, icon_color, t, obj)
     _show_head!(pin, collapse, true, false)
     push!(insp.pinned, c)
-    rowsize!(insp.grid, 6, Auto())
+    rowsize!(insp.grid, _PINNED_ROW, Auto())
     return c
 end
 
 """
 Returns `true` if the point `p` [figure px] is over the docked pinned card `c` beside its widgets:
-over its head or its rows, but not over a button of the head or a widget, see `_over_widget`.
+over its head, its rows or its property list, but not over a button of the head, the page bar, the
+detector view or a widget, see `_over_widget`.
 """
 function _over_free(c::_DockedCard, p::Point2f)
     p in Rect2f(c.parent.layoutobservables.computedbbox[]) || return false
-    buttons = (c.head.float, c.head.pin, c.head.collapse, c.properties_button)
+    buttons = (c.head.float, c.head.pin, c.head.collapse)
     any(b -> p in Rect2f(b.box.layoutobservables.computedbbox[]), buttons) && return false
+    (_over_bar(c.bar, p) || _over_docked_view(c.view, p)) && return false
     return !_over_widget(c.blocks, p)
 end
+_over_bar(::Nothing, ::Point2f) = false
+_over_bar(bar::_Segmented, p::Point2f) = _over_widget(bar.buttons, p)
+_over_docked_view(::Nothing, ::Point2f) = false
+_over_docked_view(view::_DetectorView, p::Point2f) = _over_view(view, p)
 
 """Removes the pinned card `c` of the app layout of the `gui` with its widgets and listeners."""
 function _remove_pinned!(gui::AppView, c::_DockedCard)
@@ -273,12 +538,19 @@ function _remove_pinned!(gui::AppView, c::_DockedCard)
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
     _clear_content!(c)
     foreach(off, c.head.listeners)
+    _remove_view!(gui, c)
     # the line and the blocks of the head: icon, title, pin and chevron
     delete!(c.head.line)
     foreach(delete!, [gc.content for gc in copy(c.header.content) if gc.content isa Makie.Block])
-    # the properties, which are detached from the card while it is collapsed
-    foreach(delete!, _blocks!(Any[], c.properties_part.grid))
-    delete!(c.properties_part.box)
+    # the page bars and the parts of the pages, which are detached from the card while they are not
+    # shown
+    parts = _card_parts(c)
+    blocks = Any[b for bar in values(c.bars) for b in bar.buttons]
+    foreach(part -> _blocks!(blocks, part.grid), parts)
+    foreach(delete!, unique!(objectid, blocks))
+    foreach(part -> delete!(part.box), parts)
+    empty!(c.bars)
+    c.bar = nothing
     _GLB.remove_from_gridlayout!(_GLB.gridcontent(c.parent))
     filter!(d -> d !== c, insp.pinned)
     insp.keep === c && (insp.keep = nothing)
@@ -287,7 +559,8 @@ function _remove_pinned!(gui::AppView, c::_DockedCard)
         insp.pinned_grid[k, 1] = d.parent
     end
     isempty(insp.pinned) || _GLB.trim!(insp.pinned_grid)
-    rowsize!(insp.grid, 6, isempty(insp.pinned) ? Fixed(0) : Auto())
+    rowsize!(insp.grid, _PINNED_ROW, isempty(insp.pinned) ? Fixed(0) : Auto())
+    _set_card_gaps!(gui, insp.card)
     return nothing
 end
 
@@ -295,13 +568,6 @@ end
 Collapses the pinned card `c` to its head and its actions, or expands it again; the other pinned
 cards collapse if the expanded card does not fit, see `_fit_pinned!`.
 """
-# The expanded properties of a docked card stay, older cards collapse to make room, see `_fit_pinned!`
-function _on_properties_toggled!(gui::AppView, c::_DockedCard)
-    c.properties_shown && (gui.layout.inspector.keep = c)
-    _refresh_inspector!(gui; force = true)
-    return nothing
-end
-
 function _toggle_collapsed!(gui::AppView, c::_DockedCard)
     _set_collapsed!(c, !c.collapsed)
     c.collapsed || (gui.layout.inspector.keep = c)
@@ -322,9 +588,10 @@ end
 
 Fits the "Properties" section of the `gui` into the right sidebar, which does not scroll (see
 `_overflow`): first the pinned cards collapse to their heads, the oldest first, except the card
-`keep` (the one pinned or expanded last); then the property list of the selection is shortened,
-then the expanded lists of the pinned cards, see `_fit_list!`. Cards are never expanded
-automatically, i.e. they do not change back and forth.
+`keep` (the one pinned or expanded last, or whose page or view was opened last); then the property
+list of the selection is shortened, then the lists of the pinned cards, see `_fit_list!`; then the
+expanded detector views get lower, see `_fit_views!`. Cards are never expanded automatically, i.e.
+they do not change back and forth.
 """
 function _fit_pinned!(gui::AppView; keep = nothing)
     insp = gui.layout.inspector
@@ -336,6 +603,7 @@ function _fit_pinned!(gui::AppView; keep = nothing)
     end
     _fit_list!(gui, insp.list)
     foreach(c -> _fit_list!(gui, c.list), insp.pinned)
+    _fit_views!(gui)
     return nothing
 end
 
@@ -354,6 +622,56 @@ function _fit_list!(gui::AppView, list::_PropertyList)
     shown = n <= 1 ? Tuple{String, String}[] : [rows[1:(n - 1)]; ("… $(length(rows) - n + 1) more", "")]
     _set_rows!(list, shown)
     return nothing
+end
+
+"""
+    _fit_views!(gui::AppView)
+
+Fits the expanded detector views of the docked cards of the `gui` into the right sidebar, like the
+property lists (see `_fit_list!`): the axes of the views get lower by what does not fit (see
+`_overflow`), at least `_DOCKED_VIEW_MIN` high, the view of the selection first. Once the sidebar
+has free room again (see `_free_height`), they grow back until they are as high as wide.
+"""
+function _fit_views!(gui::AppView)
+    cards = [c for c in _docked_cards(gui) if _view_shown(gui, c) && c.view_expanded]
+    isempty(cards) && return nothing
+    w = _docked_width(gui)
+    excess = _overflow(gui)
+    if excess > 0.5
+        # The layout rounds to pixels: a view may take a second step
+        for c in cards, _ in 1:3
+            excess > 0.5 || break
+            h = max(c.view_height - excess, min(_DOCKED_VIEW_MIN, w))
+            h < c.view_height || continue
+            _set_view_height!(c, w, h)
+            excess = _overflow(gui)
+        end
+    else
+        # A pixel stays free, since the layout rounds to pixels
+        room = _free_height(gui) - 1
+        for c in Iterators.reverse(cards)
+            grow = min(room, w - c.view_height)
+            grow > 0.5 || continue
+            _set_view_height!(c, w, c.view_height + grow)
+            room -= grow
+        end
+    end
+    return nothing
+end
+
+function _set_view_height!(c::_DockedCard, w::Real, h::Real)
+    c.view_height = Float32(h)
+    _resize_view!(c.view, w, c.view_height)
+    return nothing
+end
+
+"""
+Returns the free height [px] of the right sidebar of the `gui`, i.e. of the cell of the filler
+below its sections; none if a section takes the free height itself, see `_add_sidebar_section!`.
+"""
+function _free_height(gui::AppView)
+    cell = gui.layout.fillers[:right].layoutobservables.suggestedbbox[]
+    return max(0.0f0, Float32(Makie.widths(cell)[2]))
 end
 
 """
@@ -376,18 +694,16 @@ _overflows(gui::AppView) = _overflow(gui) > 0.5
     _refresh_pinned!(gui::AppView, c::_DockedCard; force = false)
 
 Shows the object of the pinned card `c`: builds its widgets when it was pinned or collapsed (see
-`_build_content!`), then its title, the values of its widgets and, while they are expanded, its
-properties, see `_refresh_selection_part!`.
+`_build_content!`), then its page (see `_show_page!`), its title and the values of its widgets.
 """
 function _refresh_pinned!(gui::AppView, c::_DockedCard; force::Bool = false)
     if c.pose === nothing
+        # blocks can only be added to a part that is attached to the figure
+        _set_shown!(c.rows_part, true)
         _build_content!(gui, c, c.obj)
         c.pose = (c.obj, nothing)
-        rowsize!(c.parent, c.rows_row, isempty(c.rows.content) ? Fixed(0) : Auto())
-        # A collapsed card shows only its head, an item without properties no disclosure
-        _set_shown!(c.properties_part, !c.collapsed && _has_properties(c.obj))
-        _show_properties_state!(c.properties_button, c.properties_shown)
     end
+    _show_page!(gui, c, c.obj)
     title = c.head.title
     w = Makie.widths(gui.layout.inspector.grid.layoutobservables.computedbbox[])[1] -
         _CARD_ICON - 3 * _CARD_TOOL - 22 - _actions_width(c)
@@ -397,11 +713,29 @@ function _refresh_pinned!(gui::AppView, c::_DockedCard; force::Bool = false)
     return nothing
 end
 
+# The card pinned to the object of the inspector opens on the page that the inspector shows, with
+# its view in the same state
 function _pin!(gui::AppView, obj)
-    gui.layout.inspector.keep = _dock_pinned!(gui, obj)
+    insp = gui.layout.inspector
+    c = _dock_pinned!(gui, obj)
+    if insp.shown === obj
+        c.page, c.view_expanded = insp.card.page, insp.card.view_expanded
+    end
+    insp.keep = c
     _refresh_inspector!(gui; force = true)
     return nothing
 end
+
+# The card of a detector of the `detectors` kwarg starts docked, on its page "Results"
+function _pin_view!(gui::AppView, pd; expanded::Bool = true)
+    c = _dock_pinned!(gui, pd)
+    c.page, c.view_expanded = :results, expanded
+    gui.layout.inspector.keep = c
+    _refresh_inspector!(gui; force = true)
+    _on_pinned!(gui)
+    return nothing
+end
+
 _is_pinned(gui::AppView, obj) = _is_docked(gui, obj) || _is_floating(gui, obj)
 function _unpin!(gui::AppView, obj)
     foreach(c -> _remove_pinned!(gui, c), _docked_cards(gui, obj))
@@ -420,18 +754,18 @@ _is_docked(gui::AppView, obj) = any(c -> c.obj === obj, gui.layout.inspector.pin
 
 Moves the card pinned to `obj` from the sidebar of the app layout into the 3D view: the docked card
 is removed, a floating card (see `_ComponentCard`) is pinned to `obj` like in the compact layout,
-collapsed if the docked card was and with its properties expanded if they were, with the button
-that docks it again, see `_dock!`. The other
-docked cards keep their state; they are not expanded into the room that becomes free.
+collapsed if the docked card was, on the same page and with its detector view expanded if it was,
+with the button that docks it again, see `_dock!`. The other docked cards keep their state; they
+are not expanded into the room that becomes free.
 """
 function _float!(gui::AppView, obj)
     docked = _docked_cards(gui, obj)
     isempty(docked) && return nothing
-    collapsed, properties = first(docked).collapsed, first(docked).properties_shown
+    d = first(docked)
+    collapsed, page, expanded = d.collapsed, d.page, d.view_expanded
     foreach(c -> _remove_pinned!(gui, c), docked)
     c = _spare_card!(gui)
-    c.collapsed, c.properties_shown = collapsed, properties
-    _show_properties_state!(c.properties_button, properties)
+    c.collapsed, c.page, c.view_expanded = collapsed, page, expanded
     _pin!(gui, c, obj)
     _on_pinned!(gui)
     return nothing
@@ -441,15 +775,15 @@ end
     _dock!(gui::AppView, obj)
 
 Moves the floating card pinned to `obj` back into the sidebar of the app layout, at the end of the
-pinned cards, collapsed if the floating card was (by its chevron) and with its properties expanded
-if they were; an expanded card stays expanded
-while the older ones collapse to make room, like a newly pinned card, see `_fit_pinned!`.
+pinned cards, collapsed if the floating card was (by its chevron), on the same page and with its
+detector view expanded if it was; an expanded card stays expanded while the older ones collapse to
+make room, like a newly pinned card, see `_fit_pinned!`.
 """
 function _dock!(gui::AppView, obj)
     floating = _floating_cards(gui, obj)
     isempty(floating) && return nothing
     d = _dock_pinned!(gui, obj)
-    d.properties_shown = first(floating).properties_shown
+    d.page, d.view_expanded = first(floating).page, first(floating).view_expanded
     _set_collapsed!(d, first(floating).collapsed)
     d.collapsed || (gui.layout.inspector.keep = d)
     foreach(c -> _toggle_pinned!(gui, c), floating)
@@ -470,16 +804,21 @@ end
     _refresh_inspector!(gui::AppView; force = false)
 
 Shows the selected object of the `gui` in the inspector (or the summary of the live view): header,
-docked card and properties. The widgets of the card are rebuilt only if the object declares others,
+docked card and its page. The widgets of the card are rebuilt only if the object declares others,
 see `_build_content!`; a focused textbox of the card keeps the typed text, unless `force`. Not
-called per frame, but after the selection changed, a move, a solve and an input. A collapsed
-inspector is not updated, it is refreshed when it is shown again. Then the pinned cards, which
-collapse (except the one pinned or expanded last) while they do not fit, see `_fit_pinned!`.
+called per frame, but after the selection changed, a move, a solve and an input. Then the pinned
+cards and the detector views that became shown, see `_announce_views!`; the pinned cards collapse
+(except the one pinned or expanded last) while they do not fit, see `_fit_pinned!`. A collapsed
+inspector is not updated: its views count as not shown (see `_layout_views`), it is refreshed when
+it is shown again.
 """
 function _refresh_inspector!(gui::AppView; force::Bool = false)
     layout = gui.layout
-    layout.right.shown || return nothing
     insp = layout.inspector
+    if !layout.right.shown
+        foreach(c -> c.shown_view = nothing, _docked_cards(gui))
+        return nothing
+    end
     obj = _shown_object(gui)
     if insp.fresh || obj !== insp.shown
         insp.fresh = false
@@ -487,10 +826,12 @@ function _refresh_inspector!(gui::AppView; force::Bool = false)
         _dock_card!(gui, insp.card, obj)
         _show_header!(gui, obj)
     end
+    _show_page!(gui, insp.card, obj)
     _refresh_card!(gui, insp.card; force)
     _show_pin!(gui)
-    _show_properties!(gui, insp, obj)
     foreach(c -> _refresh_pinned!(gui, c; force), insp.pinned)
+    # The views first: what they show sets their height
+    _announce_views!(gui)
     _fit_pinned!(gui; keep = insp.keep)
     return nothing
 end
@@ -498,21 +839,23 @@ end
 """
     _dock_card!(gui::AppView, c::_DockedCard, obj)
 
-Builds the widgets of the docked card `c` for `obj`, see `_build_content!`, or removes them without
-a selection. The row of the card in the inspector has no height without rows.
+Builds the widgets of the docked card `c` for its new object `obj`, see `_build_content!`, or
+removes them without a selection; the card opens on the page `_default_page(obj)`, which
+`_show_page!` shows.
 """
 function _dock_card!(::AppView, c::_DockedCard, ::Nothing)
     _clear_content!(c)
     c.pose = nothing
-    rowsize!(c.parent, 2, Fixed(0))
     return nothing
 end
 function _dock_card!(gui::AppView, c::_DockedCard, obj)
     # A focused box of the old object would take the keyboard, and its input the new object
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
+    # blocks can only be added to a part that is attached to the figure
+    _set_shown!(c.rows_part, true)
     _build_content!(gui, c, obj)
     c.pose = (obj, nothing)
-    rowsize!(c.parent, 2, isempty(c.rows.content) ? Fixed(0) : Auto())
+    c.page = _default_page(obj)
     return nothing
 end
 
@@ -556,8 +899,8 @@ _actions_width(c::_DockedCard) =
 """
 Connects the inspector of the `gui`: the part of the selection like on the floating card (the step
 box and the mode control, see `_connect_selection_part!`), the pin, and a refresh when the right
-sidebar is shown again. The widgets of the docked card are connected when they are built, see
-`_build_content!`.
+sidebar is collapsed or shown again. The widgets of the docked card are connected when they are
+built, see `_build_content!`, its page bar and its detector view likewise, see `_show_page!`.
 """
 function _connect_inspector!(gui::AppView)
     layout = gui.layout
@@ -587,7 +930,9 @@ function _connect_inspector!(gui::AppView)
         end
         return Consume(false)
     end)
-    push!(listeners, on(v -> v && _refresh_inspector!(gui), layout.collapse.right.active))
+    # After the listener that shows or collapses the sidebar, see `_connect_layout!`: the views of
+    # a collapsed sidebar are not shown, a sidebar that is shown again is refreshed
+    push!(listeners, on(_ -> _refresh_inspector!(gui), layout.collapse.right.active))
     _refresh_inspector!(gui)
     return nothing
 end

@@ -396,8 +396,7 @@ const _BUILTIN_TOOLS = (
     _ToolSpec(:export_button, false, :export, "Export", "Export changed poses", :tools),
     _ToolSpec(:collapse_left, true, :panel_left, "object tree", "Object tree", :panels, true),
     _ToolSpec(:collapse_right, true, :panel_right, "properties", "Properties", :panels, true),
-    _ToolSpec(:collapse_dock, true, :panel_bottom, "analysis", "Analysis", :panels,
-        spec -> !isempty(spec.specs)),
+    _ToolSpec(:collapse_dock, true, :panel_bottom, "analysis", "Analysis", :panels, false),
 )
 
 """

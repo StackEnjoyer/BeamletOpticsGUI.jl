@@ -1,10 +1,7 @@
 #=
-Analysis dock of the app layout: a tab per panel, of which only the active one is shown, and the
-lazy update of the detector panels, which computes only the panel of the active tab, see
-`_DockTabs`
+Analysis dock of the app layout: a tab per panel of `add_panel!`, of which only the active one is
+shown and updated, see `_DockTabs`
 =#
-
-using Makie: Aspect
 
 # Geometry of the tab bar in pixels
 const _TAB_HEIGHT = 30
@@ -261,19 +258,17 @@ _tab_markers(shapes::Vector{Any}) = isempty(shapes) ? _icon(:expand) : _tree_mar
     _DockTabs
 
 State of the analysis dock of the `AppLayout`: the tab bar, per tab its content (a collapsible
-part in the content cell of the dock, see `_set_shown!`) and its `DetectorPanel` (`nothing` for
-other panels, see `_add_dock_panel!`), and the index of the `active` tab. Only the content of the
-active tab is laid out and drawn.
+part in the content cell of the dock, see `_set_shown!`) and its panel (the `_UserPanel` of
+[`add_panel!`](@ref), `nothing` for a tab of `_add_dock_panel!` alone), and the index of the
+`active` tab. Only the content of the active tab is laid out and drawn. Without panels, the dock
+has no tab and stays collapsed, see `_update_dock!`.
 
 # Lazy panels
 
-Only the detector panel of the active tab is computed and drawn after a solve (see
-`_computed_panels`, `_apply_panel!`), while the dock is shown. All other panels are `stale`: they
-are computed once their tab becomes active or the dock is shown again (see `_refresh_dock!`), from
-the hits of the last solve, if they are complete (`hits_valid`, i.e. not during or after a
-cancelled solve). Panels with a history (`history = true`) are computed after every full solve to
-record their metrics (see `_record_panel!`), but not drawn; their `fields` are kept, such that
-showing them needs no second computation.
+Only the panel of the active tab is updated after a solve, while the dock is shown (see
+`_panel_shown`). All other panels are `stale`: they are updated once their tab becomes active or
+the dock is shown again (see `_refresh_dock!`), if the result of the last solve is complete, i.e.
+not during or after a cancelled solve, see `_results_valid`.
 """
 mutable struct _DockTabs
     const bar::_TabBar
@@ -281,93 +276,26 @@ mutable struct _DockTabs
     const panels::Vector{Any}
     active::Int
     const stale::Base.IdSet{Any}
-    const fields::IdDict{Any, Any}
-    hits_valid::Bool
 end
 
-"""Returns the detector panel of the active tab of the dock `tabs`, `nothing` if it has none."""
+"""Returns the panel of the active tab of the dock `tabs`, `nothing` if it has none."""
 _active_panel(tabs::_DockTabs) = tabs.active == 0 ? nothing : tabs.panels[tabs.active]
 
 """
-    _build_dock!(layout::AppLayout, spec) -> Vector
+    _build_dock!(layout::AppLayout)
 
-Creates the tab bar of the analysis dock and a tab with a `DetectorPanel` per detector of
-`spec.specs`, named by `spec.labels`, see `_build_layout`. The first tab is active. Returns the
-panels.
+Creates the tab bar of the analysis dock, without tabs: the panels of [`add_panel!`](@ref) add
+them, see `_add_dock_panel!`. The results of the detectors are shown on their cards, see
+`_DetectorView`.
 """
-function _build_dock!(layout::AppLayout, spec)
+function _build_dock!(layout::AppLayout)
     t = layout.theme
     g = layout.dock.grid
     bar = _TabBar(g[1, 1]; background = t.sidebar, text_color = t.text, muted_color = t.muted,
         accent_color = t.accent, border_color = t.border)
-    layout.tabs = _DockTabs(bar, _LayoutPart[], Any[], 0, Base.IdSet{Any}(), IdDict{Any, Any}(), false)
+    layout.tabs = _DockTabs(bar, _LayoutPart[], Any[], 0, Base.IdSet{Any}())
     layout.dock_panels = Pair{String, GridLayout}[]
     rowgap!(g, 6)
-    panels = Any[]
-    for (i, (pd, mode, kw)) in enumerate(spec.specs)
-        name = get(spec.labels, pd, "Detector $i")
-        p = DetectorPanel(_add_dock_panel!(layout, name; icon = :detector)[1, 1], pd, name, mode, kw)
-        _theme_panel!(p, t)
-        _arrange_panel!(p)
-        layout.tabs.panels[end] = p
-        push!(layout.tabs.stale, p)
-        push!(panels, p)
-    end
-    isempty(panels) || _select_tab!(layout, 1)
-    return panels
-end
-
-"""
-Sets the colors of the detector panel `p` that do not follow the theme of the figure to the
-tokens `t` (see `_APP_THEMES`): the subtitle, the spot diagram and the power (or number of hits)
-of the history in the text colors, and the x (red) and z (blue) lines of the centroid history
-and of the profiles in the red and blue of `t.gizmo`. Used for the detector panels of all layouts.
-"""
-function _theme_panel!(p::DetectorPanel, t)
-    p.ax.subtitlecolor[] = t.muted
-    p.scatter_plot.color[] = t.text
-    lines(ax) = filter(x -> x isa Makie.Lines, ax.scene.plots)
-    x_color, z_color = t.gizmo[1], t.gizmo[3]
-    if !isempty(p.history_axes)
-        value_ax, centroid_ax = p.history_axes
-        foreach(l -> l.color[] = t.text, lines(value_ax))
-        cx, cz = lines(centroid_ax)
-        cx.color[] = x_color
-        cz.color[] = z_color
-    end
-    if !isnothing(p.profiles_ax)
-        px, pz = lines(p.profiles_ax)
-        px.color[] = x_color
-        pz.color[] = z_color
-    end
-    return nothing
-end
-
-"""
-Places the history and profiles axes of the panel `p` beside its axis instead of below it, since
-the dock is wide and low: the axis in a column as wide as the dock is high, the history and the
-profiles in columns that share the remaining width.
-"""
-function _arrange_panel!(p::DetectorPanel)
-    grid = _GLB.gridcontent(p.ax).parent
-    col = 1
-    if !isempty(p.history_axes)
-        col += 1
-        for a in p.history_axes
-            grid[1, col] = a
-            a.height = nothing
-        end
-    end
-    if !isnothing(p.profiles_ax)
-        col += 1
-        grid[1, col] = p.profiles_ax
-        p.profiles_ax.height = nothing
-    end
-    Makie.trim!(grid)
-    # The labels and ticks stay within the dock, i.e. under the tab bar
-    grid.alignmode = Outside()
-    colsize!(grid, 1, Aspect(1, 1.0))
-    col > 1 && colgap!(grid, 24)
     return nothing
 end
 
@@ -424,72 +352,15 @@ end
 Lazy panels, see `_DockTabs`
 =#
 
-_has_history(p::DetectorPanel) = !isempty(p.history_axes)
-
 """Whether the panel `p` is shown, i.e. its tab is active and the dock is not collapsed."""
 _panel_shown(gui::AppView, p) = gui.layout.dock.shown && _active_panel(gui.layout.tabs) === p
-
-_computed_panels(gui::AppView, preview::Bool) =
-    filter(p -> _panel_shown(gui, p) || (!preview && _has_history(p)), gui.panels)
-
-_shown_panels(gui::AppView) = filter(p -> _panel_shown(gui, p), gui.panels)
-
-function _apply_panel!(gui::AppView, p::DetectorPanel, field; coarse, preview)
-    tabs = gui.layout.tabs
-    if _panel_shown(gui, p)
-        _update_panel!(p, field; coarse, preview, record = !preview)
-        delete!(tabs.stale, p)
-    elseif !preview
-        # Computed for its history only, see `_computed_panels`
-        _record_panel!(p, field)
-        coarse || (tabs.fields[p] = field)
-    end
-    return nothing
-end
-
-function _on_solve_started!(gui::AppView)
-    tabs = gui.layout.tabs
-    tabs.hits_valid = false
-    foreach(p -> push!(tabs.stale, p), gui.panels)
-    empty!(tabs.fields)
-    return nothing
-end
-
-function _on_applied!(gui::AppView)
-    gui.layout.tabs.hits_valid = true
-    # e.g. the tab was switched while the solve ran in the background
-    _refresh_dock!(gui)
-    return nothing
-end
-
-"""
-    _record_panel!(p::DetectorPanel, field)
-
-Records the metrics of the `field` (see `_panel_field`) in the history of the panel `p` without
-drawing anything, for a panel that is not shown, see `_DockTabs`. The metrics are the same as
-those of `_update_panel!`: of the spot diagram, or of the computed intensity.
-"""
-function _record_panel!(p::DetectorPanel, field)
-    try
-        p.metrics = _field_metrics(p, field)
-        isnothing(p.metrics) || _record_history!(p, p.metrics; draw = false)
-    catch e
-        p.last_error = _log_once(e, p.last_error, "update of the panel \"$(p.name)\"")
-    end
-    return nothing
-end
-
-_field_metrics(::DetectorPanel, ::Nothing) = nothing
-_field_metrics(p::DetectorPanel, ::_SpotField) = _spot_metrics(BMO.spot_diagram(p.pd))
-_field_metrics(::DetectorPanel, (x, z, I)::Tuple) = _intensity_metrics(x, z, I)
-_field_metrics(::DetectorPanel, e::Exception) = throw(e)
 
 """
     _activate_tab!(gui::AppView, i)
 
-Switches the dock to the tab `i` after a click on it: shows its content and computes its detector
-panel if it is stale, see `_refresh_dock!`. A panel that shows a preview (coarse grid or preview
-solve) becomes stale when it is left, since only shown panels are refined, see `_on_idle!`.
+Switches the dock to the tab `i` after a click on it: shows its content and updates its panel if it
+is stale, see `_refresh_dock!`. A panel that is left while the live view shows a preview (coarse
+grid or preview solve) becomes stale.
 """
 function _activate_tab!(gui::AppView, i::Int)
     tabs = gui.layout.tabs
@@ -504,10 +375,8 @@ end
 """
     _refresh_dock!(gui::AppView)
 
-Computes the detector panel of the active tab if it is stale and shown: from the field kept for its
-history, if any, otherwise in a job like the refinement of a coarse preview (see `_start_job`), with
-a progress window for long computations, cancelled by `Esc` or a change. Nothing is computed while
-a solve runs or after a cancelled solve, the next solve updates the panel.
+Updates the panel of the active tab if it is stale and shown, see `_refresh_tab!`. Nothing is
+updated while a solve runs or after a cancelled solve, the next solve updates the panel.
 """
 function _refresh_dock!(gui::AppView)
     tabs = gui.layout.tabs
@@ -517,54 +386,8 @@ function _refresh_dock!(gui::AppView)
     return nothing
 end
 
-"""
-    _refresh_tab!(gui::AppView, p)
-
-Updates the stale panel `p` of the shown active tab, see `_refresh_dock!`: a `DetectorPanel` is
-computed, the `update` of a `_UserPanel` of [`add_panel!`](@ref) is called, see `LiveCustom.jl`.
-"""
-function _refresh_tab!(gui::AppView, p::DetectorPanel)
-    tabs = gui.layout.tabs
-    if haskey(tabs.fields, p)
-        _show_panel!(gui, p, pop!(tabs.fields, p))
-        return nothing
-    end
-    (tabs.hits_valid && !_running(gui)) || return nothing
-    msg = "computing the panel \"$(p.name)\", Esc cancels"
-    status = gui.status.text[]
-    # The job has the panel as its object, such that the status line is not set to "traced"
-    job = _start_job(gui, r -> _show_panels!(gui, r, msg, status), p, empty(gui.pairs),
-        empty(gui.beam_handles), Any[p]; coarse = gui.trace.coarse, timing = :panel_time)
-    _run!(gui, job, msg)
-    return nothing
-end
-
-"""
-Marks the detector panel `p` stale after its options changed, see `_set_panel_options!`: a kept field
-was computed with the old options and is dropped. The panel is computed once it is shown.
-"""
-function _refresh_panel!(gui::AppView, p::DetectorPanel)
-    tabs = gui.layout.tabs
-    delete!(tabs.fields, p)
-    push!(tabs.stale, p)
-    _refresh_dock!(gui)
-    return nothing
-end
-
-"""Shows the `field` of the panel `p`, which the last solve left stale, see `_refresh_dock!`."""
-function _show_panel!(gui::AppView, p::DetectorPanel, field)
-    _update_panel!(p, field; coarse = gui.trace.coarse, preview = gui.trace.preview, record = false)
-    _draw_history!(p)
-    delete!(gui.layout.tabs.stale, p)
-    return nothing
-end
-
-"""Shows the result `r` of a job of `_refresh_dock!`, the status line is restored to `status`."""
-function _show_panels!(gui::AppView, r, msg, status)
-    foreach((p, field) -> _show_panel!(gui, p, field), r.panels, r.fields)
-    gui.status.text[] == msg && (gui.status.text[] = status)
-    return nothing
-end
+# `_refresh_tab!(gui, p)` updates the stale panel `p` of the shown active tab: the `update` of a
+# `_UserPanel` of `add_panel!` is called, see LiveApp.jl
 
 """Connects the tab bar and the collapse toggle of the dock of the `gui`, see `_DockTabs`."""
 function _connect_dock!(gui::AppView)
