@@ -522,10 +522,26 @@ function _click_leaf!(ctrl::KinematicController, leaf)
     return nothing
 end
 
-"""Axes of the keyboard controls: local y-axis, local x-axis and rotation axis of the `obj`."""
+"""
+    _control_axes(ctrl, obj) -> (y, x, v)
+
+Axes of the controls of `obj`, i.e. of its gizmo, the keyboard and the mouse: its local y-axis, its
+local x-axis and the rotation axis of the `ctrl`. They must span the space, otherwise `obj` can not
+be moved in one direction. A local axis that is parallel to the rotation axis (`|a × v| < 10⁻⁶`) is
+therefore replaced by the axis perpendicular to the other local axis and the rotation axis, e.g. the
+local x-axis of a `CollimatedSource` along +y, which points along -z, by +x. The direction of the
+replaced axis stays available as the rotation axis.
+"""
 function _control_axes(ctrl::KinematicController, obj)
     R = _pose(obj)[2]
-    return (Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), ctrl.rotation_axis)
+    y, x, v = Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), ctrl.rotation_axis
+    parallel(a) = norm(cross(a, v)) < 1e-6
+    if parallel(x) && !parallel(y)
+        x = normalize(cross(y, v))
+    elseif parallel(y) && !parallel(x)
+        y = normalize(cross(v, x))
+    end
+    return (y, x, v)
 end
 
 """Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:v`) of `obj`."""
@@ -1145,7 +1161,9 @@ can be used as usual as long as no object is grabbed. Returns a `KinematicContro
 
 The controls have a move and a rotate mode, which are switched with the key `m`. The selected object
 is marked by a box and three axes above the object: its local y-axis (green), its local x-axis
-(red) and the `rotation_axis` (blue). In the move mode the axes are shown as arrows, in the rotate
+(red) and the `rotation_axis` (blue). A local axis that is parallel to the `rotation_axis`, e.g. the
+local x-axis of a `CollimatedSource` along +y, is replaced by the axis perpendicular to the other
+two, such that the object can be moved in all directions. In the move mode the axes are shown as arrows, in the rotate
 mode as rings. The key `h` shows or hides an overlay of all controls.
 
 The key `v` switches the spectator mode on or off, in which the selection is cleared and all
@@ -1460,7 +1478,7 @@ function kinematic_controls!(
                     A = hcat(_axis_vectors(ctrl, obj, allowed)...)
                     R = _snap_orientation(ctrl, obj, snapped)
                     # Projection onto the allowed axes, which may be linearly dependent, e.g. if
-                    # a local axis is parallel to the rotation axis
+                    # a local axis is almost parallel to the rotation axis
                     _change!(ctrl, obj) do
                         translate3d!(obj, A * (pinv(A) * Δ))
                         isnothing(R) || _set_pose!(obj, _pose(obj)[1], R)

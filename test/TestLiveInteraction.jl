@@ -183,14 +183,35 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     end
 
     @testset "drag with a local axis parallel to the rotation axis" begin
-        # the local x-axis of m1 points along -z, i.e. along the rotation axis, hence the allowed
-        # axes of the drag are linearly dependent
+        # the local x-axis of m1 points along -z, i.e. along the rotation axis: the axes of the
+        # controls would span only the y-z plane, hence the axis perpendicular to the local y-axis
+        # and the rotation axis takes its place
         fig, ax, h, m1, m2 = _fixture()
         BMO.yrotate3d!(m1, π / 2)
         GUI.update_render!(h)
         scene = ax.scene
         P0 = collect(Float64.(BMO.position(m1)))
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = ax2 -> (render_plots(render_children(h)[1])[1], 0))
+        @test abs(GUI._pose(m1)[2][3, 1]) ≈ 1 atol = 1e-12
+        y, x, v = GUI._control_axes(ctrl, m1)
+        @test abs(det(hcat(y, x, v))) ≈ 1 atol = 1e-12
+        @test y ≈ GUI._pose(m1)[2][:, 2] && v == [0, 0, 1]
+        @test x ≈ cross(y, v) atol = 1e-12
+        # the same for the local y-axis, e.g. of an object that looks upwards
+        BMO.xrotate3d!(m2, π / 2)
+        y2, x2, v2 = GUI._control_axes(ctrl, m2)
+        @test abs(GUI._pose(m2)[2][3, 2]) ≈ 1 atol = 1e-9
+        @test abs(det(hcat(y2, x2, v2))) ≈ 1 atol = 1e-9
+        @test x2 ≈ GUI._pose(m2)[2][:, 1]
+        # axes in general position are the local ones
+        BMO.xrotate3d!(m2, 0.3)
+        @test GUI._control_axes(ctrl, m2)[1] ≈ GUI._pose(m2)[2][:, 2]
+        # the key of the x-axis moves m1 along the new axis, i.e. sideways
+        ctrl.selected[] = m1
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)
+        @test collect(Float64.(BMO.position(m1))) .- P0 ≈ ctrl.fine_step .* x atol = 1e-12
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
+        ctrl.selected[] = nothing
         events(scene).mouseposition[] = (100.0, 100.0)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -1276,8 +1297,13 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # Selects m1 at the center of the view (the camera looks at it) and drags it by `d` px.
         # Returns its displacement, the direction of the view and the distance [px] between the
         # cursor and the grabbed point after the drag. `move` are the axes it may move along
-        function dragged(eye, up; ortho = false, d = (40.0, 25.0), move = nothing, kwargs...)
+        function dragged(eye, up; ortho = false, d = (40.0, 25.0), move = nothing, tilt = 0.0, kwargs...)
             fig, ax, h, m1, m2 = _fixture()
+            # the local x-axis along -z for a quarter turn, see `_control_axes`
+            if tilt != 0
+                BMO.yrotate3d!(m1, tilt)
+                GUI.update_render!(h)
+            end
             scene = ax.scene
             cam = Makie.cameracontrols(scene)
             ortho && (cam.settings.projectiontype[] = Makie.Orthographic)
@@ -1324,6 +1350,12 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # from above, with y upwards on the screen, x and y, not z
         Δ, n, _ = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true)
         @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
+
+        # ... also if a local axis of the object is parallel to the rotation axis, e.g. the local
+        # x-axis of a beam group along +y: it still moves sideways
+        Δ, n, miss = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true, tilt = π / 2)
+        @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
+        @test miss < 0.5
 
         # a `plane_normal` keeps the plane, whatever the view: here the height
         Δ, n, miss = dragged([0.3, -0.4, 0.25], [0, 0, 1]; plane_normal = [0, 0, 1])

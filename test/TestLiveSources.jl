@@ -3,7 +3,7 @@ module TestLiveSources
 using GLMakie, BeamletOptics, BeamletOpticsGUI
 using BeamletOptics: render_children, render_plots, rendered
 using Makie
-using LinearAlgebra: norm, normalize
+using LinearAlgebra: norm, normalize, dot, cross
 using Test
 
 const BMO = BeamletOptics
@@ -371,6 +371,10 @@ const GUI = BeamletOpticsGUI
             @test last(gui.pairs).first === sys
             @test isnothing(gui.trace.error)
             @test startswith(gui.components.origin[src].code, entry.code_name * "([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], ")
+            # it moves in all directions: the axes of the controls span the space, also for a beam
+            # group, whose local x-axis points along the rotation axis
+            y, x, v = GUI._control_axes(gui.controls, src)
+            @test abs(dot(cross(y, x), v)) ≈ 1 atol = 1e-9
         end
         code, n = GUI._export_code(gui)
         @test n == length(sources)

@@ -48,7 +48,9 @@ help. Components
 whose kinematic trait is `Static` can not be selected.
 
 The selected component is marked by a box and three axes above it: its local y-axis (green), its
-local x-axis (red) and the vertical rotation axis (blue). In the move mode the axes are shown as
+local x-axis (red) and the vertical rotation axis (blue). If a local axis is parallel to the
+rotation axis, e.g. the local x-axis of a `CollimatedSource` along +y, the axis perpendicular to
+the other two takes its place, such that the component can be moved in all directions. In the move mode the axes are shown as
 arrows, in the rotate mode as rings. The first key of each pair moves the component in the
 direction of the arrow, or rotates it in the direction of the ring. The current mode and step
 size are shown in the hint line at the top of the 3D view.
