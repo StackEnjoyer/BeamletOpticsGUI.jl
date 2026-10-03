@@ -421,6 +421,8 @@ function _redraw!(tree::_ObjectTree)
         end
         !isnothing(tree.selected) && isequal(row.key, tree.selected) && (selected = y)
     end
+    _tree_placeholder!(expander_pos, expander_shape)
+    _tree_placeholder!(eye_pos, eye_shape, eye_color => tree.icon_color)
     p = tree.plots
     Makie.update!(p.labels; arg1 = label_pos, text = label_text, color = label_color)
     Makie.update!(p.markers; arg1 = marker_pos, marker = _tree_markers(marker_shape), color = marker_color)
@@ -456,6 +458,22 @@ _tree_marker_shape(s) = s
 function _tree_markers(shapes::Vector{Any})
     isempty(shapes) && return Makie.BezierPath[]
     return identity.(map(_tree_marker_shape, shapes))
+end
+
+"""
+    _tree_placeholder!(positions, shapes, colors...)
+
+Adds one marker at no position (`NaN`) to the empty lists of a scatter plot of the tree, e.g. the
+eyes of a view without objects and sources, with the `color` of each list of `colors`. The backend
+rejects an empty vector of markers, and a plot that is shown can not change between a single marker
+and a vector of markers.
+"""
+function _tree_placeholder!(positions, shapes, colors::Pair...)
+    isempty(positions) || return nothing
+    push!(positions, Point2f(NaN))
+    push!(shapes, :circle)
+    foreach(((list, color),) -> push!(list, color), colors)
+    return nothing
 end
 
 # The font of the labels, a symbol names a font of the theme, e.g. `:regular`

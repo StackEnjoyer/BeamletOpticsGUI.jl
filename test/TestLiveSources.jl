@@ -68,6 +68,31 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    # The object tree of the app layout has no row with an eye in an empty view, which the backend
+    # must draw as well
+    @testset "an empty view in a window, $layout" for layout in (:compact, :app)
+        gui = _live_view(System(); layout)
+        screen = GLMakie.Screen(visible = false)
+        src = _beam()
+        # no error is thrown or logged while the window draws the view
+        @test_logs min_level = Base.CoreLogging.Error begin
+            display(screen, gui.fig)
+            Makie.colorbuffer(screen)
+            # a source, a component and back to an empty view, in the open window
+            add_component!(gui, src)
+            Makie.colorbuffer(screen)
+            m = _mirror()
+            add_component!(gui, m)
+            Makie.colorbuffer(screen)
+            remove_component!(gui, m)
+            remove_component!(gui, src)
+            Makie.colorbuffer(screen)
+        end
+        @test isempty(gui.pairs) && isempty(only(GUI._systems(gui)).objects)
+        close(screen)
+        close(gui)
+    end
+
     @testset "several systems, some without a source" begin
         a, b, c = System(), System([_mirror()]), System()
         beam = _beam()
