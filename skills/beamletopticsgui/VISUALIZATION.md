@@ -73,7 +73,7 @@ orthographic); the status line appears as a toast.
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
 moves it into the 3D view next to its component, its dock button moves it back; docked pinned
 cards have the same pages as floating ones (a detector view takes the width of the sidebar, has no
-resize grip and collapses or shrinks when the sidebar is full). The dock below the 3D view only has
+resize grip; both sidebars scroll with the mouse wheel when their content is higher than the window). The dock below the 3D view only has
 tabs of `add_panel!` and stays collapsed until the first one exists. Its 3D view has
 the same help pill, chips and help card at the top left.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the

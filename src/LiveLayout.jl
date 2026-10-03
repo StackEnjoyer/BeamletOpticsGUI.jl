@@ -55,7 +55,9 @@ Collapsible parts, see `_LayoutPart`
 Collapsible part of a layout, e.g. a sidebar, the dock, the toolbar or the status bar of the app
 layout or the panels of the compact layout: a background `box` and the `grid` of
 its content, both placed at `pos` of the `parent` layout. `resize(size)` sets the size of its
-column or row in the `parent`, which is `size` while the part is shown, see `_set_shown!`.
+column or row in the `parent`, which is `size` while the part is shown, see `_set_shown!`. A part
+that scrolls, e.g. a sidebar of the app layout, has the box at `pos`, which is the region of its
+scroll `area` (see `_ScrollArea`), whose layout is the `grid`.
 """
 mutable struct _LayoutPart
     parent::GridLayout
@@ -65,7 +67,12 @@ mutable struct _LayoutPart
     box::Box
     grid::GridLayout
     shown::Bool
+    # the scroll area whose layout the `grid` is, `nothing` for a grid at `pos` of the `parent`
+    area::Any
 end
+
+_LayoutPart(parent, pos, resize, size, box, grid, shown) =
+    _LayoutPart(parent, pos, resize, size, box, grid, shown, nothing)
 
 """Appends all blocks in the layout `x` to `out`, including the blocks of nested layouts."""
 function _blocks!(out, gl::GridLayout)
@@ -97,16 +104,19 @@ function _set_shown!(part::_LayoutPart, shown::Bool)
     part.shown == shown && return nothing
     part.shown = shown
     blocks = _blocks!(Any[], part.grid)
+    area = part.area
     if shown
         part.parent[part.pos...] = part.box
-        part.parent[part.pos...] = part.grid
+        isnothing(area) ? (part.parent[part.pos...] = part.grid) : _set_area_shown!(area, true)
         part.resize(part.size)
         Makie.unhide!(part.box)
         foreach(Makie.unhide!, blocks)
     else
         Makie.hide!(part.box)
         foreach(Makie.hide!, blocks)
-        for x in (part.box, part.grid)
+        # the layout of a scroll area is not part of the parent layout
+        isnothing(area) || _set_area_shown!(area, false)
+        for x in (isnothing(area) ? (part.box, part.grid) : (part.box,))
             _GLB.remove_from_gridlayout!(_GLB.gridcontent(x))
             w = GeometryBasics.widths(x.layoutobservables.computedbbox[])
             x.layoutobservables.suggestedbbox[] = Rect2f(_OFFSCREEN, w)

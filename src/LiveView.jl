@@ -886,9 +886,9 @@ actions in the 3D view are unchanged:
   a detector, "Properties" with the properties of the object (see [`properties`](@ref)); without a
   selection, a summary of the live view. The pinned cards are docked below, one below the other,
   each with its own head (icon, label, actions, float button, pin and chevron) and its pages. A
-  detector view takes the width of the sidebar. The sidebar does not scroll: if the docked cards
-  do not fit, the older ones collapse to their heads, then the property lists are shortened and the
-  views shrink. The float button of a docked
+  detector view takes the width of the sidebar and is as high as wide. The sidebar scrolls with
+  the mouse wheel if the cards are higher than the window, a scroll bar at its right edge shows
+  the position; the chevron of a pinned card collapses it to its head. The float button of a docked
   card moves it into the 3D view, where it floats next to its object like a pinned card of the
   compact layout; the dock button in its head moves it back to the end of the docked cards. A
   card keeps its collapsed state, its page and the state of its view when it moves; pinned again
@@ -972,8 +972,9 @@ rail or toolbar) opens and closes the catalog.
   below them. The buttons at the title of the section move it into its window over the 3D view
   (pinned) and minimize it. The window has a dock button instead of the close button, and closing
   it docks the catalog again; `Insert` shows it as a popup at the mouse, which is docked again
-  after the drop. The sidebar does not scroll: in a low window, minimize the catalog or move it
-  into its window.
+  after the drop. The sidebar scrolls with the mouse wheel if the tree, which keeps a height of at
+  least 160 px, and the catalog are higher than the window; over the tree, the wheel scrolls its
+  rows first.
 
 The component then follows the mouse, drawn at half of its opacity, on the plane of the view
 through the first source of its system (or the plane with the `plane_normal` of the controls), in

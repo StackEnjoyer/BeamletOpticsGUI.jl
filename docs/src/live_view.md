@@ -203,8 +203,9 @@ hides the cards and with them the views.
 
 The floating card with an expanded view is resizable: a grip at its bottom right corner changes
 its size from 160 px up to the size of the 3D view. In the sidebar of the app layout, the view
-takes the width of the sidebar and has no grip; pinned cards there collapse or shrink their views
-when the sidebar is full, and the float button moves a pinned card with its view into the 3D view.
+takes the width of the sidebar, is as high as wide and has no grip; the sidebar scrolls with the
+mouse wheel if its cards are higher than the window, and the float button moves a pinned card with
+its view into the 3D view.
 
 By default (`detectors = :auto`, or `[]`), every `Detector` of every system, deduplicated by
 identity, has its page "Results", and no card is pinned at start. A vector pins the cards of
@@ -489,10 +490,10 @@ actions, and below it the pinned cards, one below the other, each with its own h
 actions, pin and chevron) and the same pages as a floating card; its state, including its page and
 its view, moves with the card when it floats or is docked. The pin of the selection pins
 a card, the pin of a pinned card unpins
-it. The sidebar does not scroll: if the cards do not fit, the older pinned cards collapse to their
-heads (the one pinned or expanded last stays open) and the property list of the selection, then
-those of the pinned cards, and the detector views are
-shortened or collapsed; a collapsed card is only expanded again by its chevron. The float button in the head of
+it. Both sidebars scroll with the mouse wheel if their content is higher than the window, with a
+scroll bar at their right edge: the cards keep their full size, the chevron of a pinned card
+collapses it to its head. Over the object tree, the wheel scrolls its rows first, and over a
+detector view it zooms the view. The float button in the head of
 a pinned card moves it out of the sidebar into the 3D view, where it floats next to its component
 as in the compact layout; the dock button in its head moves it back. Only the docked cards take
 room in the sidebar. The floating cards and the docked cards are built by the same code from the
