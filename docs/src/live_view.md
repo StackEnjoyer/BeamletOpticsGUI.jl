@@ -146,12 +146,13 @@ The results of a detector are on its card. Every card has pages, chosen by a pag
 and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
 has a third page, "Results", between them, which shows the detector view. The card of a source (a
 beam, a beam group or a Gaussian beamlet) has the page "Color": a menu sets the color in which it is
-drawn ("wavelength" for the color of its wavelength, "layout" for the color of the layout, or a
-fixed color), a box takes any color as a hex value such as `#ff8000` or by its name, and a slider
-sets the opacity, e.g. to see the components through the envelope of a Gaussian beamlet. Color and
-opacity only change the display: nothing is traced again, and they are not part of
-[`export_changes`](@ref). In a script, `beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5))`
-sets them from the start. A card with a single
+drawn ("wavelength" for the color of its wavelength, in which every source starts, "layout" for the
+color of the layout, or a fixed color), a box takes any color as a hex value such as `#ff8000` or
+by its name, a slider sets the opacity, e.g. to see the components through the envelope of a
+Gaussian beamlet, and another one the line width of its rays. They only change the display: nothing
+is traced again, and they are not part of [`export_changes`](@ref). In a script,
+`beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5, linewidth = 2))` sets them from the
+start. A card with a single
 page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
 detector and on "Pose" for every other object; a pinned card keeps its page.
 
@@ -556,7 +557,9 @@ the window or from code with [`add_component!`](@ref) and [`remove_component!`](
 
 The "Export" button of the tool rail (or the toolbar) prints the changed poses as Julia code and copies it
 to the clipboard, such that an alignment found interactively can be pasted into the script that
-builds the system. [`export_changes`](@ref) returns the same code:
+builds the system. The tool "Script" next to it prints the whole setup as a script, see
+[`export_script`](@ref) and [Adding and removing components](@ref components_page).
+[`export_changes`](@ref) returns the same code:
 
 ```julia
 gui = live_view(system, beam; labels = Dict(m1 => "m1", lens => "lens"))

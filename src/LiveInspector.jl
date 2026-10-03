@@ -145,7 +145,8 @@ _refresh_selection_part!(::LiveView, ::_DockedCard, _) = nothing
 _refresh_selection_part!(::LiveView, ::_DockedCard, ::Nothing) = nothing
 _card_boxes(c::_DockedCard) = c.textboxes
 # A collapsed card shows only its actions
-_declarations(c::_DockedCard, obj) = (_head_actions(obj), c.collapsed ? () : _page_rows(obj, c.page))
+_declarations(gui::LiveView, c::_DockedCard, obj) =
+    (_head_actions(obj), c.collapsed ? () : _page_rows(gui, obj, c.page))
 
 # The widgets take the theme of the figure, texts and axis colors from the tokens of the app
 _card_style(c::_DockedCard, ::Type{Label}) = (; color = c.theme.text, fontsize = 12)
@@ -194,8 +195,8 @@ end
 _rows_below(gui::AppView, c::_DockedCard) = c.pinned ? Bool[] : Bool[!isempty(gui.layout.inspector.pinned)]
 
 # The pages of the card of `obj`, none without an object
-_docked_pages(::Nothing) = ()
-_docked_pages(obj) = _card_pages(obj)
+_docked_pages(::LiveView, ::Nothing) = ()
+_docked_pages(gui::LiveView, obj) = _card_pages(gui, obj)
 
 """
     _show_page!(gui::AppView, c::_DockedCard, obj)
@@ -207,7 +208,7 @@ the selection shows the keyboard step and the summary of the live view. Only cha
 layout.
 """
 function _show_page!(gui::AppView, c::_DockedCard, obj)
-    pages = _docked_pages(obj)
+    pages = _docked_pages(gui, obj)
     (isempty(pages) || c.page in pages) || (c.page = first(pages))
     open = !isnothing(obj) && !c.collapsed
     _show_bar!(gui, c, pages, open)

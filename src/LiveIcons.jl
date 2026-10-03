@@ -153,6 +153,8 @@ const _ICON_SVG = Dict{Symbol, String}(
     :polarization_filter => "M120-840L840-840L840-120L120-120ZM440-920L520-920L520-40L440-40ZM200-760L200-200L760-200L760-760Z",
     # own design: disc in section made of three layers, the optical axis on both sides
     :linear_polarizer => "M240-880L720-880L720-80L240-80ZM40-520L180-520L180-440L40-440ZM780-520L920-520L920-440L780-440ZM320-800L320-160L410-160L410-800ZM550-800L550-160L640-160L640-800Z",
+    # own design: the brackets of code, for the export of the setup as a script
+    :script => "M360-700L140-480L360-260L416-316L252-480L416-644ZM600-700L820-480L600-260L544-316L708-480L544-644Z",
     # sources of the catalog, own designs as above: the light goes from the left to the right
     # own design: a single ray: its origin as a dot and an arrow
     :beam => "M240-480C240-430.3 199.7-390 150-390C100.3-390 60-430.3 60-480C60-529.7 100.3-570 150-570C199.7-570 240-529.7 240-480ZM150-520L740-520L740-440L150-440ZM900-480L700-330L700-630Z",

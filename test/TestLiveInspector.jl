@@ -282,8 +282,8 @@ const GUI = BeamletOpticsGUI
         # the pages and the rows of `card_rows`, with the row "remove" of a component, are those of
         # the floating cards
         @test insp.card.pages == GUI._card_pages(o.m)
-        key(c) = map(GUI._layout_key, GUI._declarations(c, o.pd))
-        @test length(GUI._declarations(insp.card, o.pd)[2]) == length(card_rows(o.pd)) + 1
+        key(c) = map(GUI._layout_key, GUI._declarations(gui, c, o.pd))
+        @test length(GUI._declarations(gui, insp.card, o.pd)[2]) == length(card_rows(o.pd)) + 1
         @test key(insp.card) == key(gui.cards.selection)
         close(gui)
     end

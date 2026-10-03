@@ -145,8 +145,11 @@ const GUI = BeamletOpticsGUI
         @test !_in_scene(gui, plots)
         @test !_in(m, gui.controls.movable)
         @test !haskey(gui.controls.init_poses, m)
-        @test all(e -> e.obj !== m, gui.controls.undo_stack)
-        @test all(e -> e.obj !== m, gui.controls.redo_stack)
+        # the removal is an action of the undo history, after the gestures of the mirror, which
+        # stay: undo brings the mirror back, see `TestLiveHistory.jl`
+        @test last(gui.controls.undo_stack) isa GUI._ActionEntry
+        @test last(gui.controls.undo_stack).obj === m
+        @test isempty(gui.controls.redo_stack)
         @test isnothing(gui.controls.last_key_step)
         @test !(m in gui.objects.hidden) && !haskey(gui.objects.opacity, m)
         @test !GUI._is_pinned(gui, m)

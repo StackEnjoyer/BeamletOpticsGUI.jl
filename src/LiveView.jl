@@ -279,13 +279,15 @@ Cards of a `LiveView`: the card of the `selection` next to the selected object, 
 rows and actions declared for it (see [`card_rows`](@ref)); `all` cards, including the pinned
 ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`); the
 selection card of groups (`browse`, a `_BrowseCard`, see `_browse!`), `nothing` until it is
-connected.
+connected; `settle` holds the row layouts of cards whose widgets were just built, with the clock
+time of the build, until their boxes were moved once, see `_settle_cards!`.
 """
 Base.@kwdef mutable struct _CardState
     selection::_ComponentCard
     all::Vector{_ComponentCard} = [selection]
     shield::Vector{Any} = Any[]
     browse::Any = nothing
+    settle::Vector{Tuple{Float64, Vector{GridLayout}}} = Tuple{Float64, Vector{GridLayout}}[]
 end
 
 """
@@ -368,6 +370,10 @@ Base.@kwdef mutable struct _ComponentState
     # the system chosen in the menu "into" of the catalog and the object that was shown then
     target::Any = nothing
     target_shown::Any = nothing
+    # `false` while an action of the undo history adds or removes, see `_unrecorded`
+    recording::Bool = true
+    # the inputs of the page "Edit" of an object that are not applied yet, see `_edit_strings`
+    const edits::IdDict{Any, Vector{String}} = IdDict{Any, Vector{String}}()
     placement::Any = nothing
     window::Any = nothing
 end
@@ -598,9 +604,10 @@ Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of 
 "Properties" with its properties (see [`properties`](@ref), the same rows as in the inspector of
 the app layout) and, for a `Detector`, "Results" with its view between them, see "Detector view".
 The card of a source (a beam, a beam group or a Gaussian beamlet) has the page "Color": a menu of
-colors ("wavelength" for the color of its wavelength, "layout" for the color of the layout, or a
-fixed color), a box for any color as a hex value such as `#ff8000` or by its name, and a slider for
-the opacity. They only change how the source is drawn: nothing is traced again.
+colors ("wavelength" for the color of its wavelength, in which every source starts, "layout" for
+the color of the layout, or a fixed color), a box for any color as a hex value such as `#ff8000` or
+by its name, and sliders for the opacity and the line width. They only change how the source is
+drawn: nothing is traced again.
 A card with a single page, e.g. of an inspected point, has no page bar. A card opens on "Results"
 for a detector and on "Pose" for any other object; a pinned card keeps its page.
 
@@ -984,8 +991,11 @@ the markers of the sources if they were hidden.
 The button "remove" below the rows of the card of a component or a source, or the key `Delete`
 while it is selected, removes it: a component from its system, a source from the view, also the
 last one. An object of a group and an extra can not be
-removed: they are kept, and the status line names the reason. Removing is not part of the undo
-history. From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
+removed: they are kept, and the status line names the reason. Adding and removing are part of the
+undo history: `Ctrl+Z` takes them back, `Ctrl+Y` does them again. A component or source from the
+catalog has the page "Edit" on its card, the form of its entry: "Apply", or Enter in a box,
+builds it again with the new values in the same pose, which is one step of the undo history.
+The tool "Script" prints the whole setup as a script, see [`export_script`](@ref). From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
 [`export_changes`](@ref) lists the added components and sources, with their constructor calls, and
 the removed ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
 
@@ -1034,7 +1044,8 @@ neither do sources and clip planes.
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam and
+  `(; render_every = 5)` for beam groups. A source is drawn in the color of its wavelength (a dark
+  red for infrared, a dark violet for ultraviolet light) unless its kwargs set a `color`. `show_polarization = true` of a polarized beam and
   `show_beams = true` of a Gaussian beamlet start with the toggles "polarization" and "beams" of
   its card on, `pol_λ`, `pol_amplitude` and `pol_scale` set the start values of the sliders of
   the polarization curve, see [`beam_card_rows`](@ref); of a beam group only its central beam is
@@ -1240,6 +1251,10 @@ function live_view(
     # The catalog of components that can be added to the systems, see `add_component!`, and their
     # placement with the mouse
     _build_catalog!(gui)
+    # The whole setup as a script, see `export_script`; after the catalog, whose dock needs the
+    # layout as it is built: a tool of a view that starts in the spectator mode hides the UI
+    add_tool!(_export_script!, gui, "Script"; icon = :script,
+        tooltip = "Export the whole setup as a script")
     _connect_placement!(gui)
     # The components snap onto the beams while they are dragged, see the `snap` kwarg
     _connect_snap!(gui)

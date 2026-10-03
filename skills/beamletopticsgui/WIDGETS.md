@@ -290,8 +290,9 @@ The catalog "Components" of the live view (a movable window, opened with the key
 pick a component by the icon of its group and its tile, type its parameters and place it with the mouse.
 An own type joins it with a
 `CatalogEntry(name, constructor; group, params, code_name, icon, source)`: a name, a constructor that is called
-with the parameter values, one `CatalogParam(name, default; unit, scale, keyword, integer)` per number
-(`integer = true` passes an `Int`, e.g. a number of rays) and one
+with the parameter values, one `CatalogParam(name, default; unit, scale, keyword, integer, presets)` per number
+(`integer = true` passes an `Int`, e.g. a number of rays; `presets = ["532 nm" => 532e-9, ...]` adds a menu
+of values next to the box, like the laser lines of the sources) and one
 `CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword)` per refractive index. The default
 of a number is in the units of the constructor (SI), the box shows `value / scale` with the `unit`. A
 glass is chosen in a menu of the glasses of `catalog_glasses()` and "constant" (a box for the number,

@@ -68,7 +68,8 @@ the view cube). In an oblique view, a drag changes the height as well; the keywo
 `plane_normal`, e.g. `plane_normal = [0, 0, 1]`, moves the components in a fixed plane instead,
 and the `constraints` below lock axes. Each drag,
 reset and series of steps with the same key (less than 1 s apart) is one entry of the undo history,
-which undoes up to 100 changes.
+which undoes up to 100 changes. In a [`live_view`](@ref), adding, removing and changing a component
+or source are entries of the same history.
 
 The `constraints` lock axes of individual components, e.g. a mirror in a kinematic mount that can
 only be tilted. The axes are named after the gizmo: `:x` (red), `:y` (green) and `:v` (blue, the

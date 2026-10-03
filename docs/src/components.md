@@ -45,9 +45,9 @@ remove_component!(gui, laser)
 A source is traced through one system of the view (keyword `system`, also a `StaticSystem`) and
 gets a marker, with which it is selected and moved like the sources the view started with. It is
 drawn in the color of its wavelength: violet to red between 380 nm and 780 nm, a dark violet for
-ultraviolet and a dark red for infrared light. The sources that the view started with keep the
-color of the layout. The keyword `beam_kwargs` takes the keywords of its rendering, e.g.
-`(; render_every = 10)` or another `color`.
+ultraviolet and a dark red for infrared light, like the sources that the view started with. The
+keyword `beam_kwargs` takes the keywords of its rendering, e.g. `(; render_every = 10)` or another
+`color`.
 
 ## The catalog and the placement
 
@@ -113,13 +113,42 @@ BeamletOpticsGUI. An added source is its constructor at the origin along +y, the
 `translate_to3d!` to its pose and the `solve_system!` that traces it; a removed source that the
 view started with is a comment.
 
+## Changing, undoing and the whole script
+
+A component or source that was placed from the catalog has the page "Edit" on its card: the form
+of its entry with the values it was built with. "Apply", or Enter in a box, builds it again with the
+new values in the same pose, in the same system and under the same label, e.g. a lens with other
+radii or a source with another wavelength; a source that is drawn in the color of its wavelength
+follows the new wavelength. An invalid input changes nothing and is reported in the status line.
+Objects that the view started with have no page "Edit": the view does not know how they were
+constructed.
+
+Adding, removing and changing are part of the undo history of the controls, together with the
+moves: `Ctrl+Z` takes the last step back, `Ctrl+Y` (or `Ctrl+Shift+Z`) does it again, e.g. a removed
+component comes back in its pose, with its label. How a source is drawn (color, opacity, line
+width, on and off) is not part of the history.
+
+The tool "Script" next to "Export" prints the whole setup as a script and copies it to the
+clipboard, like [`export_script`](@ref): the constructors and poses of all components and sources,
+the systems, the `solve_system!` calls and the `live_view` call. A view that was built from an
+empty `System()` with the catalog gives a script that runs as it is. An object that the view
+started with is a comment with its type and its pose, since its constructor is not known; fill it
+in there.
+
+```julia
+gui = live_view(System())
+# place sources and components from the catalog, then
+code = export_script(gui)
+```
+
 Limits of this version:
 
-- Adding and removing is not part of the undo history.
 - A `StaticSystem` can not be changed: a view without a `System` only offers the sources of the
   catalog. Objects inside a group can not be added or removed, remove the group instead.
-- The parameters of a source are fixed once it is placed, except its number of rays, which the
-  slider "rays" of its card changes. To change e.g. its wavelength, remove it and place a new one.
+- Only components and sources from the catalog can be changed on the page "Edit" and are written
+  with their constructors by [`export_script`](@ref).
+- The script does not contain how the sources are drawn, the extras, the clip planes and the other
+  keywords of `live_view`.
 
 ## Own catalog entries
 
@@ -131,7 +160,9 @@ groups or a new one; its `icon` is the name of an icon of the live view, as for
 [`add_tool!`](@ref), or an own `Makie.BezierPath`, and the icon of its group without one. An entry
 with `source = true` is a source: its constructor gets the position `[0, 0, 0]` and the direction
 `[0, 1, 0]` before the values of its parameters and returns a beam or a beam group; a
-`CatalogParam` with `integer = true` passes an `Int`, e.g. a number of rays. A package
+`CatalogParam` with `integer = true` passes an `Int`, e.g. a number of rays, and one with `presets`
+(`["532 nm" => 532e-9, ...]`) has a menu of these values next to its box, like the laser lines at
+the wavelength of the built-in sources. A package
 with own components adds its entries to [`component_catalog`](@ref) and its glasses to
 [`catalog_glasses`](@ref), e.g. in the `__init__` of its package extension on BeamletOpticsGUI (see
 [Cards and widgets](@ref)); a single view gets other entries via the keyword `catalog`:
@@ -161,4 +192,5 @@ CatalogParam
 CatalogGlass
 component_catalog
 catalog_glasses
+export_script
 ```
