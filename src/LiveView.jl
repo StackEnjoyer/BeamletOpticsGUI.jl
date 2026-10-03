@@ -118,6 +118,9 @@ and optionally, with defaults for any layout,
 - slots for additional parts: `_add_toolbar_entry!(gui, group)`, `_add_sidebar_section!(gui,
   side, title)` and `_add_dock_panel!(gui, title)`, which return the `GridPosition` or
   `GridLayout` to place widgets in, see `AppLayout`
+- `_catalog_dock_slot!(gui, title)`: the place in which the component catalog is docked, e.g. a
+  section of a sidebar; `nothing` by default, then the catalog is a window over the 3D view only,
+  see `_CatalogWindow`
 - the places of the public customization API (see `LiveCustom.jl`), without which it throws for
   the layout: `_add_user_panel!(f, gui, title, select)` for [`add_panel!`](@ref),
   `_controls_slot!(gui, title)` for [`add_controls!`](@ref) and `_tool_widget` (see "Tools")
@@ -346,7 +349,7 @@ the systems, with which added components are rendered; the `catalog` of the view
 each; the `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`; the
-`window` of the catalog (a `_CatalogWindow`), `nothing` for a view without a catalog.
+`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -823,7 +826,8 @@ actions in the 3D view are unchanged:
 - toolbar (icons with tooltips): trace and auto trace, home, fit (`g`), views, save view,
   orthographic, clipping (`c`), clip beams, sources (`1`), measure, export, the toggles of the
   sidebars and the dock
-- left sidebar: the object tree and, below it, the sliders ("Parameters"). The tree lists each
+- left sidebar: the object tree and, below it, the sliders ("Parameters") and the catalog
+  ("Components", see "Adding and removing components"). The tree lists each
   system with its objects (groups with their objects, collapsed by default), then the `extras`
   under "Extras", the sources and the clip planes. A click on a name selects the object like a click in the 3D view, and a
   selection in the 3D view highlights its row. The eye hides or shows an object, a group or a
@@ -902,17 +906,29 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 # Adding and removing components
 
 The components of a `System` of the view can be changed at runtime, e.g. to build a setup from an
-empty `System()` and a source; a `StaticSystem` can not be changed. The catalog "Components" is
-a window over the 3D view, in both layouts: the key `Insert` opens it with its top left corner at
-the mouse (a window that is open moves there), the toggle "Components" among the tools (tool rail
-or toolbar) opens and closes it, and so does its close button. A drag at its head moves it; it
-stays inside the 3D view. It offers the components of the `catalog` kwarg, see
-[`component_catalog`](@ref): the icons at its top select a group, e.g. the lenses, the tiles below
-a component of the group, e.g. a doublet. The boxes of the form take its numbers, e.g. the radii of
-a lens [mm], and a menu selects its glass among those of [`catalog_glasses`](@ref) or "constant",
-for which a box takes a constant refractive index. "Place" attaches the component to the mouse; the
-window stays open. An input that is no number, or that the constructor of the component rejects,
-is reported in the status line. The line "into" names the system that gets the component.
+empty `System()` and a source; a `StaticSystem` can not be changed. The catalog "Components"
+offers the components of the `catalog` kwarg, see [`component_catalog`](@ref): the icons at its top
+select a group, e.g. the lenses, the tiles below a component of the group, e.g. a doublet. The
+boxes of the form take its numbers, e.g. the radii of a lens [mm], and a menu selects its glass
+among those of [`catalog_glasses`](@ref) or "constant", for which a box takes a constant refractive
+index. "Place" attaches the component to the mouse. An input that is no number, or that the
+constructor of the component rejects, is reported in the status line. The line "into" names the
+system that gets the component.
+
+The catalog is a window over the 3D view with the head of a card. The key `Insert` opens it with
+its top left corner at the mouse, as a popup: it closes when the component was dropped. Its pin
+keeps it open at its place, and unpinning closes it. Its chevron minimizes it to its head, a drag
+at its head moves it; it stays inside the 3D view. The toggle "Components" among the tools (tool
+rail or toolbar) opens and closes the catalog.
+
+- `layout = :compact`: the catalog is closed at first, and its window has a close button.
+- `layout = :app`: the catalog is docked in the section "Components" of the left sidebar, below the
+  object tree, and open at first; there its entries are icons, the one under the mouse is named
+  below them. The buttons at the title of the section move it into its window over the 3D view
+  (pinned) and minimize it. The window has a dock button instead of the close button, and closing
+  it docks the catalog again; `Insert` shows it as a popup at the mouse, which is docked again
+  after the drop. The sidebar does not scroll: in a low window, minimize the catalog or move it
+  into its window.
 
 The component then follows the mouse, drawn at half of its opacity, on the plane through the first
 source of its system with the `plane_normal` of the controls, in the orientation in which it was

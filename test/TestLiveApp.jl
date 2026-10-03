@@ -44,7 +44,8 @@ const GUI = BeamletOpticsGUI
         @test !gui.layout.dock.shown
         @test isnothing(gui.widgets.menu)
         @test gui.sliders isa Makie.SliderGrid
-        @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters"]
+        # the catalog is docked below the object tree and the sliders
+        @test first.(gui.layout.sections[:left]) == ["Objects", "Parameters", "Components"]
         @test first.(gui.layout.sections[:right]) == ["Properties"]
         # the built-in groups and the one of the own tools, with the toggle of the catalog
         @test first.(gui.layout.groups) == [:trace, :camera, :display, :tools, :panels, :user]
@@ -59,7 +60,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.sliders)
         @test !gui.layout.dock.shown
         @test !gui.layout.collapse.dock.active[]
-        @test first.(gui.layout.sections[:left]) == ["Objects"]
+        @test first.(gui.layout.sections[:left]) == ["Objects", "Components"]
         @test _height(gui.ax) > 650
         close(gui)
 

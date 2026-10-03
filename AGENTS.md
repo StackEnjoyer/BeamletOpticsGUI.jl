@@ -74,7 +74,8 @@ describe it as available in docs or the skill.
 - `src/LiveComponents.jl`: `add_component!`, `remove_component!` (components added to and removed
   from a `System` at runtime). `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
   `component_catalog`) and its widgets (groups, tiles, form), `src/LiveCatalogWindow.jl`: its
-  window over the 3D view, `src/LiveCatalogEntries.jl`: the entries of the components of
+  window over the 3D view (pin, minimize) and its dock in a place of the layout
+  (`_catalog_dock_slot!`, e.g. the left sidebar of the app layout), `src/LiveCatalogEntries.jl`: the entries of the components of
   BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`).
   `src/LivePlacement.jl`: placing a new component with the mouse, with snapping onto beams.
   `src/LiveSnap.jl`: snapping of dragged components onto beams (the beams of the live view for

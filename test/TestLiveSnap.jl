@@ -343,7 +343,7 @@ const GUI = BeamletOpticsGUI
         GUI._cycle_snap!(ctrl)
         @test ctrl.snap[] == :position
         # not while a box takes the keyboard, and not in the spectator mode
-        box = first(GUI._catalog_window(gui).widget.boxes)
+        box = first(GUI._catalog_widget(GUI._catalog_window(gui)).boxes)
         box.focused[] = true
         _key!(gui, Keyboard.tab)
         @test ctrl.snap[] == :position

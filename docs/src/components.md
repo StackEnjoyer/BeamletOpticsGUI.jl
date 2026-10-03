@@ -31,10 +31,22 @@ systems, the keyword `system` of [`add_component!`](@ref) selects the target.
 
 ## The catalog and the placement
 
-The catalog "Components" is a window over the 3D view in both layouts. The key `Insert` opens it
-with its top left corner at the mouse, the toggle "Components" among the tools (the tool rail of
-the compact layout, the toolbar of the app layout) opens and closes it. A drag at its head moves
-it. The built-in entries are all components of BeamletOptics whose constructor takes numbers and
+The catalog "Components" is a widget like the cards: it can be pinned, minimized and, in the app
+layout, docked.
+
+- In the compact layout it is a window over the 3D view, closed at first. The key `Insert` opens
+  it with its top left corner at the mouse, the toggle "Components" of the tool rail opens and
+  closes it. A drag at its head moves it.
+- In the app layout it is docked in the section "Components" of the left sidebar, below the object
+  tree, where its entries are icons. The buttons at the title of the section move it into its
+  window over the 3D view and minimize it; the dock button of the window brings it back. `Insert`
+  shows the window at the mouse.
+
+A window that is not pinned is a popup: it closes (in the app layout: it is docked again) as soon
+as the component was dropped. The pin in its head keeps it open at its place, e.g. to place
+several components; the chevron minimizes it to its head.
+
+The built-in entries are all components of BeamletOptics whose constructor takes numbers and
 glasses:
 
 | group | entries |
@@ -47,14 +59,13 @@ glasses:
 | Polarizers | Polarization filter, Round filter, Linear polarizer |
 | Detectors | Detector |
 
-The icons at the top of the window select the group, the tiles below the entry. The boxes of the
+The icons at the top of the catalog select the group, the tiles below the entry. The boxes of the
 form take its numbers; the other arguments of the constructor keep their defaults, e.g. the
 `thickness` and the `hole_diameter` of a curved mirror. An entry with a refractive index has a menu
 of glasses instead of a number: N-BK7, fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2,
 N-BAF10 and N-LAK22 with their dispersion (see [`catalog_glasses`](@ref)), and "constant" with a box
 for a constant refractive index. "Place" attaches the component
-to the mouse; the window stays open, e.g. to place several components. A left click
-drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
+to the mouse. A left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
 only onto its central beam, of a Gaussian beamlet onto its chief ray. The component that is being
 placed is not traced until it is dropped. See the section "Adding and removing components" of
 [`live_view`](@ref) for the details of the placement.

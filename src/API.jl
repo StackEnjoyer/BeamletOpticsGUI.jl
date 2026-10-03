@@ -535,7 +535,8 @@ function catalog_glasses end
 The catalog of components that a [`live_view`](@ref) window offers by default (its `catalog`
 kwarg): the entries of BeamletOpticsGUI for the components of BeamletOptics (lenses, mirrors,
 beamsplitters, prisms, polarizers and the detector) and the entries that packages added. The
-catalog is the window "Components" over the 3D view: the entry is chosen by its group and its tile,
+catalog is the widget "Components", a window over the 3D view or, in the app layout, a section of
+the left sidebar: the entry is chosen by its group and its tile,
 its parameters are typed into boxes, its glass is chosen in a menu, and "Place" attaches the
 component to the mouse, see "Adding and removing components" of [`live_view`](@ref).
 

@@ -182,37 +182,62 @@ const _CATALOG_KEY = Keyboard.insert
 
 # The keys of a view with a catalog, in the help of the controls, see `_help_sections`
 const _CATALOG_HELP = _HelpSection["Components" => [
-    _HelpEntry(["Ins"], "open the catalog at the mouse"),
+    _HelpEntry(["Ins"], "open the catalog at the mouse, until a component is dropped"),
+    _HelpEntry([:mouse => "click"], "pin of the catalog: keep it open"),
     _HelpEntry([:mouse => "drag"], "head of the catalog: move it"),
     _HelpEntry([:mouse => "move"], "while placing: near a beam, snap onto it"),
     _HelpEntry([:mouse => "click"], "while placing: drop it, Esc cancels")]]
-# Sizes of the widgets of the catalog [px]: the icon buttons of the groups, the tiles of the
-# entries and their number per row, the boxes of the numbers and the menus of the glasses
-const _CATALOG_GROUP_SIZE = 32
-const _CATALOG_TILE_WIDTH = 86
-const _CATALOG_TILES_PER_ROW = 4
+# Sizes of the widgets of the catalog [px]: the boxes of the numbers and the menus of the glasses
 const _CATALOG_BOX_WIDTH = 64
 const _CATALOG_GLASS_WIDTH = 128
-# The numbers of an entry are in two columns from this number on
-const _CATALOG_TWO_COLUMNS = 5
 # Gap between the name, the box and the unit of a parameter in the form of the catalog, and
 # between its two columns [px]
 const _CATALOG_GAP = 8
 const _CATALOG_COLUMN_GAP = 20
+# Gaps between the icons of the groups and between the tiles of the entries [px]
+const _CATALOG_GROUP_GAP = 4
+const _CATALOG_TILE_GAP = 2
+
+"""
+    _catalog_style() -> NamedTuple
+    _catalog_style(width) -> NamedTuple
+
+How the widgets of the catalog are laid out, see `_CatalogWidget`: in its window, which is as wide
+as its content, or in a place of the `width` [px], e.g. a section of a sidebar.
+
+- `group_size`, `group_icon`: the icon buttons of the groups and their icons [px], in rows of
+  `groups_per_row`
+- `tile_width`: the width of the tiles of the entries, each with its icon and its name below it;
+  `nothing` for icon buttons of `tile_size` without a name, in a narrow place, where the name of
+  the entry under the mouse is shown below them. In rows of `tiles_per_row`.
+- `two_columns`: the numbers of an entry are in two columns from this number on
+- `constant_inline`: whether the box of a "constant" glass is right of its menu, otherwise below it
+"""
+_catalog_style() = (; group_size = 32, group_icon = 20, groups_per_row = typemax(Int),
+    tile_width = 86, tile_size = 40, tiles_per_row = 4, two_columns = 5, constant_inline = true)
+function _catalog_style(width::Real)
+    group, tile = 26, 40
+    per_row(size, gap) = max(1, floor(Int, (width + gap) / (size + gap)))
+    return (; group_size = group, group_icon = 18,
+        groups_per_row = per_row(group, _CATALOG_GROUP_GAP), tile_width = nothing,
+        tile_size = tile, tiles_per_row = per_row(tile, _CATALOG_TILE_GAP),
+        two_columns = typemax(Int), constant_inline = false)
+end
 
 """
     _CatalogWidget
 
-The widgets of the catalog of a `LiveView`, in the `layout` of the body of its window (see
-`_build_catalog!`), in the colors of the theme tokens `theme`, from top to bottom:
+The widgets of the catalog of a `LiveView` in a `layout`, e.g. the body of its window or of its
+dock (see `_catalog_widget!`), laid out by the `style` (see `_catalog_style`) in the colors of the
+theme tokens `theme`, from top to bottom:
 
 - `target`: the label of the system that gets the component
 - `group_buttons`: an icon per group of the `entries` (`groups`, in the order of their first
   entries), of which the one with the index `group` is chosen; `group_label` names it, or the one
   under the mouse
-- `tiles`: a tile per entry of the chosen group with its icon and its name (`tile_buttons`, each
-  with the index of its entry), of which the one of the entry with the index `entry` is chosen;
-  `entry_label` names it
+- `tiles`: a tile per entry of the chosen group with its icon and its name, or only its icon (see
+  the `style`; `tile_buttons`, each with the index of its entry), of which the one of the entry
+  with the index `entry` is chosen; `entry_label` names it, see `_show_catalog_entry!`
 - `form`: the inputs of the parameters of the chosen entry (`inputs`, one per parameter): a
   `Textbox` per number, and per glass its menu and, for "constant", the box of the refractive
   index, as `(; menu, box)`. `boxes` and `menus` hold all of them.
@@ -226,6 +251,7 @@ the grids of a new form and its time until its boxes were moved once, see `_sett
 mutable struct _CatalogWidget
     const layout::GridLayout
     const theme::NamedTuple
+    const style::NamedTuple
     const entries::Vector{CatalogEntry}
     const groups::Vector{String}
     const target::Label
@@ -262,39 +288,33 @@ _catalog_strings(w::_CatalogWidget) =
     String[_catalog_input_string(p, input) for (p, input) in zip(_catalog_entry(w).params, w.inputs)]
 
 """
-    _build_catalog!(gui)
+    _catalog_widget!(gui, body, style) -> _CatalogWidget
 
-Builds the catalog of the `gui` (`gui.components.catalog`, see [`component_catalog`](@ref)) as the
-window "Components" (see `_CatalogWindow`), which floats over the 3D view in every layout: the line
-"into: <system>" with the system that gets the component (see `_target_system`), the icons of the
-groups, the tiles of the entries of the chosen group, the form of the chosen entry and the button
-"Place", see `_CatalogWidget` and `_place_catalog!`. The window is hidden at first; the toggle
-"Components" among the tools of the layout (see [`add_tool!`](@ref)) shows and hides it, the key
-`Insert` shows it at the mouse, see `_connect_catalog_window!`. Both are listed in the help with
-the mouse while placing (`_CATALOG_HELP`). Nothing is built for an empty catalog and for a view
-without a `System`, to which components can be added.
+Builds the widgets of the catalog of the `gui` (`gui.components.catalog`) in the layout `body`,
+laid out by the `style` (see `_catalog_style`): the line "into: <system>" with the system that gets
+the component (see `_target_system`), the icons of the groups, the tiles of the entries of the
+chosen group, the form of the chosen entry and the button "Place", see `_CatalogWidget` and
+`_place_catalog!`. The first group and its first entry are chosen.
 """
-function _build_catalog!(gui::LiveView)
+function _catalog_widget!(gui::LiveView, body::GridLayout, style::NamedTuple)
     entries = gui.components.catalog
-    (isempty(entries) || isempty(_mutable_systems(gui))) && return nothing
     t = gui.layout.theme
-    scene, part, head, close_button, body = _catalog_window_parts(gui.fig, t)
     label = (; _card_style(t, Label)..., halign = :left)
     target = Label(body[1, 1], ""; label..., color = t.muted)
     groups = unique(e.group for e in entries)
-    row = GridLayout(body[2, 1]; halign = :left, default_colgap = 4)
-    group_buttons = [_OverlayItem(row[1, k], t; icon = _catalog_group_icon(entries, g),
-        size = _CATALOG_GROUP_SIZE, icon_size = 20, padding = (0, 0, 0, 0)) for (k, g) in enumerate(groups)]
+    rows = GridLayout(body[2, 1]; halign = :left, default_colgap = _CATALOG_GROUP_GAP,
+        default_rowgap = _CATALOG_GROUP_GAP)
+    group_buttons = [_OverlayItem(rows[fldmod1(k, style.groups_per_row)...], t;
+        icon = _catalog_group_icon(entries, g), size = style.group_size,
+        icon_size = style.group_icon, padding = (0, 0, 0, 0)) for (k, g) in enumerate(groups)]
     group_label = Label(body[3, 1], ""; label..., fontsize = 11, color = t.muted)
     tiles = _catalog_tiles(body)
     entry_label = Label(body[5, 1], ""; label..., font = :bold)
     form = _catalog_form(body)
     place = Button(body[7, 1]; label = "Place", _card_style(t, Button)..., halign = :left)
-    widget = _CatalogWidget(body, t, entries, groups, target, group_buttons, group_label,
+    widget = _CatalogWidget(body, t, style, entries, groups, target, group_buttons, group_label,
         entry_label, place, 0, 0, tiles, Pair{Int, _OverlayItem}[], form, Any[], Textbox[], Menu[], false,
         nothing)
-    w = _CatalogWindow(scene, part, head, close_button, widget, false, nothing, nothing)
-    gui.components.window = w
     listeners = gui.controls.listeners
     for (k, button) in enumerate(group_buttons)
         push!(listeners, on(_ -> _select_catalog_group!(gui, widget, k), button.clicks))
@@ -305,6 +325,28 @@ function _build_catalog!(gui::LiveView)
         _place_catalog!(gui, _catalog_entry(widget), _catalog_strings(widget))
     end)
     _select_catalog_group!(gui, widget, 1)
+    _show_catalog_target!(gui, widget)
+    return widget
+end
+
+"""
+    _build_catalog!(gui)
+
+Builds the catalog "Components" of the `gui` (`gui.components.catalog`, see
+[`component_catalog`](@ref)): its window over the 3D view (see `_CatalogWindow`) and, in a layout
+with a place for it, its dock, e.g. a section of a sidebar (see `_catalog_dock_slot!`), each with
+the widgets of the catalog, see `_catalog_widget!`. Without a dock, the window is hidden at first;
+with one, the catalog starts docked. The toggle "Components" among the tools of the layout (see
+[`add_tool!`](@ref)) shows and hides it, the key `Insert` shows the window at the mouse, see
+`_connect_catalog_window!`. Both are listed in the help with the mouse while placing
+(`_CATALOG_HELP`). Nothing is built for an empty catalog and for a view without a `System`, to
+which components can be added.
+"""
+function _build_catalog!(gui::LiveView)
+    entries = gui.components.catalog
+    (isempty(entries) || isempty(_mutable_systems(gui))) && return nothing
+    w = _CatalogWindow(gui, _catalog_dock_slot!(gui, _CATALOG_TITLE))
+    gui.components.window = w
     _connect_catalog_window!(gui, w)
     # The toggle of the layout, among its tools
     w.tool = add_tool!((g, shown) -> _show_catalog!(g, shown), gui, _CATALOG_TITLE; icon = :lens,
@@ -313,8 +355,7 @@ function _build_catalog!(gui::LiveView)
     _update_help!(gui.controls)
     # The presses on the new widgets are kept from the camera, see `_shield_cards!`
     _shield_cards!(gui)
-    _show_catalog_target!(gui, widget)
-    _arrange_catalog!(gui)
+    _show_catalog_state!(gui, w)
     return nothing
 end
 
@@ -324,7 +365,7 @@ system was inspected, see `_on_shown!`; nothing without a catalog.
 """
 function _refresh_catalog!(gui::LiveView)
     w = _catalog_window(gui)
-    isnothing(w) || _show_catalog_target!(gui, w.widget)
+    isnothing(w) || foreach(widget -> _show_catalog_target!(gui, widget), _catalog_widgets(w))
     return nothing
 end
 
@@ -358,8 +399,8 @@ Groups and tiles
 =#
 
 # The layout of the tiles of the catalog in the `layout` of its widgets, see `_CatalogWidget`
-_catalog_tiles(layout::GridLayout) =
-    GridLayout(layout[4, 1]; halign = :left, valign = :top, default_rowgap = 2, default_colgap = 2)
+_catalog_tiles(layout::GridLayout) = GridLayout(layout[4, 1]; halign = :left, valign = :top,
+    default_rowgap = _CATALOG_TILE_GAP, default_colgap = _CATALOG_TILE_GAP)
 
 """Names the group under the mouse in the catalog widget `w`, otherwise its chosen group."""
 function _show_catalog_group!(w::_CatalogWidget)
@@ -375,38 +416,70 @@ Chooses the group with the index `k` in the catalog widget `w`: shows the tiles 
 (see `_build_catalog_tiles!`) and chooses the first one. Nothing happens for the chosen group.
 """
 function _select_catalog_group!(gui::LiveView, w::_CatalogWidget, k::Integer)
-    w.group == k && return nothing
+    _set_catalog_group!(gui, w, k) && _select_catalog_entry!(gui, w, first(first(w.tile_buttons)))
+    return nothing
+end
+
+"""
+Shows the tiles of the group with the index `k` in the catalog widget `w`, without choosing one of
+its entries, see `_select_catalog_group!`. Returns `false` for the chosen group, which is kept.
+"""
+function _set_catalog_group!(gui::LiveView, w::_CatalogWidget, k::Integer)
+    w.group == k && return false
     w.group = k
     foreach(((i, b),) -> _update!(b.active, i == k), enumerate(w.group_buttons))
     _show_catalog_group!(w)
     _build_catalog_tiles!(gui, w)
-    _select_catalog_entry!(gui, w, first(first(w.tile_buttons)))
-    return nothing
+    return true
 end
 
 """
     _build_catalog_tiles!(gui, w)
 
-Replaces the tiles of the catalog widget `w` by those of the entries of its chosen group, in rows
-of `_CATALOG_TILES_PER_ROW`: each with the icon of its entry (see `_catalog_icon`) and its name. A
-click on a tile chooses its entry, see `_select_catalog_entry!`.
+Replaces the tiles of the catalog widget `w` by those of the entries of its chosen group, in the
+rows of its style (see `_catalog_style`): each with the icon of its entry (see `_catalog_icon`)
+and its name, or as an icon button, whose name is shown while the mouse is over it, see
+`_show_catalog_entry!`. A click on a tile chooses its entry, see `_select_catalog_entry!`.
 """
 function _build_catalog_tiles!(gui::LiveView, w::_CatalogWidget)
-    _release_listeners!(gui, [tile.clicks for (_, tile) in w.tile_buttons])
+    _release_listeners!(gui, Any[[tile.clicks for (_, tile) in w.tile_buttons];
+        [tile.hovered for (_, tile) in w.tile_buttons]])
     empty!(w.tile_buttons)
     _delete_catalog_grid!(w.tiles)
     w.tiles = _catalog_tiles(w.layout)
+    style = w.style
     group = w.groups[w.group]
     members = [i for (i, e) in enumerate(w.entries) if e.group == group]
     for (k, i) in enumerate(members)
         entry = w.entries[i]
-        row, col = fldmod1(k, _CATALOG_TILES_PER_ROW)
-        tile = _OverlayItem(w.tiles[row, col], w.theme; icon = _catalog_icon(w.entries, entry),
-            label = entry.name, tile_width = _CATALOG_TILE_WIDTH, icon_size = 28, fontsize = 11,
-            padding = (3, 3, 6, 5))
+        pos = w.tiles[fldmod1(k, style.tiles_per_row)...]
+        icon = _catalog_icon(w.entries, entry)
+        tile = if isnothing(style.tile_width)
+            _OverlayItem(pos, w.theme; icon, size = style.tile_size, icon_size = 28,
+                padding = (0, 0, 0, 0))
+        else
+            _OverlayItem(pos, w.theme; icon, label = entry.name, tile_width = style.tile_width,
+                icon_size = 28, fontsize = 11, padding = (3, 3, 6, 5))
+        end
         push!(w.tile_buttons, i => tile)
         push!(gui.controls.listeners, on(_ -> _select_catalog_entry!(gui, w, i), tile.clicks))
+        isnothing(style.tile_width) &&
+            push!(gui.controls.listeners, on(_ -> _show_catalog_entry!(w), tile.hovered))
     end
+    return nothing
+end
+
+"""
+Marks the tile of the chosen entry of the catalog widget `w` and names the entry; tiles without a
+name (see `_catalog_style`) name the entry under the mouse instead, like the icons of the groups.
+"""
+function _show_catalog_entry!(w::_CatalogWidget)
+    w.entry == 0 && return nothing
+    foreach(((j, tile),) -> _update!(tile.active, j == w.entry), w.tile_buttons)
+    k = isnothing(w.style.tile_width) ? findfirst(((_, tile),) -> tile.hovered[], w.tile_buttons) :
+        nothing
+    i = isnothing(k) ? w.entry : first(w.tile_buttons[k])
+    _update!(w.entry_label.text, w.entries[i].name)
     return nothing
 end
 
@@ -420,10 +493,26 @@ Nothing happens for the chosen entry, whose form keeps its texts.
 function _select_catalog_entry!(gui::LiveView, w::_CatalogWidget, i::Integer)
     w.entry == i && return nothing
     w.entry = i
-    foreach(((j, tile),) -> _update!(tile.active, j == i), w.tile_buttons)
-    entry = w.entries[i]
-    _update!(w.entry_label.text, entry.name)
-    _build_catalog_form!(gui, w, String[_catalog_string(p) for p in entry.params])
+    _show_catalog_entry!(w)
+    _build_catalog_form!(gui, w, String[_catalog_string(p) for p in w.entries[i].params])
+    return nothing
+end
+
+"""
+    _copy_catalog_state!(gui, to, from)
+
+Shows in the catalog widget `to` what the widget `from` shows: its group, its entry and the texts
+of its inputs, e.g. when the catalog moves from its dock into its window. The tiles and the form
+of `to` are only built again if they differ.
+"""
+function _copy_catalog_state!(gui::LiveView, to::_CatalogWidget, from::_CatalogWidget)
+    to === from && return nothing
+    strings = _catalog_strings(from)
+    _set_catalog_group!(gui, to, from.group)
+    same = to.entry == from.entry && _catalog_strings(to) == strings
+    to.entry = from.entry
+    _show_catalog_entry!(to)
+    same || _build_catalog_form!(gui, to, strings)
     return nothing
 end
 
@@ -442,9 +531,10 @@ _catalog_form_grid(pos) = GridLayout(pos; halign = :left, default_rowgap = 6, de
 
 Builds the form of the catalog widget `w` for its chosen entry with the `strings` as the texts of
 its inputs (see `_catalog_strings`): first the numbers, each with its name, a `Textbox` and its
-unit, in two columns from `_CATALOG_TWO_COLUMNS` numbers on, then the glasses, each with its name
-and the menu of the glasses and "constant", for which a box takes the refractive index. The boxes
-and the menus take the keyboard like those of the controls, see `_register_widget!`.
+unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
+with its name and the menu of the glasses and "constant", for which a box takes the refractive
+index, right of the menu or below it. The boxes and the menus take the keyboard like those of the
+controls, see `_register_widget!`.
 """
 function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     params = _catalog_entry(w).params
@@ -459,7 +549,7 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     if !isempty(numbers)
         grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
         push!(grids, grid)
-        two = length(numbers) >= _CATALOG_TWO_COLUMNS
+        two = length(numbers) >= w.style.two_columns
         rows = two ? cld(length(numbers), 2) : length(numbers)
         for (k, i) in enumerate(numbers)
             p = params[i]
@@ -481,18 +571,23 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
         grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
         push!(grids, grid)
         names = [_glass_names(); _GLASS_CONSTANT]
-        for (k, i) in enumerate(glasses)
+        inline = w.style.constant_inline
+        row = 0
+        for i in glasses
             p = params[i]
             glass = strings[i] in names ? strings[i] : _GLASS_CONSTANT
             constant = glass == _GLASS_CONSTANT
-            Label(grid[k, 1], p.name; label...)
-            menu = Menu(grid[k, 2]; options = names, default = glass, _card_style(t, Menu)...,
+            row += 1
+            Label(grid[row, 1], p.name; label...)
+            menu = Menu(grid[row, 2]; options = names, default = glass, _card_style(t, Menu)...,
                 width = _CATALOG_GLASS_WIDTH, halign = :left)
             tb = nothing
             if constant
-                Label(grid[k, 3], "n"; label...)
-                tb = Textbox(grid[k, 4]; stored_string = strings[i],
-                    placeholder = _catalog_number_string(p.n), box...)
+                # right of the menu, or in a row of its own below it
+                inline || (row += 1)
+                Label(grid[row, inline ? 3 : 1], "n"; label..., halign = inline ? :left : :right)
+                tb = Textbox(grid[row, inline ? 4 : 2]; stored_string = strings[i],
+                    placeholder = _catalog_number_string(p.n), box..., halign = :left)
                 push!(w.boxes, tb)
             end
             w.inputs[i] = (; menu, box = tb)

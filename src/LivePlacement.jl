@@ -192,10 +192,15 @@ function _cancel_placement!(gui::LiveView)
     return nothing
 end
 
-"""Adds the component that is being placed in the `gui` to its system in its current pose."""
+"""
+Adds the component that is being placed in the `gui` to its system in its current pose. The window
+of the catalog closes then, unless it is pinned, see `_close_unpinned_catalog!`.
+"""
 function _drop_placement!(gui::LiveView)
     p = _end_placement!(gui)
-    isnothing(p) || add_component!(gui, p.obj; system = p.system, origin = p.origin)
+    isnothing(p) && return nothing
+    add_component!(gui, p.obj; system = p.system, origin = p.origin)
+    _close_unpinned_catalog!(gui)
     return nothing
 end
 

@@ -272,7 +272,7 @@ the layout decides where the parts go:
 | function | `layout = :compact` | `layout = :app` |
 |:--|:--|:--|
 | [`add_panel!`](@ref) | a column right of the 3D view, created by the first panel | a tab of the analysis dock, which stays collapsed until the first panel exists |
-| [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" |
+| [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" and "Components" |
 | [`add_tool!`](@ref) | an entry (icon and name) of the tool rail | an icon button (or toggle) at the end of the toolbar |
 
 `add_panel!(f, gui, title)` calls `f(layout)` with the `GridLayout` of the new panel, into which it

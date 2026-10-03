@@ -53,7 +53,9 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
 `translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
-at the mouse with the key `Insert` or with the toggle "Components" among the tools. Its icons select a
+at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
+the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in
+the left sidebar (section "Components"), from where its buttons move it into the window and back. Its icons select a
 group (lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
 component (all components of BeamletOptics with a constructor of numbers and glasses), its form takes
 the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,

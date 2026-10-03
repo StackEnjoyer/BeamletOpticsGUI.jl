@@ -286,7 +286,7 @@ end
 
 ## Recipe: a catalog entry for your type
 
-The catalog "Components" of the live view (a movable window, opened with the key `Insert`) lets the user
+The catalog "Components" of the live view (a movable window, opened with the key `Insert`; docked in the left sidebar of the app layout) lets the user
 pick a component by the icon of its group and its tile, type its parameters and place it with the mouse.
 An own type joins it with a
 `CatalogEntry(name, constructor; group, params, code_name, icon)`: a name, a constructor that is called

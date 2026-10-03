@@ -44,9 +44,10 @@ end
 
     _window(gui) = GUI._catalog_window(gui)
 
-    # The widgets of the catalog of the `gui` in its window, in the order in which they were built
+    # The widgets of the catalog of the `gui` that are in use, i.e. of its window or of its dock, in
+    # the order in which they were built
     function _widgets(gui)
-        widget = _window(gui).widget
+        widget = GUI._catalog_widget(_window(gui))
         blocks = GUI._blocks!(Any[], widget.layout)
         return (; widget, layout = widget.layout, target = widget.target,
             menus = filter(b -> b isa Menu, blocks),
@@ -62,14 +63,14 @@ end
 
     # Clicks the icon of the `group` of the catalog of the `gui`
     function _group!(gui, group)
-        widget = _window(gui).widget
+        widget = GUI._catalog_widget(_window(gui))
         widget.group_buttons[findfirst(==(group), widget.groups)].clicks[] += 1
         return widget
     end
 
     # Clicks the tile of the entry `name` of the catalog of the `gui`, after the icon of its group
     function _choose!(gui, name)
-        widget = _window(gui).widget
+        widget = GUI._catalog_widget(_window(gui))
         i = findfirst(e -> e.name == name, widget.entries)
         _group!(gui, widget.entries[i].group)
         last(only(filter(t -> first(t) == i, widget.tile_buttons))).clicks[] += 1
@@ -93,7 +94,7 @@ end
             @test gui.components.catalog == catalog
             # a copy: the view keeps its entries
             @test gui.components.catalog !== catalog
-            widget = _window(gui).widget
+            widget = GUI._catalog_widget(_window(gui))
 @test last(widget.groups) == "Blocks" && last(widget.entries) === entry
 @test _tiles(_group!(gui, "Blocks")) == ["Block"]
             close(gui)
@@ -153,14 +154,21 @@ end
     @testset "widget ($layout, $theme)" for (layout, theme) in ((:compact, :light), (:app, :dark))
         gui, sys, m = _fixture(; layout, theme)
         entries = gui.components.catalog
-        # the window of both layouts, hidden at first, with the toggle of the layout that shows it
+        # the window of both layouts, hidden at first, with the toggle of the layout; the catalog
+        # is docked in a layout with a place for it, and open there
         win = _window(gui)
-        @test win isa GUI._CatalogWindow && !win.shown && !win.tool.active[]
+        docks = layout == :app
+        @test win isa GUI._CatalogWindow && !win.shown && !win.pinned && !win.collapsed
+        @test win.docked == docks && isnothing(win.dock) == !docks && win.tool.active[] == docks
         @test isempty(GUI._catalog_rects(gui))
         @test isempty(filter(c -> c.title == "Components", gui.custom.controls))
         w = _widgets(gui)
         widget = w.widget
-        @test w.layout === win.widget.layout
+        @test w.layout === (docks ? win.dock.widget : win.widget).layout
+        # the boxes and the menus of the widgets that are not in use, i.e. of the hidden window
+        other_boxes() = Textbox[b for x in GUI._catalog_widgets(win) if x !== widget for b in x.boxes]
+        other_menus() = Menu[mn for x in GUI._catalog_widgets(win) if x !== widget for mn in x.menus]
+        @test isempty(other_boxes()) == !docks
         @test w.target.text[] == "into: System 1"
         @test w.place.label[] == "Place"
         # an icon per group, the first group and its first entry are chosen
@@ -186,7 +194,7 @@ end
         @test menu.options[] == [first.(catalog_glasses()); "constant"]
         @test GUI._catalog_strings(widget) == ["50", "-50", "25.4", "N-BK7"]
         # the boxes and the menu take the keyboard
-        @test gui.custom.boxes == w.boxes && widget.boxes == w.boxes
+        @test Set(gui.custom.boxes) == Set([w.boxes; other_boxes()]) && widget.boxes == w.boxes
         @test menu in gui.custom.menus && widget.menus == [menu]
         @test !GUI._typing(gui)
         w.boxes[1].focused[] = true
@@ -201,7 +209,8 @@ end
         @test _texts(w.boxes) == ["62.8", "-45.7", "-128.2", "4", "2.5", "25.4"]
         @test [mn.selection[] for mn in w.menus] == ["N-BK7", "N-SF5"]
         @test all(tb -> !any(o -> o === tb, old), w.boxes)
-        @test gui.custom.boxes == w.boxes && !(menu in gui.custom.menus)
+        @test Set(gui.custom.boxes) == Set([w.boxes; other_boxes()]) && !(menu in gui.custom.menus)
+        @test Set(gui.custom.menus) == Set([w.menus; other_menus()])
         @test "glass 2" in w.labels && !("glass" in w.labels)
         w.boxes[3].focused[] = true
         @test GUI._typing(gui)
@@ -259,7 +268,9 @@ end
         @test !widget.dirty && only(w.menus) !== menu && !(menu in gui.custom.menus)
         @test only(w.menus).selection[] == "constant"
         @test _texts(w.boxes) == ["50", "-50", "12", "1.5"] && "n" in w.labels
-        @test gui.custom.boxes == w.boxes
+        # besides those of the hidden window of a docked catalog
+        @test filter(b -> b in w.boxes, gui.custom.boxes) == w.boxes
+        @test length(gui.custom.boxes) == (layout == :app ? 7 : 4)
         w.boxes[4].displayed_string[] = "1.7"
         @test code() == "ThinLens(0.05, -0.05, 0.012, λ -> 1.7)"
         GUI._place_catalog!(gui, GUI._catalog_entry(widget), GUI._catalog_strings(widget))
@@ -335,7 +346,9 @@ end
         @test "width" in w.labels && "scale" in w.labels && "mm" in w.labels
         # an entry without parameters has no boxes
         w = _choose!(gui, "Plain block")
-        @test isempty(w.boxes) && isempty(gui.custom.boxes) && isempty(w.menus)
+        @test isempty(w.boxes) && isempty(w.menus)
+        # the hidden window of a docked catalog keeps its entry
+        @test isempty(gui.custom.boxes) == (layout == :compact)
         @test "no parameters" in w.labels
         # the global catalog is not changed
         @test !any(e -> e === entry, component_catalog())
@@ -364,7 +377,7 @@ end
         ctrl = gui.controls
         ev = events(gui.ax.scene)
         win = _window(gui)
-        w = _widgets(gui)
+        docks = !isnothing(win.dock)
         key!(key) = (ev.keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
         mouse!(p) = (ev.mouseposition[] = (Float64(p[1]), Float64(p[2])))
         press!() = (ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
@@ -373,12 +386,16 @@ end
         at(fx, fy) = Point2f(minimum(view) .+ Makie.widths(view) .* Point2f(fx, fy))
         corner() = (r = GUI._catalog_rect(win); Point2f(minimum(r)[1], maximum(r)[2]))
         inside() = (r = GUI._catalog_rect(win); all(minimum(r) .>= minimum(view)) && all(maximum(r) .<= maximum(view)))
+        # Closes the window: its close button, or its dock button in a layout with a dock
+        close!() = ((docks ? win.dock_button : win.close_button).clicks[] += 1)
 
-        # the key Insert shows the window with its top left corner at the mouse
+        # the key Insert shows the window with its top left corner at the mouse, as a popup
         p = at(0.3, 0.8)
         mouse!(p)
         key!(Keyboard.insert)
-        @test win.shown && win.tool.active[]
+        @test win.shown && !win.pinned && !win.docked && win.tool.active[]
+        @test GUI._catalog_widget(win) === win.widget
+        w = _widgets(gui)
         @test corner() ≈ p atol = 0.5
         @test inside() && GUI._catalog_rects(gui) == [GUI._catalog_rect(win)]
         size = Makie.widths(GUI._catalog_rect(win))
@@ -428,11 +445,17 @@ end
         mouse!(Point2f(minimum(view) .- 500))
         release!()
         @test inside()
-        # the close button is no handle
-        close_rect = Rect2f(win.close_button.box.layoutobservables.computedbbox[])
-        @test !GUI._over_catalog_handle(win, Point2f(minimum(close_rect) .+ Makie.widths(close_rect) ./ 2))
+        # the buttons of the head are no handles: the pin, the chevron and the close or dock button
+        buttons = filter(!isnothing, (win.dock_button, win.pin_button, win.collapse_button, win.close_button))
+        @test length(buttons) == 3 && isnothing(win.close_button) == docks
+        for b in buttons
+            r = Rect2f(b.box.layoutobservables.computedbbox[])
+            @test r in GUI._catalog_rect(win)
+            @test !GUI._over_catalog_handle(win, Point2f(minimum(r) .+ Makie.widths(r) ./ 2))
+        end
 
-        # "Place" places the chosen entry with the values of its boxes, the window stays
+        # "Place" places the chosen entry with the values of its boxes; the window stays while
+        # the component is placed, and when that is cancelled
         w.boxes[3].displayed_string[] = "12"
         w.place.clicks[] += 1
         @test GUI._placing(gui) && win.shown
@@ -442,31 +465,39 @@ end
         @test !GUI._placing(gui) && win.shown
         @test sys.objects == [m]
 
-        # the close button hides it; its toggle follows and shows it where it was
+        # closing hides it; with a dock, the catalog is open there
         c0 = corner()
         w.boxes[1].focused[] = true
         only(w.menus).is_open[] = true
-        win.close_button.clicks[] += 1
-        @test !win.shown && !win.tool.active[] && isempty(GUI._catalog_rects(gui))
+        close!()
+        @test !win.shown && isempty(GUI._catalog_rects(gui))
         @test !w.boxes[1].focused[] && !only(w.menus).is_open[] && !GUI._typing(gui)
         @test !GUI._over_catalog(gui)
-        win.tool.active[] = true
-        @test win.shown
-        @test corner() ≈ c0 atol = 0.5
-        win.tool.active[] = false
-        @test !win.shown
-        # without the mouse in the 3D view, the key shows it where it was
+        @test win.docked == docks && win.tool.active[] == docks
+        # without the mouse in the 3D view, the key opens it where it was
         mouse!(Point2f(-10, -10))
         key!(Keyboard.insert)
-        @test win.shown
-        @test corner() ≈ c0 atol = 0.5
+        if docks
+            @test win.docked && !win.shown && win.tool.active[]
+        else
+            @test win.shown
+            @test corner() ≈ c0 atol = 0.5
+            # its toggle hides it and shows it where it was
+            win.tool.active[] = false
+            @test !win.shown
+            win.tool.active[] = true
+            @test win.shown && !win.pinned
+            @test corner() ≈ c0 atol = 0.5
+            close!()
+        end
 
         # not while a box takes the keyboard, and not in the spectator mode, which hides the window
-        win.close_button.clicks[] += 1
-        w.boxes[1].focused[] = true
+        mouse!(at(0.5, 0.5))
+        box = first(GUI._catalog_widget(win).boxes)
+        box.focused[] = true
         key!(Keyboard.insert)
         @test !win.shown
-        w.boxes[1].focused[] = false
+        box.focused[] = false
         key!(Keyboard.insert)
         @test win.shown
         GUI._set_spectator!(ctrl, true)
@@ -493,6 +524,7 @@ end
         components = only(filter(s -> s.first == "Components", sections)).second
         @test first(components).keys == ["Ins"] && occursin("open the catalog", first(components).text)
         @test any(e -> occursin("move it", e.text), components)
+        @test any(e -> occursin("keep it open", e.text), components)
         @test any(e -> occursin("snap", e.text), components)
         @test any(e -> occursin("Esc cancels", e.text), components)
         close(gui)
@@ -502,6 +534,236 @@ end
         events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.insert, Keyboard.press)
         @test isnothing(_window(gui)) && isempty(GUI._catalog_rects(gui)) && !GUI._over_catalog(gui)
         @test !any(s -> s.first == "Components", GUI._help_sections(gui.controls))
+        close(gui)
+    end
+
+    @testset "pin and minimize ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout)
+        ev = events(gui.ax.scene)
+        win = _window(gui)
+        docks = layout == :app
+        key!(key) = (ev.keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
+        mouse!(p) = (ev.mouseposition[] = (Float64(p[1]), Float64(p[2])))
+        view = Rect2f(Makie.viewport(gui.ax.scene)[])
+        at(fx, fy) = Point2f(minimum(view) .+ Makie.widths(view) .* Point2f(fx, fy))
+        corner() = (r = GUI._catalog_rect(win); Point2f(minimum(r)[1], maximum(r)[2]))
+        size() = Makie.widths(GUI._catalog_rect(win))
+        # Places the entry of the window and drops it where it is
+        function drop!()
+            win.widget.place.clicks[] += 1
+            @test GUI._placing(gui) && win.shown
+            GUI._drop_placement!(gui)
+            return nothing
+        end
+
+        # a popup: it closes when the component was dropped
+        p = at(0.3, 0.8)
+        mouse!(p)
+        key!(Keyboard.insert)
+        @test win.shown && !win.pinned && !win.pin_button.active[]
+        drop!()
+        @test length(sys.objects) == 2 && !GUI._placing(gui)
+        @test !win.shown && win.docked == docks && isempty(GUI._catalog_rects(gui))
+
+        # pinned, it stays open at its place, also for the key
+        mouse!(p)
+        key!(Keyboard.insert)
+        win.pin_button.active[] = true
+        @test win.pinned && win.shown
+        c0 = corner()
+        drop!()
+        @test length(sys.objects) == 3 && win.shown && win.pinned && win.pin_button.active[]
+        mouse!(at(0.6, 0.5))
+        key!(Keyboard.insert)
+        @test corner() ≈ c0 atol = 0.5
+
+        # minimized, it shows only its head, which is its handle; the inputs are kept
+        box = first(win.widget.boxes)
+        box.displayed_string[] = "33"
+        box.focused[] = true
+        size0 = size()
+        win.collapse_button.clicks[] += 1
+        @test win.collapsed && !win.body.shown && win.shown && win.tool.active[]
+        @test !box.focused[] && !GUI._typing(gui)
+        @test size()[2] < 60 && 150 < size()[1] < size0[1]
+        @test corner() ≈ c0 atol = 0.5
+        r = GUI._catalog_rect(win)
+        @test GUI._over_catalog_handle(win, Point2f(minimum(r) .+ Point2f(60, 4)))
+        @test all(b -> !b.blockscene.visible[], win.widget.boxes)
+        # the chevron expands it again
+        win.collapse_button.clicks[] += 1
+        @test !win.collapsed && win.body.shown && size() ≈ size0
+        @test all(b -> b.blockscene.visible[], win.widget.boxes)
+        @test first(GUI._catalog_strings(win.widget)) == "33"
+        # and so does the key
+        win.collapse_button.clicks[] += 1
+        @test win.collapsed
+        key!(Keyboard.insert)
+        @test !win.collapsed && win.pinned && size() ≈ size0
+        @test corner() ≈ c0 atol = 0.5
+
+        # unpinning closes it
+        win.pin_button.active[] = false
+        @test !win.pinned && !win.shown && win.docked == docks && !win.pin_button.active[]
+        # closed while pinned, it is a popup again
+        mouse!(p)
+        key!(Keyboard.insert)
+        win.pin_button.active[] = true
+        (docks ? win.dock_button : win.close_button).clicks[] += 1
+        @test !win.shown && !win.pinned && !win.pin_button.active[]
+        mouse!(at(0.5, 0.6))
+        key!(Keyboard.insert)
+        @test win.shown && !win.pinned
+        @test corner() ≈ at(0.5, 0.6) atol = 0.5
+        close(gui)
+    end
+
+    @testset "dock of the app layout" begin
+        gui, sys, m = _fixture(; layout = :app)
+        ev = events(gui.ax.scene)
+        layout = gui.layout
+        win = _window(gui)
+        d = win.dock
+        entries = gui.components.catalog
+        key!(key) = (ev.keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
+        mouse!(p) = (ev.mouseposition[] = (Float64(p[1]), Float64(p[2])))
+        view = Rect2f(Makie.viewport(gui.ax.scene)[])
+        p = Point2f(minimum(view) .+ Makie.widths(view) .* Point2f(0.3, 0.8))
+        corner() = (r = GUI._catalog_rect(win); Point2f(minimum(r)[1], maximum(r)[2]))
+        bbox(x) = Rect2f(x.layoutobservables.computedbbox[])
+        visible(widget) = [b.blockscene.visible[] for b in GUI._blocks!(Any[], widget.layout)]
+        # The widgets of the dock lie inside the sidebar, within its padding
+        function inside()
+            side, r = bbox(layout.left.grid), bbox(d.widget.layout)
+            return minimum(r)[1] >= minimum(side)[1] + GUI._SIDEBAR_PADDING - 0.5 &&
+                   maximum(r)[1] <= maximum(side)[1] - GUI._SIDEBAR_PADDING + 0.5
+        end
+
+        # docked and open at the start: the section "Components" of the left sidebar
+        @test win.docked && !win.shown && !d.collapsed && d.part.shown && win.tool.active[]
+        @test first.(layout.sections[:left]) == ["Objects", "Components"]
+        @test GUI._catalog_widget(win) === d.widget
+        @test GUI._catalog_widgets(win) == (win.widget, d.widget)
+        @test isempty(GUI._catalog_rects(gui)) && !GUI._over_catalog(gui)
+        @test all(visible(d.widget)) && inside()
+        # the buttons of the dock are in the title row of the section
+        title = bbox(d.float_button.box)
+        @test maximum(title)[1] < minimum(bbox(d.collapse_button.box))[1] + 1
+        @test minimum(title)[2] > maximum(bbox(d.widget.layout))[2] - 1
+
+        # icons without names in rows of five, the name of the one under the mouse
+        @test d.widget.style.tiles_per_row == 5 && isnothing(d.widget.style.tile_width)
+        @test win.widget.style.tiles_per_row == 4 && win.widget.style.tile_width == 86
+        curved = [e.name for e in entries if e.group == "Curved mirrors"]
+        _group!(gui, "Curved mirrors")
+        tiles = last.(d.widget.tile_buttons)
+        @test length(tiles) == length(curved) > 5
+        @test all(t -> isempty(t.label[]), tiles)
+        rects = [Rect2f(t.box.layoutobservables.computedbbox[]) for t in tiles]
+        @test minimum(rects[5])[2] ≈ minimum(rects[1])[2] && minimum(rects[5])[1] > minimum(rects[4])[1]
+        @test minimum(rects[6])[2] < minimum(rects[1])[2] && minimum(rects[6])[1] ≈ minimum(rects[1])[1]
+        @test d.widget.entry_label.text[] == curved[1]
+        tiles[3].hovered[] = true
+        @test d.widget.entry_label.text[] == curved[3] && _active(d.widget) == [curved[1]]
+        tiles[3].hovered[] = false
+        @test d.widget.entry_label.text[] == curved[1]
+        @test inside()
+
+        # the form in one column, the box of a constant glass below its menu
+        _choose!(gui, "Triplet")
+        _tick!(gui)
+        @test length(d.widget.boxes) == 8 && length(d.widget.menus) == 3
+        @test allequal(round(minimum(bbox(b))[1]) for b in d.widget.boxes)
+        @test inside()
+        menu = first(d.widget.menus)
+        menu.i_selected[] = length(menu.options[])
+        _tick!(gui)
+        @test length(d.widget.boxes) == 9 && inside()
+        constant = last(d.widget.boxes)
+        @test maximum(bbox(constant))[2] < minimum(bbox(first(d.widget.menus)))[2] + 1
+        first(d.widget.boxes).displayed_string[] = "61"
+        strings = GUI._catalog_strings(d.widget)
+        @test strings[1] == "61" && strings[9] == "1.5" && strings[10] == "N-SF5"
+
+        # the float button: the window, pinned, shows the same; the dock keeps its title
+        d.float_button.clicks[] += 1
+        @test !win.docked && win.shown && win.pinned && win.pin_button.active[]
+        @test !d.part.shown && !any(visible(d.widget)) && win.tool.active[]
+        @test GUI._catalog_widget(win) === win.widget
+        @test GUI._catalog_strings(win.widget) == strings
+        @test win.widget.group == d.widget.group && _active(win.widget) == ["Triplet"]
+        @test GUI._catalog_rects(gui) == [GUI._catalog_rect(win)]
+        @test length(win.widget.boxes) == 9
+        # "Place" of the window places with its values; pinned, it stays
+        first(win.widget.boxes).displayed_string[] = "62"
+        win.widget.place.clicks[] += 1
+        @test GUI._placing(gui)
+        @test startswith(gui.components.placement.origin.code, "SphericalTripletLens(0.062, ")
+        GUI._drop_placement!(gui)
+        @test length(sys.objects) == 2 && win.shown
+
+        # the dock button of the window: back, with what the window showed
+        win.widget.group_buttons[2].clicks[] += 1
+        win.dock_button.clicks[] += 1
+        @test win.docked && !win.shown && !win.pinned && d.part.shown && all(visible(d.widget))
+        @test isempty(GUI._catalog_rects(gui)) && win.tool.active[]
+        @test d.widget.group == 2 && _tiles(d.widget) == _tiles(win.widget)
+        @test _active(d.widget) == _active(win.widget) && inside()
+        @test GUI._catalog_strings(d.widget) == GUI._catalog_strings(win.widget)
+
+        # minimized by its chevron and by the toggle of the layout
+        d.collapse_button.clicks[] += 1
+        @test d.collapsed && !d.part.shown && !any(visible(d.widget)) && !win.tool.active[]
+        win.tool.active[] = true
+        @test !d.collapsed && d.part.shown && all(visible(d.widget))
+        win.tool.active[] = false
+        @test d.collapsed && win.docked
+
+        # the key Insert: a popup at the mouse, which is docked again once a component was
+        # dropped, minimized as before
+        mouse!(p)
+        key!(Keyboard.insert)
+        @test win.shown && !win.pinned && !win.docked && win.tool.active[]
+        @test corner() ≈ p atol = 0.5
+        win.widget.place.clicks[] += 1
+        GUI._drop_placement!(gui)
+        @test length(sys.objects) == 3
+        @test win.docked && !win.shown && d.collapsed && !d.part.shown && !win.tool.active[]
+
+        # while the catalog floats, both buttons of the dock bring it back
+        d.float_button.clicks[] += 1
+        @test !win.docked && win.shown && win.pinned
+        d.collapse_button.clicks[] += 1
+        @test win.docked && !d.collapsed && d.part.shown
+        d.float_button.clicks[] += 1
+        d.float_button.clicks[] += 1
+        @test win.docked && !win.shown && d.part.shown
+
+        # with the sidebar collapsed, the catalog is docked without showing it
+        layout.collapse.left.active[] = false
+        @test !layout.left.shown
+        mouse!(p)
+        key!(Keyboard.insert)
+        @test win.shown
+        win.widget.group_buttons[4].clicks[] += 1
+        win.widget.place.clicks[] += 1
+        GUI._drop_placement!(gui)
+        @test win.docked && !layout.left.shown && !any(visible(d.widget))
+        @test d.widget.group == 4 && _tiles(d.widget) == _tiles(win.widget)
+        # its toggle shows the sidebar
+        win.tool.active[] = false
+        @test d.collapsed && !layout.left.shown
+        win.tool.active[] = true
+        @test layout.left.shown && layout.collapse.left.active[] && d.part.shown
+        @test all(visible(d.widget)) && inside()
+        close(gui)
+
+        # the compact layout has no dock
+        gui, _ = _fixture(; layout = :compact)
+        win = _window(gui)
+        @test isnothing(win.dock) && isnothing(win.dock_button) && !win.docked
+        @test isnothing(GUI._catalog_dock_slot!(gui, "Components"))
+        @test GUI._catalog_widgets(win) == (win.widget,)
         close(gui)
     end
 
