@@ -23,6 +23,7 @@ mode, which is switched with `m`:
 |:----------------------------------------|:------------------------------|:------------------------------|
 | Left-click on a component               | Select it                     | Select it                     |
 | Left-drag on the selected component     | Move in the plane of the view | Rotate around the blue axis   |
+| Left-drag on a ring                     |                               | Rotate around that ring       |
 | Left-drag elsewhere                     | Rotate the camera             | Rotate the camera             |
 | `↑` / `↓`                               | Move along the green arrow    | Rotate around the red ring    |
 | `→` / `←`                               | Move along the red arrow      | Rotate around the blue ring   |
@@ -52,7 +53,11 @@ local x-axis (red) and the vertical rotation axis (blue). If a local axis is par
 rotation axis, e.g. the local x-axis of a `CollimatedSource` along +y, the axis perpendicular to
 the other two takes its place, such that the component can be moved in all directions. In the move mode the axes are shown as
 arrows, in the rotate mode as rings. The first key of each pair moves the component in the
-direction of the arrow, or rotates it in the direction of the ring. The current mode and step
+direction of the arrow, or rotates it in the direction of the ring. In the rotate mode, a drag on
+a ring (the ring under the cursor is highlighted) rotates the component around that ring, through
+its position: the angle follows the cursor around the ring, or, if the ring is seen edge-on, the
+movement of the cursor along it. This tilts a component out of the plane of the table with the
+mouse. Locked rings, see `constraints` below, can not be dragged. The current mode and step
 size are shown in the hint line at the top of the 3D view.
 
 Clicking a component inside an `ObjectGroup` selects the outermost group first. Clicking the same

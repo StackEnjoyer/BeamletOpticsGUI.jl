@@ -189,8 +189,9 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["↑", "↓"], along(up); color = up),
             _HelpEntry(["←", "→"], along(left); color = left),
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
-            _HelpEntry([:mouse => "drag"], !move ? "rotate around the blue ring" :
-                                            view_plane ? "move in the plane of the view" : "move in the plane";
+            _HelpEntry([:mouse => "drag"],
+                !move ? "rotate around the ring you grab, else the blue ring" :
+                view_plane ? "move in the plane of the view" : "move in the plane";
                 color = move ? "" : "blue"),
             _HelpEntry(["+", "−"], "keyboard step, now $step"),
             _HelpEntry(["Shift"], "with a key: 10× step"),
@@ -271,6 +272,22 @@ const _AXES_SYMS = (:y, :x, :v)
 const _GIZMO_AXES = (:x, :y, :v)
 const _GIZMO_FADE_ALPHA = 0.15
 const _RING_RES = 32
+# Pick radius of the rings [px], share of white of the ring under the cursor, and the smallest
+# cosine of the angle between the view and the axis of a ring below which its plane is seen edge-on
+const _RING_PICK_RADIUS = 8.0
+const _RING_HOVER_BRIGHTEN = 0.55
+const _RING_EDGE_ON = 0.15
+
+"""
+    _ring_basis(a) -> (e1, e2)
+
+The unit vectors of the plane of the ring around the unit vector `a`: `a`, `e1`, `e2` are a
+right-handed frame, i.e. the ring runs counterclockwise about `a` from `e1` to `e2`.
+"""
+function _ring_basis(a)
+    e1 = normalize(cross(a, abs(a[1]) < 0.9 ? [1, 0, 0] : [0, 1, 0]))
+    return e1, cross(a, e1)
+end
 
 """
     _gizmo(mode, origin, axes, l)
@@ -286,8 +303,7 @@ function _gizmo(mode::Symbol, origin, axes, l)
     label_pos = Point3f[]
     ring_pts = Point3f[]
     for a in axes
-        e1 = normalize(cross(a, abs(a[1]) < 0.9 ? [1, 0, 0] : [0, 1, 0]))
-        e2 = cross(a, e1)
+        e1, e2 = _ring_basis(a)
         ts = LinRange(0, 1.5π, _RING_RES + 1)
         for i in 1:_RING_RES
             push!(ring_pts, Point3f(origin + r * (cos(ts[i]) * e1 + sin(ts[i]) * e2)))
@@ -306,6 +322,22 @@ function _gizmo(mode::Symbol, origin, axes, l)
         end
     end
     return arrow_pos, arrow_dir, label_pos, ring_pts
+end
+
+"""
+    _RingDrag
+
+The state of a mouse drag on a ring of the gizmo in the rotate mode: the `sym` (`:x`, `:y` or `:v`)
+and the unit vector `axis` of the ring, which stay fixed during the drag, the angle `θ` [rad] of the
+cursor on the plane of the ring at the last step (`nothing` if it was seen edge-on), and the
+`tangent` of the ring at the press, a unit vector in pixels, which turns the movement of the cursor
+into an angle if the plane is seen edge-on.
+"""
+mutable struct _RingDrag
+    sym::Symbol
+    axis::Vector{Float64}
+    θ::Union{Nothing, Float64}
+    tangent::NTuple{2, Float64}
 end
 
 """One entry of the undo history of [`kinematic_controls!`](@ref): the pose of `obj` before and
@@ -423,6 +455,12 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     drag_angle::Float64
     drag_applied::Float64
     drag_beam_angle::Union{Nothing, Float64}
+    # center of the gizmo, i.e. of its rings [m], set by `_update_selection_box!`
+    gizmo_origin::Vector{Float64}
+    # the ring (`:x`, `:y` or `:v`) under the cursor, highlighted, see `_update_hover!`, or `nothing`
+    ring_hover::Union{Nothing, Symbol}
+    # the drag of a ring in the rotate mode, from its press to its release, see `_pick_ring`
+    ring::Union{Nothing, _RingDrag}
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -591,6 +629,20 @@ function _gizmo_colors(ctrl::KinematicController, obj, kind::Symbol)
     return colors
 end
 
+"""Returns the colors of the line segments of the rings for the `colors` of the axes: the ring under
+the cursor, see `ctrl.ring_hover`, is brighter."""
+function _ring_colors(ctrl::KinematicController, colors)
+    out = repeat(colors; inner = 2 * _RING_RES)
+    i = findfirst(==(ctrl.ring_hover), _AXES_SYMS)
+    isnothing(i) && return out
+    for k in ((i - 1) * 2 * _RING_RES + 1):(i * 2 * _RING_RES)
+        c = out[k]
+        out[k] = Makie.RGBAf(c.r + _RING_HOVER_BRIGHTEN * (1 - c.r), c.g + _RING_HOVER_BRIGHTEN * (1 - c.g),
+            c.b + _RING_HOVER_BRIGHTEN * (1 - c.b), c.alpha)
+    end
+    return out
+end
+
 _help_sections(ctrl::KinematicController) = _merge_sections(
     _help_sections(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
         ctrl.click_help, spectator = ctrl.spectator[], view_plane = isnothing(ctrl.plane_normal)),
@@ -672,6 +724,7 @@ function _update_selection_box!(ctrl::KinematicController)
     if isempty(plots)
         isempty(ctrl.box_obs[]) || (empty!(ctrl.box_obs[]); notify(ctrl.box_obs))
         ctrl.gizmo_visible[] && (ctrl.gizmo_visible[] = false)
+        ctrl.ring_hover = nothing
         return nothing
     end
     bb = _selection_bbox(ctrl, obj, plots)
@@ -683,6 +736,7 @@ function _update_selection_box!(ctrl::KinematicController)
     offset = ctrl.mode[] == :move ? 0.3 * l : 1.4 * l
     origin = Vector{Float64}(position(obj)) + (dot(abs.(v), w) / 2 + offset) * v
     arrow_pos, arrow_dir, label_pos, ring_pts = _gizmo(ctrl.mode[], origin, _control_axes(ctrl, obj), l)
+    ctrl.gizmo_origin = origin
     ctrl.arrow_pos.val = arrow_pos
     ctrl.arrow_dir.val = arrow_dir
     ctrl.label_pos.val = label_pos
@@ -691,7 +745,8 @@ function _update_selection_box!(ctrl::KinematicController)
     colors = _gizmo_colors(ctrl, obj, ctrl.mode[])
     ctrl.arrow_color.val = colors
     ctrl.label_color.val = colors
-    ctrl.ring_color.val = repeat(colors; inner = 2 * _RING_RES)
+    ctrl.mode[] == :rotate || (ctrl.ring_hover = nothing)
+    ctrl.ring_color.val = _ring_colors(ctrl, colors)
     foreach(notify, (ctrl.gizmo_size, ctrl.arrow_pos, ctrl.arrow_dir, ctrl.label_pos, ctrl.ring_pts,
         ctrl.arrow_color, ctrl.label_color, ctrl.ring_color))
     ctrl.gizmo_visible[] || (ctrl.gizmo_visible[] = true)
@@ -1002,6 +1057,7 @@ function _set_spectator!(ctrl::KinematicController, on::Bool)
         ctrl.dragging = false
         ctrl.press_kind = :none
         ctrl.drag_start = nothing
+        ctrl.ring = nothing
         ctrl.last_key_step = nothing
         ctrl.selected[] = nothing
         _update_selection_box!(ctrl)
@@ -1060,6 +1116,73 @@ function _mouse_plane_hit(scene, ctrl::KinematicController)
 end
 
 _default_pick(ax) = Makie.pick(Makie.get_scene(ax))
+
+"""
+    _pick_ring(ctrl, scene) -> Union{Nothing, Tuple{Symbol, NTuple{2, Float64}}}
+
+Returns the ring of the gizmo under the cursor in the rotate mode as `(sym, tangent)`, or `nothing`:
+the unlocked ring (see `constraints`) whose polyline is nearest to the cursor in pixels, within
+`_RING_PICK_RADIUS`. `sym` is `:x`, `:y` or `:v`, `tangent` is the unit vector in pixels along the
+positive direction of rotation at the nearest point, `(1, 0)` if the ring is seen end-on there.
+"""
+function _pick_ring(ctrl::KinematicController, scene)
+    obj = ctrl.selected[]
+    (ctrl.mode[] == :rotate && ctrl.gizmo_visible[] && !isnothing(obj)) || return nothing
+    origin, dir = _cursor_ray(scene)
+    cursor = _px(scene)
+    allowed = _allowed_axes(ctrl, obj, :rotate)
+    best, dmin = nothing, _RING_PICK_RADIUS
+    n = 2 * _RING_RES
+    for (i, sym) in enumerate(_AXES_SYMS)
+        sym in allowed || continue
+        for k in 1:2:n
+            a, b = ctrl.ring_pts[][(i - 1) * n + k], ctrl.ring_pts[][(i - 1) * n + k + 1]
+            # Segments behind the camera are not visible
+            (dot(a .- origin, dir) > 0 && dot(b .- origin, dir) > 0) || continue
+            pa = Makie.project(scene, :data, :pixel, Point3(a))
+            pb = Makie.project(scene, :data, :pixel, Point3(b))
+            d = _point_segment_distance(cursor, pa, pb)
+            if d < dmin
+                t = (pb[1] - pa[1], pb[2] - pa[2])
+                L = hypot(t...)
+                best, dmin = (sym, L > 1e-3 ? t ./ L : (1.0, 0.0)), d
+            end
+        end
+    end
+    return best
+end
+
+"""
+    _ring_angle(scene, center, axis) -> Union{Nothing, Float64}
+
+Returns the angle [rad] about the unit vector `axis` of the point of the plane through `center`
+perpendicular to `axis` under the cursor, counted from `_ring_basis(axis)`, i.e. the angle on a
+ring around `axis` with the center `center`; `nothing` if the plane is seen edge-on (see
+`_RING_EDGE_ON`), where the point is not defined well.
+"""
+function _ring_angle(scene, center, axis)
+    origin, dir = _cursor_ray(scene)
+    abs(dot(normalize(dir), axis)) < _RING_EDGE_ON && return nothing
+    hit = _ray_plane_intersect(origin, dir, center, axis)
+    isnothing(hit) && return nothing
+    e1, e2 = _ring_basis(axis)
+    d = hit .- center
+    return atan(dot(d, e2), dot(d, e1))
+end
+
+"""Highlights the ring under the cursor, see `ctrl.ring_hover`, if the mouse is not busy otherwise."""
+function _update_hover!(ctrl::KinematicController, scene)
+    pick = ctrl.spectator[] || ctrl.ignore_mouse() ||
+           (!isnothing(ctrl.select_modifier) && !_modifier_held(scene, ctrl.select_modifier)) ?
+           nothing : _pick_ring(ctrl, scene)
+    sym = isnothing(pick) ? nothing : first(pick)
+    sym === ctrl.ring_hover && return nothing
+    ctrl.ring_hover = sym
+    obj = ctrl.selected[]
+    isnothing(obj) && return nothing
+    ctrl.ring_color[] = _ring_colors(ctrl, _gizmo_colors(ctrl, obj, ctrl.mode[]))
+    return nothing
+end
 
 """
     _ray_box(origin, dir, bb)
@@ -1185,6 +1308,13 @@ A click selects, a drag moves only what is already selected, every other drag ro
   `plane_normal`, it moves within that plane instead; or rotates it around the `rotation_axis` in the rotate mode. If the exact point under the
   cursor is not known (a custom `pick` function, or the `Makie.pick` fallback), the object's
   `position` is used instead
+- left-drag on a ring of the gizmo (rotate mode, only unlocked rings): rotates the selected object
+  around the axis of that ring through its `position`, i.e. its `position` stays, groups turn
+  around their `position`. The angle follows the cursor around the ring (the angle between the
+  press and the cursor on the plane of the ring); if the ring is seen almost edge-on, the movement
+  of the cursor along the ring is turned into an angle with `rotate_speed` instead. The ring
+  within about 8 px of the cursor (the nearest one) is highlighted and is grabbed, before the
+  object itself is. The drag is one entry of the undo history, a click on a ring does nothing
 - left-drag elsewhere (background or an unselected object): rotates the camera as usual
 - left-click on empty space: deselects the current object
 
@@ -1355,7 +1485,8 @@ function kinematic_controls!(
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
-        Observable(:off), (obj, point) -> nothing, 0, 0.0, 0.0, nothing
+        Observable(:off), (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
+        center, nothing, nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1370,6 +1501,18 @@ function kinematic_controls!(
             if !isnothing(ctrl.select_modifier) && !_modifier_held(scene, ctrl.select_modifier)
                 # Modifier not held: every click and drag goes to the camera, no state change
                 return Consume(false)
+            end
+            ring = _pick_ring(ctrl, scene)
+            if !isnothing(ring)
+                # A drag on a ring of the gizmo rotates the selection around it, a click does nothing
+                sym, tangent = ring
+                obj = ctrl.selected[]
+                axis = only(_axis_vectors(ctrl, obj, (sym,)))
+                ctrl.press_pos = ctrl.last_mouse = _px(scene)
+                ctrl.press_leaf = nothing
+                ctrl.press_kind = :pending_ring
+                ctrl.ring = _RingDrag(sym, axis, _ring_angle(scene, ctrl.gizmo_origin, axis), tangent)
+                return Consume(true)
             end
             local t
             if pick === nothing
@@ -1434,6 +1577,8 @@ function kinematic_controls!(
                     ctrl.last_key_step = nothing
                     _push_history!(ctrl, obj, P0, R0, P1, R1)
                 end
+            elseif kind == :pending_ring
+                consume = true
             elseif kind == :pending_drag
                 # Released before crossing the threshold: a click, not a drag
                 moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
@@ -1450,6 +1595,7 @@ function kinematic_controls!(
             ctrl.press_kind = :none
             ctrl.press_leaf = nothing
             ctrl.press_pos = nothing
+            ctrl.ring = nothing
             return Consume(consume)
         end
         return Consume(false)
@@ -1457,16 +1603,36 @@ function kinematic_controls!(
 
     l2 = on(events(scene).mouseposition, priority = 200) do _
         if !ctrl.dragging
-            ctrl.press_kind == :pending_drag || return Consume(false)
+            if !(ctrl.press_kind in (:pending_drag, :pending_ring))
+                _update_hover!(ctrl, scene)
+                return Consume(false)
+            end
             cur = _px(scene)
             moved = hypot((cur .- ctrl.press_pos)...)
             moved >= ctrl.drag_threshold || return Consume(true)
             ctrl.dragging = true
             ctrl.drag_start = _pose(ctrl.selected[])
             _start_snap!(ctrl, ctrl.selected[])
+            # The snapping to beams is of the rotation around the rotation axis
+            !isnothing(ctrl.ring) && ctrl.ring.sym != :v && (ctrl.drag_beam_angle = nothing)
         end
         obj = ctrl.selected[]
-        if ctrl.mode[] == :move
+        if !isnothing(ctrl.ring)
+            ring = ctrl.ring
+            mp = _px(scene)
+            Δ = (mp[1] - ctrl.last_mouse[1], mp[2] - ctrl.last_mouse[2])
+            ctrl.last_mouse = mp
+            θ = _ring_angle(scene, ctrl.gizmo_origin, ring.axis)
+            # The cursor follows the ring, or, if its plane is seen edge-on, moves along it
+            δ = isnothing(θ) || isnothing(ring.θ) ? ctrl.rotate_speed * (Δ[1] * ring.tangent[1] + Δ[2] * ring.tangent[2]) :
+                mod(θ - ring.θ + π, 2π) - π
+            ring.θ = θ
+            δ = ring.sym == :v ? _snap_rotation!(ctrl, δ) : δ
+            if δ != 0
+                _change!(() -> rotate3d!(obj, ring.axis, δ), ctrl, obj)
+                _request_update!(ctrl)
+            end
+        elseif ctrl.mode[] == :move
             hit = _mouse_plane_hit(scene, ctrl)
             if !isnothing(hit)
                 target = hit .+ ctrl.grab_offset
