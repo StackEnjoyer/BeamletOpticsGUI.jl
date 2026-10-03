@@ -73,7 +73,8 @@ and optionally, with defaults for any layout,
 
 - `_figure(layout::L, size)`: the `Figure`, and `_default_size(layout::L)`: its size unless given
 - `_connect_layout!(gui::LiveView{L})`: connects the widgets that only the layout has, e.g.
-  collapsing; its listeners belong in `gui.controls.listeners`
+  collapsing; its listeners belong in `gui.controls.listeners`; `_close_layout!(gui)` stops what
+  runs besides them when the view is closed, e.g. timers
 - where the controls of the selected object are shown, i.e. the widgets that
   [`card_actions`](@ref) and [`card_rows`](@ref) declare, built by the same code for any host (see
   `_AbstractCard`): by default on the floating card next to the object (`_ComponentCard`), which
@@ -100,8 +101,9 @@ and optionally, with defaults for any layout,
 - hooks called by the shared logic: `_on_solved!(gui)` after a solve is shown,
   `_on_selected!(gui)` after the selection changed, `_on_clipping!(gui)` after clipping was
   switched, `_on_clip_planes_changed!(gui)` after a clip plane was added or removed,
-  `_on_hidden!(gui)` after objects were hidden or shown and `_on_pinned!(gui)` after a card was
-  pinned or unpinned
+  `_on_hidden!(gui)` after objects were hidden or shown, `_on_pinned!(gui)` after a card was
+  pinned or unpinned and `_on_components_changed!(gui)` after a component was added to or removed
+  from a system, see [`add_component!`](@ref)
 - the pages of the cards (see `_card_pages`), which every host of a card shows, and the detector
   views on the page "Results" (see `_DetectorView`): the views of the floating cards are known to
   the shared logic, a layout that shows views elsewhere, e.g. on its docked cards, returns them from
@@ -116,6 +118,9 @@ and optionally, with defaults for any layout,
 - slots for additional parts: `_add_toolbar_entry!(gui, group)`, `_add_sidebar_section!(gui,
   side, title)` and `_add_dock_panel!(gui, title)`, which return the `GridPosition` or
   `GridLayout` to place widgets in, see `AppLayout`
+- `_catalog_dock_slot!(gui, title)`: the place in which the component catalog is docked, e.g. a
+  section of a sidebar; `nothing` by default, then the catalog is a window over the 3D view only,
+  see `_CatalogWindow`
 - the places of the public customization API (see `LiveCustom.jl`), without which it throws for
   the layout: `_add_user_panel!(f, gui, title, select)` for [`add_panel!`](@ref),
   `_controls_slot!(gui, title)` for [`add_controls!`](@ref) and `_tool_widget` (see "Tools")
@@ -274,13 +279,15 @@ Cards of a `LiveView`: the card of the `selection` next to the selected object, 
 rows and actions declared for it (see [`card_rows`](@ref)); `all` cards, including the pinned
 ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`); the
 selection card of groups (`browse`, a `_BrowseCard`, see `_browse!`), `nothing` until it is
-connected.
+connected; `settle` holds the row layouts of cards whose widgets were just built, with the clock
+time of the build, until their boxes were moved once, see `_settle_cards!`.
 """
 Base.@kwdef mutable struct _CardState
     selection::_ComponentCard
     all::Vector{_ComponentCard} = [selection]
     shield::Vector{Any} = Any[]
     browse::Any = nothing
+    settle::Vector{Tuple{Float64, Vector{GridLayout}}} = Tuple{Float64, Vector{GridLayout}}[]
 end
 
 """
@@ -313,21 +320,67 @@ end
     _BeamState
 
 The beams of a `LiveView` (the objects `last.(gui.pairs)`) as their cards switch them: the beams
-that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the handles of its
+that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the `kwargs` of
+`live_render!` of its handle in `gui.beam_handles` besides the style of the layout, with which it
+is rendered again for another length of its final rays (see `_set_flen!`); the handles of its
 overlays, the polarization curve in `pol` (see `_set_polarization!`) and the generating beams of a
 Gaussian beamlet in `gen` (see `_set_generating_beams!`), and the kwargs of `live_render!` of the
 overlays in `overlay_kwargs`, taken from the `beam_kwargs` of `live_view` without `render_every`,
 including the initial `show_polarization` and `show_beams`. `shown` holds per overlay handle the
 plots that are visible while the beam is on, the others stay hidden; `pol_view` per beam the
-values of the sliders of its polarization curve, see `_pol_view`.
+values of the sliders of its polarization curve, see `_pol_view`. `marker_size` is the length [m] of
+the arrow of the markers of the sources, also of those that are added later.
 """
 Base.@kwdef struct _BeamState
     off::Base.IdSet{Any} = Base.IdSet{Any}()
+    kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
     pol::IdDict{Any, Any} = IdDict{Any, Any}()
     gen::IdDict{Any, Any} = IdDict{Any, Any}()
     overlay_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
     shown::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
     pol_view::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+    marker_size::Base.RefValue{Float64} = Ref(0.01)
+end
+
+"""
+    _ComponentState
+
+The components that were added to and removed from the systems of a `LiveView` at runtime, see
+[`add_component!`](@ref) and [`remove_component!`](@ref): the `render_kwargs` of `live_render!` of
+the systems, with which added components are rendered; the `catalog` of the view (see
+[`component_catalog`](@ref)); the `added` components that are still part of a system and the
+`removed` ones that the view started with, both in the order of the calls, with the `system` of
+each; sources are added and removed like components, the `system` of an added one is the system it
+is traced through, and a removed source of the start has its systems in `source_systems`;
+`target` is the system that was chosen in the menu "into" of the catalog, which holds while the
+shown object is `target_shown`, see `_catalog_target`; the
+`origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
+its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
+is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
+likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
+`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
+"""
+Base.@kwdef mutable struct _ComponentState
+    const render_kwargs::NamedTuple
+    const catalog::Vector{CatalogEntry}
+    const added::Vector{Any} = Any[]
+    const removed::Vector{Any} = Any[]
+    const system::IdDict{Any, Any} = IdDict{Any, Any}()
+    const origin::IdDict{Any, Any} = IdDict{Any, Any}()
+    const source_systems::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the system chosen in the menu "into" of the catalog and the object that was shown then
+    target::Any = nothing
+    target_shown::Any = nothing
+    # `false` while an action of the undo history adds or removes, see `_unrecorded`
+    recording::Bool = true
+    # the inputs of the page "Edit" of an object that are not applied yet, see `_edit_strings`
+    const edits::IdDict{Any, Vector{String}} = IdDict{Any, Vector{String}}()
+    placement::Any = nothing
+    # the source that is being aimed with the mouse, see `_start_aim!`
+    aim::Any = nothing
+    # the optical table of the view (a `_Table`), see `_set_table!`
+    table::Any = nothing
+    window::Any = nothing
 end
 
 """
@@ -408,7 +461,8 @@ remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
 (`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
-`objects` (`_ObjectState`), `beams` (`_BeamState`) and `detectors` (`_DetectorStates`); the widgets that the layout creates are in `widgets`
+`objects` (`_ObjectState`), `beams` (`_BeamState`), `detectors` (`_DetectorStates`) and `components`
+(`_ComponentState`); the widgets that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. The
 objects of the `extras` kwarg are rendered, selectable and movable, but not part of any system,
@@ -442,6 +496,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     objects::_ObjectState
     beams::_BeamState = _BeamState()
     detectors::_DetectorStates = _DetectorStates()
+    components::_ComponentState
     background_card::Any = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
@@ -450,6 +505,12 @@ end
 
 # Infers the layout type like the constructor of a non-parametric type
 LiveView(fields...) = LiveView{typeof(last(fields))}(fields...)
+
+"""
+The systems of the `gui` in the order in which they are rendered: those of its pairs and those
+without a source, see `live_view`.
+"""
+_systems(gui::LiveView) = BMO.AbstractSystem[rendered(h) for h in gui.system_handles]
 
 
 """
@@ -479,12 +540,14 @@ function Base.display(gui::LiveView; screen_config...)
 end
 
 function Base.show(io::IO, gui::LiveView)
-    print(io, "LiveView(", length(gui.pairs), " systems, ", length(_find_detectors(first.(gui.pairs))),
-        " detectors)")
+    print(io, "LiveView(", length(gui.system_handles), " systems, ", length(_sources(gui)),
+        " sources, ", length(_find_detectors(_systems(gui))), " detectors)")
 end
 
 function Base.close(gui::LiveView)
     _cancel_solve!(gui)
+    _end_placement!(gui)
+    _close_layout!(gui)
     close(gui.controls)
     isnothing(gui.widgets.view_cube) || close(gui.widgets.view_cube)
     foreach(_hide_card!, gui.cards.all)
@@ -500,11 +563,21 @@ function _log_once(e, last_error, source::String)
     return msg
 end
 
+# What `live_view` shows: a system with one of its sources, or a system without a source
+const _ViewArg = Union{BMO.AbstractSystem, Pair{<:BMO.AbstractSystem}}
+_view_system(sys::BMO.AbstractSystem) = sys
+_view_system(p::Pair) = p.first
+
+# The status line of a view without a source
+const _NO_SOURCE = "no source, add one from the catalog or with add_component!"
+
 """
     live_view(system => beam, ...; kwargs...)
     live_view(system, beam; kwargs...)
+    live_view(system, ...; kwargs...)
 
-Opens a complete interactive window for one or several pairs of `system` and `beam`. All systems
+Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
+without a source, which get their sources at runtime (see "Adding and removing components"). All systems
 and beams are live-rendered into the same `LScene`, see [`live_render!`](@ref), and can be moved
 with the [`kinematic_controls!`](@ref). After each change, all `Detector`s are emptied, all systems
 are solved again and the beams and the shown detector views are updated. Returns a `LiveView` with
@@ -535,6 +608,11 @@ object and its actions:
 Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of the object,
 "Properties" with its properties (see [`properties`](@ref), the same rows as in the inspector of
 the app layout) and, for a `Detector`, "Results" with its view between them, see "Detector view".
+The card of a source (a beam, a beam group or a Gaussian beamlet) has the page "Color": a menu of
+colors ("wavelength" for the color of its wavelength, in which every source starts, "layout" for
+the color of the layout, or a fixed color), a box for any color as a hex value such as `#ff8000` or
+by its name, and sliders for the opacity and the line width. They only change how the source is
+drawn: nothing is traced again.
 A card with a single page, e.g. of an inspected point, has no page bar. A card opens on "Results"
 for a detector and on "Pose" for any other object; a pinned card keeps its page.
 
@@ -772,7 +850,7 @@ its normal is the green axis. Moving a plane does not solve the systems. The key
 | key       | action                                   |
 |:----------|:-----------------------------------------|
 | `p`       | add a clip plane and select it           |
-| `Delete`  | remove the selected clip plane           |
+| `Delete`  | remove the selected clip plane (or the selected component, see "Adding and removing components") |
 | `c`       | switch clipping on or off (all planes)   |
 | `Shift+c` | flip the selected clip plane             |
 
@@ -790,7 +868,8 @@ actions in the 3D view are unchanged:
 - toolbar (icons with tooltips): trace and auto trace, home, fit (`g`), views, save view,
   orthographic, clipping (`c`), clip beams, sources (`1`), measure, export, the toggles of the
   sidebars and the dock
-- left sidebar: the object tree and, below it, the sliders ("Parameters"). The tree lists each
+- left sidebar: the object tree and, below it, the sliders ("Parameters") and the catalog
+  ("Components", see "Adding and removing components"). The tree lists each
   system with its objects (groups with their objects, collapsed by default), then the `extras`
   under "Extras", the sources and the clip planes. A click on a name selects the object like a click in the 3D view, and a
   selection in the 3D view highlights its row. The eye hides or shows an object, a group or a
@@ -866,6 +945,110 @@ toggle, optionally with a key (an entry of the tool rail, or an icon in the tool
 Widgets of a thing in the scene belong on its card, see [`card_rows`](@ref), own widget types on
 cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 
+# Adding and removing components
+
+The components of a `System` of the view and its sources can be changed at runtime, e.g. to build
+a setup from an empty `System()`, also without a source (`live_view(System())`); a `StaticSystem`
+can not be changed. The catalog "Components"
+offers the sources and components of the `catalog` kwarg, see [`component_catalog`](@ref): the icons at its top
+select a group, e.g. the sources or the lenses, the tiles below an entry of the group, e.g. a doublet. The
+boxes of the form take its numbers, e.g. the radii of a lens [mm], and a menu selects its glass
+among those of [`catalog_glasses`](@ref) or "constant", for which a box takes a constant refractive
+index. "Place" attaches the component to the mouse. An input that is no number, or that the
+constructor of the component rejects, is reported in the status line. The line "into" names the
+system that gets the component: the system of the selected or inspected object, else the first
+one. In a view with several systems it is a menu of the systems, which chooses another one; the
+choice holds until another object is selected, which sets the system again.
+
+The catalog is a window over the 3D view with the head of a card. The key `Insert` opens it with
+its top left corner at the mouse, as a popup: it closes when the component was dropped. Its pin
+keeps it open at its place, and unpinning closes it. Its chevron minimizes it to its head, a drag
+at its head moves it; it stays inside the 3D view. The toggle "Components" among the tools (tool
+rail or toolbar) opens and closes the catalog.
+
+- `layout = :compact`: the catalog is closed at first, and its window has a close button.
+- `layout = :app`: the catalog is docked in the section "Components" of the left sidebar, below the
+  object tree, and open at first; there its entries are icons, the one under the mouse is named
+  below them. The buttons at the title of the section move it into its window over the 3D view
+  (pinned) and minimize it. The window has a dock button instead of the close button, and closing
+  it docks the catalog again; `Insert` shows it as a popup at the mouse, which is docked again
+  after the drop. The sidebar does not scroll: in a low window, minimize the catalog or move it
+  into its window.
+
+The component then follows the mouse, drawn at half of its opacity, on the plane of the view
+through the first source of its system (or the plane with the `plane_normal` of the controls), in
+the orientation in which it was constructed: seen from above, it is placed at the height of the
+beam. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
+local y-axis as constructed) along the beam. Of a beam group, e.g. a `CollimatedSource`, it snaps
+only onto the central beam, and of a Gaussian beamlet onto its chief ray. A left click drops it:
+it becomes part of its system, i.e. the system that the line "into" named when "Place" was
+pressed, all beams of that system are traced through it,
+and it is selected. `Esc` cancels the placement. Meanwhile the component is not traced, a drag
+still moves the camera, and a click selects nothing.
+
+A source of the group "Sources" (a beam, a Gaussian beamlet, a collimated or a point source) is
+placed by its marker in the same way. It does not snap onto beams and points along +y, as it is
+constructed; turn it with the controls afterwards. Its beam is traced through the system that the
+line "into" names, which may be a `StaticSystem`, once it is dropped, and drawn in the color of its
+wavelength (a dark red for infrared, a dark violet for ultraviolet light). Placing a source shows
+the markers of the sources if they were hidden.
+
+The button "remove" below the rows of the card of a component or a source, or the key `Delete`
+while it is selected, removes it: a component from its system, a source from the view, also the
+last one. An object of a group and an extra can not be
+removed: they are kept, and the status line names the reason. Adding and removing are part of the
+undo history: `Ctrl+Z` takes them back, `Ctrl+Y` does them again. A component or source from the
+catalog has the page "Edit" on its card, the form of its entry: "Apply", or Enter in a box,
+builds it again with the new values in the same pose, which is one step of the undo history.
+The tool "Script" prints the whole setup as a script, see [`export_script`](@ref). From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
+[`export_changes`](@ref) lists the added components and sources, with their constructor calls, and
+the removed ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
+
+# Snapping onto beams
+
+With the snapping switched on (the chip "Snap" next to the mode at the top left, the key `Tab`, or
+the `snap` kwarg), a component that is dragged with the mouse snaps onto the beams like one that is
+being placed. In the move mode, a component whose position comes within 12 px of a beam sits on the
+beam and slides along it; of a beam group only the central beam takes part, of a Gaussian beamlet
+its chief ray. `Tab` and a click on the chip switch to the next of three states, `Shift`+`Tab` to
+the one before: off, the "position" only, such that e.g. a mirror keeps its tilt, and
+"position + rotation", which also turns the optical axis (the local y-axis) along the beam; beside
+the beams the component then has the orientation of the start of the drag again. The chip names the
+state. In the rotate mode, the angle between the optical axis and the beam
+through the component snaps to the multiples of 45° within 3°, e.g. a lens straight in the beam or
+a mirror at 45°.
+
+The beams are those at the start of the drag, without what lies behind the dragged component: it
+snaps onto the beam that reaches it, continued as a straight line, and not onto the part that it
+deflects itself. Locked axes (see `constraints`) stay locked. The keyboard steps do not snap, and
+neither do sources and clip planes.
+
+# Optical table
+
+The toggle "Table" among the tools (or the `table` kwarg) shows an optical table below the setup: a
+grid of holes at a distance of 25 mm in the plane perpendicular to the rotation axis of the controls
+(z by default), at the lowest point of the components, drawn with its outline. While it is shown,
+a component or source that is dragged or placed with the mouse beside the beams sits on the hole
+closest to it, at its own height above the table; with the snapping onto beams switched on, a beam
+within its radius comes first. In the rotate mode, the angle of the optical axis to the rows of the
+holes snaps to the multiples of 45° within 3°, unless a beam through the component takes it. The
+table grows with the setup while it is shown and never shrinks. The keyboard steps and the clip
+planes do not snap. It is an overlay: nothing of it is traced, clipped or exported.
+
+# Aligning and aiming
+
+The last row of the card of a component has two buttons that align it to the nearest beam, i.e. to
+the central beam of a source that is switched on, as far as it does not depend on the component:
+"onto beam" moves the component to the point of that beam closest to it, "face beam" turns its
+optical axis (the local y-axis) along the beam, in its direction or against it, whichever is
+closer. "aim" in the last row of the card of a source starts aiming it: a dashed line follows the
+mouse, and a click turns the source about its position such that it points at the center of the
+component under the mouse (or at the position of another source), elsewhere at the point of the
+plane in which the mouse moves objects, through the source, which snaps onto the holes of the
+table while it is shown. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
+still moves the camera. Each of them is one step of the undo history and is solved like a move;
+locked axes (see `constraints`) stay locked.
+
 # Keyword args
 
 - `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
@@ -892,7 +1075,8 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam and
+  `(; render_every = 5)` for beam groups. A source is drawn in the color of its wavelength (a dark
+  red for infrared, a dark violet for ultraviolet light) unless its kwargs set a `color`. `show_polarization = true` of a polarized beam and
   `show_beams = true` of a Gaussian beamlet start with the toggles "polarization" and "beams" of
   its card on, `pol_λ`, `pol_amplitude` and `pol_scale` set the start values of the sliders of
   the polarization curve, see [`beam_card_rows`](@ref); of a beam group only its central beam is
@@ -930,11 +1114,21 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
   shows its progress window, see "Long solves"
 - `background_card = nothing`: an object, or a function `gui -> object or nothing`, whose card a
   click on the empty background shows, see "Background card"
+- `catalog = component_catalog()`: the components that the catalog "Components" offers, a vector of
+  [`CatalogEntry`](@ref); an empty vector shows no catalog, see "Adding and removing components"
+- `snap = false`: whether the components snap onto the beams while they are dragged with the mouse:
+  `false`, `true` or `:position` (the position), or `:pose` (the position and the rotation), see
+  "Snapping onto beams"
+- `table = false`: the optical table, see "Optical table": `true` shows it at the start, a
+  `NamedTuple` sets some of `pitch = 25e-3` (the distance of its holes [m], e.g. `25.4e-3` for an
+  imperial table), `height = nothing` (its coordinate along the rotation axis [m], by default the
+  lowest point of the components), `snap = true` (whether components snap onto its holes) and
+  `shown = true`
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
 function live_view(
-        pairs::Pair{<:BMO.AbstractSystem}...;
+        args::_ViewArg...;
         size = nothing,
         layout::Symbol = :compact,
         theme::Symbol = :light,
@@ -961,10 +1155,14 @@ function live_view(
         progress_delay::Real = 0.5,
         extras = [],
         background_card = nothing,
+        catalog = component_catalog(),
+        snap::Union{Bool, Symbol} = false,
+        table = false,
         kwargs...
     )
-    isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
-    ps = Pair{BMO.AbstractSystem, Any}[p for p in pairs]
+    isempty(args) &&
+        throw(ArgumentError("live_view requires at least one system or system => beam pair"))
+    ps = Pair{BMO.AbstractSystem, Any}[p for p in args if p isa Pair]
     for b in beams_off
         any(p -> p.second === b, ps) ||
             throw(ArgumentError("beams_off: $(typeof(b)) is not a beam of the pairs"))
@@ -976,13 +1174,15 @@ function live_view(
         get(kw, :show_beams, false) === true && !_has_generating_beams(b) &&
             throw(ArgumentError("beam_kwargs: show_beams = true for $(typeof(b)), which is no Gaussian beamlet"))
     end
-    # several beams may share a system, which is rendered once
-    systems = unique(objectid, first.(ps))
+    # several beams may share a system, which is rendered once; a system without a source gets
+    # its sources at runtime, see `add_component!`
+    systems = unique(objectid, BMO.AbstractSystem[_view_system(a) for a in args])
     extra_specs = _extra_specs(extras, systems)
     detector_specs = _detector_specs(detectors, systems)
     slider_specs = [_slider_spec(s) for s in sliders]
     clip_specs = _clip_plane_specs(clip_planes)
     view_specs = _view_specs(views)
+    table_spec = _table_spec(table)
 
     lay = _live_layout(layout, theme)
     fig = _figure(lay, something(size, _default_size(lay)))
@@ -1005,9 +1205,8 @@ function live_view(
         # initial states `show_polarization` and `show_beams` are kept with the kwargs of the
         # overlays, see `_BeamState`
         beam_state.overlay_kwargs[beam] = Base.structdiff(kw, NamedTuple{(:render_every,)})
-        # The planes of the beams are set explicitly by `_apply_clip_planes!`, see `clip_beams`
-        push!(beam_handles, live_render!(ax, beam; _beam_style(lay, beam)...,
-            Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})..., clip_planes = Plane3f[]))
+        beam_state.kwargs[beam] = Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})
+        push!(beam_handles, _live_render_beam!(ax, lay, beam, beam_state.kwargs[beam]))
     end
 
     # The extras are moved and selected like the objects of the systems, but never traced
@@ -1016,9 +1215,10 @@ function live_view(
     # bounding boxes
     extent = _scene_extent((system_handles..., extras_handle))
     markers = AbstractObjectRenderHandle[]
+    # Markers of the sources, scaled to the size of the systems, also of the sources that are
+    # added at runtime
+    marker_size = beam_state.marker_size[] = 0.08 * extent
     if movable_sources
-        # Markers of the sources, scaled to the size of the systems
-        marker_size = 0.08 * extent
         for src in unique(objectid, last.(ps))
             BMO.is_static(src) || push!(markers,
                 _live_render_source!(ax, src; size = marker_size, strokecolor = _marker_stroke(lay)))
@@ -1038,6 +1238,8 @@ function live_view(
     change = function (obj)
         gui = gui_ref[]
         _on_moved!(gui, obj)
+        # The table grows with the setup, see `_Table`
+        _table_include!(gui, obj)
         _update_inspector!(gui)
         return nothing
     end
@@ -1058,8 +1260,10 @@ function live_view(
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
-        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state, background_card,
-        widgets, layout = lay)
+        objects = _ObjectState(; menu = Any[first.(entries)...]), beams = beam_state,
+        components = _ComponentState(; render_kwargs = (; sys_kw...),
+            catalog = CatalogEntry[catalog...]),
+        background_card, widgets, layout = lay)
     gui_ref[] = gui
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
@@ -1084,6 +1288,21 @@ function live_view(
     _connect_projection!(gui, orthographic)
     _connect_sources!(gui)
     _connect_layout!(gui)
+    # The catalog of components that can be added to the systems, see `add_component!`, and their
+    # placement with the mouse
+    _build_catalog!(gui)
+    # The whole setup as a script, see `export_script`; after the catalog, whose dock needs the
+    # layout as it is built: a tool of a view that starts in the spectator mode hides the UI
+    add_tool!(_export_script!, gui, "Script"; icon = :script,
+        tooltip = "Export the whole setup as a script")
+    _connect_placement!(gui)
+    # Aiming a source with the mouse, see `_start_aim!`
+    _connect_aim!(gui)
+    # The components snap onto the beams while they are dragged, see the `snap` kwarg
+    _connect_snap!(gui)
+    _set_snap!(controls, snap)
+    # The optical table, onto whose holes they snap beside the beams, see the `table` kwarg
+    _build_table!(gui, table_spec)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,
@@ -1107,6 +1326,7 @@ function live_view(
         _mark_stale!(gui, nothing; msg = _NOT_TRACED)
         _update_info!(gui)
     end
+    isempty(ps) && (gui.status.text[] = _NO_SOURCE)
     # The overlays of the beams with `show_polarization` or `show_beams`, after the solve they show
     _init_overlays!(gui)
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read
@@ -1122,3 +1342,6 @@ function live_view(
 end
 
 live_view(system::BMO.AbstractSystem, beam; kwargs...) = live_view(system => beam; kwargs...)
+# Several systems, the first one without a source: not a system and its beam
+live_view(system::BMO.AbstractSystem, arg::_ViewArg, args::_ViewArg...; kwargs...) =
+    invoke(live_view, Tuple{Vararg{_ViewArg}}, system, arg, args...; kwargs...)

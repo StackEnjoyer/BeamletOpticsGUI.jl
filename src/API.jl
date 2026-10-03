@@ -14,8 +14,10 @@ function kinematic_controls! end
 """
     live_view(system => beam, ...; kwargs...)
     live_view(system, beam; kwargs...)
+    live_view(system, ...; kwargs...)
 
-Opens a complete interactive window for one or several pairs of `system` and `beam`: a 3D view in
+Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
+without a source, e.g. an empty table `live_view(System())` that gets its sources in the window: a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
 sliders. After each change, all detectors are emptied, all systems are solved again and the beams
 and the shown detector views are updated. Returns a `LiveView`, which can be shown via `display`.
@@ -253,7 +255,7 @@ _card_cell(w::CardWidget) = w
 
 Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s, chosen by multiple
 dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams, beam groups and
-sources add the toggles of [`beam_card_rows`](@ref), a source whose rays can be regenerated (see
+sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length of the final rays), a source whose rays can be regenerated (see
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 its signal (the power or the number of rays of its detector view while a view is shown, else the
 number of hits), mechanics (`NonInteractableObject`, e.g. a
@@ -308,6 +310,11 @@ the group. These change the display only. The initial states are set by the `liv
 `beams_off` and `beam_kwargs` (`show_beams`, `show_polarization`, `pol_λ`, `pol_amplitude`,
 `pol_scale`).
 
+The last row, `length`, has a box with the length [mm] with which the final rays of the beam, i.e.
+those that hit nothing, are drawn (`flen` of `live_render!`: by default 1 m, of Gaussian beamlets
+0.1 m, or as given by the `beam_kwargs`). An input draws the beam and its overlays again with that
+length, nothing is solved; an input that is no positive number is reported in the status line.
+
 The card of an own beam type adds the rows after its own rows, e.g.
 
 ```julia
@@ -353,8 +360,9 @@ Shows the value `v` in the widget `w` on a card of [`live_view`](@ref), where `v
 the `value(gui, obj)` of its [`CardWidget`](@ref). The card calls it when it gets its object and
 after moves, solves and inputs. BeamletOpticsGUI has methods for the blocks of `Makie`: the
 text of a `Label` or the label of a `Button` (`string(v)`), the text of a `Textbox`, the value of
-a `Slider` (the closest step of its range) and the state of a `Toggle`. The default for any other
-type shows nothing.
+a `Slider` (the closest step of its range), the state of a `Toggle` and the selected option of a
+`Menu` (the option with the value `v`; an unknown value keeps the selection). The default for any
+other type shows nothing.
 
 Showing a value is not an input: the card ignores the updates of [`card_input`](@ref) while it
 shows values, and a method should not change the observable of `card_input` if it can avoid it,
@@ -363,3 +371,233 @@ also keep what the user is typing: the method for a `Textbox` does not change a 
 unless it is called with `force = true`, which the card does after an input was applied.
 """
 function card_show! end
+
+"""
+    add_component!(gui, obj; system = nothing, select = true, label = nothing) -> obj
+
+Adds the object `obj` (an `AbstractObject` or an object group) to a system of the
+[`live_view`](@ref) window `gui` at runtime: `obj` is pushed to the system, rendered and registered
+with the controls, i.e. it is selected, moved, hidden and exported like the components the view
+started with. Then the systems are solved again, or the beams are marked as outdated without auto
+tracing. Place `obj` before adding it, e.g. via `translate_to3d!`.
+
+`system` is the `System` of the `gui` that gets `obj`: by default the system of the selected or
+inspected object (or the inspected system itself), otherwise the first `System` of the view. All
+beams paired with that system are traced through `obj`. A `StaticSystem` can not be changed: it
+throws an `ArgumentError`, like a `system` that is not shown in the `gui` and an `obj` that the
+`gui` shows already. `select = true` selects `obj` afterwards (or shows its card if it is not
+movable), `label` names it like an entry of the `labels` kwarg of `live_view`.
+
+The components of the catalog are added this way once they are placed, see
+[`component_catalog`](@ref). [`remove_component!`](@ref) removes a component again,
+[`export_changes`](@ref) lists the added and removed components.
+
+    add_component!(gui, source; system = nothing, select = true, label = nothing, beam_kwargs = (;)) -> source
+
+Adds the `source` (a beam or a beam group, e.g. a `Beam`, a `GaussianBeamlet` or a
+`CollimatedSource`) to the `gui`: it is traced through the `system` with every solve, rendered with
+the `beam_kwargs` (those of `live_render!` of the beam, as an entry of the `beam_kwargs` of
+`live_view`; by default in the color of its wavelength, e.g. red for 632.8 nm and a dark red for
+infrared light, and a beam group with `render_every = 5`; `beam_kwargs = (; color = :blue)` sets
+another color) and gets a marker, with
+which it is selected and moved like the sources the view started with, also in a view with
+`movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
+source does not change; by default the system that gets a component, otherwise the first system of
+the view. It throws an `ArgumentError` for a `source` that the `gui` shows already. A view may start
+without a source, see `live_view(system)`.
+
+```julia
+gui = live_view(System())
+add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); label = "laser")
+lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+translate_to3d!(lens, [0, 0.1, 0])
+add_component!(gui, lens; label = "lens")
+```
+"""
+function add_component! end
+
+"""
+    remove_component!(gui, obj) -> obj
+
+Removes the object `obj` from its system in the [`live_view`](@ref) window `gui`, like "remove" on
+its card or the key `Delete` while it is selected: `obj` is deleted from the system, its plots and
+its cards are removed, and the systems are solved again, or the beams are marked as outdated without
+auto tracing. Adding and removing are entries of the undo history of the controls: `Ctrl+Z` in the
+window brings a removed object back, as does [`add_component!`](@ref).
+
+`obj` is a top-level object (or object group) of a `System` of the `gui`. An object of a group can
+not be removed on its own, remove the group instead. It throws an `ArgumentError`, like an object
+of a `StaticSystem`, an extra and an object that is not shown in the `gui`.
+
+    remove_component!(gui, source) -> source
+
+Removes the `source` (a beam or a beam group) from the `gui`: it is no longer traced through any
+system, and its beam, its marker and its cards are removed. Every source can be removed, also the
+last one, which leaves a view without a source; it throws an `ArgumentError` for a beam that is no
+source of the `gui`.
+"""
+function remove_component! end
+
+"""
+    CatalogParam(name, default; unit = "", scale = 1.0, keyword = nothing, integer = false,
+        presets = ())
+
+A numeric parameter of a [`CatalogEntry`](@ref), passed to its constructor: the `default` value in
+the units of the constructor (SI in BeamletOptics, e.g. [m]), shown and entered in the catalog as
+`value / scale` with the `unit`, e.g. `CatalogParam("diameter", 25.4e-3; unit = "mm", scale = 1e-3)`
+for a box that shows `25.4` mm. A parameter with `keyword = :name` is passed as that keyword
+argument, the other parameters are passed as positional arguments in their order.
+
+A parameter with `integer = true` is passed as an `Int`, e.g. the `num_rays` of a source: its
+`default` must be a whole number, otherwise an `ArgumentError` is thrown, and the catalog only takes
+whole numbers for it.
+
+`presets` are named values of the parameter, as pairs `"name" => value` in the units of the
+constructor, e.g. `presets = ["532 nm" => 532e-9, "632.8 nm" => 632.8e-9]` for the laser lines of a
+wavelength. The catalog shows them in a menu next to the box of the parameter: choosing one writes
+its value into the box, and the menu shows "custom" for any other value of the box.
+"""
+struct CatalogParam
+    name::String
+    default::Float64
+    unit::String
+    scale::Float64
+    keyword::Union{Nothing, Symbol}
+    integer::Bool
+    presets::Vector{Pair{String, Float64}}
+end
+
+function CatalogParam(name::AbstractString, default::Real; unit::AbstractString = "",
+        scale::Real = 1.0, keyword::Union{Nothing, Symbol} = nothing, integer::Bool = false,
+        presets = ())
+    (isfinite(scale) && scale != 0) ||
+        throw(ArgumentError("the scale of the parameter \"$name\" must be finite and not zero, got $scale"))
+    (!integer || isinteger(default)) ||
+        throw(ArgumentError("the default of the integer parameter \"$name\" must be a whole number, got $default"))
+    return CatalogParam(String(name), Float64(default), String(unit), Float64(scale), keyword, integer,
+        Pair{String, Float64}[String(first(p)) => Float64(last(p)) for p in presets])
+end
+
+"""
+    CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword = nothing)
+
+The glass of a [`CatalogEntry`](@ref), passed to its constructor as the refractive index `n(λ)`:
+the catalog shows a menu of the glasses of [`catalog_glasses`](@ref) and "constant", for which a
+box takes a constant refractive index with the default `n`. `default` is the name of the glass that
+is chosen at first, or `"constant"`; a name that [`catalog_glasses`](@ref) does not hold throws an
+`ArgumentError`. `name` and `keyword` as for [`CatalogParam`](@ref).
+
+The constructor gets the glass as it is stored in [`catalog_glasses`](@ref), e.g. a
+`SellmeierEquation`, and for "constant" a function `λ -> n`, which every constructor of
+BeamletOptics with a refractive index takes.
+"""
+struct CatalogGlass
+    name::String
+    default::String
+    n::Float64
+    keyword::Union{Nothing, Symbol}
+end
+
+function CatalogGlass(name::AbstractString = "glass"; default::AbstractString = "N-BK7", n::Real = 1.5,
+        keyword::Union{Nothing, Symbol} = nothing)
+    default == _GLASS_CONSTANT || _glass(default)
+    (isfinite(n) && n > 0) ||
+        throw(ArgumentError("the refractive index of the parameter \"$name\" must be positive, got $n"))
+    return CatalogGlass(String(name), String(default), Float64(n), keyword)
+end
+
+"""
+    CatalogEntry(name, constructor; group = "Components", params = [], code_name = string(nameof(constructor)), icon = nothing, source = false)
+
+An entry of the component catalog of [`live_view`](@ref), see [`component_catalog`](@ref): a
+component that the user picks, parametrizes and places in the 3D view. `constructor` is called with
+the values of the `params` (numbers, see [`CatalogParam`](@ref), and glasses, see
+[`CatalogGlass`](@ref)) and returns the `AbstractObject` (or object group) to add, in the pose in
+which it is constructed; the catalog then moves it to where it is placed.
+
+An entry with `source = true` is a source: `constructor` is called as
+`constructor([0, 0, 0], [0, 1, 0], values...; keywords...)`, i.e. with the position and the
+direction of the source before the values of the `params`, and returns the beam or the beam group
+to add, e.g. `Beam` or `CollimatedSource`. A constructor that returns an object for an entry with
+`source = true`, or a beam for one without, throws an `ArgumentError` when the entry is placed.
+
+The catalog shows the entries by their `group`, each as a tile with its `name` and its `icon`: the
+name of an icon of the live view as for [`add_tool!`](@ref) (e.g. `:lens`, an unknown name throws
+an `ArgumentError`) or an own `Makie.BezierPath`. An entry without an icon shows the icon of its
+group; a group that is not one of the built-in ones shows the icon of its first entry that has one.
+
+[`export_changes`](@ref) prints the component as the call `code_name(values...; keywords...)`,
+a source as `code_name([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], values...; keywords...)`, each followed by
+the calls that move it to its pose; hence `constructor` should be a function or type that the user's script can call by that name,
+e.g. `ThinLens`, not an anonymous wrapper.
+
+```julia
+entry = CatalogEntry("Thin lens", ThinLens; group = "Lenses", icon = :lens, params = [
+    CatalogParam("R1", 50e-3; unit = "mm", scale = 1e-3),
+    CatalogParam("R2", -50e-3; unit = "mm", scale = 1e-3),
+    CatalogParam("diameter", 25.4e-3; unit = "mm", scale = 1e-3),
+    CatalogGlass()])
+```
+"""
+struct CatalogEntry
+    name::String
+    group::String
+    constructor::Any
+    params::Vector{Union{CatalogParam, CatalogGlass}}
+    code_name::String
+    icon::Union{Nothing, Symbol, Makie.BezierPath}
+    source::Bool
+end
+
+function CatalogEntry(name::AbstractString, constructor; group::AbstractString = "Components",
+        params = CatalogParam[], code_name::AbstractString = string(nameof(constructor)),
+        icon::Union{Nothing, Symbol, Makie.BezierPath} = nothing, source::Bool = false)
+    # an unknown name throws
+    icon isa Symbol && _icon(icon)
+    return CatalogEntry(String(name), String(group), constructor,
+        Union{CatalogParam, CatalogGlass}[params...], String(code_name), icon, source)
+end
+
+"""
+    catalog_glasses() -> Vector{Pair{String, Any}}
+
+The glasses that the component catalog of [`live_view`](@ref) offers for the entries with a
+[`CatalogGlass`](@ref), as `name => n`, where `n(λ)` is the refractive index at the wavelength `λ`
+[m] as BeamletOptics takes it, e.g. a `SellmeierEquation`. The built-in glasses are common optical
+glasses and crystals with the dispersion formulas of the database refractiveindex.info: N-BK7,
+fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2, N-BAF10 and N-LAK22.
+
+A package adds its glasses to the returned vector; views opened afterwards show them.
+[`export_changes`](@ref) prints a `SellmeierEquation` and a `DiscreteRefractiveIndex` as their
+constructor call and any other glass via `repr`, hence an own glass should be one of the two or a
+named function.
+
+```julia
+push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))
+```
+"""
+function catalog_glasses end
+
+"""
+    component_catalog() -> Vector{CatalogEntry}
+
+The catalog of components that a [`live_view`](@ref) window offers by default (its `catalog`
+kwarg): the entries of BeamletOpticsGUI for the sources and the components of BeamletOptics
+(sources, lenses, mirrors, beamsplitters, prisms, polarizers and the detector) and the entries that
+packages added. The
+catalog is the widget "Components", a window over the 3D view or, in the app layout, a section of
+the left sidebar: the entry is chosen by its group and its tile,
+its parameters are typed into boxes, its glass is chosen in a menu, and "Place" attaches the
+component to the mouse, see "Adding and removing components" of [`live_view`](@ref).
+
+A package with own components adds its entries (see [`CatalogEntry`](@ref)) to the returned
+vector, e.g. in the `__init__` of its package extension on BeamletOpticsGUI; views opened afterwards
+show them. A single view gets other entries via `live_view(...; catalog = entries)`, none with
+`catalog = CatalogEntry[]`.
+
+```julia
+push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses",
+    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3)]))
+```
+"""
+function component_catalog end

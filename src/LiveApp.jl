@@ -14,7 +14,8 @@ Layout of `live_view(...; layout = :app)`, an application window around the 3D v
 
 - a toolbar at the top, an ordered list of groups of entries, see `_add_toolbar_entry!`
 - the left sidebar, a stack of titled sections ("OBJECTS" with the object tree, see `_tree_rows`,
-  "PARAMETERS" with the sliders), and the right sidebar ("PROPERTIES": the inspector with the card
+  "PARAMETERS" with the sliders, "COMPONENTS" with the docked catalog, see
+  `_catalog_dock_slot!`), and the right sidebar ("PROPERTIES": the inspector with the card
   of the selected object and the pinned cards, each with its pages, e.g. the page "Results" with
   the view of a detector, see `_Inspector`), see `_add_sidebar_section!`
 - the analysis dock below the 3D view, a tab per panel of [`add_panel!`](@ref) (see
@@ -165,8 +166,11 @@ end
 Construction
 =#
 
+# Padding of the sidebars around their sections [px]
+const _SIDEBAR_PADDING = 10
+
 """Returns a collapsible part with a background box at `pos` of the `parent`, see `_LayoutPart`."""
-function _app_part(parent::GridLayout, pos, resize, size, color; padding = 10)
+function _app_part(parent::GridLayout, pos, resize, size, color; padding = _SIDEBAR_PADDING)
     box = Box(parent[pos...]; color, cornerradius = 0)
     grid = GridLayout(parent[pos...]; alignmode = Outside(padding), default_rowgap = 8)
     resize(size)
@@ -344,6 +348,7 @@ end
 
 _on_clip_planes_changed!(gui::AppView) = _update_tree!(gui)
 _on_hidden!(gui::AppView) = _update_tree!(gui)
+_on_components_changed!(gui::AppView) = _update_tree!(gui)
 _show_hint(::AppView) = "click its eye in the object tree to show it again"
 
 function _on_clipping!(gui::AppView)
@@ -437,6 +442,28 @@ function _refresh_tab!(gui::AppView, p::_UserPanel)
 end
 
 _controls_slot!(gui::AppView, title::String) = _add_sidebar_section!(gui, :left, title)
+
+"""
+    _catalog_dock_slot!(gui::AppView, title)
+
+The dock of the component catalog in the app layout: the section `title` of the left sidebar, below
+the object tree. Its content is a collapsible part, the buttons of the dock are at the right of its
+title (see `_section_header`), and `reveal` switches the toggle of the sidebar on.
+"""
+function _catalog_dock_slot!(gui::AppView, title::AbstractString)
+    layout = gui.layout
+    left = layout.left
+    content = _add_sidebar_section!(layout, :left, title)
+    stack = left.grid
+    row = 2 * length(layout.sections[:left])
+    box = Box(stack[row, 1]; visible = false)
+    part = _LayoutPart(stack, (row, 1), s -> rowsize!(stack, row, s), Auto(), box, content, true)
+    header = GridLayout(_section_header(layout, :left, title); halign = :right, tellwidth = false,
+        default_colgap = 2)
+    toggle = layout.collapse.left
+    return (; part, header, width = left.size.x - 2 * _SIDEBAR_PADDING, tooltip_placement = :right,
+        reveal = () -> (toggle.active[] || (toggle.active[] = true); nothing))
+end
 
 # The left sidebar, the place of `add_controls!`, may be collapsed by its toggle: it is attached to
 # the figure while blocks are added to it, see `_with_ui` of all layouts

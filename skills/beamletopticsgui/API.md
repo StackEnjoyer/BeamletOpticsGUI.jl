@@ -12,6 +12,7 @@ using GLMakie, BeamletOptics, BeamletOpticsGUI
 gui = live_view(system, beam; layout = :compact, labels = Dict(m1 => "Mirror 1"))
 display(gui)                # opens the window; `wait(display(gui))` in a script
 code = export_changes(gui)  # the changed poses as Julia code
+script = export_script(gui) # the whole setup as a script (constructors of catalog parts)
 ```
 
 Look up the docstring of any name before use, e.g.
@@ -21,7 +22,8 @@ Look up the docstring of any name before use, e.g.
 
 | Category | Names |
 |----------|-------|
-| Window | `live_view`, `export_changes`, `retrace!` |
+| Window | `live_view`, `export_changes`, `export_script`, `retrace!` |
+| Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
 | Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
@@ -45,7 +47,35 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization`, `show_beams`, `pol_λ`, `pol_amplitude`, `pol_scale` set the start state of the card toggles and sliders |
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
+| `catalog = component_catalog()` | the entries of the component catalog (`CatalogEntry`s); `CatalogEntry[]` shows no catalog |
+| `snap = false` | components snap onto the central beams while dragged with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: `Tab` or the chip "Snap" cycles off, position, position and rotation; `Shift`+`Tab` backwards |
+| `table = false` | optical table below the setup, also the toggle "Table" among the tools: `true`, or `(; pitch = 25e-3, height = nothing, snap = true, shown = true)` [m]; while shown, dragged and placed components and sources snap onto its holes beside the beams, rotations in steps of 45° to its rows |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
+
+`add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
+`translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
+Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
+beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and
+gives it a marker, `remove_component!(gui, source)` removes it, also the last one. Every source is
+drawn in the color of its wavelength (dark red for infrared), unless its `beam_kwargs` set a `color`
+(`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`). A view may start
+without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
+The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
+at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
+the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in
+the left sidebar (section "Components"), from where its buttons move it into the window and back. Its
+line "into" names the system that gets the entry (of the selection, else the first one) and is a menu
+of the systems in a view with several systems. Its icons select a
+group (sources, lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
+component (all components of BeamletOptics with a constructor of numbers and glasses) or a source
+(`Beam`, `GaussianBeamlet`, `CollimatedSource`, `UniformDiscSource`, `PointSource`,
+`UniformPointSource`, `AstigmaticGaussianBeamlet`; placed along +y, then rotated with the controls), its form takes
+the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,
+N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. "Place"
+attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
+selected component or source. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
+refractive index as `λ -> n`; an added source is its constructor at the origin along +y, its
+`rotate3d!`/`translate_to3d!` and `solve_system!(system, name)`, a removed source of the start a comment.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
 keyboard controls to a live-rendered system on its own, without `live_view`.

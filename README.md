@@ -39,13 +39,14 @@ using Pkg
 Pkg.add("BeamletOpticsGUI")
 ```
 
-It needs BeamletOptics 0.13 (0.13.11 or newer) and a Makie backend, preferably GLMakie.
+It needs BeamletOptics 0.13 (0.13.12 or newer) and a Makie backend, preferably GLMakie.
 
 ## Features
 
 - `live_view`: a window with the 3D view, a detector view on the card of each detector (spot diagram, PSF or intensity), cards of
   the selected component, clip planes, measurements and camera tools, in a compact or an
   application layout, light or dark
+- a component catalog and `add_component!`/`remove_component!` to add and remove components at runtime
 - `kinematic_controls!` and `view_cube!` for own Makie scenes
 - own panels, controls and tools (`add_panel!`, `add_controls!`, `add_tool!`) and cards for own
   component types (`card_rows`)

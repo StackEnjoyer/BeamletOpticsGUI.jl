@@ -15,9 +15,22 @@ BeamletOpticsGUI
 live_view
 retrace!
 export_changes
+export_script
 add_panel!
 add_controls!
 add_tool!
+```
+
+## Adding and removing components
+
+```@docs
+add_component!
+remove_component!
+CatalogEntry
+CatalogParam
+CatalogGlass
+component_catalog
+catalog_glasses
 ```
 
 ## Interactive helpers

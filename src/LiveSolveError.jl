@@ -44,7 +44,7 @@ function _hit_conflict(gui::LiveView, e)
     e isa MethodError && e.f === convert && length(e.args) == 2 || return nothing
     T, hit = e.args
     (T isa Type && T <: BMO.AbstractDetectorHit && hit isa BMO.AbstractDetectorHit) || return nothing
-    pds = [pd for pd in _find_detectors(first.(gui.pairs)) if BMO.hits(pd) isa AbstractVector{T}]
+    pds = [pd for pd in _find_detectors(_systems(gui)) if BMO.hits(pd) isa AbstractVector{T}]
     return (; pds, kinds = (_hit_kind(T), _hit_kind(typeof(hit))))
 end
 

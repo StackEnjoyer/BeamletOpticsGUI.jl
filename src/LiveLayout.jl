@@ -22,10 +22,12 @@ _figure(::AbstractLiveLayout, size) = Figure(; size)
 
 # Optional parts of the layout interface, see `AbstractLiveLayout`
 _connect_layout!(::LiveView) = nothing
+_close_layout!(::LiveView) = nothing
 _on_selected!(::LiveView) = nothing
 _on_clipping!(::LiveView) = nothing
 _on_clip_planes_changed!(::LiveView) = nothing
 _on_hidden!(::LiveView) = nothing
+_on_components_changed!(::LiveView) = nothing
 
 _slot_error(gui::LiveView, what) = _slot_error(gui.layout, what)
 function _slot_error(layout::AbstractLiveLayout, what)
@@ -278,12 +280,12 @@ _clip_plane_color(layout::AbstractLiveLayout) = layout.theme.clip_plane
 _marker_stroke(layout::AbstractLiveLayout) = layout.theme.marker_stroke
 
 """
-Default kwargs of `live_render!` of the source `beam` in the `layout`: the color of the rays of
-sources that are drawn as lines, not the envelopes of Gaussian beamlets, which keep their color.
+Default kwargs of `live_render!` of the source `beam` in the `layout`: the color of its wavelength
+(see `_wavelength_style`) for beams, Gaussian beamlets and beam groups, nothing for anything else
+and for astigmatic beam groups. `layout.theme.rays` is the color of the entry "layout" of the menu
+of colors of the card of a source.
 """
-_beam_style(::AbstractLiveLayout, _) = (;)
-_beam_style(layout::AbstractLiveLayout, ::Union{BMO.AbstractRay, Beam, BMO.AbstractBeamGroup}) =
-    (; color = layout.theme.rays)
+_beam_style(::AbstractLiveLayout, beam) = _wavelength_style(beam)
 _beam_style(::AbstractLiveLayout, ::BMO.AstigmaticBeamGroup) = (;)
 
 """

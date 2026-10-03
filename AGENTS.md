@@ -16,7 +16,7 @@ describe it as available in docs or the skill.
 
 | # | Principle | Gap in 0.2 |
 |---|---|---|
-| P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components can be added to and removed from the scene in the GUI. One view holds several systems with several beams each. | adding and removing components at runtime |
+| P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components and sources can be added to and removed from the scene in the GUI. One view holds several systems with several beams each. | `StaticSystem`s can not be changed; only components and sources from the catalog can be changed afterwards (page "Edit") and exported with their constructors (`export_script`), since the constructor of an object from the user's script is not known; the glasses of the catalog (`catalog_glasses`) are data of the GUI until BeamletOptics has a glass catalog |
 | P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`, `_has_view`), only `Detector` has a view; tree icons per type are internal |
 | P3 | Any layout can be assembled from the widgets and presented to the user. Layouts are composed in code from public widget blocks; `:compact` and `:app` are two such compositions. | the layout interface `AbstractLiveLayout` is internal, the widgets have no public constructors |
 | P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads (`card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`; a component package adds them in a package extension on BeamletOpticsGUI). | own views (the page "Results") and icons per type |
@@ -58,7 +58,12 @@ describe it as available in docs or the skill.
   the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,
   `src/LiveApp.jl`, `src/LiveAppTree.jl`, `src/LiveDock.jl`, `src/LiveInspector.jl`: the two layouts.
 - `src/LiveCard.jl`, `src/LiveCards.jl`, `src/LiveCardRows.jl`: cards and the card API.
-  `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Results", "Properties").
+  `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Color", "Results", "Properties").
+  `src/LiveBeamColor.jl`: the page "Color" of the sources (color, opacity and line width of their
+  beams). `src/LiveEdit.jl`: the page "Edit" of the components and sources from the catalog, which
+  builds them again with other parameters. Adding, removing and changing are actions of the undo
+  history of the controls (`_push_action!` in `src/LiveInteraction.jl`, `_record_added!` in
+  `src/LiveComponents.jl`).
 - `src/LiveDetectorView.jl`: the view of a detector on the page "Results" of its card: the kinds
   of views per type of hits (spot diagram, PSF, intensity), their results and metrics, and the
   widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of the view per detector,
@@ -71,6 +76,20 @@ describe it as available in docs or the skill.
 - `src/LiveInteraction.jl`: `kinematic_controls!`. `src/ViewCube.jl`: `view_cube!`.
 - `src/LiveCustom.jl`, `src/LiveWidgets.jl`: `add_panel!`, `add_controls!`, `add_tool!`,
   `retrace!`, own widgets.
+- `src/LiveComponents.jl`: `add_component!`, `remove_component!` (components added to and removed
+  from a `System` at runtime), `src/LiveSources.jl`: their methods for sources (beams and beam
+  groups), which may also leave a view without a source. `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
+  `component_catalog`) and its widgets (groups, tiles, form), `src/LiveCatalogWindow.jl`: its
+  window over the 3D view (pin, minimize) and its dock in a place of the layout
+  (`_catalog_dock_slot!`, e.g. the left sidebar of the app layout), `src/LiveCatalogEntries.jl`: the entries of the components of
+  BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`).
+  `src/LivePlacement.jl`: placing a new component with the mouse, with snapping onto beams.
+  `src/LiveSnap.jl`: snapping of dragged components onto beams (the beams of the live view for
+  the snapping of the controls, see `_set_snap!` in `src/LiveInteraction.jl`).
+  `src/LiveTable.jl`: the optical table, an overlay with a grid of holes that dragged and placed
+  components snap onto (the `snap_grid` of the controls). `src/LiveAlign.jl`: the buttons of the
+  card of a component that align it to the nearest beam. `src/LiveAim.jl`: aiming a source with
+  the mouse.
 - `src/LiveMarkers.jl`: clip planes and source markers.
 - `docs/`: Documenter site. `skills/beamletopticsgui/`: the agent skill.
 

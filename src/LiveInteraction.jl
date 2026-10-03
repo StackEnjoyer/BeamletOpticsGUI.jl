@@ -166,9 +166,10 @@ its `help_extra` sections are merged in, e.g. the keys of `live_view`, see `_mer
 
 - `click_help = _CLICK_HELP`: what a click does
 - `spectator = false`: the entries of the spectator mode instead
+- `view_plane = true`: whether the mouse moves objects in the plane of the view, see `_drag_normal`
 """
 function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = nothing;
-        click_help::String = _CLICK_HELP, spectator::Bool = false)
+        click_help::String = _CLICK_HELP, spectator::Bool = false, view_plane::Bool = true)
     spectator && return _HelpSection["Spectator mode" => [
         _HelpEntry(["V"], "switch to edit mode"),
         _HelpEntry([:mouse => "drag"], "all clicks and drags: camera"),
@@ -188,7 +189,8 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["↑", "↓"], along(up); color = up),
             _HelpEntry(["←", "→"], along(left); color = left),
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
-            _HelpEntry([:mouse => "drag"], move ? "move in the plane" : "rotate around the blue ring";
+            _HelpEntry([:mouse => "drag"], !move ? "rotate around the blue ring" :
+                                            view_plane ? "move in the plane of the view" : "move in the plane";
                 color = move ? "" : "blue"),
             _HelpEntry(["+", "−"], "keyboard step, now $step"),
             _HelpEntry(["Shift"], "with a key: 10× step"),
@@ -316,6 +318,20 @@ struct _HistoryEntry
     R1::Matrix{Float64}
 end
 
+"""
+An entry of the undo history that is no change of a pose: an action on `obj`, e.g. adding it to or
+removing it from the [`live_view`](@ref), which `undo()` takes back and `redo()` does again, see
+`_push_action!`.
+"""
+struct _ActionEntry
+    obj::Any
+    undo::Function
+    redo::Function
+end
+
+# The entries of the undo history, in the order of the gestures and actions
+const _AnyHistoryEntry = Union{_HistoryEntry, _ActionEntry}
+
 # Last key step, see `_record_key_step!`
 const _KeyStepInfo = NamedTuple{(:obj, :key, :time), Tuple{_LiveMovable, Keyboard.Button, Float64}}
 
@@ -334,7 +350,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     selected::Observable{Union{Nothing, _LiveMovable}}
     mode::Observable{Symbol}
     on_change::Function
-    plane_normal::Vector{Float64}
+    # normal of the plane of the mouse drags, `nothing` for the plane of the view, see `_drag_normal`
+    plane_normal::Union{Nothing, Vector{Float64}}
     rotation_axis::Vector{Float64}
     rotate_speed::Float64
     fine_step::Float64
@@ -362,8 +379,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # pose of the selected object at the start of the current drag, for the undo history
     drag_start::Union{Nothing, Tuple{Point3{Float64}, Matrix{Float64}}}
     # undo/redo history, one entry per gesture, see `_push_history!` / `_record_key_step!`
-    undo_stack::Vector{_HistoryEntry}
-    redo_stack::Vector{_HistoryEntry}
+    undo_stack::Vector{_AnyHistoryEntry}
+    redo_stack::Vector{_AnyHistoryEntry}
     last_key_step::Union{Nothing, _KeyStepInfo}
     # selection box and gizmo of the keyboard controls
     box_obs::Observable{Vector{Point3f}}
@@ -405,6 +422,25 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     click_leaf::Function
     # what a click does, in the help, see `_help_sections`
     click_help::String
+    # snapping of the mouse drags onto beams, see `_set_snap!`: `:off`, `:position` (the position of
+    # the dragged object) or `:pose` (its optical axis as well)
+    snap::Observable{Symbol}
+    # `(obj, point) -> (; point, direction)`, or `nothing`: the point of a beam that `obj` snaps
+    # onto when it is dragged to the `point` [m], with the direction of the beam there. Without
+    # beams nothing snaps; `live_view` knows them, see `_snap_beam`
+    snap_beam::Function
+    # `(obj, point) -> (; point, direction)`, or `nothing`: the point of a grid that `obj` snaps onto
+    # when it is dragged to the `point` [m] beside the beams, with a direction of the grid, to which
+    # its rotation snaps; `live_view` has the holes of its table, see `_table_snap`
+    snap_grid::Function
+    # number of drags so far, such that `snap_beam` can tell a new drag
+    drag_count::Int
+    # rotation of the current drag in the rotate mode: the angle by the mouse and the angle that is
+    # applied [rad], which differ while snapped, and the angle of the optical axis of the object to
+    # the beam at its start, `nothing` without a beam, see `_snap_angle`
+    drag_angle::Float64
+    drag_applied::Float64
+    drag_beam_angle::Union{Nothing, Float64}
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -504,10 +540,26 @@ function _click_leaf!(ctrl::KinematicController, leaf)
     return nothing
 end
 
-"""Axes of the keyboard controls: local y-axis, local x-axis and rotation axis of the `obj`."""
+"""
+    _control_axes(ctrl, obj) -> (y, x, v)
+
+Axes of the controls of `obj`, i.e. of its gizmo, the keyboard and the mouse: its local y-axis, its
+local x-axis and the rotation axis of the `ctrl`. They must span the space, otherwise `obj` can not
+be moved in one direction. A local axis that is parallel to the rotation axis (`|a × v| < 10⁻⁶`) is
+therefore replaced by the axis perpendicular to the other local axis and the rotation axis, e.g. the
+local x-axis of a `CollimatedSource` along +y, which points along -z, by +x. The direction of the
+replaced axis stays available as the rotation axis.
+"""
 function _control_axes(ctrl::KinematicController, obj)
     R = _pose(obj)[2]
-    return (Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), ctrl.rotation_axis)
+    y, x, v = Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), ctrl.rotation_axis
+    parallel(a) = norm(cross(a, v)) < 1e-6
+    if parallel(x) && !parallel(y)
+        x = normalize(cross(y, v))
+    elseif parallel(y) && !parallel(x)
+        y = normalize(cross(v, x))
+    end
+    return (y, x, v)
 end
 
 """Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:v`) of `obj`."""
@@ -559,7 +611,7 @@ end
 
 _help_sections(ctrl::KinematicController) = _merge_sections(
     _help_sections(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
-        ctrl.click_help, spectator = ctrl.spectator[]),
+        ctrl.click_help, spectator = ctrl.spectator[], view_plane = isnothing(ctrl.plane_normal)),
     ctrl.spectator[] ? _HelpSection[] : ctrl.help_extra)
 
 """
@@ -728,6 +780,129 @@ function _reset_pose!(ctrl::KinematicController, obj)
     return nothing
 end
 
+#=
+Snapping of the mouse drags onto beams
+=#
+
+# The states of the snapping in the order of `_cycle_snap!`, see `_set_snap!`
+const _SNAP_STATES = (:off, :position, :pose)
+# The angles of the optical axis to the beam at which a rotation snaps, and how close it snaps [rad]
+const _SNAP_ANGLE_STEP = π / 4
+const _SNAP_ANGLE_TOLERANCE = deg2rad(3)
+
+"""
+    _set_snap!(ctrl, snap)
+
+Sets the snapping of the mouse drags of the controls `ctrl`: `:off` (or `false`), `:position` (or
+`true`) or `:pose`. While it is on, an object that is dragged in the move mode to a beam (see
+`ctrl.snap_beam`) sits on the beam; with `:pose`, its optical axis (the local y-axis) also points
+along the beam, and has the orientation of the start of the drag beside the beams. In the rotate
+mode, the angle of the optical axis to the beam through the object snaps to the multiples of
+`_SNAP_ANGLE_STEP`, see `_snap_angle`. The keyboard steps do not snap.
+"""
+function _set_snap!(ctrl::KinematicController, snap::Symbol)
+    snap in _SNAP_STATES ||
+        throw(ArgumentError("snap must be false, true, :position or :pose, got :$snap"))
+    ctrl.snap[] == snap || (ctrl.snap[] = snap)
+    _update_help!(ctrl)
+    return nothing
+end
+_set_snap!(ctrl::KinematicController, snap::Bool) = _set_snap!(ctrl, snap ? :position : :off)
+
+"""
+    _cycle_snap!(ctrl, dir = 1)
+
+Switches the snapping of the controls `ctrl` to its next state: off, `:position`, `:pose` and off
+again, with `dir = -1` the other way round, see `_set_snap!`.
+"""
+function _cycle_snap!(ctrl::KinematicController, dir::Integer = 1)
+    i = findfirst(==(ctrl.snap[]), _SNAP_STATES)
+    return _set_snap!(ctrl, _SNAP_STATES[mod1(i + dir, length(_SNAP_STATES))])
+end
+
+# What the snapping of the controls does, for the chip and the status line
+_snap_string(snap::Symbol) = snap == :off ? "off" : snap == :pose ? "position + rotation" : "position"
+
+"""
+Returns the signed angle [rad] about the unit vector `axis` from the direction `d` to the direction
+`y`, both projected onto the plane perpendicular to it; `nothing` if one of them is parallel to it.
+"""
+function _angle_about(axis, d, y)
+    dp = d .- dot(d, axis) .* axis
+    yp = y .- dot(y, axis) .* axis
+    (norm(dp) < 1e-9 || norm(yp) < 1e-9) && return nothing
+    return atan(dot(axis, cross(dp, yp)), dot(dp, yp))
+end
+
+"""
+Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
+and for the rotate mode the angle of the optical axis of `obj` to the beam through its position,
+see `_snap_angle`; without such a beam, or with the snapping onto beams switched off, its angle to
+the direction of the grid at its position (see `ctrl.snap_grid`), if there is one.
+"""
+function _start_snap!(ctrl::KinematicController, obj)
+    ctrl.drag_count += 1
+    ctrl.drag_angle = ctrl.drag_applied = 0.0
+    ctrl.drag_beam_angle = nothing
+    ctrl.mode[] == :rotate || return nothing
+    P, R = _pose(obj)
+    beam = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, Vector{Float64}(P))
+    # beside the beams, the angle to the grid
+    isnothing(beam) && (beam = ctrl.snap_grid(obj, Vector{Float64}(P)))
+    isnothing(beam) && return nothing
+    ctrl.drag_beam_angle = _angle_about(ctrl.rotation_axis, Vector{Float64}(beam.direction), R[:, 2])
+    return nothing
+end
+
+"""
+    _snap_angle(angle, beam_angle) -> Float64
+
+The angle [rad] by which an object is rotated in a drag for the `angle` by the mouse, if its optical
+axis had the angle `beam_angle` to the beam at the start of the drag: within
+`_SNAP_ANGLE_TOLERANCE` of a multiple of `_SNAP_ANGLE_STEP` to the beam, the angle that reaches
+the multiple, otherwise the `angle` itself, also without a beam (`nothing`).
+"""
+function _snap_angle(angle::Real, beam_angle::Real)
+    φ = beam_angle + angle
+    snapped = round(φ / _SNAP_ANGLE_STEP) * _SNAP_ANGLE_STEP
+    return abs(φ - snapped) <= _SNAP_ANGLE_TOLERANCE ? angle + (snapped - φ) : Float64(angle)
+end
+_snap_angle(angle::Real, ::Nothing) = Float64(angle)
+
+"""
+Returns the angle [rad] by which the object of the current drag of the controls `ctrl` is rotated
+for the step `δ` of the mouse: the step itself, or, with a beam to snap to, the step to the snapped
+angle of the drag, see `_snap_angle`.
+"""
+function _snap_rotation!(ctrl::KinematicController, δ::Real)
+    isnothing(ctrl.drag_beam_angle) && return Float64(δ)
+    ctrl.drag_angle += δ
+    step = _snap_angle(ctrl.drag_angle, ctrl.drag_beam_angle) - ctrl.drag_applied
+    ctrl.drag_applied += step
+    return step
+end
+
+"""
+    _snap_orientation(ctrl, obj, snapped) -> Union{Nothing, Matrix{Float64}}
+
+The orientation of `obj` in a drag of the controls `ctrl` in the move mode with the snapping
+`:pose`: on a beam (`snapped`, see `ctrl.snap_beam`), the orientation of the start of the drag,
+turned such that the optical axis (the local y-axis) points along the beam, in the direction or
+against it, whichever is closer; beside the beams (`nothing`), the orientation of the start of the
+drag. `nothing` if the orientation is not changed: without `:pose`, and for an object whose
+rotation is constrained.
+"""
+function _snap_orientation(ctrl::KinematicController, obj, snapped)
+    (ctrl.snap[] == :pose && !isnothing(ctrl.drag_start)) || return nothing
+    Set(_allowed_axes(ctrl, obj, :rotate)) == Set(_GIZMO_AXES) || return nothing
+    R0 = ctrl.drag_start[2]
+    isnothing(snapped) && return R0
+    y = R0[:, 2]
+    d = Vector{Float64}(snapped.direction)
+    dot(y, d) < 0 && (d = -d)
+    return _align_rotation(y, d, ctrl.rotation_axis) * R0
+end
+
 const _HISTORY_LIMIT = 100
 
 """
@@ -757,7 +932,7 @@ function _record_key_step!(ctrl::KinematicController, obj, key, P0, R0, P1, R1)
     now = time()
     m = ctrl.last_key_step
     if !isnothing(m) && m.obj === obj && m.key === key && (now - m.time) <= 1.0 &&
-       !isempty(ctrl.undo_stack)
+       !isempty(ctrl.undo_stack) && last(ctrl.undo_stack) isa _HistoryEntry
         e = pop!(ctrl.undo_stack)
         push!(ctrl.undo_stack, _HistoryEntry(obj, e.P0, e.R0, P1, R1))
     else
@@ -768,38 +943,63 @@ function _record_key_step!(ctrl::KinematicController, obj, key, P0, R0, P1, R1)
 end
 
 """
+    _push_action!(ctrl, obj, undo, redo)
+
+Pushes an action on `obj` to the undo history, e.g. adding it to the [`live_view`](@ref): `undo()`
+takes it back, `redo()` does it again. Like a gesture, it clears the redo stack and drops the
+oldest entry once the history exceeds `_HISTORY_LIMIT`. Both functions must not push entries
+themselves.
+"""
+function _push_action!(ctrl::KinematicController, obj, undo, redo)
+    push!(ctrl.undo_stack, _ActionEntry(obj, undo, redo))
+    length(ctrl.undo_stack) > _HISTORY_LIMIT && popfirst!(ctrl.undo_stack)
+    empty!(ctrl.redo_stack)
+    ctrl.last_key_step = nothing
+    return nothing
+end
+
+# Sets the pose of the object of the gesture `e` and selects it
+function _apply_entry!(ctrl::KinematicController, e::_HistoryEntry, P, R)
+    _change!(() -> _set_pose!(e.obj, P, R), ctrl, e.obj)
+    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
+    _update_selection_box!(ctrl)
+    _request_update!(ctrl)
+    return nothing
+end
+
+_undo_entry!(ctrl::KinematicController, e::_HistoryEntry) = _apply_entry!(ctrl, e, e.P0, e.R0)
+_redo_entry!(ctrl::KinematicController, e::_HistoryEntry) = _apply_entry!(ctrl, e, e.P1, e.R1)
+_undo_entry!(::KinematicController, e::_ActionEntry) = (e.undo(); nothing)
+_redo_entry!(::KinematicController, e::_ActionEntry) = (e.redo(); nothing)
+
+"""
     _undo!(ctrl::KinematicController)
 
-Undoes the last recorded gesture (a mouse drag, a reset or one or several merged keyboard steps),
-if any, and selects its object. Returns whether an entry was undone.
+Undoes the last recorded gesture (a mouse drag, a reset or one or several merged keyboard steps)
+or action (see `_push_action!`), if any; a gesture selects its object. Returns whether an entry was
+undone.
 """
 function _undo!(ctrl::KinematicController)
     isempty(ctrl.undo_stack) && return false
     e = pop!(ctrl.undo_stack)
     push!(ctrl.redo_stack, e)
     ctrl.last_key_step = nothing
-    _change!(() -> _set_pose!(e.obj, e.P0, e.R0), ctrl, e.obj)
-    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
-    _update_selection_box!(ctrl)
-    _request_update!(ctrl)
+    _undo_entry!(ctrl, e)
     return true
 end
 
 """
     _redo!(ctrl::KinematicController)
 
-Redoes the last undone gesture, if any, and selects its object. Returns whether an entry was
-redone.
+Redoes the last undone gesture or action, if any; a gesture selects its object. Returns whether an
+entry was redone.
 """
 function _redo!(ctrl::KinematicController)
     isempty(ctrl.redo_stack) && return false
     e = pop!(ctrl.redo_stack)
     push!(ctrl.undo_stack, e)
     ctrl.last_key_step = nothing
-    _change!(() -> _set_pose!(e.obj, e.P1, e.R1), ctrl, e.obj)
-    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
-    _update_selection_box!(ctrl)
-    _request_update!(ctrl)
+    _redo_entry!(ctrl, e)
     return true
 end
 
@@ -874,10 +1074,35 @@ function _cursor_ray(scene)
     return origin, dir
 end
 
-"""Returns the drag plane intersection of the ray through the mouse position."""
+"""
+Returns the direction in which the camera of the `scene` looks, a unit vector: from its eye to its
+`lookat` point, or, for a view without a `Camera3D`, e.g. an `Axis3`, along the ray through the
+cursor.
+"""
+function _view_direction(scene)
+    cam = Makie.cameracontrols(scene)
+    if cam isa Makie.Camera3D
+        d = Vector{Float64}(cam.lookat[] .- cam.eyeposition[])
+        norm(d) > 0 && return d ./ norm(d)
+    end
+    return normalize(_cursor_ray(scene)[2])
+end
+
+"""
+    _drag_normal(scene, ctrl) -> Vector{Float64}
+
+The normal of the plane in which the mouse moves an object of the controls `ctrl`: their
+`plane_normal`, or by default (`nothing`) the direction in which the camera looks (see
+`_view_direction`), i.e. the plane of the view, in which the object stays under the cursor in every
+view, e.g. also in a view from the front.
+"""
+_drag_normal(scene, ctrl::KinematicController) =
+    isnothing(ctrl.plane_normal) ? _view_direction(scene) : ctrl.plane_normal
+
+"""Returns the drag plane intersection of the ray through the mouse position, see `_drag_normal`."""
 function _mouse_plane_hit(scene, ctrl::KinematicController)
     origin, dir = _cursor_ray(scene)
-    return _ray_plane_intersect(origin, dir, ctrl.plane_point, ctrl.plane_normal)
+    return _ray_plane_intersect(origin, dir, ctrl.plane_point, _drag_normal(scene, ctrl))
 end
 
 _default_pick(ax) = Makie.pick(Makie.get_scene(ax))
@@ -982,7 +1207,9 @@ can be used as usual as long as no object is grabbed. Returns a `KinematicContro
 
 The controls have a move and a rotate mode, which are switched with the key `m`. The selected object
 is marked by a box and three axes above the object: its local y-axis (green), its local x-axis
-(red) and the `rotation_axis` (blue). In the move mode the axes are shown as arrows, in the rotate
+(red) and the `rotation_axis` (blue). A local axis that is parallel to the `rotation_axis`, e.g. the
+local x-axis of a `CollimatedSource` along +y, is replaced by the axis perpendicular to the other
+two, such that the object can be moved in all directions. In the move mode the axes are shown as arrows, in the rotate
 mode as rings. The key `h` shows or hides an overlay of all controls.
 
 The key `v` switches the spectator mode on or off, in which the selection is cleared and all
@@ -997,9 +1224,11 @@ A click selects, a drag moves only what is already selected, every other drag ro
 
 - left-click on an object: selects it, so that a camera drag never moves or rotates a component by
   accident
-- left-drag on the selected object: moves it within the plane through the grabbed point
-  (`plane_normal`), such that the point under the cursor at the start of the drag stays under the
-  cursor; or rotates it around the `rotation_axis` in the rotate mode. If the exact point under the
+- left-drag on the selected object: moves it within the plane of the view through the grabbed
+  point, i.e. the plane perpendicular to the direction in which the camera looks, such that the
+  point under the cursor at the start of the drag stays under the cursor in every view: a view
+  from above moves it on the table, a view from the front changes its height. With a
+  `plane_normal`, it moves within that plane instead; or rotates it around the `rotation_axis` in the rotate mode. If the exact point under the
   cursor is not known (a custom `pick` function, or the `Makie.pick` fallback), the object's
   `position` is used instead
 - left-drag elsewhere (background or an unselected object): rotates the camera as usual
@@ -1052,7 +1281,8 @@ the object (or subgroup) that is currently selected apply.
 - `objects = nothing`: the movable top-level objects, all top-level objects of `h` by default. The
   objects of a movable group are movable as well.
 - `on_change = obj -> nothing`: called with the moved object after each change, e.g. to solve the system
-- `plane_normal = [0, 0, 1]`: normal of the plane for mouse translation
+- `plane_normal = nothing`: normal of the plane for mouse translation, e.g. `[0, 0, 1]` to keep
+  the height of the objects; by default the plane of the view, see "Mouse controls"
 - `rotation_axis = [0, 0, 1]`: rotation axis for mouse rotation, blue axis of the keyboard controls
 - `rotate_speed = deg2rad(0.5)`: mouse rotation angle per pixel [rad]
 - `fine_step = 10e-9`: keyboard translation step [m]
@@ -1085,7 +1315,7 @@ function kinematic_controls!(
         h::AbstractSystemRenderHandle;
         objects = nothing,
         on_change = obj -> nothing,
-        plane_normal = [0, 0, 1],
+        plane_normal = nothing,
         rotation_axis = [0, 0, 1],
         rotate_speed = deg2rad(0.5),
         fine_step = 10e-9,
@@ -1160,16 +1390,18 @@ function kinematic_controls!(
 
     ctrl = KinematicController(
         ax, h, movable, init_poses, Observable{Union{Nothing, _LiveMovable}}(nothing),
-        mode_obs, on_change, normalize(Float64.(plane_normal)), normalize(Float64.(rotation_axis)),
+        mode_obs, on_change, isnothing(plane_normal) ? nothing : normalize(Float64.(plane_normal)),
+        normalize(Float64.(rotation_axis)),
         Float64(rotate_speed), Float64(fine_step), Float64(fine_angle), throttle,
         Observable(spectator), select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
-        nothing, _HistoryEntry[], _HistoryEntry[], nothing,
+        nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing,
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
-        () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP
+        () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
+        Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1277,6 +1509,7 @@ function kinematic_controls!(
             moved >= ctrl.drag_threshold || return Consume(true)
             ctrl.dragging = true
             ctrl.drag_start = _pose(ctrl.selected[])
+            _start_snap!(ctrl, ctrl.selected[])
         end
         obj = ctrl.selected[]
         if ctrl.mode[] == :move
@@ -1285,11 +1518,23 @@ function kinematic_controls!(
                 target = hit .+ ctrl.grab_offset
                 allowed = _allowed_axes(ctrl, obj, :move)
                 if !isempty(allowed)
+                    snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
+                    if isnothing(snapped)
+                        # beside the beams: onto the grid, e.g. the holes of the table
+                        grid = ctrl.snap_grid(obj, target)
+                        isnothing(grid) || (target = Vector{Float64}(grid.point))
+                    else
+                        target = Vector{Float64}(snapped.point)
+                    end
                     Δ = target .- Vector{Float64}(position(obj))
                     A = hcat(_axis_vectors(ctrl, obj, allowed)...)
+                    R = _snap_orientation(ctrl, obj, snapped)
                     # Projection onto the allowed axes, which may be linearly dependent, e.g. if
-                    # a local axis is parallel to the rotation axis
-                    _change!(() -> translate3d!(obj, A * (pinv(A) * Δ)), ctrl, obj)
+                    # a local axis is almost parallel to the rotation axis
+                    _change!(ctrl, obj) do
+                        translate3d!(obj, A * (pinv(A) * Δ))
+                        isnothing(R) || _set_pose!(obj, _pose(obj)[1], R)
+                    end
                     _request_update!(ctrl)
                 end
             end
@@ -1298,8 +1543,11 @@ function kinematic_controls!(
             dx = mp[1] - ctrl.last_mouse[1]
             ctrl.last_mouse = mp
             if dx != 0 && :v in _allowed_axes(ctrl, obj, :rotate)
-                _change!(() -> rotate3d!(obj, ctrl.rotation_axis, ctrl.rotate_speed * dx), ctrl, obj)
-                _request_update!(ctrl)
+                δ = _snap_rotation!(ctrl, ctrl.rotate_speed * dx)
+                if δ != 0
+                    _change!(() -> rotate3d!(obj, ctrl.rotation_axis, δ), ctrl, obj)
+                    _request_update!(ctrl)
+                end
             end
         end
         return Consume(true)

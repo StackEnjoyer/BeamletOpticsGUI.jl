@@ -40,15 +40,25 @@ When this Skill is active:
 2) Open the window: `gui = live_view(system, beam); display(gui)`. Several systems and beams:
    `live_view(sys1 => beam1, sys2 => beam2)`. Pass `labels`, `detectors`, `extras` (housings),
    `constraints`, `on_change` as needed (`API.md`).
-3) Add own parts if the user needs them: a card for an own component type, a controls section, a tool or
-   a panel (`WIDGETS.md`, `VISUALIZATION.md`).
+3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
+   controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added
+   to and removed from the view in the window (catalog "Components", keys `Insert` and `Delete`) or from code with
+   `add_component!` and `remove_component!` (`API.md`); `live_view(System())` starts on an empty table.
 4) Export the alignment found in the window with `export_changes(gui)` (the button "Export" does the
    same) and paste it into the script that builds the system.
 
 ## Limits of the current version
 
-- Components cannot be added or removed in the window at runtime (they can be hidden; extras are fixed
-  when the view starts).
+- Extras are fixed when the view starts (they can be hidden). Components of a `System` and sources can
+  be added and removed at runtime, with these limits: the objects of a `StaticSystem` and objects
+  inside a group cannot be added or removed; a component or source that is being placed is not traced until it is
+  dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card)
+  and are written with their constructors by `export_script`. Adding, removing and changing are undone with
+  `Ctrl+Z` and redone with `Ctrl+Y`.
+- Aligning is done in the window only: the buttons "onto beam" and "face beam" of the card of a
+  component, "aim" of the card of a source and the optical table (`table = true`, a grid of holes that
+  dragged components snap onto). There is no public function for them; from code, set the poses with
+  BeamletOptics (`translate_to3d!`, `rotate3d!`) and call `retrace!`.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
 - The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for

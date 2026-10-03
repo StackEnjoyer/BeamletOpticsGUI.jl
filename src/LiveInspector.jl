@@ -145,7 +145,8 @@ _refresh_selection_part!(::LiveView, ::_DockedCard, _) = nothing
 _refresh_selection_part!(::LiveView, ::_DockedCard, ::Nothing) = nothing
 _card_boxes(c::_DockedCard) = c.textboxes
 # A collapsed card shows only its actions
-_declarations(c::_DockedCard, obj) = (_head_actions(obj), c.collapsed ? () : card_rows(obj))
+_declarations(gui::LiveView, c::_DockedCard, obj) =
+    (_head_actions(obj), c.collapsed ? () : _page_rows(gui, obj, c.page))
 
 # The widgets take the theme of the figure, texts and axis colors from the tokens of the app
 _card_style(c::_DockedCard, ::Type{Label}) = (; color = c.theme.text, fontsize = 12)
@@ -194,8 +195,8 @@ end
 _rows_below(gui::AppView, c::_DockedCard) = c.pinned ? Bool[] : Bool[!isempty(gui.layout.inspector.pinned)]
 
 # The pages of the card of `obj`, none without an object
-_docked_pages(::Nothing) = ()
-_docked_pages(obj) = _card_pages(obj)
+_docked_pages(::LiveView, ::Nothing) = ()
+_docked_pages(gui::LiveView, obj) = _card_pages(gui, obj)
 
 """
     _show_page!(gui::AppView, c::_DockedCard, obj)
@@ -207,11 +208,11 @@ the selection shows the keyboard step and the summary of the live view. Only cha
 layout.
 """
 function _show_page!(gui::AppView, c::_DockedCard, obj)
-    pages = _docked_pages(obj)
+    pages = _docked_pages(gui, obj)
     (isempty(pages) || c.page in pages) || (c.page = first(pages))
     open = !isnothing(obj) && !c.collapsed
     _show_bar!(gui, c, pages, open)
-    _set_shown!(c.rows_part, open && c.page === :pose && !isempty(c.rows.content))
+    _set_shown!(c.rows_part, open && _shows_rows(c.page) && !isempty(c.rows.content))
     _show_step!(c, c.step_part, isnothing(obj) || c.page === :pose)
     _show_view!(gui, c, obj, open && c.page === :results)
     _show_list!(gui, c, obj, isnothing(obj) ? !c.pinned : (open && c.page === :properties))
@@ -253,6 +254,13 @@ function _set_page!(gui::AppView, c::_DockedCard, page::Symbol)
     # A focused box of the page that is left would keep the keyboard
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
     c.page = page
+    # The rows of the new page, see `_declarations`
+    obj = _card_object(gui, c)
+    if !isnothing(obj) && !isnothing(c.pose)
+        # blocks can only be added to a part that is attached to the figure
+        _set_shown!(c.rows_part, true)
+        _build_content!(gui, c, obj)
+    end
     (c.pinned && !c.collapsed) && (gui.layout.inspector.keep = c)
     _refresh_inspector!(gui; force = true)
     return nothing
@@ -354,6 +362,10 @@ _view_shown(gui::AppView, c::_DockedCard) =
 
 # The docked cards of the `gui`: the card of the selection and the pinned ones
 _docked_cards(gui::AppView) = _DockedCard[gui.layout.inspector.card; gui.layout.inspector.pinned]
+
+# Also the menus of the docked cards
+_card_menu_open(gui::AppView) =
+    any(_has_open_menu, gui.cards.all) || any(_has_open_menu, _docked_cards(gui))
 
 # The views of the inspector card and of the docked pinned cards that are shown, see `_shown_views`
 _layout_views(gui::AppView) =
@@ -853,9 +865,10 @@ function _dock_card!(gui::AppView, c::_DockedCard, obj)
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
     # blocks can only be added to a part that is attached to the figure
     _set_shown!(c.rows_part, true)
+    # before the widgets, which are those of the page, see `_declarations`
+    c.page = _default_page(obj)
     _build_content!(gui, c, obj)
     c.pose = (obj, nothing)
-    c.page = _default_page(obj)
     return nothing
 end
 
