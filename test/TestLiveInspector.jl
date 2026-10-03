@@ -178,10 +178,10 @@ const GUI = BeamletOpticsGUI
         _page!(card, :properties)
         @test _value(gui, "Hits") == "1"
         @test _value(gui, "Size") == "(5, 5) mm"
-        # the bars of the sets of pages are built once
-        @test length(card.bars) == 2
+        # the bars of the sets of pages (of components, sources and detectors) are built once
+        @test length(card.bars) == 3
         ctrl.selected[] = o.l1
-        @test length(card.bars) == 2 && card.bar.keys == [:pose, :properties]
+        @test length(card.bars) == 3 && card.bar.keys == [:pose, :properties]
         # an inspected system has no pose, its rows are on the page "Pose"
         GUI._inspect!(gui, gui.system_handles[1])
         @test insp.name.text[] == "System 1" && card.page == :pose

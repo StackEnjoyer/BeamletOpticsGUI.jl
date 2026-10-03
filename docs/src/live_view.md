@@ -144,7 +144,14 @@ its visible part.
 The results of a detector are on its card. Every card has pages, chosen by a page bar below its head: "Pose" (the rows of
 [`card_rows`](@ref); on the card of the selection also the keyboard step and the Move/Rotate mode)
 and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
-has a third page, "Results", between them, which shows the detector view. A card with a single
+has a third page, "Results", between them, which shows the detector view. The card of a source (a
+beam, a beam group or a Gaussian beamlet) has the page "Color": a menu sets the color in which it is
+drawn ("wavelength" for the color of its wavelength, "layout" for the color of the layout, or a
+fixed color), a box takes any color as a hex value such as `#ff8000` or by its name, and a slider
+sets the opacity, e.g. to see the components through the envelope of a Gaussian beamlet. Color and
+opacity only change the display: nothing is traced again, and they are not part of
+[`export_changes`](@ref). In a script, `beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5))`
+sets them from the start. A card with a single
 page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
 detector and on "Pose" for every other object; a pinned card keeps its page.
 

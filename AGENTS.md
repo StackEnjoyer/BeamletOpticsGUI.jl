@@ -58,7 +58,8 @@ describe it as available in docs or the skill.
   the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,
   `src/LiveApp.jl`, `src/LiveAppTree.jl`, `src/LiveDock.jl`, `src/LiveInspector.jl`: the two layouts.
 - `src/LiveCard.jl`, `src/LiveCards.jl`, `src/LiveCardRows.jl`: cards and the card API.
-  `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Results", "Properties").
+  `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Color", "Results", "Properties").
+  `src/LiveBeamColor.jl`: the page "Color" of the sources (color and opacity of their beams).
 - `src/LiveDetectorView.jl`: the view of a detector on the page "Results" of its card: the kinds
   of views per type of hits (spot diagram, PSF, intensity), their results and metrics, and the
   widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of the view per detector,

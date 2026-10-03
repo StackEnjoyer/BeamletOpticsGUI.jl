@@ -592,6 +592,10 @@ object and its actions:
 Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of the object,
 "Properties" with its properties (see [`properties`](@ref), the same rows as in the inspector of
 the app layout) and, for a `Detector`, "Results" with its view between them, see "Detector view".
+The card of a source (a beam, a beam group or a Gaussian beamlet) has the page "Color": a menu of
+colors ("wavelength" for the color of its wavelength, "layout" for the color of the layout, or a
+fixed color), a box for any color as a hex value such as `#ff8000` or by its name, and a slider for
+the opacity. They only change how the source is drawn: nothing is traced again.
 A card with a single page, e.g. of an inspected point, has no page bar. A card opens on "Results"
 for a detector and on "Pose" for any other object; a pinned card keeps its page.
 

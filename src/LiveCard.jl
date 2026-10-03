@@ -470,6 +470,12 @@ card_show!(b::Button, v) = (_update!(b.label, string(v)); nothing)
 card_show!(b::Textbox, v; force::Bool = false) = ((b.focused[] && !force) || _set_box!(b, string(v)); nothing)
 card_show!(b::Slider, v) = (b.value[] == v || Makie.set_close_to!(b, v); nothing)
 card_show!(b::Toggle, v) = (_update!(b.active, Bool(v)); nothing)
+# The option with the value `v` of a menu; an unknown value keeps the selection
+function card_show!(b::Menu, v)
+    i = findfirst(o -> Makie.optionvalue(o) == v, b.options[])
+    (isnothing(i) || b.i_selected[] == i) || (b.i_selected[] = i)
+    return nothing
+end
 
 """
     _show_value!(block, v, force::Bool)
@@ -550,6 +556,8 @@ function _lower_parts(c::_ComponentCard)
         isempty(c.rows.content) || push!(parts, c.rows)
         # step and mode on the card that stands for the selection, see `_update_card!`
         c.step_shown && push!(parts, c.step)
+    elseif c.page === :color
+        isempty(c.rows.content) || push!(parts, c.rows)
     elseif c.page === :properties
         push!(parts, c.properties)
     elseif c.page === :results && !isnothing(c.view)

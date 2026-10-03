@@ -360,8 +360,9 @@ Shows the value `v` in the widget `w` on a card of [`live_view`](@ref), where `v
 the `value(gui, obj)` of its [`CardWidget`](@ref). The card calls it when it gets its object and
 after moves, solves and inputs. BeamletOpticsGUI has methods for the blocks of `Makie`: the
 text of a `Label` or the label of a `Button` (`string(v)`), the text of a `Textbox`, the value of
-a `Slider` (the closest step of its range) and the state of a `Toggle`. The default for any other
-type shows nothing.
+a `Slider` (the closest step of its range), the state of a `Toggle` and the selected option of a
+`Menu` (the option with the value `v`; an unknown value keeps the selection). The default for any
+other type shows nothing.
 
 Showing a value is not an input: the card ignores the updates of [`card_input`](@ref) while it
 shows values, and a method should not change the observable of `card_input` if it can avoid it,

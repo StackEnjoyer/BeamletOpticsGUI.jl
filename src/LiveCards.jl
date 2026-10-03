@@ -22,8 +22,19 @@ function _typing(gui::LiveView)
     any(tb -> tb.focused[], _layout_boxes(gui)) && return true
     # the widgets of `add_controls!` and `add_panel!`, see `_register_widgets!`
     _custom_typing(gui.custom) && return true
+    # the search of an open menu of a card, e.g. of the colors of a beam
+    _card_menu_open(gui) && return true
     return _menu_open(gui)
 end
+
+"""Whether a menu of the card `c` is open, see `_open_menu`."""
+_has_open_menu(c::_AbstractCard) = any(b -> !isnothing(_open_menu(b)), c.blocks)
+
+"""
+Whether a menu of a card of the `gui` is open: its options may reach beyond the card, hence presses
+are left to it and the keys to its search, see `_connect_cards!` and `_typing`.
+"""
+_card_menu_open(gui::LiveView) = any(_has_open_menu, gui.cards.all)
 
 """
 Returns the textboxes of the `gui` outside of the cards, e.g. of the inspector of the app layout,
@@ -229,6 +240,8 @@ _update_card!(::LiveView, c::_ComponentCard, ::Nothing, ::Vector{Rect2f}) = _hid
 function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{Rect2f})
     pose = _card_pose(obj)
     if c.pose === nothing || c.pose[1] !== obj
+        # The rows of the card are those of its page, see `_declarations`
+        _choose_page!(c, obj)
         _build_content!(gui, c, obj)
         _build_pages!(gui, c, obj)
     end
@@ -280,9 +293,18 @@ before, e.g. a card that was docked on this page, and the view of an object with
 """
 function _build_pages!(gui::LiveView, c::_ComponentCard, obj)
     pages = _card_pages(obj)
-    (c.pinned && c.page in pages) || (c.page = _default_page(obj))
+    _choose_page!(c, obj)
     _show_bar!(gui, c, pages)
     _build_view!(gui, c, obj)
+    return nothing
+end
+
+"""
+The page of the floating card `c` for its new object `obj`: its default page (see `_default_page`),
+unless the card is pinned and has the page that it showed before.
+"""
+function _choose_page!(c::_ComponentCard, obj)
+    (c.pinned && c.page in _card_pages(obj)) || (c.page = _default_page(obj))
     return nothing
 end
 
@@ -325,6 +347,12 @@ function _set_page!(gui::LiveView, c::_ComponentCard, page::Symbol)
     c.page = page
     isnothing(c.bar) || _update!(c.bar.selected, page)
     _defocus_card!(c)
+    # The rows of the new page, see `_declarations`
+    obj = _card_object(gui, c)
+    if !isnothing(obj) && !isnothing(c.pose) && c.pose[1] === obj
+        _build_content!(gui, c, obj)
+        _refresh_card!(gui, c; force = true)
+    end
     _refresh_selection_part!(gui, c, _card_object(gui, c))
     _update_cards!(gui)
     return nothing
@@ -460,7 +488,7 @@ The declarations of the widgets of `obj` on the card `c`: [`card_actions`](@ref)
 "parts" of an object with parts (see `_head_actions`) and [`card_rows`](@ref) with the row "remove"
 of a component (see `_card_rows`), which a host may extend, e.g. the docked card of the app layout.
 """
-_declarations(::_AbstractCard, obj) = (_head_actions(obj), _card_rows(obj))
+_declarations(c::_AbstractCard, obj) = (_head_actions(obj), _page_rows(obj, c.page))
 
 """
     _card_rows(obj)
@@ -977,7 +1005,8 @@ elsewhere ends the input into the textboxes of the cards, also if the controls c
 function _connect_cards!(gui::LiveView)
     ctrl = gui.controls
     ev = events(gui.ax.scene)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) || _over_catalog(gui)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
+                 _over_catalog(gui) || _card_menu_open(gui)
     ctrl.ignore_mouse = () -> over() || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))
