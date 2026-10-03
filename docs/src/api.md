@@ -30,6 +30,8 @@ rotate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector, ::Real)
 select!
 spectator!
 wait_solve
+presentation!
+Makie.record(::Any, ::BeamletOpticsGUI.LiveView, ::AbstractString, ::Any)
 ```
 
 ## Adding and removing components

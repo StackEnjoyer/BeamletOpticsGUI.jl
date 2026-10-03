@@ -314,6 +314,8 @@ mutable struct _CompactOverlay
     views_menu::Union{Nothing, Menu}
     reshield::Function
     hidden::Bool
+    # also the help pill is moved away, in the presentation mode, see `presentation!`
+    pill_hidden::Bool
 end
 
 function _CompactOverlay(fig::Figure, ax::LScene, cube, t::NamedTuple)
@@ -337,7 +339,7 @@ function _CompactOverlay(fig::Figure, ax::LScene, cube, t::NamedTuple)
         cornerradius = 14, padding = (14, 14, 6, 6))
     o = _CompactOverlay(scene, t, ax, cube, pill, pill_button, more, more_button, rail, rail_tools,
         [0, 0, 0], Tuple{_OverlayItem, _OverlayPart}[], 0, camera, camera_tools, isnothing(cube),
-        _Deadline(), toast, false, _Deadline(), nothing, nothing, nothing, () -> nothing, false)
+        _Deadline(), toast, false, _Deadline(), nothing, nothing, nothing, () -> nothing, false, false)
     o.camera_deadline.action = () -> _hide_camera!(o)
     o.toast_deadline.action = () -> _hide_toast!(o)
     return o
@@ -539,7 +541,7 @@ function _arrange_overlay!(o::_CompactOverlay)
     vp = _view_rect(o)
     lo, hi = minimum(vp), maximum(vp)
     m = _OVERLAY_MARGIN
-    _place_pill!(o.pill, vp)
+    o.pill_hidden ? _park!(o.pill.outer) : _place_pill!(o.pill, vp)
     if o.hidden
         foreach(p -> _park!(p.outer), (o.more, o.rail, o.camera, o.toast))
         foreach(s -> _park!(last(s).outer), o.sections)
@@ -597,7 +599,7 @@ the help pill, "⋯", the open tool rail and popover of a section, the shown cam
 toast only shows text, the clicks on it reach the 3D view.
 """
 function _overlay_rects(o::_CompactOverlay)
-    o.hidden && return Rect2f[_overlay_rect(o.pill)]
+    o.hidden && return o.pill_hidden ? Rect2f[] : Rect2f[_overlay_rect(o.pill)]
     rects = Rect2f[_overlay_rect(o.pill), _overlay_rect(o.more)]
     if _rail_open(o)
         push!(rects, _overlay_rect(o.rail))
@@ -655,6 +657,7 @@ window, see `_panel_part!`.
 function _set_spectator_ui!(gui::CompactView, on::Bool)
     layout = gui.layout
     layout.overlay.hidden = on
+    layout.overlay.pill_hidden = on && gui.presentation.on
     isnothing(layout.panel_part) || _set_shown!(layout.panel_part, !on)
     _arrange_overlay!(layout.overlay)
     return nothing

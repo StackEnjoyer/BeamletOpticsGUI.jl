@@ -231,6 +231,20 @@ Base.@kwdef mutable struct _TraceState
 end
 
 """
+    _PresentationState
+
+The presentation mode of a `LiveView`, see [`presentation!`](@ref): whether it is `on`, which parts
+of the chrome it keeps (`cards`, `view_cube`) and what it replaced, to restore it: `saved` holds the
+spectator mode, the selection and the background colors of the 3D view and the figure from before.
+"""
+Base.@kwdef mutable struct _PresentationState
+    on::Bool = false
+    cards::Bool = false
+    view_cube::Bool = false
+    saved::Union{Nothing, NamedTuple} = nothing
+end
+
+"""
     _ClipState
 
 Clip planes of a `LiveView`: the `planes`, applied if `enabled`, to the beams as well if `beams`.
@@ -486,6 +500,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     beams::_BeamState = _BeamState()
     detectors::_DetectorStates = _DetectorStates()
     components::_ComponentState
+    presentation::_PresentationState = _PresentationState()
     background_card::Any = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`

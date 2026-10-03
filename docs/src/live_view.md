@@ -368,6 +368,25 @@ rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))
 spectator!(gui, true)
 ```
 
+## Presentation mode and recording
+
+For screenshots and videos, [`presentation!`](@ref) hides everything but the 3D view (tools, status
+line, help, cards, view cube, selection box and the sidebars of the app layout), optionally with
+another `background`, and restores the window when switched off. `Makie.record` with a live view
+renders a video offscreen: `f(i)` changes the window for each element of `iter`, then the solve is
+awaited and a frame is written.
+
+```julia
+presentation!(gui; background = :black, cards = true)  # keep the pinned detector cards
+wait_solve(gui)
+save("setup.png", gui.fig; px_per_unit = 2)
+presentation!(gui, false)
+
+Makie.record(gui, "move.mp4", range(0, 5e-3, 60); framerate = 30, px_per_unit = 2) do d
+    translate_to3d!(gui, lens, [0, 0.1 + d, 0])
+end
+```
+
 ## Manual tracing
 
 Solving a large system on every mouse-drag event can be too slow for smooth interaction. With

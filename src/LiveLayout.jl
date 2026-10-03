@@ -148,13 +148,17 @@ mode and the progress window of a running solve stay, such that the mode can be 
 trace cancelled.
 """
 function _on_spectator!(gui::LiveView, on::Bool)
+    # The presentation mode ends with the spectator mode, e.g. by the key `v`
+    on || _restore_presentation!(gui)
+    presenting = gui.presentation.on
     if on
         _end_browse!(gui)
         for m in (gui.widgets.menu, gui.widgets.views_menu)
             (isnothing(m) || !m.is_open[]) || (m.is_open[] = false)
         end
     end
-    _set_visible!(gui.widgets.view_cube, !on)
+    _set_visible!(gui.widgets.view_cube, !on || (presenting && gui.presentation.view_cube))
+    _help_ui(gui).presenting = presenting
     _update_source_markers!(gui)
     _set_spectator_ui!(gui, on)
     _update_cards!(gui)
