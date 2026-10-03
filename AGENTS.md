@@ -77,6 +77,8 @@ describe it as available in docs or the skill.
   window over the 3D view, `src/LiveCatalogEntries.jl`: the entries of the components of
   BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`).
   `src/LivePlacement.jl`: placing a new component with the mouse, with snapping onto beams.
+  `src/LiveSnap.jl`: snapping of dragged components onto beams (the beams of the live view for
+  the snapping of the controls, see `_set_snap!` in `src/LiveInteraction.jl`).
 - `src/LiveMarkers.jl`: clip planes and source markers.
 - `docs/`: Documenter site. `skills/beamletopticsgui/`: the agent skill.
 

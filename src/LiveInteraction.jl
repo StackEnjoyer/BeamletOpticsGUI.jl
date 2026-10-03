@@ -405,6 +405,23 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     click_leaf::Function
     # what a click does, in the help, see `_help_sections`
     click_help::String
+    # snapping of the mouse drags onto beams, see `_set_snap!`: `:off`, `:position` (the position of
+    # the dragged object) or `:pose` (its optical axis as well); `snap_variant` is the one of the
+    # two that the toggle switches on
+    snap::Observable{Symbol}
+    snap_variant::Symbol
+    # `(obj, point) -> (; point, direction)`, or `nothing`: the point of a beam that `obj` snaps
+    # onto when it is dragged to the `point` [m], with the direction of the beam there. Without
+    # beams nothing snaps; `live_view` knows them, see `_snap_beam`
+    snap_beam::Function
+    # number of drags so far, such that `snap_beam` can tell a new drag
+    drag_count::Int
+    # rotation of the current drag in the rotate mode: the angle by the mouse and the angle that is
+    # applied [rad], which differ while snapped, and the angle of the optical axis of the object to
+    # the beam at its start, `nothing` without a beam, see `_snap_angle`
+    drag_angle::Float64
+    drag_applied::Float64
+    drag_beam_angle::Union{Nothing, Float64}
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -726,6 +743,131 @@ function _reset_pose!(ctrl::KinematicController, obj)
     P0, R0 = ctrl.init_poses[obj]
     _change!(() -> _set_pose!(obj, P0, R0), ctrl, obj)
     return nothing
+end
+
+#=
+Snapping of the mouse drags onto beams
+=#
+
+# The variants of the snapping, see `_set_snap!`
+const _SNAP_VARIANTS = (:position, :pose)
+# The angles of the optical axis to the beam at which a rotation snaps, and how close it snaps [rad]
+const _SNAP_ANGLE_STEP = π / 4
+const _SNAP_ANGLE_TOLERANCE = deg2rad(3)
+
+"""
+    _set_snap!(ctrl, snap)
+
+Sets the snapping of the mouse drags of the controls `ctrl`: `:off` (or `false`), `:position` (or
+`true`) or `:pose`. While it is on, an object that is dragged in the move mode to a beam (see
+`ctrl.snap_beam`) sits on the beam; with `:pose`, its optical axis (the local y-axis) also points
+along the beam, and has the orientation of the start of the drag beside the beams. In the rotate
+mode, the angle of the optical axis to the beam through the object snaps to the multiples of
+`_SNAP_ANGLE_STEP`, see `_snap_angle`. The keyboard steps do not snap.
+"""
+function _set_snap!(ctrl::KinematicController, snap::Symbol)
+    snap in (:off, _SNAP_VARIANTS...) ||
+        throw(ArgumentError("snap must be false, true, :position or :pose, got :$snap"))
+    snap == :off || (ctrl.snap_variant = snap)
+    ctrl.snap[] == snap || (ctrl.snap[] = snap)
+    _update_help!(ctrl)
+    return nothing
+end
+_set_snap!(ctrl::KinematicController, snap::Bool) = _set_snap!(ctrl, snap ? :position : :off)
+
+"""Switches the snapping of the controls `ctrl` on, with its last variant, or off, see `_set_snap!`."""
+_toggle_snap!(ctrl::KinematicController) =
+    _set_snap!(ctrl, ctrl.snap[] == :off ? ctrl.snap_variant : :off)
+
+"""
+Switches the variant of the snapping of the controls `ctrl` between `:position` and `:pose`, also
+while it is off, for when it is switched on, see `_set_snap!`.
+"""
+function _toggle_snap_variant!(ctrl::KinematicController)
+    variant = ctrl.snap_variant == :position ? :pose : :position
+    ctrl.snap_variant = variant
+    ctrl.snap[] == :off ? _update_help!(ctrl) : _set_snap!(ctrl, variant)
+    return nothing
+end
+
+# What the snapping of the controls does, for the chips and the status line
+_snap_string(variant::Symbol) = variant == :pose ? "position + rotation" : "position"
+
+"""
+Returns the signed angle [rad] about the unit vector `axis` from the direction `d` to the direction
+`y`, both projected onto the plane perpendicular to it; `nothing` if one of them is parallel to it.
+"""
+function _angle_about(axis, d, y)
+    dp = d .- dot(d, axis) .* axis
+    yp = y .- dot(y, axis) .* axis
+    (norm(dp) < 1e-9 || norm(yp) < 1e-9) && return nothing
+    return atan(dot(axis, cross(dp, yp)), dot(dp, yp))
+end
+
+"""
+Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
+and for the rotate mode the angle of the optical axis of `obj` to the beam through its position,
+see `_snap_angle`.
+"""
+function _start_snap!(ctrl::KinematicController, obj)
+    ctrl.drag_count += 1
+    ctrl.drag_angle = ctrl.drag_applied = 0.0
+    ctrl.drag_beam_angle = nothing
+    (ctrl.snap[] == :off || ctrl.mode[] != :rotate) && return nothing
+    P, R = _pose(obj)
+    beam = ctrl.snap_beam(obj, Vector{Float64}(P))
+    isnothing(beam) && return nothing
+    ctrl.drag_beam_angle = _angle_about(ctrl.rotation_axis, Vector{Float64}(beam.direction), R[:, 2])
+    return nothing
+end
+
+"""
+    _snap_angle(angle, beam_angle) -> Float64
+
+The angle [rad] by which an object is rotated in a drag for the `angle` by the mouse, if its optical
+axis had the angle `beam_angle` to the beam at the start of the drag: within
+`_SNAP_ANGLE_TOLERANCE` of a multiple of `_SNAP_ANGLE_STEP` to the beam, the angle that reaches
+the multiple, otherwise the `angle` itself, also without a beam (`nothing`).
+"""
+function _snap_angle(angle::Real, beam_angle::Real)
+    φ = beam_angle + angle
+    snapped = round(φ / _SNAP_ANGLE_STEP) * _SNAP_ANGLE_STEP
+    return abs(φ - snapped) <= _SNAP_ANGLE_TOLERANCE ? angle + (snapped - φ) : Float64(angle)
+end
+_snap_angle(angle::Real, ::Nothing) = Float64(angle)
+
+"""
+Returns the angle [rad] by which the object of the current drag of the controls `ctrl` is rotated
+for the step `δ` of the mouse: the step itself, or, with a beam to snap to, the step to the snapped
+angle of the drag, see `_snap_angle`.
+"""
+function _snap_rotation!(ctrl::KinematicController, δ::Real)
+    isnothing(ctrl.drag_beam_angle) && return Float64(δ)
+    ctrl.drag_angle += δ
+    step = _snap_angle(ctrl.drag_angle, ctrl.drag_beam_angle) - ctrl.drag_applied
+    ctrl.drag_applied += step
+    return step
+end
+
+"""
+    _snap_orientation(ctrl, obj, snapped) -> Union{Nothing, Matrix{Float64}}
+
+The orientation of `obj` in a drag of the controls `ctrl` in the move mode with the snapping
+`:pose`: on a beam (`snapped`, see `ctrl.snap_beam`), the orientation of the start of the drag,
+turned such that the optical axis (the local y-axis) points along the beam, in the direction or
+against it, whichever is closer; beside the beams (`nothing`), the orientation of the start of the
+drag. `nothing` if the orientation is not changed: without `:pose`, and for an object whose
+rotation is constrained.
+"""
+function _snap_orientation(ctrl::KinematicController, obj, snapped)
+    (ctrl.snap[] == :pose && !isnothing(ctrl.drag_start)) || return nothing
+    Set(_allowed_axes(ctrl, obj, :rotate)) == Set(_GIZMO_AXES) || return nothing
+    R0 = ctrl.drag_start[2]
+    isnothing(snapped) && return R0
+    y = R0[:, 2]
+    d = Vector{Float64}(snapped.direction)
+    dot(y, d) < 0 && (d = -d)
+    return _align_rotation(y, d, ctrl.rotation_axis) * R0
 end
 
 const _HISTORY_LIMIT = 100
@@ -1169,7 +1311,8 @@ function kinematic_controls!(
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
-        () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP
+        () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
+        Observable(:off), :position, (obj, point) -> nothing, 0, 0.0, 0.0, nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1277,6 +1420,7 @@ function kinematic_controls!(
             moved >= ctrl.drag_threshold || return Consume(true)
             ctrl.dragging = true
             ctrl.drag_start = _pose(ctrl.selected[])
+            _start_snap!(ctrl, ctrl.selected[])
         end
         obj = ctrl.selected[]
         if ctrl.mode[] == :move
@@ -1285,11 +1429,17 @@ function kinematic_controls!(
                 target = hit .+ ctrl.grab_offset
                 allowed = _allowed_axes(ctrl, obj, :move)
                 if !isempty(allowed)
+                    snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
+                    isnothing(snapped) || (target = Vector{Float64}(snapped.point))
                     Δ = target .- Vector{Float64}(position(obj))
                     A = hcat(_axis_vectors(ctrl, obj, allowed)...)
+                    R = _snap_orientation(ctrl, obj, snapped)
                     # Projection onto the allowed axes, which may be linearly dependent, e.g. if
                     # a local axis is parallel to the rotation axis
-                    _change!(() -> translate3d!(obj, A * (pinv(A) * Δ)), ctrl, obj)
+                    _change!(ctrl, obj) do
+                        translate3d!(obj, A * (pinv(A) * Δ))
+                        isnothing(R) || _set_pose!(obj, _pose(obj)[1], R)
+                    end
                     _request_update!(ctrl)
                 end
             end
@@ -1298,8 +1448,11 @@ function kinematic_controls!(
             dx = mp[1] - ctrl.last_mouse[1]
             ctrl.last_mouse = mp
             if dx != 0 && :v in _allowed_axes(ctrl, obj, :rotate)
-                _change!(() -> rotate3d!(obj, ctrl.rotation_axis, ctrl.rotate_speed * dx), ctrl, obj)
-                _request_update!(ctrl)
+                δ = _snap_rotation!(ctrl, ctrl.rotate_speed * dx)
+                if δ != 0
+                    _change!(() -> rotate3d!(obj, ctrl.rotation_axis, δ), ctrl, obj)
+                    _request_update!(ctrl)
+                end
             end
         end
         return Consume(true)

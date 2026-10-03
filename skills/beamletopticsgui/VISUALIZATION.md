@@ -138,7 +138,7 @@ end
   away, must not change objects). Controls are for parameters without a scene object; widgets of
   an object belong on its card (`card_rows`). See `WIDGETS.md` for both recipes.
 - Textboxes/menus built in `add_controls!`/`add_panel!` block the 3D keys while focused/open.
-- `key` must be free: all letters, arrows, `1`, `Esc`, `Insert`, `Delete`, `Backspace`, Shift/Ctrl/Alt,
+- `key` must be free: all letters, arrows, `1`, `Esc`, `Tab`, `Insert`, `Delete`, `Backspace`, Shift/Ctrl/Alt,
   `+`/`-` are taken (live view, kinematic controls, Makie `Camera3D`) → `ArgumentError`. Use
   digits `2`-`9` or `f1`-`f12`. `icon` must be an icon name of the app (e.g. `:measure`,
   `:export`, `:chart`, `:object`) or a `Makie.BezierPath`, else `ArgumentError` listing them (also

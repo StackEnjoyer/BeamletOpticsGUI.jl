@@ -47,6 +47,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
 | `catalog = component_catalog()` | the entries of the component catalog (`CatalogEntry`s); `CatalogEntry[]` shows no catalog |
+| `snap = false` | components snap onto the central beams while dragged with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: chip "Snap", `Tab`, `Shift`+`Tab` |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with

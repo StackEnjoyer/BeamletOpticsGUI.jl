@@ -36,8 +36,10 @@ overlay (see `_overlay_scene`) in the colors of the `theme` tokens:
 
 - `pill`: the help pill at the top left ("? h keys", see `_help_pill`), whose `pill_button`
   opens and closes the help card like the key `h`
-- `chips`, right of the pill: the mode (`mode_button`, a click switches it like the key `m`) and
-  the keyboard step (`step_label`, changed by the `step_buttons` "+" and "−" like the keys). In
+- `chips`, right of the pill: the mode (`mode_button`, a click switches it like the key `m`), the
+  keyboard step (`step_label`, changed by the `step_buttons` "+" and "−" like the keys) and the
+  snapping onto beams (`snap_button`, a click switches it on and off like the key `Tab`, and
+  `snap_variant_button`, a click switches what snaps like `Shift`+`Tab`, see `_set_snap!`). In
   the spectator mode, the part `spectator` is shown instead, whose `spectator_button` switches
   back to the edit mode like the key `v`.
 - `card`: the help card below the pill, shown while `shown`: the sections of `_help_sections` in
@@ -61,6 +63,8 @@ mutable struct _HelpUI
     const mode_button::Button
     const step_label::Label
     const step_buttons::NTuple{2, Button}
+    const snap_button::Button
+    const snap_variant_button::Button
     const spectator::_OverlayPart
     const spectator_button::Button
     const card::_OverlayPart
@@ -85,6 +89,10 @@ function _HelpUI(scene::Scene, t::NamedTuple, ax::LScene, pill::_OverlayPart,
     Box(g[1, 3]; width = 1, height = 14, color = t.border, strokewidth = 0)
     step_label = Label(g[1, 4], "step"; _card_style(t, Label)...)
     step_buttons = (_help_button(g[1, 5], t, "+"), _help_button(g[1, 6], t, "−"))
+    Box(g[1, 7]; width = 1, height = 14, color = t.border, strokewidth = 0)
+    snap_button = _help_button(g[1, 8], t, "Snap")
+    _help_cap!(g[1, 9], t, "Tab")
+    snap_variant_button = _help_button(g[1, 10], t, _snap_string(:position))
     # Chip of the spectator mode
     spectator = _help_chips(scene, t)
     g = spectator.content
@@ -104,8 +112,8 @@ function _HelpUI(scene::Scene, t::NamedTuple, ax::LScene, pill::_OverlayPart,
     close_button = _OverlayItem(head[1, 5], t; icon = :close, size = 22, icon_size = 14,
         padding = (0, 0, 0, 0), icon_color = t.muted)
     return _HelpUI(scene, t, ax, pill, pill_button, chips, mode_button, step_label, step_buttons,
-        spectator, spectator_button, card, close_button, nothing, Any[], Label[], nothing, false,
-        false)
+        snap_button, snap_variant_button, spectator, spectator_button, card, close_button, nothing,
+        Any[], Label[], nothing, false, false)
 end
 
 # A pill-shaped part for the chips next to the help pill, as high as the pill
@@ -223,9 +231,28 @@ function _update_help_ui!(help::_HelpUI, ctrl::KinematicController)
     mode = ctrl.mode[]
     _update!(help.mode_button.label, uppercasefirst(String(mode)))
     _update!(help.step_label.text, "step " * _step_string(mode, ctrl.fine_step, ctrl.fine_angle))
+    _show_snap_chips!(help, ctrl.snap[] != :off, ctrl.snap_variant)
     help.shown = ctrl.help_shown
     help.shown && _show_help_sections!(help, _help_sections(ctrl))
     _arrange_help!(help, ctrl.spectator[])
+    return nothing
+end
+
+"""
+Shows the snapping of the controls in the chips of the `help`: the chip "Snap" in the accent color
+while it is `on`, and its `variant`, muted while it is off, see `_set_snap!`.
+"""
+function _show_snap_chips!(help::_HelpUI, on::Bool, variant::Symbol)
+    t = help.theme
+    b = help.snap_button
+    color = on ? t.accent : t.text
+    foreach(c -> _update!(c, Makie.to_color(color)), (b.labelcolor, b.labelcolor_hover, b.labelcolor_active))
+    _update!(b.buttoncolor, Makie.to_color(on ? t.accent_soft : t.field))
+    _update!(b.strokecolor, Makie.to_color(on ? t.accent_soft : t.border))
+    v = help.snap_variant_button
+    _update!(v.label, _snap_string(variant))
+    color = on ? t.text : t.muted
+    foreach(c -> _update!(c, Makie.to_color(color)), (v.labelcolor, v.labelcolor_hover, v.labelcolor_active))
     return nothing
 end
 
@@ -274,7 +301,8 @@ _over_help(help::_HelpUI, p::Point2f) =
 
 Connects the help of the live view `gui` (see `_HelpUI`) to its controls: the pill and the close
 button of the card open and close the card like the key `h`, the chips switch the mode, change the
-keyboard step and leave the spectator mode like the keys `m`, `+`, `-` and `v`. The help replaces
+keyboard step, switch the snapping onto beams and leave the spectator mode like the keys `m`, `+`,
+`-`, `Tab` and `v`. The help replaces
 the text of the controls overlay (`help_view`) and follows the 3D view. The presses and the
 scrolling on the help card are consumed before all other listeners (`_HELP_PRIORITY`).
 """
@@ -310,6 +338,8 @@ function _connect_help!(gui::LiveView)
     end)
     push!(listeners, on(_ -> Consume(over_card()), ev.scroll; priority = _HELP_PRIORITY))
     push!(listeners, on(_ -> _set_mode!(gui, _other_mode(ctrl.mode[])), help.mode_button.clicks))
+    push!(listeners, on(_ -> _toggle_snap!(gui), help.snap_button.clicks))
+    push!(listeners, on(_ -> _toggle_snap_variant!(gui), help.snap_variant_button.clicks))
     for (button, dir) in zip(help.step_buttons, (1, -1))
         push!(listeners, on(_ -> _change_step!(ctrl, dir), button.clicks))
     end

@@ -931,6 +931,24 @@ history. From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do 
 [`export_changes`](@ref) lists the added components, with their constructor calls, and the removed
 ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
 
+# Snapping onto beams
+
+With the snapping switched on (the chip "Snap" next to the mode at the top left, the key `Tab`, or
+the `snap` kwarg), a component that is dragged with the mouse snaps onto the beams like one that is
+being placed. In the move mode, a component whose position comes within 12 px of a beam sits on the
+beam and slides along it; of a beam group only the central beam takes part, of a Gaussian beamlet
+its chief ray. The chip right of "Snap" and `Shift`+`Tab` choose what snaps: the "position" only,
+such that e.g. a mirror keeps its tilt, or "position + rotation", which also turns the optical axis
+(the local y-axis) along the beam; beside the beams the component then has the orientation of the
+start of the drag again. In the rotate mode, the angle between the optical axis and the beam
+through the component snaps to the multiples of 45° within 3°, e.g. a lens straight in the beam or
+a mirror at 45°.
+
+The beams are those at the start of the drag, without what lies behind the dragged component: it
+snaps onto the beam that reaches it, continued as a straight line, and not onto the part that it
+deflects itself. Locked axes (see `constraints`) stay locked. The keyboard steps do not snap, and
+neither do sources and clip planes.
+
 # Keyword args
 
 - `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
@@ -997,6 +1015,9 @@ ones. A `Detector` added at runtime shows its view on the page "Results" of its 
   click on the empty background shows, see "Background card"
 - `catalog = component_catalog()`: the components that the catalog "Components" offers, a vector of
   [`CatalogEntry`](@ref); an empty vector shows no catalog, see "Adding and removing components"
+- `snap = false`: whether the components snap onto the beams while they are dragged with the mouse:
+  `false`, `true` or `:position` (the position), or `:pose` (the position and the rotation), see
+  "Snapping onto beams"
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -1029,6 +1050,7 @@ function live_view(
         extras = [],
         background_card = nothing,
         catalog = component_catalog(),
+        snap::Union{Bool, Symbol} = false,
         kwargs...
     )
     isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
@@ -1157,6 +1179,9 @@ function live_view(
     # placement with the mouse
     _build_catalog!(gui)
     _connect_placement!(gui)
+    # The components snap onto the beams while they are dragged, see the `snap` kwarg
+    _connect_snap!(gui)
+    _set_snap!(controls, snap)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,

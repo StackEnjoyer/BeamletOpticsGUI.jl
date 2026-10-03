@@ -255,6 +255,7 @@ const _LIVE_VIEW_KEYS = (
     Keyboard.p => "add a clip plane (p)",
     Keyboard.delete => "remove the component or clip plane (Delete)",
     Keyboard.insert => "open the catalog of the components (Insert)",
+    Keyboard.tab => "snap onto beams (Tab, Shift+Tab)",
     Keyboard._1 => "the source markers (1)",
     Keyboard.g => "zoom to the selection (g)",
     Keyboard.v => "the spectator mode (v)",

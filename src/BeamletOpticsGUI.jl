@@ -28,6 +28,7 @@ using PrecompileTools: @setup_workload, @compile_workload
 import GeometryBasics
 using GeometryBasics: Point2, Point3, Point3f, Point3d, Vec3f, Vec3d, GLTriangleFace, Mesh
 using Base.ScopedValues: ScopedValue, with
+import AbstractTrees
 using AbstractTrees: PreOrderDFS
 using LinearAlgebra: dot, cross, normalize, norm
 using Trapz: trapz
@@ -78,6 +79,7 @@ include("LiveSolveError.jl")
 include("LiveCustom.jl")
 include("LiveComponents.jl")
 include("LivePlacement.jl")
+include("LiveSnap.jl")
 include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")
