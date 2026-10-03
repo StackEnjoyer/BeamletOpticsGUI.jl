@@ -95,6 +95,83 @@ end
 function add_panel! end
 
 """
+    detector_view!(position, gui, pd; kind, expanded = true, width = 280, height = 280,
+        spot_colors = nothing, n, colorscale, colorrange, profiles, kwargs...) -> DetectorView
+    detector_view!(position, pd; theme = :light, name = "Detector", kwargs...) -> DetectorView
+
+Builds the view of the results of the `Detector` `pd`, the one of the page "Results" of its card in
+[`live_view`](@ref), into `position` (a `GridPosition` or `GridLayout` of a `Figure`, e.g.
+`fig[1, 1]`), for a layout of your own, e.g. a second window. Returns a [`DetectorView`](@ref).
+
+The view shows the hits of `pd` as a spot diagram (`kind = :spot`), a field of intensity
+(`:intensity`, for beamlet hits) or its PSF, the intensity normalized to its peak (`:psf`, for ray
+hits), with the metrics, the centroid marked by a cross and the buttons "log", "profiles" and
+"fit". `kind = :auto` (the default) takes the first kind that the hits offer. The mouse acts like
+on an `Axis`: the wheel zooms, a drag with the left button selects the rectangle to zoom to, a drag
+with the right button pans and Ctrl + click or a double click fits the view. The axes are in mm of
+the local x and z of the detector. The figure must be shown for the mouse to work.
+
+Keyword arguments:
+
+- `kind`: `:auto`, `:spot`, `:psf` or `:intensity`; a kind that the hits do not offer falls back
+  to the first one that they offer
+- `expanded`: `true` for the large view with its `axis`, `false` for the thumbnail with the key
+  metrics, which the user expands by a click
+- `width`, `height`: the size of the axis [px] of the expanded view
+- `spot_colors`: the colors of the spots of a spot diagram, `nothing` for the text color of the
+  theme. A function `hit -> color` is called for each hit (in the order of the hits of the
+  detector, which is the order of the spots) after each update, e.g. to color by wavelength:
+  `hit -> my_color(BeamletOptics.wavelength(hit.ray))`; a color colors all spots; a vector of colors (one per spot
+  of the current result) is dropped when the number of hits changes, use a function for results
+  that change. See [`set_spot_colors!`](@ref)
+- `n`, `colorscale` (`:linear` or `:log`), `colorrange`, `profiles`: the options of a field (grid
+  per axis, color scale, fixed color range, profiles along x and z through the centroid); all other
+  keywords, e.g. `x_min` or `x_max`, go to `BeamletOptics.intensity`. A `history` throws an
+  `ArgumentError`: record the values in `on_change` and plot them yourself
+
+With the `gui`, the view is updated like the views of the cards: after each solve its detector is
+computed in the background (also while the view is not on a card) and shown. The view shares the
+options of the detector (kind, grid, color scale, profiles, window of a zoom) with its cards and with
+other views of the detector, i.e. a change in one is shown in all. The options that are passed to
+`detector_view!` are applied to these shared options, the others are kept; the theme is that of the
+`gui`. Make the figure for a window next to the live view with the colors of the theme, e.g.
+`Figure(; backgroundcolor = gui.layout.theme.background)`. Without a `gui`, the view
+is computed when it is built and by [`update_detector_view!`](@ref); `theme` is `:light` or `:dark`.
+The view is removed with `close(view)`.
+
+```julia
+fig = Figure(size = (900, 450))
+v1 = detector_view!(fig[1, 1], gui, pd1; kind = :spot, spot_colors = hit -> my_color(BeamletOptics.wavelength(hit.ray)))
+v2 = detector_view!(fig[1, 2], gui, pd2; kind = :intensity, colorscale = :log)
+display(GLMakie.Screen(), fig)   # a second window, updated after each solve of `gui`
+v1.metrics.rms                    # RMS radius of the spots of pd1 [m]
+```
+"""
+function detector_view! end
+
+"""
+    update_detector_view!(view::DetectorView) -> view
+
+Computes the view of the detector of the `view` from its hits now and shows it. A `view` of a
+[`live_view`](@ref) is updated after each solve of the live view by itself; use this for hits that
+the live view did not solve, e.g. after a `solve_system!` of your own, or for a view built without a
+live view, which is only computed when it is built, expanded or changed by the mouse. The hits must
+be complete. Blocks until the result is shown, with a view of a field on a fine grid this takes as
+long as `BeamletOptics.intensity`.
+"""
+function update_detector_view! end
+
+"""
+    set_spot_colors!(view::DetectorView, colors) -> view
+
+Sets the colors of the spots of the spot diagram of the `view`, see the keyword `spot_colors` of
+[`detector_view!`](@ref): a function `hit -> color`, which is called for the hits of each
+result, one color for all spots, a vector with one color per spot of the current result, or
+`nothing` for the text color of the theme. The spot diagram that is shown changes at once.
+"""
+function set_spot_colors! end
+
+"""
     add_controls!(f, gui, title::AbstractString) -> GridLayout
 
 Adds own widgets to the [`live_view`](@ref) window `gui`, placed by its layout: with

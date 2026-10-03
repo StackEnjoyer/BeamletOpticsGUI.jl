@@ -63,7 +63,9 @@ describe it as available in docs or the skill.
 - `src/LiveDetectorView.jl`: the view of a detector on the page "Results" of its card: the kinds
   of views per type of hits (spot diagram, PSF, intensity), their results and metrics, and the
   widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of the view per detector,
-  its computation only while it is shown, and the `detectors` kwarg.
+  its computation only while it is shown, and the `detectors` kwarg. `src/LiveDetectorWidget.jl`: the
+  public `detector_view!`, `DetectorView`, `update_detector_view!` and `set_spot_colors!`, the view of a card in a
+  figure of its own (registered with `_register_view!` if it has a live view).
 - `src/LiveTrace.jl`, `src/LiveProgress.jl`: solving, progress window. `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
 - `src/LiveSelectionCard.jl`: the small menu of a click on a group ("Select", "More") and the selection card of groups (browsing their parts level by level).

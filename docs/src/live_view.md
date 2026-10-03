@@ -237,6 +237,9 @@ The option `history` is no longer available and throws an `ArgumentError`: recor
 `on_change` and plot them in a panel of [`add_panel!`](@ref), see [Own panels, controls and tools](@ref)
 and the [Interactive Michelson interferometer](@ref) example.
 
+The view of a detector can also be placed in a figure of your own, e.g. a second window: see
+[`detector_view!`](@ref).
+
 ## Sliders
 
 `sliders` adds custom parameters: in the compact layout the entry "Sliders" of the tool rail, which
