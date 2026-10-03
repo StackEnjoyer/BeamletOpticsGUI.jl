@@ -19,7 +19,7 @@ const BMO = BeamletOptics
 export live_view, kinematic_controls!, view_cube!, export_changes, card_rows, pose_card_rows,
        beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!,
        add_controls!, add_tool!, retrace!, add_component!, remove_component!, CatalogEntry,
-       CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!, spectator!, wait_solve
+       CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!, spectator!, wait_solve, presentation!
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -84,6 +84,7 @@ include("LiveBeamColor.jl")
 include("LivePlacement.jl")
 include("LiveSnap.jl")
 include("LiveScripting.jl")
+include("LivePresentation.jl")
 include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")

@@ -169,7 +169,7 @@ the cards that the mouse moved to their `spot` first, where they stay (see `_dra
 the selection card of groups (see `_update_browse_card!`), then the card of the selection, at its
 object; a pinned card without room is collapsed to its head. All cards are hidden while a menu is
 open, whose options they would cover, and in the spectator mode (see `_on_spectator!`), after which
-the pinned cards are shown again where they were. Called every frame, which moves the cards with the camera
+the pinned cards are shown again where they were; the presentation mode can keep the pinned cards. Called every frame, which moves the cards with the camera
 and the objects.
 """
 function _update_cards!(gui::LiveView)
@@ -179,7 +179,10 @@ function _update_cards!(gui::LiveView)
     shown = menu || !_selection_card_shown(gui) || any(c -> c.pinned && c.obj === sel, gui.cards.all) ?
         nothing : sel
     spectator = gui.controls.spectator[]
-    target(c) = spectator ? nothing : c === gui.cards.selection ? shown : c.pinned && !menu ? c.obj : nothing
+    # The presentation mode may keep the pinned cards, see `presentation!`
+    keep = !spectator || (gui.presentation.on && gui.presentation.cards)
+    target(c) = c === gui.cards.selection ? (spectator ? nothing : shown) :
+                c.pinned && !menu && keep ? c.obj : nothing
     order = [gui.cards.selection; filter(c -> c !== gui.cards.selection, gui.cards.all)]
     for c in order
         isnothing(c.spot) || _update_card!(gui, c, target(c), obstacles)
