@@ -156,7 +156,7 @@ end
 
 The step from the form of the catalog to a component: parses the `strings` of the inputs of the
 parameters of the `entry` (see `_catalog_value`), constructs the object or source `obj` and returns
-it with its `origin = (; code, pose0)`, the call of its constructor as code and its pose as constructed,
+it with its `origin = (; code, pose0, entry, strings)`, the call of its constructor as code, its pose as constructed, the `entry` and the `strings`, with which it can be built again,
 see `_ComponentState`. Throws for an invalid input and what the constructor throws.
 """
 function _catalog_component(entry::CatalogEntry, strings)
@@ -164,7 +164,8 @@ function _catalog_component(entry::CatalogEntry, strings)
         throw(ArgumentError("\"$(entry.name)\" has $(length(entry.params)) parameters, got $(length(strings)) values"))
     values = Any[_catalog_value(p, s) for (p, s) in zip(entry.params, strings)]
     obj = _catalog_object(entry, values)
-    return (; obj, origin = (; code = _catalog_code(entry, values), pose0 = _pose(obj)))
+    return (; obj, origin = (; code = _catalog_code(entry, values), pose0 = _pose(obj), entry,
+        strings = String[String(s) for s in strings]))
 end
 
 """
