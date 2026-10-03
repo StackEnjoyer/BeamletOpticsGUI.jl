@@ -22,7 +22,7 @@ mode, which is switched with `m`:
 | Input                                   | Move mode                     | Rotate mode                   |
 |:----------------------------------------|:------------------------------|:------------------------------|
 | Left-click on a component               | Select it                     | Select it                     |
-| Left-drag on the selected component     | Move in the horizontal plane  | Rotate around the blue axis   |
+| Left-drag on the selected component     | Move in the plane of the view | Rotate around the blue axis   |
 | Left-drag elsewhere                     | Rotate the camera             | Rotate the camera             |
 | `↑` / `↓`                               | Move along the green arrow    | Rotate around the red ring    |
 | `→` / `←`                               | Move along the red arrow      | Rotate around the blue ring   |
@@ -58,7 +58,13 @@ component again descends one level into the hierarchy (a subgroup, then the indi
 so that the group can still be moved as a whole, or a single part can be moved on its own. `Esc`
 goes back up one level.
 
-A drag grabs the point under the cursor, which stays under the cursor during the drag. Each drag,
+A drag grabs the point under the cursor, which stays under the cursor during the drag: the
+component moves in the plane of the view, i.e. the plane through the grabbed point perpendicular to
+the direction in which the camera looks. Seen from above, it moves on the table; seen from the
+front, it moves sideways and in height, which is easiest in an orthographic view along an axis (see
+the view cube). In an oblique view, a drag changes the height as well; the keyword
+`plane_normal`, e.g. `plane_normal = [0, 0, 1]`, moves the components in a fixed plane instead,
+and the `constraints` below lock axes. Each drag,
 reset and series of steps with the same key (less than 1 s apart) is one entry of the undo history,
 which undoes up to 100 changes.
 

@@ -166,9 +166,10 @@ its `help_extra` sections are merged in, e.g. the keys of `live_view`, see `_mer
 
 - `click_help = _CLICK_HELP`: what a click does
 - `spectator = false`: the entries of the spectator mode instead
+- `view_plane = true`: whether the mouse moves objects in the plane of the view, see `_drag_normal`
 """
 function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = nothing;
-        click_help::String = _CLICK_HELP, spectator::Bool = false)
+        click_help::String = _CLICK_HELP, spectator::Bool = false, view_plane::Bool = true)
     spectator && return _HelpSection["Spectator mode" => [
         _HelpEntry(["V"], "switch to edit mode"),
         _HelpEntry([:mouse => "drag"], "all clicks and drags: camera"),
@@ -188,7 +189,8 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["↑", "↓"], along(up); color = up),
             _HelpEntry(["←", "→"], along(left); color = left),
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
-            _HelpEntry([:mouse => "drag"], move ? "move in the plane" : "rotate around the blue ring";
+            _HelpEntry([:mouse => "drag"], !move ? "rotate around the blue ring" :
+                                            view_plane ? "move in the plane of the view" : "move in the plane";
                 color = move ? "" : "blue"),
             _HelpEntry(["+", "−"], "keyboard step, now $step"),
             _HelpEntry(["Shift"], "with a key: 10× step"),
@@ -334,7 +336,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     selected::Observable{Union{Nothing, _LiveMovable}}
     mode::Observable{Symbol}
     on_change::Function
-    plane_normal::Vector{Float64}
+    # normal of the plane of the mouse drags, `nothing` for the plane of the view, see `_drag_normal`
+    plane_normal::Union{Nothing, Vector{Float64}}
     rotation_axis::Vector{Float64}
     rotate_speed::Float64
     fine_step::Float64
@@ -574,7 +577,7 @@ end
 
 _help_sections(ctrl::KinematicController) = _merge_sections(
     _help_sections(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
-        ctrl.click_help, spectator = ctrl.spectator[]),
+        ctrl.click_help, spectator = ctrl.spectator[], view_plane = isnothing(ctrl.plane_normal)),
     ctrl.spectator[] ? _HelpSection[] : ctrl.help_extra)
 
 """
@@ -1009,10 +1012,35 @@ function _cursor_ray(scene)
     return origin, dir
 end
 
-"""Returns the drag plane intersection of the ray through the mouse position."""
+"""
+Returns the direction in which the camera of the `scene` looks, a unit vector: from its eye to its
+`lookat` point, or, for a view without a `Camera3D`, e.g. an `Axis3`, along the ray through the
+cursor.
+"""
+function _view_direction(scene)
+    cam = Makie.cameracontrols(scene)
+    if cam isa Makie.Camera3D
+        d = Vector{Float64}(cam.lookat[] .- cam.eyeposition[])
+        norm(d) > 0 && return d ./ norm(d)
+    end
+    return normalize(_cursor_ray(scene)[2])
+end
+
+"""
+    _drag_normal(scene, ctrl) -> Vector{Float64}
+
+The normal of the plane in which the mouse moves an object of the controls `ctrl`: their
+`plane_normal`, or by default (`nothing`) the direction in which the camera looks (see
+`_view_direction`), i.e. the plane of the view, in which the object stays under the cursor in every
+view, e.g. also in a view from the front.
+"""
+_drag_normal(scene, ctrl::KinematicController) =
+    isnothing(ctrl.plane_normal) ? _view_direction(scene) : ctrl.plane_normal
+
+"""Returns the drag plane intersection of the ray through the mouse position, see `_drag_normal`."""
 function _mouse_plane_hit(scene, ctrl::KinematicController)
     origin, dir = _cursor_ray(scene)
-    return _ray_plane_intersect(origin, dir, ctrl.plane_point, ctrl.plane_normal)
+    return _ray_plane_intersect(origin, dir, ctrl.plane_point, _drag_normal(scene, ctrl))
 end
 
 _default_pick(ax) = Makie.pick(Makie.get_scene(ax))
@@ -1132,9 +1160,11 @@ A click selects, a drag moves only what is already selected, every other drag ro
 
 - left-click on an object: selects it, so that a camera drag never moves or rotates a component by
   accident
-- left-drag on the selected object: moves it within the plane through the grabbed point
-  (`plane_normal`), such that the point under the cursor at the start of the drag stays under the
-  cursor; or rotates it around the `rotation_axis` in the rotate mode. If the exact point under the
+- left-drag on the selected object: moves it within the plane of the view through the grabbed
+  point, i.e. the plane perpendicular to the direction in which the camera looks, such that the
+  point under the cursor at the start of the drag stays under the cursor in every view: a view
+  from above moves it on the table, a view from the front changes its height. With a
+  `plane_normal`, it moves within that plane instead; or rotates it around the `rotation_axis` in the rotate mode. If the exact point under the
   cursor is not known (a custom `pick` function, or the `Makie.pick` fallback), the object's
   `position` is used instead
 - left-drag elsewhere (background or an unselected object): rotates the camera as usual
@@ -1187,7 +1217,8 @@ the object (or subgroup) that is currently selected apply.
 - `objects = nothing`: the movable top-level objects, all top-level objects of `h` by default. The
   objects of a movable group are movable as well.
 - `on_change = obj -> nothing`: called with the moved object after each change, e.g. to solve the system
-- `plane_normal = [0, 0, 1]`: normal of the plane for mouse translation
+- `plane_normal = nothing`: normal of the plane for mouse translation, e.g. `[0, 0, 1]` to keep
+  the height of the objects; by default the plane of the view, see "Mouse controls"
 - `rotation_axis = [0, 0, 1]`: rotation axis for mouse rotation, blue axis of the keyboard controls
 - `rotate_speed = deg2rad(0.5)`: mouse rotation angle per pixel [rad]
 - `fine_step = 10e-9`: keyboard translation step [m]
@@ -1220,7 +1251,7 @@ function kinematic_controls!(
         h::AbstractSystemRenderHandle;
         objects = nothing,
         on_change = obj -> nothing,
-        plane_normal = [0, 0, 1],
+        plane_normal = nothing,
         rotation_axis = [0, 0, 1],
         rotate_speed = deg2rad(0.5),
         fine_step = 10e-9,
@@ -1295,7 +1326,8 @@ function kinematic_controls!(
 
     ctrl = KinematicController(
         ax, h, movable, init_poses, Observable{Union{Nothing, _LiveMovable}}(nothing),
-        mode_obs, on_change, normalize(Float64.(plane_normal)), normalize(Float64.(rotation_axis)),
+        mode_obs, on_change, isnothing(plane_normal) ? nothing : normalize(Float64.(plane_normal)),
+        normalize(Float64.(rotation_axis)),
         Float64(rotate_speed), Float64(fine_step), Float64(fine_angle), throttle,
         Observable(spectator), select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,

@@ -3,7 +3,7 @@ module TestLivePlacement
 using GLMakie, BeamletOptics, BeamletOpticsGUI
 using BeamletOptics: render_plots
 using Makie
-using LinearAlgebra: I, norm, dot, det
+using LinearAlgebra: I, norm, dot, det, normalize
 using Test
 
 const BMO = BeamletOptics
@@ -88,19 +88,24 @@ const GUI = BeamletOpticsGUI
         @test !any(o -> o === lens, sys.objects)
         ghost_plots = copy(render_plots(p.ghost))
         @test !isempty(ghost_plots) && all(q -> _in_scene(gui, q), ghost_plots)
-        # shown on its plane, the controls ignore the mouse
-        @test _pose(lens)[1][3] ≈ 0 atol = 1e-9
+        # shown on its plane, i.e. the plane of the view through the source; the controls ignore
+        # the mouse
+        n = GUI._view_direction(scene)
+        @test n ≈ normalize([0.0, 0.1, 0.0] .- [0.35, -0.25, 0.45])
+        @test dot(_pose(lens)[1], n) ≈ 0 atol = 1e-9
+        @test abs(_pose(lens)[1][3]) > 1e-3
         @test ctrl.ignore_mouse()
         @test occursin("placing Lens", gui.status.text[])
 
-        # 1: beside the beam, on the plane through the source, as constructed
+        # 1: beside the beam, under the mouse on the plane of the view through the source, as
+        # constructed
         _mouse!(gui, [0, 0.05, 0]; shift = 30)
         origin, dir = GUI._cursor_ray(scene)
-        hit = GUI._ray_plane_intersect(origin, dir, [0.0, 0, 0], [0.0, 0, 1])
+        hit = GUI._ray_plane_intersect(origin, dir, [0.0, 0, 0], n)
         P, R = _pose(lens)
         @test !p.snapped
         @test P ≈ hit atol = 1e-9
-        @test P[3] ≈ 0 atol = 1e-9
+        @test dot(P, n) ≈ 0 atol = 1e-9
         @test R ≈ R0 atol = 1e-9
 
         # 2: near beam A, on the beam, the optical axis along +y, i.e. as constructed
@@ -134,15 +139,17 @@ const GUI = BeamletOpticsGUI
         @test P ≈ P3 atol = 1e-9
         @test R ≈ R3 atol = 1e-9
 
-        # 5: looking along the plane, the camera ray beside the beams does not meet it: the
-        # position is kept, the orientation is the one as constructed
+        # 5: seen from the side, beside the beams: under the mouse in the vertical plane through
+        # the source, above the beam, in the orientation as constructed
         set_view(gui.ax, [0.5, 0.05, 0.0], [0.0, 0.05, 0.0], [0.0, 0, 1])
         vp = Makie.viewport(scene)[]
         c = Point2f(vp.origin) .+ Point2f(vp.widths) ./ 2
         events(scene).mouseposition[] = (Float64(c[1]), Float64(c[2]) + 100)
         P, R = _pose(lens)
         @test !p.snapped
-        @test P ≈ P3 atol = 1e-9
+        @test P[1] ≈ 0 atol = 1e-9
+        @test P[3] > 0.01
+        @test P[2] ≈ 0.05 atol = 1e-6
         @test R ≈ R0 atol = 1e-9
 
         # Esc cancels: no ghost, nothing added, the controls take the mouse again
@@ -156,6 +163,38 @@ const GUI = BeamletOpticsGUI
         # Esc without a placement is left to the other listeners
         _key!(gui, Keyboard.escape)
         @test gui.status.text[] == "placement cancelled"
+        close(gui)
+    end
+
+    @testset "a fixed plane ($layout)" for layout in (:compact, :app)
+        # with a `plane_normal`, the component stays on that plane through the source
+        gui, sys, m = _fixture(; layout, plane_normal = [0, 0, 1])
+        scene = gui.ax.scene
+        lens = _lens()
+        R0 = _pose(lens)[2]
+        events(scene).mouseposition[] = (-10.0, -10.0)
+        GUI._start_placement!(gui, lens)
+        p = gui.components.placement
+        @test _pose(lens)[1][3] ≈ 0 atol = 1e-9
+        _mouse!(gui, [0, 0.05, 0]; shift = 30)
+        origin, dir = GUI._cursor_ray(scene)
+        hit = GUI._ray_plane_intersect(origin, dir, [0.0, 0, 0], [0.0, 0, 1])
+        P0, R = _pose(lens)
+        @test !p.snapped
+        @test P0 ≈ hit atol = 1e-9
+        @test P0[3] ≈ 0 atol = 1e-9
+        @test R ≈ R0 atol = 1e-9
+        # looking along the plane, the camera ray beside the beams does not meet it: the position
+        # is kept
+        set_view(gui.ax, [0.5, 0.05, 0.0], [0.0, 0.05, 0.0], [0.0, 0, 1])
+        vp = Makie.viewport(scene)[]
+        c = Point2f(vp.origin) .+ Point2f(vp.widths) ./ 2
+        events(scene).mouseposition[] = (Float64(c[1]), Float64(c[2]) + 100)
+        P, R = _pose(lens)
+        @test !p.snapped
+        @test P ≈ P0 atol = 1e-9
+        @test R ≈ R0 atol = 1e-9
+        _key!(gui, Keyboard.escape)
         close(gui)
     end
 

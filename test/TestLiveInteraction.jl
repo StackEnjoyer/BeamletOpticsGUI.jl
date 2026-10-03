@@ -1250,7 +1250,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mouseposition[] = (cx + 30, cy + 15)
             r1 = Makie.ray_at_cursor(scene)
             hit1 = GUI._ray_plane_intersect(Vector{Float64}(r1.origin), Vector{Float64}(r1.direction),
-                ctrl.plane_point, ctrl.plane_normal)
+                ctrl.plane_point, GUI._drag_normal(scene, ctrl))
             # the grabbed point (position - grab_offset) is still exactly the new plane hit
             @test isapprox(collect(Float64.(BMO.position(m1))) .- grab_offset, hit1; atol = 1e-9)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -1270,6 +1270,76 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             close(ctrl)
         end
+    end
+
+    @testset "drag in the plane of the view" begin
+        # Selects m1 at the center of the view (the camera looks at it) and drags it by `d` px.
+        # Returns its displacement, the direction of the view and the distance [px] between the
+        # cursor and the grabbed point after the drag. `move` are the axes it may move along
+        function dragged(eye, up; ortho = false, d = (40.0, 25.0), move = nothing, kwargs...)
+            fig, ax, h, m1, m2 = _fixture()
+            scene = ax.scene
+            cam = Makie.cameracontrols(scene)
+            ortho && (cam.settings.projectiontype[] = Makie.Orthographic)
+            Makie.update_cam!(scene, Vec3d(eye), Vec3d(0, 0, 0), Vec3d(up))
+            vp = scene.viewport[]
+            c = (vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2)
+            constraints = isnothing(move) ? Dict() : Dict(m1 => (; move))
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, constraints, kwargs...)
+            ev = events(scene)
+            ev.mouseposition[] = c
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test ctrl.selected[] === m1
+            P0 = collect(Float64.(BMO.position(m1)))
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            grabbed = P0 .- ctrl.grab_offset
+            ev.mouseposition[] = c .+ d
+            n = GUI._view_direction(scene)
+            Δ = collect(Float64.(BMO.position(m1))) .- P0
+            px = Makie.project(scene, :data, :pixel, Point3d((grabbed .+ Δ)...))
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            miss = hypot(px[1] - (c[1] + d[1] - vp.origin[1]), px[2] - (c[2] + d[2] - vp.origin[2]))
+            close(ctrl)
+            return Δ, n, miss
+        end
+
+        @testset "$name, ortho = $ortho" for (name, eye, up) in (
+                    ("oblique", [0.3, -0.4, 0.25], [0, 0, 1]),
+                    ("front", [0.0, -0.5, 0.0], [0, 0, 1]),
+                    ("side", [-0.5, 0.0, 0.0], [0, 0, 1]),
+                    ("top", [0.0, 0.0, 0.5], [0, 1, 0])),
+                ortho in (false, true)
+            Δ, n, miss = dragged(eye, up; ortho)
+            @test n ≈ -normalize(Float64.(eye))
+            # it moved, within the plane of the view, and the grabbed point is under the cursor
+            @test norm(Δ) > 1e-4
+            @test abs(dot(Δ, n)) < 1e-9
+            @test miss < 0.5
+        end
+
+        # from the front, a drag to the right and upwards changes x and z, not y
+        Δ, n, _ = dragged([0.0, -0.5, 0.0], [0, 0, 1]; ortho = true)
+        @test Δ[1] > 1e-4 && Δ[3] > 1e-4 && abs(Δ[2]) < 1e-12
+        # from above, with y upwards on the screen, x and y, not z
+        Δ, n, _ = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true)
+        @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
+
+        # a `plane_normal` keeps the plane, whatever the view: here the height
+        Δ, n, miss = dragged([0.3, -0.4, 0.25], [0, 0, 1]; plane_normal = [0, 0, 1])
+        @test norm(Δ) > 1e-4 && abs(Δ[3]) < 1e-12 && abs(dot(Δ, n)) > 1e-5
+        @test miss < 0.5
+        # parallel to that plane, i.e. from the front, nothing moves
+        Δ, _, _ = dragged([0.0, -0.5, 0.0], [0, 0, 1]; ortho = true, plane_normal = [0, 0, 1])
+        @test norm(Δ) < 1e-12
+
+        # locked axes stay locked: only along the local x-axis of the mirror, the world x-axis
+        Δ, _, _ = dragged([0.3, -0.4, 0.25], [0, 0, 1])
+        @test norm(cross(Δ, [1.0, 0, 0])) > 1e-5
+        Δ, _, _ = dragged([0.3, -0.4, 0.25], [0, 0, 1]; move = (:x,))
+        @test abs(Δ[1]) > 1e-4 && norm(cross(Δ, [1.0, 0, 0])) < 1e-12
+        Δ, _, _ = dragged([0.3, -0.4, 0.25], [0, 0, 1]; move = ())
+        @test norm(Δ) < 1e-12
     end
 
     @testset "screen-space picking of sources" begin

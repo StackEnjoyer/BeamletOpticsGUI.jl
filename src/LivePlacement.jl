@@ -62,9 +62,10 @@ function _align_rotation(y, d, half_turn_axis)
 end
 
 """
-The point of the plane on which a component for the system `sys` of the `gui` is placed: the
-position of the first source that is traced through `sys`, such that the component lies at the
-height of its beam, or the `lookat` point of the camera without one.
+The point of the plane on which a component for the system `sys` of the `gui` is placed (see
+`_placement_pose`): the position of the first source that is traced through `sys`, such that the
+component lies at the height of its beam in a view from above, and at its depth in a view from the
+front; or the `lookat` point of the camera without one.
 """
 function _placement_plane_point(gui::LiveView, sys::BMO.AbstractSystem)
     for (s, beam) in gui.pairs
@@ -83,8 +84,9 @@ a beam group, only the central beam takes part, and of a Gaussian beamlet its ch
 the component sits on the axis of the source and not on one of its outer rays. The
 component is not traced while it is placed, hence the beams it snaps onto do not change. Elsewhere,
 the position is where the camera ray through the cursor meets the plane through `p.plane_point`
-with the `plane_normal` of the controls, in the orientation `p.R0` as constructed; the position is
-kept if the ray does not meet the plane in front of the camera.
+in which the mouse moves objects (see `_drag_normal`: the plane of the view, or the one with the
+`plane_normal` of the controls), in the orientation `p.R0` as constructed; the position is kept if
+the ray does not meet the plane in front of the camera.
 """
 function _placement_pose(gui::LiveView, p::_Placement)
     ctrl = gui.controls
@@ -94,7 +96,7 @@ function _placement_pose(gui::LiveView, p::_Placement)
         return Point3{Float64}(info.point), R, true
     end
     origin, dir = _cursor_ray(gui.ax.scene)
-    hit = _ray_plane_intersect(origin, dir, p.plane_point, ctrl.plane_normal)
+    hit = _ray_plane_intersect(origin, dir, p.plane_point, _drag_normal(gui.ax.scene, ctrl))
     # A camera in the plane meets it at the eye with every ray, which is no place for a component
     met = !isnothing(hit) && norm(hit .- origin) > 1e-9
     P = met ? Point3{Float64}(hit) : _pose(p.obj)[1]
@@ -161,7 +163,7 @@ function _start_placement!(gui::LiveView, obj::BMO.AbstractObject; origin = noth
         return nothing
     end
     plane_point = _placement_plane_point(gui, system)
-    n = ctrl.plane_normal
+    n = _drag_normal(gui.ax.scene, ctrl)
     lookat = Vector{Float64}(cameracontrols(gui.ax.scene).lookat[])
     R0 = _pose(obj)[2]
     _set_pose_exact!(obj, lookat .- dot(lookat .- plane_point, n) .* n, R0)

@@ -93,12 +93,30 @@ _snaps(::BMO.AbstractObject) = true
 _snaps(_) = false
 
 """
+    _sight_line(scene, point) -> (origin, direction)
+
+The line of sight of the camera of the `scene` through the `point` [m]: from the eye of a
+perspective camera, otherwise along the direction of the view, see `_view_direction`.
+"""
+function _sight_line(scene, point)
+    cam = Makie.cameracontrols(scene)
+    if cam isa Makie.Camera3D && cam.settings.projectiontype[] == Makie.Perspective
+        eye = Vector{Float64}(cam.eyeposition[])
+        norm(point .- eye) > 0 && return eye, normalize(point .- eye)
+    end
+    return Vector{Float64}(point), _view_direction(scene)
+end
+
+"""
     _snap_point(scene, lines, point; radius = _SNAP_RADIUS) -> Union{Nothing, NamedTuple}
 
 The point of the `lines` that a component at the `point` [m] snaps onto: of the line whose
 projection into the `scene` is closest to the projected point within `radius` pixels, the point
-that is closest to the `point` in space, as `(; point, direction)` with the direction of the line.
-`nothing` without a line that close.
+that is seen closest to the `point`, i.e. the one closest to the line of sight through the `point`
+(see `_sight_line`), as `(; point, direction)` with the direction of the line. Hence a component
+that is dragged in the plane of the view snaps onto the beam where it is seen, also if it is far
+from the beam in depth. Of a line that is seen end-on, it is the point closest to the `point` in
+space. `nothing` without a line that close.
 """
 function _snap_point(scene, lines, point; radius::Real = _SNAP_RADIUS)
     origin, dir = _cursor_ray(scene)
@@ -116,7 +134,13 @@ function _snap_point(scene, lines, point; radius::Real = _SNAP_RADIUS)
     end
     isnothing(best) && return nothing
     u = best.b .- best.a
-    s = clamp(dot(point .- best.a, u) / dot(u, u), 0.0, 1.0)
+    o, d = _sight_line(scene, point)
+    # the closest points of the line `best.a + s u` and the line of sight `o + t d`
+    w = best.a .- o
+    uu, ud, uw, dw = dot(u, u), dot(u, d), dot(u, w), dot(d, w)
+    denom = uu - ud^2
+    s = denom > 1e-12 * uu ? (ud * dw - uw) / denom : dot(point .- best.a, u) / uu
+    s = clamp(s, 0.0, 1.0)
     return (; point = best.a .+ s .* u, direction = best.direction)
 end
 

@@ -930,9 +930,10 @@ rail or toolbar) opens and closes the catalog.
   after the drop. The sidebar does not scroll: in a low window, minimize the catalog or move it
   into its window.
 
-The component then follows the mouse, drawn at half of its opacity, on the plane through the first
-source of its system with the `plane_normal` of the controls, in the orientation in which it was
-constructed. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
+The component then follows the mouse, drawn at half of its opacity, on the plane of the view
+through the first source of its system (or the plane with the `plane_normal` of the controls), in
+the orientation in which it was constructed: seen from above, it is placed at the height of the
+beam. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
 local y-axis as constructed) along the beam. Of a beam group, e.g. a `CollimatedSource`, it snaps
 only onto the central beam, and of a Gaussian beamlet onto its chief ray. A left click drops it:
 it becomes part of its system, i.e. the system of the selected or inspected object when "Place"

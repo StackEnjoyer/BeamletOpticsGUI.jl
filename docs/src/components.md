@@ -65,7 +65,9 @@ form take its numbers; the other arguments of the constructor keep their default
 of glasses instead of a number: N-BK7, fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2,
 N-BAF10 and N-LAK22 with their dispersion (see [`catalog_glasses`](@ref)), and "constant" with a box
 for a constant refractive index. "Place" attaches the component
-to the mouse. A left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
+to the mouse, which moves it in the plane of the view through the first source of its system: seen
+from above it lies at the height of the beam, seen from the front at the depth of the source. A
+left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
 only onto its central beam, of a Gaussian beamlet onto its chief ray. The component that is being
 placed is not traced until it is dropped. See the section "Adding and removing components" of
 [`live_view`](@ref) for the details of the placement.

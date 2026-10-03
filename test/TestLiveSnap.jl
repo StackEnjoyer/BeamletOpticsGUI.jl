@@ -2,7 +2,7 @@ module TestLiveSnap
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
-using LinearAlgebra: I, norm, dot
+using LinearAlgebra: I, norm, dot, normalize
 using Test
 
 const BMO = BeamletOptics
@@ -43,8 +43,9 @@ const GUI = BeamletOpticsGUI
         (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, action))
     # The distance [px] of the `point` from the line through `a` along `dir` on the screen
     function _px_distance(gui, point, a, dir)
-        foot = a .+ dot(point .- a, dir) .* dir
-        return norm(_pixel(gui, point) .- _pixel(gui, foot))
+        p, q = _pixel(gui, point), _pixel(gui, a)
+        t = normalize(_pixel(gui, a .+ 0.1 .* dir) .- q)
+        return abs((p[1] - q[1]) * t[2] - (p[2] - q[2]) * t[1])
     end
 
     # Grabs the selected `obj` at its position and moves the mouse by the pixels `by`, in steps;
@@ -129,19 +130,43 @@ const GUI = BeamletOpticsGUI
         gui, sys, m, lens, a = _fixture()
         scene = gui.ax.scene
         lines = GUI._snap_lines(gui, lens)
-        # a point 4 mm beside beam A: its foot on the beam, with the direction of the beam
+        # a point 4 mm beside beam A: the point of the beam that is seen next to it, with the
+        # direction of the beam
         s = GUI._snap_point(scene, lines, [0.004, 0.12, 0.0]; radius = 1e3)
-        @test s.point ≈ [0.0, 0.12, 0] atol = 1e-12
+        @test abs(s.point[1]) < 1e-12 && abs(s.point[3]) < 1e-12
+        @test s.point[2] ≈ 0.12 atol = 3e-3
         @test s.direction ≈ y
+        d = _px_distance(gui, [0.004, 0.12, 0.0], [0.0, 0, 0], y)
+        @test norm(_pixel(gui, s.point) .- _pixel(gui, [0.004, 0.12, 0.0])) ≈ d atol = 0.5
+        # a point above the table that is seen on the beam: the point of the beam behind it, not
+        # the one closest in space
+        eye = Vector{Float64}(Makie.cameracontrols(scene).eyeposition[])
+        above = eye .+ 0.8 .* ([0.0, 0.2, 0] .- eye)
+        @test above[3] > 0.05
+        s = GUI._snap_point(scene, lines, above)
+        @test s.point ≈ [0.0, 0.2, 0] atol = 1e-9
+        @test abs(above[2] - 0.2) > 0.02
+        # the same in an orthographic view from above: the foot on the beam
+        GUI._sight_line(scene, above) # perspective: from the eye
+        @test GUI._sight_line(scene, above)[1] ≈ eye
         # only within the radius on the screen
         d = _px_distance(gui, [0.004, 0.12, 0.0], [0.0, 0, 0], y)
         @test !isnothing(GUI._snap_point(scene, lines, [0.004, 0.12, 0.0]; radius = d + 1))
         @test isnothing(GUI._snap_point(scene, lines, [0.004, 0.12, 0.0]; radius = d - 1))
         # the closest line: beam B at x = -0.05
-        @test GUI._snap_point(scene, lines, [-0.048, 0.2, 0.0]; radius = 1e3).point ≈ [-0.05, 0.2, 0] atol = 1e-12
+        @test GUI._snap_point(scene, lines, [-0.048, 0.2, 0.0]; radius = 1e3).point ≈ [-0.05, 0.2, 0] atol = 3e-3
+        @test GUI._snap_point(scene, lines, [-0.048, 0.2, 0.0]; radius = 1e3).point[1] ≈ -0.05 atol = 1e-12
         # behind the end of a line: its end
         s = GUI._snap_point(scene, lines, [0.001, -0.01, 0.0]; radius = 1e3)
         @test s.point ≈ [0.0, 0, 0] atol = 1e-12
+        # orthographic, from above: the line of sight is the direction of the view, the point of
+        # the beam is the foot of the point
+        Makie.cameracontrols(scene).settings.projectiontype[] = Makie.Orthographic
+        set_view(gui.ax, [0.0, 0.15, 0.5], [0.0, 0.15, 0.0], [0.0, 1, 0])
+        o, dir = GUI._sight_line(scene, [0.004, 0.12, 0.03])
+        @test o ≈ [0.004, 0.12, 0.03] && dir ≈ [0.0, 0, -1]
+        s = GUI._snap_point(scene, lines, [0.004, 0.12, 0.03]; radius = 1e3)
+        @test s.point ≈ [0.0, 0.12, 0] atol = 1e-9
         close(gui)
     end
 
@@ -153,11 +178,13 @@ const GUI = BeamletOpticsGUI
         far = [0.02, 0.12, 0.0]
         by_near, by_far = _to(gui, lens, near), _to(gui, lens, far)
 
-        # snap off: the lens follows the mouse
+        # snap off: the lens follows the mouse, in the plane of the view
         @test ctrl.snap[] == :off
         _drag!(gui, lens, by_near)
         free = _pose(lens)[1]
         @test abs(free[1]) > 1e-4 && _pose(lens)[2] == R0
+        @test norm(_pixel(gui, free) .- _pixel(gui, near)) < 0.5
+        @test abs(dot(free .- P0, GUI._view_direction(gui.ax.scene))) < 1e-9
         @test _px_distance(gui, free, [0.0, 0, 0], y) < GUI._SNAP_RADIUS
         GUI._undo!(ctrl)
         @test _pose(lens)[1] ≈ P0
@@ -168,7 +195,9 @@ const GUI = BeamletOpticsGUI
         _drag!(gui, lens, by_near)
         P, R = _pose(lens)
         @test abs(P[1]) < 1e-9 && abs(P[3]) < 1e-9
-        @test P[2] ≈ free[2] atol = 1e-9
+        # where the beam is seen next to the mouse, not where it is closest in space
+        @test norm(_pixel(gui, P) .- _pixel(gui, free)) < GUI._SNAP_RADIUS
+        @test P[2] ≈ near[2] atol = 2e-3
         @test R == R0
         # one gesture of the history
         @test length(ctrl.undo_stack) == n + 1
@@ -185,7 +214,8 @@ const GUI = BeamletOpticsGUI
         @test abs(_pose(lens)[1][1]) < 1e-9
         p = _pixel(gui, position(lens))
         _mouse!(gui, p .+ (_pixel(gui, [0.0, 0.16, 0]) .- _pixel(gui, [0.0, 0.12, 0])))
-        @test abs(_pose(lens)[1][1]) < 1e-9 && _pose(lens)[1][2] > free[2] + 0.02
+        @test abs(_pose(lens)[1][1]) < 1e-9
+        @test _pose(lens)[1][2] ≈ near[2] + 0.04 atol = 3e-3
         _mouse!(gui, _pixel(gui, P0))
         @test _pose(lens)[1] ≈ P0 atol = 2e-3
         _release!(gui)
