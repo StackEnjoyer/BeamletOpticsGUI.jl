@@ -937,10 +937,11 @@ With the snapping switched on (the chip "Snap" next to the mode at the top left,
 the `snap` kwarg), a component that is dragged with the mouse snaps onto the beams like one that is
 being placed. In the move mode, a component whose position comes within 12 px of a beam sits on the
 beam and slides along it; of a beam group only the central beam takes part, of a Gaussian beamlet
-its chief ray. The chip right of "Snap" and `Shift`+`Tab` choose what snaps: the "position" only,
-such that e.g. a mirror keeps its tilt, or "position + rotation", which also turns the optical axis
-(the local y-axis) along the beam; beside the beams the component then has the orientation of the
-start of the drag again. In the rotate mode, the angle between the optical axis and the beam
+its chief ray. `Tab` and a click on the chip switch to the next of three states, `Shift`+`Tab` to
+the one before: off, the "position" only, such that e.g. a mirror keeps its tilt, and
+"position + rotation", which also turns the optical axis (the local y-axis) along the beam; beside
+the beams the component then has the orientation of the start of the drag again. The chip names the
+state. In the rotate mode, the angle between the optical axis and the beam
 through the component snaps to the multiples of 45° within 3°, e.g. a lens straight in the beam or
 a mirror at 45°.
 

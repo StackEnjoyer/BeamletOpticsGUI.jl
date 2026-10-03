@@ -4,14 +4,14 @@ see `_set_snap!` of the controls: the beams that a component snaps onto (`_snap_
 and the help
 =#
 
-# The key that switches the snapping on and off, with Shift its variant; Makie's `Camera3D` and
-# the live view bind all letters
+# The key that switches the snapping to its next state, with Shift to the one before; Makie's
+# `Camera3D` and the live view bind all letters
 const _SNAP_KEY = Keyboard.tab
 
 # The keys of the snapping, in the help of the controls, see `_help_sections`
 const _SNAP_HELP = _HelpSection["Snap onto beams" => [
-    _HelpEntry(["Tab"], "snap dragged components on and off"),
-    _HelpEntry(["Shift", "Tab"], "snap the position, or the rotation as well"; combo = true),
+    _HelpEntry(["Tab"], "snap dragged components: off, position, position + rotation"),
+    _HelpEntry(["Shift", "Tab"], "the same backwards"; combo = true),
     _HelpEntry([:mouse => "drag"], "move mode: onto the central beam of a source"),
     _HelpEntry([:mouse => "drag"], "rotate mode: in steps of 45° to the beam")]]
 
@@ -125,9 +125,10 @@ end
 
 Connects the snapping of the controls of the `gui` (see `_set_snap!`) to its beams: a component
 that is dragged snaps onto the lines of `_snap_lines`, which are taken once per drag, as soon as no
-solve in the background changes the beams. The key `Tab` (`_SNAP_KEY`) switches the snapping on and
-off, with `Shift` its variant, unless a textbox or menu takes the keyboard and not in the spectator
-mode; both are listed in the help (`_SNAP_HELP`).
+solve in the background changes the beams. The key `Tab` (`_SNAP_KEY`) switches the snapping to its
+next state (off, the position, position and rotation, see `_cycle_snap!`), with `Shift` to the one
+before, unless a textbox or menu takes the keyboard and not in the spectator mode; both are listed
+in the help (`_SNAP_HELP`).
 """
 function _connect_snap!(gui::LiveView)
     ctrl = gui.controls
@@ -146,7 +147,7 @@ function _connect_snap!(gui::LiveView)
     push!(ctrl.listeners, on(events(scene).keyboardbutton; priority = 200) do event
         (event.action == Keyboard.press && event.key == _SNAP_KEY) || return Consume(false)
         (ctrl.ignore_keys() || ctrl.spectator[]) && return Consume(false)
-        _shift_pressed(scene) ? _toggle_snap_variant!(gui) : _toggle_snap!(gui)
+        _cycle_snap!(gui, _shift_pressed(scene) ? -1 : 1)
         return Consume(true)
     end)
     append!(ctrl.help_extra, _SNAP_HELP)
@@ -154,25 +155,15 @@ function _connect_snap!(gui::LiveView)
     return nothing
 end
 
-# What the snapping of the controls of the `gui` does now, for the status line
-function _show_snap_status!(gui::LiveView)
+"""
+Switches the snapping of the controls of the `gui` to its next state, like the key `Tab`, with
+`dir = -1` to the one before, like `Shift`+`Tab`, and tells it in the status line, see
+`_cycle_snap!`.
+"""
+function _cycle_snap!(gui::LiveView, dir::Integer = 1)
     ctrl = gui.controls
-    gui.status.text[] = ctrl.snap[] == :off ?
-                        "snap off, next: $(_snap_string(ctrl.snap_variant))" :
-                        "snap on: $(_snap_string(ctrl.snap_variant)) onto the beams"
-    return nothing
-end
-
-"""Switches the snapping of the controls of the `gui` on or off, like the key `Tab`, see `_set_snap!`."""
-function _toggle_snap!(gui::LiveView)
-    _toggle_snap!(gui.controls)
-    _show_snap_status!(gui)
-    return nothing
-end
-
-"""Switches the variant of the snapping of the controls of the `gui`, like `Shift`+`Tab`."""
-function _toggle_snap_variant!(gui::LiveView)
-    _toggle_snap_variant!(gui.controls)
-    _show_snap_status!(gui)
+    _cycle_snap!(ctrl, dir)
+    gui.status.text[] = ctrl.snap[] == :off ? "snap off" :
+                        "snap on: $(_snap_string(ctrl.snap[])) onto the beams"
     return nothing
 end

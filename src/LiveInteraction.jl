@@ -406,10 +406,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # what a click does, in the help, see `_help_sections`
     click_help::String
     # snapping of the mouse drags onto beams, see `_set_snap!`: `:off`, `:position` (the position of
-    # the dragged object) or `:pose` (its optical axis as well); `snap_variant` is the one of the
-    # two that the toggle switches on
+    # the dragged object) or `:pose` (its optical axis as well)
     snap::Observable{Symbol}
-    snap_variant::Symbol
     # `(obj, point) -> (; point, direction)`, or `nothing`: the point of a beam that `obj` snaps
     # onto when it is dragged to the `point` [m], with the direction of the beam there. Without
     # beams nothing snaps; `live_view` knows them, see `_snap_beam`
@@ -749,8 +747,8 @@ end
 Snapping of the mouse drags onto beams
 =#
 
-# The variants of the snapping, see `_set_snap!`
-const _SNAP_VARIANTS = (:position, :pose)
+# The states of the snapping in the order of `_cycle_snap!`, see `_set_snap!`
+const _SNAP_STATES = (:off, :position, :pose)
 # The angles of the optical axis to the beam at which a rotation snaps, and how close it snaps [rad]
 const _SNAP_ANGLE_STEP = π / 4
 const _SNAP_ANGLE_TOLERANCE = deg2rad(3)
@@ -766,32 +764,27 @@ mode, the angle of the optical axis to the beam through the object snaps to the 
 `_SNAP_ANGLE_STEP`, see `_snap_angle`. The keyboard steps do not snap.
 """
 function _set_snap!(ctrl::KinematicController, snap::Symbol)
-    snap in (:off, _SNAP_VARIANTS...) ||
+    snap in _SNAP_STATES ||
         throw(ArgumentError("snap must be false, true, :position or :pose, got :$snap"))
-    snap == :off || (ctrl.snap_variant = snap)
     ctrl.snap[] == snap || (ctrl.snap[] = snap)
     _update_help!(ctrl)
     return nothing
 end
 _set_snap!(ctrl::KinematicController, snap::Bool) = _set_snap!(ctrl, snap ? :position : :off)
 
-"""Switches the snapping of the controls `ctrl` on, with its last variant, or off, see `_set_snap!`."""
-_toggle_snap!(ctrl::KinematicController) =
-    _set_snap!(ctrl, ctrl.snap[] == :off ? ctrl.snap_variant : :off)
+"""
+    _cycle_snap!(ctrl, dir = 1)
 
+Switches the snapping of the controls `ctrl` to its next state: off, `:position`, `:pose` and off
+again, with `dir = -1` the other way round, see `_set_snap!`.
 """
-Switches the variant of the snapping of the controls `ctrl` between `:position` and `:pose`, also
-while it is off, for when it is switched on, see `_set_snap!`.
-"""
-function _toggle_snap_variant!(ctrl::KinematicController)
-    variant = ctrl.snap_variant == :position ? :pose : :position
-    ctrl.snap_variant = variant
-    ctrl.snap[] == :off ? _update_help!(ctrl) : _set_snap!(ctrl, variant)
-    return nothing
+function _cycle_snap!(ctrl::KinematicController, dir::Integer = 1)
+    i = findfirst(==(ctrl.snap[]), _SNAP_STATES)
+    return _set_snap!(ctrl, _SNAP_STATES[mod1(i + dir, length(_SNAP_STATES))])
 end
 
-# What the snapping of the controls does, for the chips and the status line
-_snap_string(variant::Symbol) = variant == :pose ? "position + rotation" : "position"
+# What the snapping of the controls does, for the chip and the status line
+_snap_string(snap::Symbol) = snap == :off ? "off" : snap == :pose ? "position + rotation" : "position"
 
 """
 Returns the signed angle [rad] about the unit vector `axis` from the direction `d` to the direction
@@ -1312,7 +1305,7 @@ function kinematic_controls!(
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
-        Observable(:off), :position, (obj, point) -> nothing, 0, 0.0, 0.0, nothing
+        Observable(:off), (obj, point) -> nothing, 0, 0.0, 0.0, nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged

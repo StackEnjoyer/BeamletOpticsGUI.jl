@@ -128,21 +128,19 @@ const GUI = BeamletOpticsGUI
         @test minimum(chips)[1] > maximum(pill)[1] && maximum(chips)[2] ≈ maximum(pill)[2]
         @test help.mode_button.label[] == "Move" && help.step_label.text[] == "step 10 nm"
         @test GUI._help_rects(help) == [chips]
-        # the chips of the snapping onto beams: off, a click switches it on, another its variant
-        snap, variant = help.snap_button, help.snap_variant_button
-        accent, text, muted = Makie.to_color.((t.accent, t.text, t.muted))
-        @test snap.label[] == "Snap" && variant.label[] == "position"
-        @test ctrl.snap[] == :off && snap.labelcolor[] == text && variant.labelcolor[] == muted
+        # the chip of the snapping onto beams: off, each click switches to its next state
+        snap = help.snap_button
+        accent, text = Makie.to_color.((t.accent, t.text))
+        @test ctrl.snap[] == :off && snap.label[] == "Snap off" && snap.labelcolor[] == text
         snap.clicks[] += 1
-        @test ctrl.snap[] == :position && snap.labelcolor[] == accent && variant.labelcolor[] == text
-        @test snap.buttoncolor[] == Makie.to_color(t.accent_soft)
-        variant.clicks[] += 1
-        @test ctrl.snap[] == :pose && variant.label[] == "position + rotation"
+        @test ctrl.snap[] == :position && snap.label[] == "Snap: position"
+        @test snap.labelcolor[] == accent && snap.buttoncolor[] == Makie.to_color(t.accent_soft)
         snap.clicks[] += 1
-        @test ctrl.snap[] == :off && snap.labelcolor[] == text && variant.labelcolor[] == muted
-        @test variant.label[] == "position + rotation"
-        variant.clicks[] += 1
-        @test ctrl.snap[] == :off && variant.label[] == "position"
+        @test ctrl.snap[] == :pose && snap.label[] == "Snap: position + rotation"
+        @test snap.labelcolor[] == accent
+        snap.clicks[] += 1
+        @test ctrl.snap[] == :off && snap.label[] == "Snap off" && snap.labelcolor[] == text
+        @test snap.buttoncolor[] == Makie.to_color(t.field)
         @test chips in GUI._layout_obstacles(gui) && pill in GUI._layout_obstacles(gui)
 
         # the key h opens the card below the pill, in the 3D view

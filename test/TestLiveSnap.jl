@@ -320,25 +320,28 @@ const GUI = BeamletOpticsGUI
     @testset "switching ($layout)" for layout in (:compact, :app)
         gui, sys, m, lens, a = _fixture(; layout)
         ctrl = gui.controls
-        @test ctrl.snap[] == :off && ctrl.snap_variant == :position
-        # the key Tab switches it on and off
+        @test ctrl.snap[] == :off
+        # the key Tab switches to the next state: the position, position and rotation, off
         _key!(gui, Keyboard.tab)
         @test ctrl.snap[] == :position
         @test gui.status.text[] == "snap on: position onto the beams"
         _key!(gui, Keyboard.tab)
-        @test ctrl.snap[] == :off && occursin("snap off", gui.status.text[])
-        # with Shift its variant, also while it is off
-        _key!(gui, Keyboard.left_shift)
-        _key!(gui, Keyboard.tab)
-        @test ctrl.snap[] == :off && ctrl.snap_variant == :pose
-        _key!(gui, Keyboard.left_shift, Keyboard.release)
-        _key!(gui, Keyboard.tab)
         @test ctrl.snap[] == :pose
         @test gui.status.text[] == "snap on: position + rotation onto the beams"
+        _key!(gui, Keyboard.tab)
+        @test ctrl.snap[] == :off && gui.status.text[] == "snap off"
+        # with Shift to the state before
         _key!(gui, Keyboard.left_shift)
         _key!(gui, Keyboard.tab)
+        @test ctrl.snap[] == :pose
+        _key!(gui, Keyboard.tab)
         _key!(gui, Keyboard.left_shift, Keyboard.release)
-        @test ctrl.snap[] == :position && ctrl.snap_variant == :position
+        @test ctrl.snap[] == :position
+        @test gui.status.text[] == "snap on: position onto the beams"
+        GUI._cycle_snap!(ctrl, -1)
+        @test ctrl.snap[] == :off
+        GUI._cycle_snap!(ctrl)
+        @test ctrl.snap[] == :position
         # not while a box takes the keyboard, and not in the spectator mode
         box = first(GUI._catalog_window(gui).widget.boxes)
         box.focused[] = true
@@ -350,7 +353,7 @@ const GUI = BeamletOpticsGUI
         @test ctrl.snap[] == :position
         GUI._set_spectator!(ctrl, false)
         _key!(gui, Keyboard.tab)
-        @test ctrl.snap[] == :off
+        @test ctrl.snap[] == :pose
 
         # the key is taken, and listed in the help
         @test occursin("Tab", GUI._key_binding(gui, Keyboard.tab))
