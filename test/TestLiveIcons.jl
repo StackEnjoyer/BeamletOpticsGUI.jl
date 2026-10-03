@@ -21,7 +21,10 @@ const GUI = BeamletOpticsGUI
             :offaxis_ellipsoidal_mirror, :hyperbolic_mirror, :offaxis_hyperbolic_mirror,
             :thin_beamsplitter, :round_thin_beamsplitter, :plate_beamsplitter,
             :round_plate_beamsplitter, :compensator, :prism, :polarization_filter,
-            :linear_polarizer)
+            :linear_polarizer,
+            # the sources of the component catalog
+            :beam, :gaussian_beam, :collimated_source, :disc_source, :point_source,
+            :uniform_point_source, :astigmatic_beam)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)

@@ -12,9 +12,17 @@ const GUI = BeamletOpticsGUI
     _entry(entries, constructor) = entries[findfirst(e -> e.constructor === constructor, entries)]
     _glasses(entry) = findall(p -> p isa CatalogGlass, entry.params)
     bk7 = "SellmeierEquation(1.03961212, 0.231792344, 1.01046945, 0.00600069867, 0.0200179144, 103.560653)"
+    # A module like a script of the user, which only uses BeamletOptics
+    _script() = (m = Module(:CatalogScript); Core.eval(m, :(using BeamletOptics)); m)
 
     @testset "built-in entries" begin
-        entries = GUI._builtin_catalog()
+        catalog = GUI._builtin_catalog()
+        # the sources come first, see the testset "sources"
+        @test unique(e.group for e in catalog) == ["Sources", "Lenses", "Mirrors", "Curved mirrors",
+            "Beamsplitters", "Prisms", "Polarizers", "Detectors"]
+        @test allunique(e.name for e in catalog)
+        entries = filter(e -> !e.source, catalog)
+        @test all(e -> e.group != "Sources", entries)
         # all components of BeamletOptics with a constructor of numbers and glasses
         @test [e.constructor for e in entries] == Any[
             ThinLens, SphericalLens, SphericalDoubletLens, SphericalTripletLens,
@@ -26,10 +34,7 @@ const GUI = BeamletOpticsGUI
             RoundPlateBeamsplitter, CubeBeamsplitter, RectangularCompensatorPlate,
             RightAnglePrism, PolarizationFilter, RoundPolarizationFilter, RoundLinearPolarizer,
             Detector]
-        @test unique(e.group for e in entries) == ["Lenses", "Mirrors", "Curved mirrors",
-            "Beamsplitters", "Prisms", "Polarizers", "Detectors"]
-        @test allunique(e.name for e in entries)
-        @test all(e -> e.code_name == string(nameof(e.constructor)), entries)
+        @test all(e -> e.code_name == string(nameof(e.constructor)), catalog)
         for entry in entries
             values = _defaults(entry)
             obj = GUI._catalog_object(entry, values)
@@ -56,8 +61,74 @@ const GUI = BeamletOpticsGUI
         end
     end
 
+    @testset "sources" begin
+        entries = filter(e -> e.source, GUI._builtin_catalog())
+        @test all(e -> e.group == "Sources", entries)
+        @test GUI._catalog_group_icon(entries, "Sources") === :source
+        @test [e.constructor for e in entries] == Any[Beam, GaussianBeamlet, CollimatedSource,
+            UniformDiscSource, PointSource, UniformPointSource, AstigmaticGaussianBeamlet]
+        @test [e.icon for e in entries] == [:beam, :gaussian_beam, :collimated_source, :disc_source,
+            :point_source, :uniform_point_source, :astigmatic_beam]
+        # the number of rays of a source
+        rays(src::BMO.AbstractBeamGroup) = length(BMO.beams(src))
+        rays(::BMO.AbstractBeam) = 1
+        for entry in entries
+            values = _defaults(entry)
+            src = GUI._catalog_object(entry, values)
+            @test src isa Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}
+            # at the origin along +y, with the wavelength of a helium-neon laser
+            @test position(src) == [0, 0, 0]
+            @test BMO.direction(src) == [0, 1, 0]
+            @test BMO.wavelength(src) == 632.8e-9
+            # a new source with every call
+            @test GUI._catalog_object(entry, values) !== src
+            # the code constructs the same source, in a module that only uses BeamletOptics
+            code = GUI._catalog_code(entry, values)
+            @test startswith(code, entry.code_name * "([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], ")
+            twin = Core.eval(_script(), Meta.parse(code))
+            @test typeof(twin) === typeof(src)
+            @test BMO.wavelength(twin) == BMO.wavelength(src)
+            @test rays(twin) == rays(src)
+            @test position(twin) == position(src) && BMO.direction(twin) == BMO.direction(src)
+            # the wavelength is shown in nm, whole numbers are written without a decimal point
+            wavelength = only(filter(p -> p.name == "wavelength", entry.params))
+            @test wavelength.unit == "nm" && GUI._catalog_string(wavelength) == "632.8"
+            for p in filter(p -> p.integer, entry.params)
+                @test p.keyword in (:num_rings, :num_rays)
+                @test !occursin(".", last(split(code, "$(p.keyword) = ")))
+            end
+        end
+        # the parameters and the code of each source
+        _code(constructor) = (e = _entry(entries, constructor); GUI._catalog_code(e, _defaults(e)))
+        at = "[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]"
+        @test _code(Beam) == "Beam($at, 6.328e-7)"
+        @test _code(GaussianBeamlet) == "GaussianBeamlet($at, 6.328e-7, 0.001; P0 = 0.001)"
+        @test _code(CollimatedSource) == "CollimatedSource($at, 0.01, 6.328e-7; num_rings = 10)"
+        @test _code(UniformDiscSource) == "UniformDiscSource($at, 0.01, 6.328e-7; num_rays = 1000)"
+        @test _code(PointSource) == "PointSource($at, $(deg2rad(5)), 6.328e-7; num_rings = 10)"
+        @test _code(UniformPointSource) == "UniformPointSource($at, $(deg2rad(5)), 6.328e-7; num_rays = 1000)"
+        @test _code(AstigmaticGaussianBeamlet) ==
+              "AstigmaticGaussianBeamlet($at, 6.328e-7, 0.001, 0.0005; P0 = 0.001)"
+        # the inputs of the form reach the source: the half angle in degrees, the numbers of rays
+        point = _entry(entries, UniformPointSource)
+        @test [GUI._catalog_string(p) for p in point.params] == ["5", "632.8", "1000"]
+        c = GUI._catalog_component(point, ["10", "500", "20"])
+        @test rays(c.obj) == 20 && BMO.wavelength(c.obj) == 5e-7
+        # an input is rounded to 15 digits, see `_catalog_value`
+        @test c.origin.code == "UniformPointSource($at, 0.174532925199433, 5.0e-7; num_rays = 20)"
+        @test_throws ArgumentError GUI._catalog_component(point, ["10", "500", "2.5"])
+        disc = _entry(entries, UniformDiscSource)
+        @test rays(GUI._catalog_component(disc, ["4", "500", "30"]).obj) == 30
+        rings = _entry(entries, CollimatedSource)
+        @test rays(GUI._catalog_component(rings, ["4", "500", "2"]).obj) <
+              rays(GUI._catalog_component(rings, ["4", "500", "4"]).obj)
+        gauss = _entry(entries, GaussianBeamlet)
+        @test GUI._catalog_component(gauss, ["1064", "0.5", "2"]).origin.code ==
+              "GaussianBeamlet($at, 1.064e-6, 0.0005; P0 = 0.002)"
+    end
+
     @testset "parameters reach the constructor" begin
-        entries = GUI._builtin_catalog()
+        entries = filter(e -> !e.source, GUI._builtin_catalog())
         # a biconvex thin lens of N-BK7 and its diameter
         lens = _entry(entries, ThinLens)
         @test [p.name for p in lens.params] == ["R1", "R2", "diameter", "glass"]
@@ -100,7 +171,8 @@ const GUI = BeamletOpticsGUI
     @testset "every entry in a view" begin
         sys = System()
         gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false)
-        for entry in gui.components.catalog
+        # the components; adding and removing a source is tested in `TestLiveSources.jl`
+        for entry in filter(e -> !e.source, gui.components.catalog)
             obj = GUI._catalog_object(entry, _defaults(entry))
             translate_to3d!(obj, [0, 0.1, 0])
             add_component!(gui, obj; label = entry.name)

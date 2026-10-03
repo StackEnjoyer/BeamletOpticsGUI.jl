@@ -164,9 +164,9 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.trace.error)
         @test !_hit(gui, m) && _hit(gui, m2)
 
-        # not removable: twice, a source, a clip plane, an unknown object
+        # not removable: twice, a source that is not shown, a clip plane, an unknown object
         @test_throws ArgumentError remove_component!(gui, m)
-        @test_throws ArgumentError remove_component!(gui, beam)
+        @test_throws ArgumentError remove_component!(gui, _beam())
         plane = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0]; select = false)
         @test_throws ArgumentError remove_component!(gui, plane)
         @test_throws ArgumentError remove_component!(gui, sys)
@@ -325,13 +325,6 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard.delete)
         @test isempty(gui.clip.planes) && isnothing(gui.controls.selected[])
         @test length(sys.objects) == 2 && gui.components.removed == [m]
-
-        # a source is kept, with the reason in the status line
-        gui.controls.selected[] = beam
-        _key!(gui, Keyboard.delete)
-        @test gui.controls.selected[] === beam
-        @test occursin("source", gui.status.text[])
-        @test length(sys.objects) == 2
 
         # "remove" of the card: a row below the rows of `card_rows`, not an action in the head
         @test [w.name for w in card_actions(m2)] == [:hide]

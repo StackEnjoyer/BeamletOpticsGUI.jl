@@ -199,8 +199,8 @@ end
 """
     _delete_selected!(gui, sel) -> Bool
 
-The key `Delete` on the selected object `sel` of the `gui`: removes a clip plane, or a component
-from its system, see `remove_component!`. A selection that can not be removed, e.g. a source, an
+The key `Delete` on the selected object `sel` of the `gui`: removes a clip plane, a component from
+its system or a source, see `remove_component!`. A selection that can not be removed, e.g. an
 extra or an object of a group, is kept, with the reason in the status line. Returns whether the key
 was handled, i.e. `false` without a selection.
 """

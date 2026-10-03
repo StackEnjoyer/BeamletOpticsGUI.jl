@@ -14,8 +14,10 @@ function kinematic_controls! end
 """
     live_view(system => beam, ...; kwargs...)
     live_view(system, beam; kwargs...)
+    live_view(system, ...; kwargs...)
 
-Opens a complete interactive window for one or several pairs of `system` and `beam`: a 3D view in
+Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
+without a source, e.g. an empty table `live_view(System())` that gets its sources in the window: a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
 sliders. After each change, all detectors are emptied, all systems are solved again and the beams
 and the shown detector views are updated. Returns a `LiveView`, which can be shown via `display`.
@@ -389,8 +391,21 @@ The components of the catalog are added this way once they are placed, see
 [`component_catalog`](@ref). [`remove_component!`](@ref) removes a component again,
 [`export_changes`](@ref) lists the added and removed components.
 
+    add_component!(gui, source; system = nothing, select = true, label = nothing, beam_kwargs = (;)) -> source
+
+Adds the `source` (a beam or a beam group, e.g. a `Beam`, a `GaussianBeamlet` or a
+`CollimatedSource`) to the `gui`: it is traced through the `system` with every solve, rendered with
+the `beam_kwargs` (those of `live_render!` of the beam, as an entry of the `beam_kwargs` of
+`live_view`; a beam group is rendered with `render_every = 5` by default) and gets a marker, with
+which it is selected and moved like the sources the view started with, also in a view with
+`movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
+source does not change; by default the system that gets a component, otherwise the first system of
+the view. It throws an `ArgumentError` for a `source` that the `gui` shows already. A view may start
+without a source, see `live_view(system)`.
+
 ```julia
-gui = live_view(System() => beam)
+gui = live_view(System())
+add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); label = "laser")
 lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
 translate_to3d!(lens, [0, 0.1, 0])
 add_component!(gui, lens; label = "lens")
@@ -409,18 +424,29 @@ again via [`add_component!`](@ref).
 
 `obj` is a top-level object (or object group) of a `System` of the `gui`. An object of a group can
 not be removed on its own, remove the group instead. It throws an `ArgumentError`, like an object
-of a `StaticSystem`, an extra, a source and an object that is not shown in the `gui`.
+of a `StaticSystem`, an extra and an object that is not shown in the `gui`.
+
+    remove_component!(gui, source) -> source
+
+Removes the `source` (a beam or a beam group) from the `gui`: it is no longer traced through any
+system, and its beam, its marker and its cards are removed. Every source can be removed, also the
+last one, which leaves a view without a source; it throws an `ArgumentError` for a beam that is no
+source of the `gui`.
 """
 function remove_component! end
 
 """
-    CatalogParam(name, default; unit = "", scale = 1.0, keyword = nothing)
+    CatalogParam(name, default; unit = "", scale = 1.0, keyword = nothing, integer = false)
 
 A numeric parameter of a [`CatalogEntry`](@ref), passed to its constructor: the `default` value in
 the units of the constructor (SI in BeamletOptics, e.g. [m]), shown and entered in the catalog as
 `value / scale` with the `unit`, e.g. `CatalogParam("diameter", 25.4e-3; unit = "mm", scale = 1e-3)`
 for a box that shows `25.4` mm. A parameter with `keyword = :name` is passed as that keyword
 argument, the other parameters are passed as positional arguments in their order.
+
+A parameter with `integer = true` is passed as an `Int`, e.g. the `num_rays` of a source: its
+`default` must be a whole number, otherwise an `ArgumentError` is thrown, and the catalog only takes
+whole numbers for it.
 """
 struct CatalogParam
     name::String
@@ -428,13 +454,16 @@ struct CatalogParam
     unit::String
     scale::Float64
     keyword::Union{Nothing, Symbol}
+    integer::Bool
 end
 
 function CatalogParam(name::AbstractString, default::Real; unit::AbstractString = "",
-        scale::Real = 1.0, keyword::Union{Nothing, Symbol} = nothing)
+        scale::Real = 1.0, keyword::Union{Nothing, Symbol} = nothing, integer::Bool = false)
     (isfinite(scale) && scale != 0) ||
         throw(ArgumentError("the scale of the parameter \"$name\" must be finite and not zero, got $scale"))
-    return CatalogParam(String(name), Float64(default), String(unit), Float64(scale), keyword)
+    (!integer || isinteger(default)) ||
+        throw(ArgumentError("the default of the integer parameter \"$name\" must be a whole number, got $default"))
+    return CatalogParam(String(name), Float64(default), String(unit), Float64(scale), keyword, integer)
 end
 
 """
@@ -466,7 +495,7 @@ function CatalogGlass(name::AbstractString = "glass"; default::AbstractString = 
 end
 
 """
-    CatalogEntry(name, constructor; group = "Components", params = [], code_name = string(nameof(constructor)), icon = nothing)
+    CatalogEntry(name, constructor; group = "Components", params = [], code_name = string(nameof(constructor)), icon = nothing, source = false)
 
 An entry of the component catalog of [`live_view`](@ref), see [`component_catalog`](@ref): a
 component that the user picks, parametrizes and places in the 3D view. `constructor` is called with
@@ -474,13 +503,20 @@ the values of the `params` (numbers, see [`CatalogParam`](@ref), and glasses, se
 [`CatalogGlass`](@ref)) and returns the `AbstractObject` (or object group) to add, in the pose in
 which it is constructed; the catalog then moves it to where it is placed.
 
+An entry with `source = true` is a source: `constructor` is called as
+`constructor([0, 0, 0], [0, 1, 0], values...; keywords...)`, i.e. with the position and the
+direction of the source before the values of the `params`, and returns the beam or the beam group
+to add, e.g. `Beam` or `CollimatedSource`. A constructor that returns an object for an entry with
+`source = true`, or a beam for one without, throws an `ArgumentError` when the entry is placed.
+
 The catalog shows the entries by their `group`, each as a tile with its `name` and its `icon`: the
 name of an icon of the live view as for [`add_tool!`](@ref) (e.g. `:lens`, an unknown name throws
 an `ArgumentError`) or an own `Makie.BezierPath`. An entry without an icon shows the icon of its
 group; a group that is not one of the built-in ones shows the icon of its first entry that has one.
 
 [`export_changes`](@ref) prints the component as the call `code_name(values...; keywords...)`,
-hence `constructor` should be a function or type that the user's script can call by that name,
+a source as `code_name([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], values...; keywords...)`, each followed by
+the calls that move it to its pose; hence `constructor` should be a function or type that the user's script can call by that name,
 e.g. `ThinLens`, not an anonymous wrapper.
 
 ```julia
@@ -498,15 +534,16 @@ struct CatalogEntry
     params::Vector{Union{CatalogParam, CatalogGlass}}
     code_name::String
     icon::Union{Nothing, Symbol, Makie.BezierPath}
+    source::Bool
 end
 
 function CatalogEntry(name::AbstractString, constructor; group::AbstractString = "Components",
         params = CatalogParam[], code_name::AbstractString = string(nameof(constructor)),
-        icon::Union{Nothing, Symbol, Makie.BezierPath} = nothing)
+        icon::Union{Nothing, Symbol, Makie.BezierPath} = nothing, source::Bool = false)
     # an unknown name throws
     icon isa Symbol && _icon(icon)
     return CatalogEntry(String(name), String(group), constructor,
-        Union{CatalogParam, CatalogGlass}[params...], String(code_name), icon)
+        Union{CatalogParam, CatalogGlass}[params...], String(code_name), icon, source)
 end
 
 """
@@ -533,8 +570,9 @@ function catalog_glasses end
     component_catalog() -> Vector{CatalogEntry}
 
 The catalog of components that a [`live_view`](@ref) window offers by default (its `catalog`
-kwarg): the entries of BeamletOpticsGUI for the components of BeamletOptics (lenses, mirrors,
-beamsplitters, prisms, polarizers and the detector) and the entries that packages added. The
+kwarg): the entries of BeamletOpticsGUI for the sources and the components of BeamletOptics
+(sources, lenses, mirrors, beamsplitters, prisms, polarizers and the detector) and the entries that
+packages added. The
 catalog is the widget "Components", a window over the 3D view or, in the app layout, a section of
 the left sidebar: the entry is chosen by its group and its tile,
 its parameters are typed into boxes, its glass is chosen in a menu, and "Place" attaches the

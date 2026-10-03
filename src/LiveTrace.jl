@@ -163,28 +163,30 @@ function _resolve!(gui::LiveView, obj; coarse = false, preview = false)
     # Beams that are switched off are not traced, see `_set_beam_on!`
     pairs, handles = _on_pairs(gui, gui.pairs, gui.beam_handles)
     sinks = fill(nothing, length(pairs) + length(requests))
-    r = _compute(pairs, handles, requests, sinks; systems = first.(gui.pairs), coarse, preview)
+    r = _compute(pairs, handles, requests, sinks; systems = _systems(gui), coarse, preview)
     _apply!(gui, r, obj; coarse)
     return nothing
 end
 
 """
-    _start_job(gui, apply, obj, pairs, handles[, requests]; coarse = false, preview = false, timing) -> _SolveJob
+    _start_job(gui, apply, obj, pairs, handles[, requests]; systems, coarse = false, preview = false, timing) -> _SolveJob
 
 Starts `_compute` for the `pairs` whose beams are switched on (with the beam render `handles`) and
 the `requests` of detector views (by default those of the shown views, see `_view_requests`) of the
 `gui` in a background task, with a progress sink per source and request, see `_SolveJob`. `apply`
 shows the result, `timing` is the duration field that a cancelled job updates, `:view_time` for a
-job that only computes views, i.e. without `pairs`.
+job that only computes views, i.e. without `pairs`. The detectors of the `systems` are emptied
+first: by default those of the `pairs`; a solve passes all systems of the `gui`, also those
+without a source.
 """
 _start_job(gui::LiveView, apply, obj, pairs, handles; kwargs...) =
     _start_job(gui, apply, obj, pairs, handles, _view_requests(gui); kwargs...)
 
-function _start_job(gui::LiveView, apply, obj, pairs, handles, requests; coarse = false,
-        preview = false, timing::Symbol)
-    isempty(pairs) || _views_solve_started!(gui)
-    # The detectors of all systems are emptied, also of those whose beams are all switched off
-    systems = first.(pairs)
+function _start_job(gui::LiveView, apply, obj, pairs, handles, requests;
+        systems = BMO.AbstractSystem[first.(pairs)...], coarse = false, preview = false,
+        timing::Symbol)
+    # The detectors of the systems are emptied, also of those whose beams are all switched off
+    isempty(systems) || _views_solve_started!(gui)
     # Beams that are switched off are not traced, see `_set_beam_on!`. The task works on its own
     # copies of the lists (filtered here, such that the sinks and anchors match them), the objects
     # are protected by `_change!`
@@ -439,7 +441,7 @@ function _solve!(gui::LiveView, obj; coarse = false, preview = false)
     _cancel_solve!(gui)
     gui.trace.pending = false
     job = _start_job(gui, r -> _apply!(gui, r, obj; coarse), obj, gui.pairs, gui.beam_handles;
-        coarse, preview, timing = preview ? :preview_time : :solve_time)
+        systems = _systems(gui), coarse, preview, timing = preview ? :preview_time : :solve_time)
     done = _run!(gui, job, _TRACING)
     if _running(gui)
         # Outdated until the solve in the background is shown, see `_finish!`

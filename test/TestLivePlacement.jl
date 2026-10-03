@@ -314,6 +314,86 @@ const GUI = BeamletOpticsGUI
         gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf)
         @test_throws ArgumentError GUI._start_placement!(gui, _lens())
         @test !GUI._placing(gui)
+        # a source does not change its system
+        src = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
+        GUI._start_placement!(gui, src)
+        @test GUI._placing(gui)
+        GUI._drop_placement!(gui)
+        @test last(gui.pairs).second === src && last(gui.pairs).first isa StaticSystem
+        close(gui)
+    end
+
+    @testset "a source ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout, show_sources = false)
+        ctrl = gui.controls
+        scene = gui.ax.scene
+        nplots = length(scene.plots)
+        a = first(gui.pairs).second
+
+        src = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
+        origin = (; code = "Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.328e-7)", pose0 = GUI._pose(src))
+        GUI._start_placement!(gui, src; origin)
+        p = gui.components.placement
+        @test p.obj === src && p.system === sys
+        @test occursin("placing Beam", gui.status.text[])
+        # placed by its marker: the markers of the sources are shown
+        @test gui.widgets.sources_toggle.active[]
+        @test all(q -> _in_scene(gui, q), render_plots(p.ghost))
+
+        # it follows the mouse in the plane of the view through the first source, as constructed
+        n = GUI._view_direction(scene)
+        target = [0.1, 0.15, 0.05]
+        _mouse!(gui, target)
+        P = collect(Float64, position(src))
+        @test norm(_pixel(gui, P) .- _pixel(gui, target)) < 0.5
+        @test abs(dot(P .- position(a), n)) < 1e-9
+        @test BMO.direction(src) ≈ [0, 1, 0] atol = 1e-12
+        # not traced meanwhile
+        @test length(gui.pairs) == 2 && isnothing(BMO.intersection(first(BMO.rays(src))))
+
+        # no snapping: a lens 5 px beside beam A sits on it, a source stays under the mouse
+        _mouse!(gui, [0.0, 0.1, 0]; shift = 5)
+        @test !p.snapped
+        P = collect(Float64, position(src))
+        @test norm(_pixel(gui, P) .- _pixel(gui, [0.0, 0.1, 0])) > 4
+        @test BMO.direction(src) ≈ [0, 1, 0] atol = 1e-12
+
+        # `Esc` cancels: none of its plots is left
+        ghost_plots = copy(render_plots(p.ghost))
+        _key!(gui, Keyboard.escape)
+        @test !GUI._placing(gui)
+        @test !any(q -> _in_scene(gui, q), ghost_plots)
+        @test length(scene.plots) == nplots && length(gui.pairs) == 2
+
+        # a click drops it: a source of the system, traced, selected, with its origin
+        GUI._start_placement!(gui, src; origin)
+        _mouse!(gui, [0.0, 0.1, 0]; shift = 5)
+        P = collect(Float64, position(src))
+        _press!(gui)
+        _release!(gui)
+        @test !GUI._placing(gui)
+        @test last(gui.pairs).second === src && last(gui.pairs).first === sys
+        @test length(gui.beam_handles) == 3
+        @test collect(Float64, position(src)) ≈ P atol = 1e-9
+        @test ctrl.selected[] === src
+        @test gui.components.origin[src] === origin
+        @test any(o -> o === src, gui.components.added)
+        @test isnothing(gui.trace.error) && !gui.trace.stale
+        # moved onto the axis of beam A like any source: its beam ends on the mirror
+        GUI._change!(() -> translate_to3d!(src, [0.0, 0.05, 0]), ctrl, src)
+        ctrl.on_change(src)
+        @test BMO.object(BMO.intersection(first(BMO.rays(src)))) === m
+        close(gui)
+    end
+
+    @testset "the first source of a view" begin
+        gui = live_view(System(); trace_budget = Inf, throttle = false)
+        src = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
+        GUI._start_placement!(gui, src)
+        # without a source, the plane goes through the point the camera looks at
+        @test gui.components.placement.plane_point ≈ collect(Float64, cameracontrols(gui.ax.scene).lookat[])
+        GUI._drop_placement!(gui)
+        @test only(gui.pairs).second === src
         close(gui)
     end
 

@@ -41,19 +41,20 @@ When this Skill is active:
    `live_view(sys1 => beam1, sys2 => beam2)`. Pass `labels`, `detectors`, `extras` (housings),
    `constraints`, `on_change` as needed (`API.md`).
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
-   controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components can be added
-   to and removed from a system in the window (catalog "Components", keys `Insert` and `Delete`) or from code with
-   `add_component!` and `remove_component!` (`API.md`).
+   controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added
+   to and removed from the view in the window (catalog "Components", keys `Insert` and `Delete`) or from code with
+   `add_component!` and `remove_component!` (`API.md`); `live_view(System())` starts on an empty table.
 4) Export the alignment found in the window with `export_changes(gui)` (the button "Export" does the
    same) and paste it into the script that builds the system.
 
 ## Limits of the current version
 
-- Extras and sources are fixed when the view starts (extras can be hidden). Components of a `System` can
+- Extras are fixed when the view starts (they can be hidden). Components of a `System` and sources can
   be added and removed at runtime, with these limits: adding and removing is not part of the undo
-  history; a `StaticSystem`, sources and objects
-  inside a group cannot be added or removed; a component that is being placed is not traced until it is
-  dropped.
+  history; the objects of a `StaticSystem` and objects
+  inside a group cannot be added or removed; a component or source that is being placed is not traced until it is
+  dropped; the parameters of a source of the catalog (wavelength, diameter) are fixed once it is placed,
+  except the number of rays on its card.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
 - The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for

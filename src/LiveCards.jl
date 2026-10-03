@@ -465,12 +465,14 @@ _declarations(::_AbstractCard, obj) = (_head_actions(obj), _card_rows(obj))
 """
     _card_rows(obj)
 
-The rows of the card of `obj`: those of [`card_rows`](@ref) and, for a component, i.e. an
-`AbstractObject`, the row "remove" below them, see `remove_component!`. It is a row and not an
-action in the head, whose width the name of the object needs in the inspector of the app layout.
+The rows of the card of `obj`: those of [`card_rows`](@ref) and, for a component and a source,
+i.e. an `AbstractObject`, a beam or a beam group, the row "remove" below them, see
+`remove_component!`. It is a row and not an action in the head, whose width the name of the object
+needs in the inspector of the app layout.
 """
 _card_rows(obj) = card_rows(obj)
-_card_rows(obj::BMO.AbstractObject) = (card_rows(obj)..., _remove_row())
+_card_rows(obj::Union{BMO.AbstractObject, BMO.AbstractBeam, BMO.AbstractBeamGroup}) =
+    (card_rows(obj)..., _remove_row())
 
 """
     _head_actions(obj)
@@ -880,7 +882,7 @@ function _inspector_rows(gui::LiveView, ::Nothing)
     rows = Tuple{String, String}[
         ("Systems", string(length(gui.system_handles))), ("Objects", string(objects)),
         ("Sources", string(length(_sources(gui)))),
-        ("Detectors", string(length(_find_detectors(first.(gui.pairs))))),
+        ("Detectors", string(length(_find_detectors(_systems(gui))))),
         ("Clip planes", string(length(gui.clip.planes))),
         ("Last trace", gui.trace.solve_time > 0 ? _ms_string(gui.trace.solve_time) : "–")]
     return rows

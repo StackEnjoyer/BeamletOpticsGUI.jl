@@ -145,6 +145,54 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
 end
 
 """
+    _export_removed_lines!(lines, gui, systems, used, obj)
+
+Appends the lines of `export_changes` for `obj`, which the `gui` started with and which was removed
+at runtime: a component is a `delete!` from its system (named by `systems`, see
+`_export_system_names`), or a comment if its label is no variable name or one of the `used` names;
+a source is a comment, since the script that traces it is not known.
+"""
+function _export_removed_lines!(lines, gui::LiveView, systems, used, obj)
+    type = string(nameof(typeof(obj)))
+    label = _label(gui, obj)
+    system = systems[gui.components.system[obj]]
+    push!(lines, "", "# $label ($type), removed")
+    named = haskey(gui.labels, obj) && _is_variable_name(label) && !(label in used)
+    push!(lines, named ? "delete!($system, $label)" :
+        "# delete!($system, …) with the variable of $label")
+    return nothing
+end
+
+function _export_removed_lines!(lines, gui::LiveView, systems, used,
+        src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})
+    type = string(nameof(typeof(src)))
+    label = _label(gui, src)
+    traced = join((systems[sys] for sys in gui.components.source_systems[src]), ", ")
+    push!(lines, "", "# $label ($type), removed", "# do not trace $label through $traced any more")
+    return nothing
+end
+
+"""
+    _export_added_lines!(lines, gui, names, system, obj, base) -> n
+
+Appends the lines of `export_changes` that follow the constructor of `obj`, which was added to the
+`gui` at runtime, and returns the number `n` of changed objects of its group: a component is pushed
+to its `system` (the name of its variable) and moved from its pose `base` as constructed to its
+current pose, see `_export_pose_lines!`; a source is moved and then traced through the `system`.
+"""
+function _export_added_lines!(lines, gui::LiveView, names, system, obj, base)
+    push!(lines, "push!($system, $(names[obj]))")
+    return _export_pose_lines!(lines, gui, names, obj; base, heading = false)
+end
+
+function _export_added_lines!(lines, gui::LiveView, names, system,
+        src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}, base)
+    n = _export_pose_lines!(lines, gui, names, src; base, heading = false)
+    push!(lines, "solve_system!($system, $(names[src]))")
+    return n
+end
+
+"""
     _export_code(gui) -> (code, n)
 
 Returns the Julia code of `export_changes` and the number `n` of changes: the components that were
@@ -156,7 +204,9 @@ A removed component is a `delete!` from its system (see `_export_system_names`),
 its label is no variable name. An added component is its constructor call (the `code` of its
 `origin`, see `_ComponentState`; without one, a comment that it is to be constructed there), a
 `push!` to its system and its change of pose since it was constructed (without `origin`: since it
-was added); together they count as one change.
+was added); together they count as one change. Sources are added and removed like components: a
+removed source is a comment, an added one its constructor call, its change of pose and the
+`solve_system!` that traces it, see `_export_removed_lines!` and `_export_added_lines!`.
 """
 function _export_code(gui::LiveView)
     ctrl = gui.controls
@@ -181,13 +231,7 @@ function _export_code(gui::LiveView)
         "# Each rotation is about the position of the object, groups are moved before their objects."]
     n = 0
     for obj in comp.removed
-        type = string(nameof(typeof(obj)))
-        label = _label(gui, obj)
-        system = systems[comp.system[obj]]
-        push!(lines, "", "# $label ($type), removed")
-        named = haskey(gui.labels, obj) && _is_variable_name(label) && !(label in used)
-        push!(lines, named ? "delete!($system, $label)" :
-            "# delete!($system, …) with the variable of $label")
+        _export_removed_lines!(lines, gui, systems, used, obj)
         n += 1
     end
     added = Base.IdSet{Any}(comp.added)
@@ -199,9 +243,8 @@ function _export_code(gui::LiveView)
         push!(lines, "", (isnothing(label) ? "# $type" : "# $label ($type)") * ", added")
         push!(lines, isnothing(origin) ? "# construct `$name` here, in its pose when it was added" :
             "$name = $(origin.code)")
-        push!(lines, "push!($(systems[comp.system[obj]]), $name)")
         base = isnothing(origin) ? nothing : origin.pose0
-        n += 1 + _export_pose_lines!(lines, gui, names, obj; base, heading = false)
+        n += 1 + _export_added_lines!(lines, gui, names, systems[comp.system[obj]], obj, base)
     end
     for top in ctrl.movable
         (top isa LiveClipPlane || top in added) && continue
@@ -244,7 +287,9 @@ of the catalog, see [`component_catalog`](@ref); otherwise a comment marks where
 a `push!(system, name)` and the `rotate3d!` and `translate_to3d!` from its pose as constructed
 (otherwise: from its pose when it was added) to its current pose. The system is named after its
 label if that is a valid variable name, otherwise `system`, or `system1`, `system2`, … if the view
-shows several systems.
+shows several systems. An added source is its constructor call, its `rotate3d!` and
+`translate_to3d!` and the `solve_system!(system, name)` that traces it; a removed source that the
+view started with is a comment, since the script that traces it is not known.
 
 The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
 otherwise `obj1`, `obj2`, … by the position of the object in the component menu. A comment above

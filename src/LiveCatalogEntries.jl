@@ -18,6 +18,7 @@ end
 
 # The icons of the groups of the built-in entries, see `_catalog_group_icon`
 const _CATALOG_GROUP_ICONS = Dict{String, Symbol}(
+    "Sources" => :source,
     "Lenses" => :lens,
     "Mirrors" => :mirror,
     "Curved mirrors" => :spherical_mirror,
@@ -49,12 +50,16 @@ _length_param(name, default; kwargs...) = CatalogParam(name, default; unit = "mm
 """
     _builtin_catalog() -> Vector{CatalogEntry}
 
-The entries of [`component_catalog`](@ref): all components of BeamletOptics with a constructor of
-numbers and glasses, with the defaults of one inch optics. Only these arguments are parameters, the
-others keep the defaults of the constructor, e.g. the `stop` of a `Detector` and the `thickness`
-and the `hole_diameter` of the curved mirrors. The radii of curvature follow BeamletOptics:
-positive if the center of the surface lies behind it (towards +y), i.e. `R1 > 0` and `R2 < 0` for a
-biconvex lens, `Inf` for a plane surface of a `SphericalLens`.
+The entries of [`component_catalog`](@ref): the sources of BeamletOptics and all its components
+with a constructor of numbers and glasses, with the defaults of one inch optics. Only these
+arguments are parameters, the others keep the defaults of the constructor, e.g. the `stop` of a
+`Detector` and the `thickness` and the `hole_diameter` of the curved mirrors. The radii of curvature
+follow BeamletOptics: positive if the center of the surface lies behind it (towards +y), i.e.
+`R1 > 0` and `R2 < 0` for a biconvex lens, `Inf` for a plane surface of a `SphericalLens`.
+
+The sources (entries with `source = true`) are constructed at the origin along +y with a wavelength
+of 632.8 nm; the half angle of the point sources is entered in degrees, the numbers of rings and
+rays are whole numbers.
 """
 function _builtin_catalog()
     inch = 25.4e-3
@@ -65,12 +70,31 @@ function _builtin_catalog()
     flint = "N-SF5"
     entries = CatalogEntry[]
     # The entries of a group, each as (name, icon, constructor, parameters...)
-    function group!(group, items...)
+    function group!(group, items...; source::Bool = false)
         for (name, icon, constructor, params...) in items
-            push!(entries, CatalogEntry(name, constructor; group, icon, params))
+            push!(entries, CatalogEntry(name, constructor; group, icon, params, source))
         end
         return nothing
     end
+    # the parameters of the sources: a helium-neon laser, the numbers of rings and rays of BeamletOptics
+    wavelength = CatalogParam("wavelength", 632.8e-9; unit = "nm", scale = 1e-9)
+    power = CatalogParam("power", 1e-3; unit = "mW", scale = 1e-3, keyword = :P0)
+    half_angle = CatalogParam("half angle", deg2rad(5); unit = "°", scale = π / 180)
+    rings = CatalogParam("rings", 10; keyword = :num_rings, integer = true)
+    rays = CatalogParam("rays", 1000; keyword = :num_rays, integer = true)
+    group!("Sources",
+        ("Beam", :beam, Beam, wavelength),
+        ("Gaussian beamlet", :gaussian_beam, GaussianBeamlet, wavelength, len("waist", 1e-3), power),
+        ("Collimated source", :collimated_source, CollimatedSource,
+            len("diameter", 10e-3), wavelength, rings),
+        ("Uniform disc source", :disc_source, UniformDiscSource,
+            len("diameter", 10e-3), wavelength, rays),
+        ("Point source", :point_source, PointSource, half_angle, wavelength, rings),
+        ("Uniform point source", :uniform_point_source, UniformPointSource,
+            half_angle, wavelength, rays),
+        ("Astigmatic Gaussian beamlet", :astigmatic_beam, AstigmaticGaussianBeamlet,
+            wavelength, len("waist x", 1e-3), len("waist y", 0.5e-3), power);
+        source = true)
     group!("Lenses",
         ("Thin lens", :thin_lens, ThinLens,
             len("R1", 50e-3), len("R2", -50e-3), diameter, CatalogGlass()),

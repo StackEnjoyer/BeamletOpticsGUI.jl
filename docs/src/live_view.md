@@ -71,6 +71,10 @@ receiver path of a lidar, which are solved with different sources:
 gui = live_view(system_tx => beam_tx, system_rx => source_rx)
 ```
 
+A system can also be shown without a source, e.g. an empty table `live_view(System())`: its sources
+are added in the window, from the group "Sources" of the catalog, or from code, see
+[Adding and removing components](@ref components_page).
+
 ## Movable sources in the live view
 
 Each source, i.e. the beam or beam group of each `system => beam` pair, is shown with an orange

@@ -11,17 +11,18 @@ const _GHOST_OPACITY = 0.5
 """
     _Placement
 
-A component of a `LiveView` that follows the mouse until a click drops it, see
-`_start_placement!`: the object `obj` and its `ghost`, i.e. its render handle while it is not part
-of a system; the `system` that gets it and its `origin` (see `_ComponentState`); its orientation
+A component or source of a `LiveView` that follows the mouse until a click drops it, see
+`_start_placement!`: the object or source `obj` and its `ghost`, i.e. its render handle while it is
+not part of the view (of a source: its marker); the `system` that gets it and its `origin` (see
+`_ComponentState`); its orientation
 `R0` as constructed, which it has off the beams; the `plane_point` of the plane it moves on; the
 `ignore_mouse` of the controls, which ignore all presses meanwhile; the mouse position of the
 `press` that may become the click that drops it; `snapped` is `true` while it sits on a beam.
 """
 mutable struct _Placement
-    const obj::BMO.AbstractObject
+    const obj::Union{BMO.AbstractObject, _Source}
     const ghost::AbstractObjectRenderHandle
-    const system::BMO.System
+    const system::BMO.AbstractSystem
     const origin::Any
     const R0::Matrix{Float64}
     const plane_point::Vector{Float64}
@@ -82,15 +83,15 @@ beam, it snaps onto the beam: the position is the point of the beam under the cu
 `_inspect_beam`) and the local y-axis, the optical axis as constructed, points along the beam. Of
 a beam group, only the central beam takes part, and of a Gaussian beamlet its chief ray, such that
 the component sits on the axis of the source and not on one of its outer rays. The
-component is not traced while it is placed, hence the beams it snaps onto do not change. Elsewhere,
-the position is where the camera ray through the cursor meets the plane through `p.plane_point`
+component is not traced while it is placed, hence the beams it snaps onto do not change. A source
+does not snap, see `_snaps`. Elsewhere, the position is where the camera ray through the cursor meets the plane through `p.plane_point`
 in which the mouse moves objects (see `_drag_normal`: the plane of the view, or the one with the
 `plane_normal` of the controls), in the orientation `p.R0` as constructed; the position is kept if
 the ray does not meet the plane in front of the camera.
 """
 function _placement_pose(gui::LiveView, p::_Placement)
     ctrl = gui.controls
-    info = _inspect_beam(gui; radius = _SNAP_RADIUS, central = true)
+    info = _snaps(p.obj) ? _inspect_beam(gui; radius = _SNAP_RADIUS, central = true) : nothing
     if !isnothing(info)
         R = _align_rotation(p.R0[:, 2], info.direction, ctrl.rotation_axis) * p.R0
         return Point3{Float64}(info.point), R, true
@@ -133,10 +134,38 @@ function _ghost_style!(gui::LiveView, sys::BMO.System, ghost::AbstractObjectRend
 end
 
 """
-    _start_placement!(gui, obj; origin = nothing, system = _target_system(gui))
+The system that gets `obj` when it is placed in the `gui` without a `system`: of a component the
+`_target_system`, of a source the `_source_system`.
+"""
+_placement_system(gui::LiveView, ::BMO.AbstractObject) = _target_system(gui)
+_placement_system(gui::LiveView, ::_Source) = _source_system(gui, nothing)
 
-Attaches the new component `obj` to the mouse in the 3D view of the `gui`: it is rendered in its
-pose (see `_ghost_style!`) without being part of a system and follows the mouse, see
+# A component changes its system, hence it needs a `System`; a source is traced through any system
+_check_placement_system(::BMO.AbstractObject, system) = system isa BMO.System ||
+    throw(ArgumentError("the live view has no `System` that a component can be placed in"))
+_check_placement_system(::_Source, system) = system isa BMO.AbstractSystem ||
+    throw(ArgumentError("`system` must be a system of the live view, got a $(typeof(system))"))
+
+"""
+    _ghost!(gui, obj, system) -> AbstractObjectRenderHandle
+
+Renders `obj` while it is being placed in the `gui`, i.e. while it is not part of the view: a
+component for the `system` as its objects are rendered and in the look of `_ghost_style!`, a source
+as its marker (see `_live_render_source!`), whose beam is drawn when it is dropped.
+"""
+function _ghost!(gui::LiveView, obj::BMO.AbstractObject, system)
+    ghost = live_render!(gui.ax, obj; gui.components.render_kwargs...)
+    _ghost_style!(gui, system, ghost)
+    return ghost
+end
+_ghost!(gui::LiveView, src::_Source, _) = _live_render_source!(gui.ax, src;
+    size = gui.beams.marker_size[], strokecolor = _marker_stroke(gui.layout))
+
+"""
+    _start_placement!(gui, obj; origin = nothing, system = _placement_system(gui, obj))
+
+Attaches the new component or source `obj` to the mouse in the 3D view of the `gui`: it is rendered
+in its pose (see `_ghost!`) without being part of the view and follows the mouse, see
 `_placement_pose`, until a left click drops it, which adds it to the `system` via
 [`add_component!`](@ref) with its `origin` (see `_ComponentState`). `Esc` and the spectator mode
 cancel the placement, see `_cancel_placement!`; a component that is being placed already is
@@ -146,13 +175,13 @@ selected or dragged.
 
 Before the mouse enters the 3D view, the component is shown at the point of its plane (see
 `_placement_plane_point`) closest to the `lookat` point of the camera. A static `obj` can not
-follow the mouse and is added where it is.
+follow the mouse and is added where it is. A source is placed by its marker, hence the markers of
+the sources are shown if they were hidden.
 """
-function _start_placement!(gui::LiveView, obj::BMO.AbstractObject; origin = nothing,
-        system = _target_system(gui))
+function _start_placement!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source};
+        origin = nothing, system = _placement_system(gui, obj))
     ctrl = gui.controls
-    system isa BMO.System ||
-        throw(ArgumentError("the live view has no `System` that a component can be placed in"))
+    _check_placement_system(obj, system)
     _cancel_placement!(gui)
     if ctrl.spectator[]
         gui.status.text[] = "spectator mode, press v to place components"
@@ -167,14 +196,22 @@ function _start_placement!(gui::LiveView, obj::BMO.AbstractObject; origin = noth
     lookat = Vector{Float64}(cameracontrols(gui.ax.scene).lookat[])
     R0 = _pose(obj)[2]
     _set_pose_exact!(obj, lookat .- dot(lookat .- plane_point, n) .* n, R0)
-    ghost = live_render!(gui.ax, obj; gui.components.render_kwargs...)
-    _ghost_style!(gui, system, ghost)
+    _show_placed_markers!(gui, obj)
+    ghost = _ghost!(gui, obj, system)
     gui.components.placement = _Placement(obj, ghost, system, origin, R0, plane_point,
         ctrl.ignore_mouse, nothing, false)
     # The camera still gets the presses, e.g. to rotate the view
     ctrl.ignore_mouse = () -> true
     _update_placement!(gui)
     gui.status.text[] = "placing $(nameof(typeof(obj))): click to drop it, Esc to cancel"
+    return nothing
+end
+
+# The markers of the sources are shown while a source is placed, which is placed by its marker
+_show_placed_markers!(::LiveView, ::BMO.AbstractObject) = nothing
+function _show_placed_markers!(gui::LiveView, ::_Source)
+    toggle = gui.widgets.sources_toggle.active
+    toggle[] || (toggle[] = true)
     return nothing
 end
 

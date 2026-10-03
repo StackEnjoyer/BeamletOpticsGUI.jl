@@ -19,15 +19,16 @@ _catalog_default(p::CatalogParam) = p.default
 _catalog_default(p::CatalogGlass) = p.default == _GLASS_CONSTANT ? p.n : p.default
 
 """
-The argument of the constructor for the value `v` of the parameter `p`: the number, the glass with
-the name `v` (see `_glass`) or, for a constant refractive index `v`, the function `λ -> v`.
+The argument of the constructor for the value `v` of the parameter `p`: the number (an `Int` for a
+parameter with `integer`), the glass with the name `v` (see `_glass`) or, for a constant refractive
+index `v`, the function `λ -> v`.
 """
-_catalog_arg(::CatalogParam, v::Real) = Float64(v)
+_catalog_arg(p::CatalogParam, v::Real) = p.integer ? Int(v) : Float64(v)
 _catalog_arg(::CatalogGlass, v::AbstractString) = _glass(v)
 _catalog_arg(::CatalogGlass, v::Real) = (n = Float64(v); λ -> n)
 
 """The argument of the constructor for the value `v` of the parameter `p` as Julia code, see `_catalog_arg`."""
-_catalog_arg_code(::CatalogParam, v::Real) = repr(Float64(v))
+_catalog_arg_code(p::CatalogParam, v::Real) = repr(_catalog_arg(p, v))
 _catalog_arg_code(::CatalogGlass, v::AbstractString) = _glass_code(_glass(v))
 _catalog_arg_code(::CatalogGlass, v::Real) = "λ -> $(repr(Float64(v)))"
 
@@ -54,14 +55,23 @@ end
 _catalog_args(entry::CatalogEntry, values) = _catalog_args(_catalog_arg, entry, values)
 
 """
-    _catalog_object(entry, values) -> AbstractObject
+    _catalog_object(entry, values) -> Union{AbstractObject, AbstractBeam, AbstractBeamGroup}
 
 Constructs the component of the catalog `entry` with the `values` of its parameters, see
-`_catalog_args`. Throws what the constructor throws, and an `ArgumentError` if it does not return
-an `AbstractObject`.
+`_catalog_args`. The constructor of an entry with `source` gets the position `[0, 0, 0]` and the
+direction `[0, 1, 0]` before them and returns a beam or a beam group. Throws what the constructor
+throws, and an `ArgumentError` if it does not return an `AbstractObject`, or a source for an entry
+with `source`.
 """
 function _catalog_object(entry::CatalogEntry, values)
     positional, keywords = _catalog_args(entry, values)
+    if entry.source
+        # new vectors with every call: a source may keep them
+        src = entry.constructor([0.0, 0, 0], [0.0, 1, 0], positional...; keywords...)
+        src isa Union{BMO.AbstractBeam, BMO.AbstractBeamGroup} ||
+            throw(ArgumentError("the constructor returned a $(nameof(typeof(src))), not a beam or a beam group"))
+        return src
+    end
     obj = entry.constructor(positional...; keywords...)
     obj isa BMO.AbstractObject ||
         throw(ArgumentError("the constructor returned a $(nameof(typeof(obj))), not an AbstractObject"))
@@ -74,10 +84,14 @@ end
 The call of the constructor of the catalog `entry` with the `values` of its parameters as Julia
 code, e.g. `"ThinBeamsplitter(0.0254, 0.0254; reflectance = 0.5)"`: the call that
 `_catalog_object` makes, for [`export_changes`](@ref). A glass is written as the call of its
-constructor, see `_glass_code`, such that the code runs without this package.
+constructor, see `_glass_code`, such that the code runs without this package. The code of an entry
+with `source` has the position and the direction of the source before the arguments, e.g.
+`"Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.328e-7)"`.
 """
 function _catalog_code(entry::CatalogEntry, values)
     positional, keywords = _catalog_args(_catalog_arg_code, entry, values)
+    # the position and the direction that `_catalog_object` passes
+    entry.source && pushfirst!(positional, "[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]")
     args = join(positional, ", ")
     isempty(keywords) && return "$(entry.code_name)($args)"
     kwargs = join(("$k = $v" for (k, v) in keywords), ", ")
@@ -105,7 +119,8 @@ The value of the parameter `p` for the text `s` of its input in the catalog, see
 
 A [`CatalogParam`](@ref) gives the number in the units of the constructor. The unchanged text of
 the default and an empty box, which shows the default as its placeholder, give `p.default` itself.
-`Inf` is a value, e.g. for the radius of a plane surface.
+`Inf` is a value, e.g. for the radius of a plane surface. A parameter with `integer` only takes a
+whole number.
 
 A [`CatalogGlass`](@ref) gives the name of the glass if `s` is one of [`catalog_glasses`](@ref),
 otherwise the constant refractive index that `s` holds, `p.n` for an empty box.
@@ -120,7 +135,10 @@ function _catalog_value(p::CatalogParam, s::AbstractString)
         throw(ArgumentError("invalid input \"$text\" for $(p.name), enter a number"))
     v = x * p.scale
     # without the rounding error of the product, e.g. 0.03 instead of 0.030000000000000002
-    return isfinite(v) ? round(v; sigdigits = 15) : v
+    isfinite(v) && (v = round(v; sigdigits = 15))
+    (p.integer && !isinteger(v)) &&
+        throw(ArgumentError("invalid input \"$text\" for $(p.name), enter a whole number"))
+    return v
 end
 
 function _catalog_value(p::CatalogGlass, s::AbstractString)
@@ -137,8 +155,8 @@ end
     _catalog_component(entry, strings) -> (; obj, origin)
 
 The step from the form of the catalog to a component: parses the `strings` of the inputs of the
-parameters of the `entry` (see `_catalog_value`), constructs the object `obj` and returns it with
-its `origin = (; code, pose0)`, the call of its constructor as code and its pose as constructed,
+parameters of the `entry` (see `_catalog_value`), constructs the object or source `obj` and returns
+it with its `origin = (; code, pose0)`, the call of its constructor as code and its pose as constructed,
 see `_ComponentState`. Throws for an invalid input and what the constructor throws.
 """
 function _catalog_component(entry::CatalogEntry, strings)
@@ -150,9 +168,9 @@ function _catalog_component(entry::CatalogEntry, strings)
 end
 
 """
-    _place_catalog!(gui, entry, strings) -> Union{AbstractObject, Nothing}
+    _place_catalog!(gui, entry, strings) -> Union{AbstractObject, AbstractBeam, AbstractBeamGroup, Nothing}
 
-"Place" of the catalog of the `gui`: constructs the component of the `entry` from the `strings` of
+"Place" of the catalog of the `gui`: constructs the component or source of the `entry` from the `strings` of
 its form (see `_catalog_component`) and starts placing it with the mouse, see `_start_placement!`.
 An invalid input or an error of the constructor only shows a message in the status line: no object
 is made, nothing is placed and `nothing` is returned.
@@ -339,12 +357,13 @@ the widgets of the catalog, see `_catalog_widget!`. Without a dock, the window i
 with one, the catalog starts docked. The toggle "Components" among the tools of the layout (see
 [`add_tool!`](@ref)) shows and hides it, the key `Insert` shows the window at the mouse, see
 `_connect_catalog_window!`. Both are listed in the help with the mouse while placing
-(`_CATALOG_HELP`). Nothing is built for an empty catalog and for a view without a `System`, to
-which components can be added.
+(`_CATALOG_HELP`). A view without a `System`, to which components can be added, only offers the
+sources of the catalog, which are traced through any system. Nothing is built for an empty catalog.
 """
 function _build_catalog!(gui::LiveView)
     entries = gui.components.catalog
-    (isempty(entries) || isempty(_mutable_systems(gui))) && return nothing
+    isempty(_mutable_systems(gui)) && filter!(e -> e.source, entries)
+    isempty(entries) && return nothing
     w = _CatalogWindow(gui, _catalog_dock_slot!(gui, _CATALOG_TITLE))
     gui.components.window = w
     _connect_catalog_window!(gui, w)
@@ -369,9 +388,13 @@ function _refresh_catalog!(gui::LiveView)
     return nothing
 end
 
-"""Shows the system that gets the component of the catalog widget `w`, see `_target_system`."""
+"""
+Shows the system that gets the chosen entry of the catalog widget `w`: of a component the
+`_target_system`, of a source the system it is traced through, see `_source_system`.
+"""
 function _show_catalog_target!(gui::LiveView, w::_CatalogWidget)
-    sys = _target_system(gui)
+    source = w.entry != 0 && _catalog_entry(w).source
+    sys = source ? _source_system(gui, nothing) : _target_system(gui)
     _update!(w.target.text, isnothing(sys) ? "into: no system" : "into: $(_label(gui, sys))")
     return nothing
 end
@@ -494,6 +517,7 @@ function _select_catalog_entry!(gui::LiveView, w::_CatalogWidget, i::Integer)
     w.entry == i && return nothing
     w.entry = i
     _show_catalog_entry!(w)
+    _show_catalog_target!(gui, w)
     _build_catalog_form!(gui, w, String[_catalog_string(p) for p in w.entries[i].params])
     return nothing
 end

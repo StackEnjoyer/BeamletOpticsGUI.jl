@@ -68,9 +68,9 @@ card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text;
 card_actions(obj) = (CardWidget(Button; name = :hide, label = "hide",
     value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
 
-# The row "remove" of a component, below its other rows (see `_card_rows`): removes a top-level
-# object of a `System` from the view (see `remove_component!`) and names the reason in the status
-# line for any other object, e.g. an object of a group or an extra
+# The row "remove" of a component or a source, below its other rows (see `_card_rows`): removes a
+# top-level object of a `System` or a source from the view (see `remove_component!`) and names the
+# reason in the status line for any other object, e.g. an object of a group or an extra
 _remove_row() = CardRow(CardWidget(Button; name = :remove, label = "remove",
     on = (gui, o, _) -> _remove_selected!(gui, o)))
 
@@ -162,10 +162,14 @@ _first_ray(g::BMO.GaussianBeamlet) = _first_ray(g.chief)
 _first_ray(g::BMO.AstigmaticGaussianBeamlet) = _first_ray(g.c)
 _first_ray(beam::BMO.Beam) = first(BMO.rays(beam))
 
-"""The wavelength of the first ray hitting `obj`, or of the first beam of the `gui` [m]."""
+"""
+The wavelength of the first ray hitting `obj`, or of the first beam of the `gui` [m]; 1000 nm, the
+default of BeamletOptics, in a view without a source.
+"""
 function _live_wavelength(gui::LiveView, obj)
     rs = _hits(gui, obj)
-    return BMO.wavelength(isempty(rs) ? _first_ray(last(first(gui.pairs))) : first(rs))
+    isempty(rs) || return BMO.wavelength(first(rs))
+    return isempty(gui.pairs) ? 1.0e-6 : BMO.wavelength(_first_ray(last(first(gui.pairs))))
 end
 
 function _index_text(gui::LiveView, l)

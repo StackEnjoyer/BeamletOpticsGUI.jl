@@ -326,7 +326,8 @@ Gaussian beamlet in `gen` (see `_set_generating_beams!`), and the kwargs of `liv
 overlays in `overlay_kwargs`, taken from the `beam_kwargs` of `live_view` without `render_every`,
 including the initial `show_polarization` and `show_beams`. `shown` holds per overlay handle the
 plots that are visible while the beam is on, the others stay hidden; `pol_view` per beam the
-values of the sliders of its polarization curve, see `_pol_view`.
+values of the sliders of its polarization curve, see `_pol_view`. `marker_size` is the length [m] of
+the arrow of the markers of the sources, also of those that are added later.
 """
 Base.@kwdef struct _BeamState
     off::Base.IdSet{Any} = Base.IdSet{Any}()
@@ -336,6 +337,7 @@ Base.@kwdef struct _BeamState
     overlay_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
     shown::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
     pol_view::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+    marker_size::Base.RefValue{Float64} = Ref(0.01)
 end
 
 """
@@ -346,7 +348,9 @@ The components that were added to and removed from the systems of a `LiveView` a
 the systems, with which added components are rendered; the `catalog` of the view (see
 [`component_catalog`](@ref)); the `added` components that are still part of a system and the
 `removed` ones that the view started with, both in the order of the calls, with the `system` of
-each; the `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
+each; sources are added and removed like components, the `system` of an added one is the system it
+is traced through, and a removed source of the start has its systems in `source_systems`; the
+`origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`; the
 `window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
@@ -358,6 +362,7 @@ Base.@kwdef mutable struct _ComponentState
     const removed::Vector{Any} = Any[]
     const system::IdDict{Any, Any} = IdDict{Any, Any}()
     const origin::IdDict{Any, Any} = IdDict{Any, Any}()
+    const source_systems::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
     placement::Any = nothing
     window::Any = nothing
 end
@@ -485,6 +490,12 @@ end
 # Infers the layout type like the constructor of a non-parametric type
 LiveView(fields...) = LiveView{typeof(last(fields))}(fields...)
 
+"""
+The systems of the `gui` in the order in which they are rendered: those of its pairs and those
+without a source, see `live_view`.
+"""
+_systems(gui::LiveView) = BMO.AbstractSystem[rendered(h) for h in gui.system_handles]
+
 
 """
     display(gui::LiveView; screen_config...)
@@ -513,8 +524,8 @@ function Base.display(gui::LiveView; screen_config...)
 end
 
 function Base.show(io::IO, gui::LiveView)
-    print(io, "LiveView(", length(gui.pairs), " systems, ", length(_find_detectors(first.(gui.pairs))),
-        " detectors)")
+    print(io, "LiveView(", length(gui.system_handles), " systems, ", length(_sources(gui)),
+        " sources, ", length(_find_detectors(_systems(gui))), " detectors)")
 end
 
 function Base.close(gui::LiveView)
@@ -536,11 +547,21 @@ function _log_once(e, last_error, source::String)
     return msg
 end
 
+# What `live_view` shows: a system with one of its sources, or a system without a source
+const _ViewArg = Union{BMO.AbstractSystem, Pair{<:BMO.AbstractSystem}}
+_view_system(sys::BMO.AbstractSystem) = sys
+_view_system(p::Pair) = p.first
+
+# The status line of a view without a source
+const _NO_SOURCE = "no source, add one from the catalog or with add_component!"
+
 """
     live_view(system => beam, ...; kwargs...)
     live_view(system, beam; kwargs...)
+    live_view(system, ...; kwargs...)
 
-Opens a complete interactive window for one or several pairs of `system` and `beam`. All systems
+Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
+without a source, which get their sources at runtime (see "Adding and removing components"). All systems
 and beams are live-rendered into the same `LScene`, see [`live_render!`](@ref), and can be moved
 with the [`kinematic_controls!`](@ref). After each change, all `Detector`s are emptied, all systems
 are solved again and the beams and the shown detector views are updated. Returns a `LiveView` with
@@ -905,10 +926,11 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 
 # Adding and removing components
 
-The components of a `System` of the view can be changed at runtime, e.g. to build a setup from an
-empty `System()` and a source; a `StaticSystem` can not be changed. The catalog "Components"
-offers the components of the `catalog` kwarg, see [`component_catalog`](@ref): the icons at its top
-select a group, e.g. the lenses, the tiles below a component of the group, e.g. a doublet. The
+The components of a `System` of the view and its sources can be changed at runtime, e.g. to build
+a setup from an empty `System()`, also without a source (`live_view(System())`); a `StaticSystem`
+can not be changed. The catalog "Components"
+offers the sources and components of the `catalog` kwarg, see [`component_catalog`](@ref): the icons at its top
+select a group, e.g. the sources or the lenses, the tiles below an entry of the group, e.g. a doublet. The
 boxes of the form take its numbers, e.g. the radii of a lens [mm], and a menu selects its glass
 among those of [`catalog_glasses`](@ref) or "constant", for which a box takes a constant refractive
 index. "Place" attaches the component to the mouse. An input that is no number, or that the
@@ -941,12 +963,19 @@ was pressed, else the first `System` of the view, all beams of that system are t
 and it is selected. `Esc` cancels the placement. Meanwhile the component is not traced, a drag
 still moves the camera, and a click selects nothing.
 
-The button "remove" below the rows of the card of a component, or the key `Delete` while it is
-selected, removes it from its system. An object of a group, an extra and a source can not be
+A source of the group "Sources" (a beam, a Gaussian beamlet, a collimated or a point source) is
+placed by its marker in the same way. It does not snap onto beams and points along +y, as it is
+constructed; turn it with the controls afterwards. Its beam is traced through the system that the
+line "into" names, which may be a `StaticSystem`, once it is dropped. Placing a source shows the
+markers of the sources if they were hidden.
+
+The button "remove" below the rows of the card of a component or a source, or the key `Delete`
+while it is selected, removes it: a component from its system, a source from the view, also the
+last one. An object of a group and an extra can not be
 removed: they are kept, and the status line names the reason. Removing is not part of the undo
 history. From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
-[`export_changes`](@ref) lists the added components, with their constructor calls, and the removed
-ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
+[`export_changes`](@ref) lists the added components and sources, with their constructor calls, and
+the removed ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
 
 # Snapping onto beams
 
@@ -1040,7 +1069,7 @@ neither do sources and clip planes.
   or `rotation_axis`
 """
 function live_view(
-        pairs::Pair{<:BMO.AbstractSystem}...;
+        args::_ViewArg...;
         size = nothing,
         layout::Symbol = :compact,
         theme::Symbol = :light,
@@ -1071,8 +1100,9 @@ function live_view(
         snap::Union{Bool, Symbol} = false,
         kwargs...
     )
-    isempty(pairs) && throw(ArgumentError("live_view requires at least one system => beam pair"))
-    ps = Pair{BMO.AbstractSystem, Any}[p for p in pairs]
+    isempty(args) &&
+        throw(ArgumentError("live_view requires at least one system or system => beam pair"))
+    ps = Pair{BMO.AbstractSystem, Any}[p for p in args if p isa Pair]
     for b in beams_off
         any(p -> p.second === b, ps) ||
             throw(ArgumentError("beams_off: $(typeof(b)) is not a beam of the pairs"))
@@ -1084,8 +1114,9 @@ function live_view(
         get(kw, :show_beams, false) === true && !_has_generating_beams(b) &&
             throw(ArgumentError("beam_kwargs: show_beams = true for $(typeof(b)), which is no Gaussian beamlet"))
     end
-    # several beams may share a system, which is rendered once
-    systems = unique(objectid, first.(ps))
+    # several beams may share a system, which is rendered once; a system without a source gets
+    # its sources at runtime, see `add_component!`
+    systems = unique(objectid, BMO.AbstractSystem[_view_system(a) for a in args])
     extra_specs = _extra_specs(extras, systems)
     detector_specs = _detector_specs(detectors, systems)
     slider_specs = [_slider_spec(s) for s in sliders]
@@ -1123,9 +1154,10 @@ function live_view(
     # bounding boxes
     extent = _scene_extent((system_handles..., extras_handle))
     markers = AbstractObjectRenderHandle[]
+    # Markers of the sources, scaled to the size of the systems, also of the sources that are
+    # added at runtime
+    marker_size = beam_state.marker_size[] = 0.08 * extent
     if movable_sources
-        # Markers of the sources, scaled to the size of the systems
-        marker_size = 0.08 * extent
         for src in unique(objectid, last.(ps))
             BMO.is_static(src) || push!(markers,
                 _live_render_source!(ax, src; size = marker_size, strokecolor = _marker_stroke(lay)))
@@ -1223,6 +1255,7 @@ function live_view(
         _mark_stale!(gui, nothing; msg = _NOT_TRACED)
         _update_info!(gui)
     end
+    isempty(ps) && (gui.status.text[] = _NO_SOURCE)
     # The overlays of the beams with `show_polarization` or `show_beams`, after the solve they show
     _init_overlays!(gui)
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read
@@ -1238,3 +1271,6 @@ function live_view(
 end
 
 live_view(system::BMO.AbstractSystem, beam; kwargs...) = live_view(system => beam; kwargs...)
+# Several systems, the first one without a source: not a system and its beam
+live_view(system::BMO.AbstractSystem, arg::_ViewArg, args::_ViewArg...; kwargs...) =
+    invoke(live_view, Tuple{Vararg{_ViewArg}}, system, arg, args...; kwargs...)

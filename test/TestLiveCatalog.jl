@@ -21,13 +21,20 @@ function checked_block(width::Real)
     return CatalogBlock(width)
 end
 
+# The constructor of a source that returns an object, and the one of a component that returns a beam
+block_at(pos, dir, width::Real) = CatalogBlock(width)
+ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
+
 @testset "Live view catalog" begin
+    width_param() = CatalogParam("width", 10e-3; unit = "mm", scale = 1e-3)
     block_entry() = CatalogEntry("Block", CatalogBlock; group = "Blocks", params = [
-        CatalogParam("width", 10e-3; unit = "mm", scale = 1e-3),
+        width_param(),
         CatalogParam("scale", 2.0; keyword = :scale)])
 
-    # Rays along +y onto a mirror, in one system named `label`; a second pair with `two`
-    function _fixture(; two::Bool = false, label = nothing, kwargs...)
+    # Rays along +y onto a mirror, in one system named `label`; a second pair with `two`. The
+    # catalog shows the thin lens, in its window and in its dock, unless `lens = false`: then its
+    # first entry, a source
+    function _fixture(; two::Bool = false, label = nothing, lens::Bool = true, kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         sys = System([m])
@@ -39,10 +46,24 @@ end
         two && push!(pairs, sys2 => Beam([0.05, 0, 0], [0.0, 1, 0], 1e-6))
         labels = isnothing(label) ? Dict() : Dict(sys => label)
         gui = live_view(pairs...; trace_budget = Inf, throttle = false, labels, kwargs...)
+        lens && _show_entry!(gui, "Thin lens")
         return gui, sys, m, sys2, m2
     end
 
     _window(gui) = GUI._catalog_window(gui)
+
+    # Chooses the entry `name` in all widgets of the catalog of the `gui`, if it has the entry
+    function _show_entry!(gui, name)
+        win = _window(gui)
+        isnothing(win) && return nothing
+        for widget in GUI._catalog_widgets(win)
+            i = findfirst(e -> e.name == name, widget.entries)
+            isnothing(i) && continue
+            GUI._set_catalog_group!(gui, widget, findfirst(==(widget.entries[i].group), widget.groups))
+            GUI._select_catalog_entry!(gui, widget, i)
+        end
+        return nothing
+    end
 
     # The widgets of the catalog of the `gui` that are in use, i.e. of its window or of its dock, in
     # the order in which they were built
@@ -124,6 +145,52 @@ end
         # a constructor that returns no object
         @test_throws ArgumentError GUI._catalog_object(CatalogEntry("x", identity; params = [CatalogParam("w", 1.0)]), [1.0])
 
+        # a whole number is passed as an `Int` and written without a decimal point
+        count = CatalogParam("count", 3; keyword = :scale, integer = true)
+        @test count.integer && !width_param().integer
+        counted = CatalogEntry("x", CatalogBlock; params = [width_param(), count])
+        positional, keywords = GUI._catalog_args(counted, [5e-3, 4.0])
+        @test positional == [5e-3] && only(keywords) == (:scale => 4) && last(only(keywords)) isa Int
+        @test GUI._catalog_code(counted, [5e-3, 4.0]) == "CatalogBlock(0.005; scale = 4)"
+        @test GUI._catalog_object(counted, [5e-3, 4.0]) isa CatalogBlock
+        @test GUI._catalog_string(count) == "3"
+        @test GUI._catalog_value(count, "3") === 3.0 && GUI._catalog_value(count, "") === 3.0
+        @test GUI._catalog_value(count, " 12 ") === 12.0 && GUI._catalog_value(count, "1e3") === 1000.0
+        for s in ("2.5", "Inf", "abc")
+            @test_throws ArgumentError GUI._catalog_value(count, s)
+        end
+        @test_throws "enter a whole number" GUI._catalog_value(count, "2.5")
+        @test_throws ArgumentError GUI._catalog_component(counted, ["4", "2.5"])
+        @test GUI._catalog_component(counted, ["4", "2"]).origin.code == "CatalogBlock(0.004; scale = 2)"
+        @test_throws ArgumentError CatalogParam("count", 2.5; integer = true)
+
+        # a source: the position and the direction come before the parameters
+        wavelength = CatalogParam("wavelength", 500e-9; unit = "nm", scale = 1e-9)
+        ray = CatalogEntry("Ray", Beam; group = "Sources", params = [wavelength], source = true)
+        @test ray.source && !entry.source
+        beam = GUI._catalog_object(ray, [600e-9])
+        @test beam isa Beam && BMO.wavelength(beam) == 600e-9
+        @test position(beam) == [0, 0, 0] && BMO.direction(beam) == [0, 1, 0]
+        @test GUI._catalog_code(ray, [600e-9]) == "Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.0e-7)"
+        twin = Core.eval(@__MODULE__, Meta.parse(GUI._catalog_code(ray, [600e-9])))
+        @test typeof(twin) === typeof(beam) && BMO.wavelength(twin) == 600e-9
+        # without parameters and with keywords only
+        @test GUI._catalog_code(CatalogEntry("x", Beam; source = true), Float64[]) ==
+              "Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0])"
+        rings = CatalogEntry("x", CollimatedSource; source = true,
+            params = [CatalogParam("d", 1e-3), CatalogParam("rings", 2; keyword = :num_rings, integer = true)])
+        @test GUI._catalog_code(rings, [1e-3, 2.0]) ==
+              "CollimatedSource([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.001; num_rings = 2)"
+        @test GUI._catalog_object(rings, [1e-3, 2.0]) isa CollimatedSource
+        c = GUI._catalog_component(ray, ["650"])
+        @test c.obj isa Beam && BMO.wavelength(c.obj) == 650e-9
+        @test c.origin.code == "Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.5e-7)"
+        @test first(c.origin.pose0) == [0, 0, 0]
+        # the constructor of a source returns an object, and the one of a component a beam
+        @test_throws ArgumentError GUI._catalog_object(
+            CatalogEntry("x", block_at; params = [width_param()], source = true), [5e-3])
+        @test_throws ArgumentError GUI._catalog_object(CatalogEntry("x", ray_of; params = [wavelength]), [1e-6])
+
         # the texts of the boxes: in the unit of the parameter
         width, scale = entry.params
         @test GUI._catalog_string(width) == "10"
@@ -152,7 +219,7 @@ end
     end
 
     @testset "widget ($layout, $theme)" for (layout, theme) in ((:compact, :light), (:app, :dark))
-        gui, sys, m = _fixture(; layout, theme)
+        gui, sys, m = _fixture(; layout, theme, lens = false)
         entries = gui.components.catalog
         # the window of both layouts, hidden at first, with the toggle of the layout; the catalog
         # is docked in a layout with a place for it, and open there
@@ -173,19 +240,40 @@ end
         @test w.place.label[] == "Place"
         # an icon per group, the first group and its first entry are chosen
         @test widget.groups == unique(e.group for e in entries)
-        @test length(widget.group_buttons) == length(widget.groups) == 7
-        @test [b.active[] for b in widget.group_buttons] == (1:7 .== 1)
+        @test length(widget.group_buttons) == length(widget.groups) == 8
+        # the sources are the first group: the form of a beam is its wavelength
+        @test first(widget.groups) == "Sources"
+        @test [b.active[] for b in widget.group_buttons] == (1:8 .== 1)
+        @test widget.group_label.text[] == "Sources"
+        @test _tiles(widget) == ["Beam", "Gaussian beamlet", "Collimated source", "Uniform disc source",
+            "Point source", "Uniform point source", "Astigmatic Gaussian beamlet"]
+        @test _active(widget) == ["Beam"] && widget.entry_label.text[] == "Beam"
+        @test GUI._catalog_entry(widget) === first(entries) && first(entries).source
+        @test _texts(w.boxes) == ["632.8"] && isempty(w.menus)
+        @test "wavelength" in w.labels && "nm" in w.labels
+        # whole numbers and an angle in degrees
+        w = _choose!(gui, "Point source")
+        @test _texts(w.boxes) == ["5", "632.8", "10"]
+        @test "half angle" in w.labels && "°" in w.labels && "rings" in w.labels
+        w.boxes[3].displayed_string[] = "2.5"
+        gui.status.text[] = ""
+        w.place.clicks[] += 1
+        @test occursin("invalid input \"2.5\" for rings, enter a whole number", gui.status.text[])
+        @test !GUI._placing(gui)
+        # the lenses
+        w = _choose!(gui, "Thin lens")
+        @test [b.active[] for b in widget.group_buttons] == (1:8 .== 2)
         @test widget.group_label.text[] == "Lenses"
         @test _tiles(widget) == ["Thin lens", "Singlet", "Doublet", "Triplet"]
         @test _active(widget) == ["Thin lens"] && widget.entry_label.text[] == "Thin lens"
-        @test GUI._catalog_entry(widget) === first(entries)
         # the name of the group under the mouse
-        widget.group_buttons[3].hovered[] = true
+        widget.group_buttons[4].hovered[] = true
         @test widget.group_label.text[] == "Curved mirrors"
-        widget.group_buttons[3].hovered[] = false
+        widget.group_buttons[4].hovered[] = false
         @test widget.group_label.text[] == "Lenses"
         # a box per number with its default, between its name and its unit, a menu per glass
-        lens = first(entries)
+        lens = GUI._catalog_entry(widget)
+        @test lens.constructor === ThinLens
         @test _texts(w.boxes) == ["50", "-50", "25.4"]
         @test all(p -> p.name in w.labels, lens.params)
         @test count(==("mm"), w.labels) == 3
@@ -218,7 +306,7 @@ end
 
         # another group: its tiles, its first entry is chosen
         w = _choose!(gui, "Thin beamsplitter")
-        @test [b.active[] for b in widget.group_buttons] == (1:7 .== 4)
+        @test [b.active[] for b in widget.group_buttons] == (1:8 .== 5)
         @test widget.group_label.text[] == "Beamsplitters"
         @test _tiles(widget) == [e.name for e in entries if e.group == "Beamsplitters"]
         @test length(_tiles(widget)) == 6
@@ -319,10 +407,16 @@ end
         @test isnothing(_window(gui))
         @test isempty(gui.custom.boxes)
         close(gui)
-        # no system that components can be added to
+        # no system that components can be added to: only the sources, see `TestLiveSources.jl`,
+        # and no widget without them
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
-        gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf)
+        static() = StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
+        gui = live_view(static(); layout, trace_budget = Inf)
+        @test all(e -> e.source, GUI._catalog_widget(_window(gui)).entries)
+        close(gui)
+        gui = live_view(static(); layout, trace_budget = Inf,
+            catalog = [e for e in component_catalog() if !e.source])
         @test isnothing(_window(gui))
         close(gui)
         # an empty system gets one
@@ -703,11 +797,11 @@ end
         @test length(sys.objects) == 2 && win.shown
 
         # the dock button of the window: back, with what the window showed
-        win.widget.group_buttons[2].clicks[] += 1
+        win.widget.group_buttons[3].clicks[] += 1
         win.dock_button.clicks[] += 1
         @test win.docked && !win.shown && !win.pinned && d.part.shown && all(visible(d.widget))
         @test isempty(GUI._catalog_rects(gui)) && win.tool.active[]
-        @test d.widget.group == 2 && _tiles(d.widget) == _tiles(win.widget)
+        @test d.widget.group == 3 && _tiles(d.widget) == _tiles(win.widget)
         @test _active(d.widget) == _active(win.widget) && inside()
         @test GUI._catalog_strings(d.widget) == GUI._catalog_strings(win.widget)
 
@@ -745,11 +839,11 @@ end
         mouse!(p)
         key!(Keyboard.insert)
         @test win.shown
-        win.widget.group_buttons[4].clicks[] += 1
+        win.widget.group_buttons[5].clicks[] += 1
         win.widget.place.clicks[] += 1
         GUI._drop_placement!(gui)
         @test win.docked && !layout.left.shown && !any(visible(d.widget))
-        @test d.widget.group == 4 && _tiles(d.widget) == _tiles(win.widget)
+        @test d.widget.group == 5 && _tiles(d.widget) == _tiles(win.widget)
         # its toggle shows the sidebar
         win.tool.active[] = false
         @test d.collapsed && !layout.left.shown

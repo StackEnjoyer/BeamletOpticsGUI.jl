@@ -78,7 +78,7 @@ _points(h) = only(render_plots(h))[1][]
         @test _result(gui).metrics.P ≈ optical_power(pd)
         # no card is pinned at the start
         @test !any(c -> c.pinned, gui.cards.all) && isempty(gui.detectors.start)
-        @test sprint(show, gui) == "LiveView(1 systems, 1 detectors)"
+        @test sprint(show, gui) == "LiveView(1 systems, 1 sources, 1 detectors)"
         @test isnothing(gui.sliders)
         close(gui)
 
@@ -133,7 +133,7 @@ _points(h) = only(render_plots(h))[1][]
         b2 = Beam([0.05, 0.1, 0.001], [1.0, 0, 0])
         gui = _live_view(sys1 => b1, sys2 => b2; throttle = false, mode = :rotate, fine_angle = 1e-3)
         @test length(_detectors(gui)) == 1 # deduplicated
-        @test sprint(show, gui) == "LiveView(2 systems, 1 detectors)"
+        @test sprint(show, gui) == "LiveView(2 systems, 2 sources, 1 detectors)"
         # both systems and the markers of both sources are handled by one controller
         @test length(render_children(gui.controls.h)) == 5
         @test length(BMO.hits(pd)) == 2
@@ -1040,14 +1040,6 @@ _points(h) = only(render_plots(h))[1][]
             @test collect(position(plane2)) ≈ collect(position(m))
             @test maximum(abs.(GUI._normal(plane2) - view_dir)) < 1e-6
             @test _planes(gui) == GUI._plane3f.([plane, plane2])
-
-            # Delete with a source selected keeps the planes and the source, see `remove_component!`
-            # for a selected component
-            src = last(gui.pairs[1])
-            gui.controls.selected[] = src
-            _key!(gui, Keyboard.delete)
-            @test length(gui.clip.planes) == 2
-            @test gui.controls.selected[] === src
 
             # Delete removes the marker and the plane
             marker_plots = copy(render_plots(_handle(gui, plane2)))

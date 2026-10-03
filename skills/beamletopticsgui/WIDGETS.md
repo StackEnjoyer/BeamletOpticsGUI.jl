@@ -289,15 +289,19 @@ end
 The catalog "Components" of the live view (a movable window, opened with the key `Insert`; docked in the left sidebar of the app layout) lets the user
 pick a component by the icon of its group and its tile, type its parameters and place it with the mouse.
 An own type joins it with a
-`CatalogEntry(name, constructor; group, params, code_name, icon)`: a name, a constructor that is called
-with the parameter values, one `CatalogParam(name, default; unit, scale, keyword)` per number and one
+`CatalogEntry(name, constructor; group, params, code_name, icon, source)`: a name, a constructor that is called
+with the parameter values, one `CatalogParam(name, default; unit, scale, keyword, integer)` per number
+(`integer = true` passes an `Int`, e.g. a number of rays) and one
 `CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword)` per refractive index. The default
 of a number is in the units of the constructor (SI), the box shows `value / scale` with the `unit`. A
 glass is chosen in a menu of the glasses of `catalog_glasses()` and "constant" (a box for the number,
 default `n`); the constructor gets the glass as stored there (a `SellmeierEquation`) or `λ -> n`. A
 parameter with `keyword = :name` is passed as that keyword argument, the others positionally in order.
 The constructor should be a function or type that a script can call by name, since `export_changes`
-prints the call. `group` is a built-in group ("Lenses", "Mirrors", "Curved mirrors", "Beamsplitters",
+prints the call. An entry with `source = true` is a source: its constructor is called as
+`constructor([0, 0, 0], [0, 1, 0], values...; keywords...)` and returns a beam or beam group, e.g.
+`CatalogEntry("My laser", MySource; group = "Sources", source = true, params = [...])`.
+`group` is a built-in group ("Sources", "Lenses", "Mirrors", "Curved mirrors", "Beamsplitters",
 "Prisms", "Polarizers", "Detectors") or a new one; `icon` is the name of an icon as for `add_tool!`
 (e.g. `:singlet`, `:round_mirror`, `:prism`) or a `Makie.BezierPath`, by default the icon of the group.
 

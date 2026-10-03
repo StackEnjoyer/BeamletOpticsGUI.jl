@@ -150,11 +150,13 @@ end
     _removal_reason(gui, obj) -> Union{Nothing, String}
 
 Why `obj` can not be removed from the `gui` via `remove_component!`, for its `ArgumentError` and
-the status line, or `nothing` if it can: only the top-level objects of the `System`s are removed.
+the status line, or `nothing` if it can: only the top-level objects of the `System`s and the
+sources of the view are removed.
 """
 _removal_reason(::LiveView, ::LiveClipPlane) = "a clip plane is not a component of a system"
 _removal_reason(gui::LiveView, src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) =
-    "$(_label(gui, src)) is a source, sources can not be removed"
+    any(p -> p.second === src, gui.pairs) ? nothing :
+    "the $(nameof(typeof(src))) is not a source of the live view"
 _removal_reason(::LiveView, ::BMO.AbstractSystem) = "a system can not be removed"
 function _removal_reason(gui::LiveView, obj)
     isnothing(_component_system(gui, obj)) || return nothing
@@ -183,18 +185,17 @@ function _component_parts(obj)
     return parts
 end
 
-function remove_component!(gui::LiveView, obj)
-    reason = _removal_reason(gui, obj)
-    isnothing(reason) || throw(ArgumentError(reason))
+"""
+    _release!(gui, top, parts; keep_name = false)
+
+Lets go of the top-level object `top` of the `gui` and its `parts` (which include `top`) before
+they are removed from the view: ends browsing, their inspection, their drag and their selection,
+unpins their cards, clears a measurement with one of them, and forgets that they are movable, their
+hidden state, opacity, parents, constraints, initial poses, entries of the undo history and names.
+With `keep_name`, `top` keeps its name and label, e.g. for the code of `export_changes`.
+"""
+function _release!(gui::LiveView, top, parts; keep_name::Bool = false)
     ctrl = gui.controls
-    comp = gui.components
-    sys = _component_system(gui, obj)
-    h_sys = _system_handle(gui, sys)
-    name = _label(gui, obj)
-    parts = _component_parts(obj)
-    leaves = _leaves(obj)
-    # Stops a solve in the background, which traces the objects of the system
-    _change!(() -> delete!(sys, obj), ctrl, nothing)
     _end_browse!(gui)
     gui.objects.inspected in parts && _end_inspection!(gui)
     if ctrl.press_leaf in parts || ctrl.selected[] in parts
@@ -209,22 +210,38 @@ function remove_component!(gui::LiveView, obj)
     end
     foreach(p -> _unpin!(gui, p), parts)
     any(m -> m.obj in parts, gui.measure.points) && _clear_measurement!(gui)
-    # A component the view started with is listed by `export_changes` as removed, under its name
-    added = findfirst(o -> o === obj, comp.added)
-    filter!(o -> o !== obj, ctrl.movable)
+    filter!(o -> o !== top, ctrl.movable)
     for p in parts
         delete!(gui.objects.hidden, p)
         delete!(gui.objects.opacity, p)
         delete!(gui.objects.parents, p)
         delete!(ctrl.constraints, p)
         delete!(ctrl.init_poses, p)
-        (p === obj && isnothing(added)) && continue
+        (p === top && keep_name) && continue
         delete!(gui.objects.names, p)
         delete!(gui.labels, p)
     end
     filter!(e -> !(e.obj in parts), ctrl.undo_stack)
     filter!(e -> !(e.obj in parts), ctrl.redo_stack)
     !isnothing(ctrl.last_key_step) && ctrl.last_key_step.obj in parts && (ctrl.last_key_step = nothing)
+    return nothing
+end
+
+function remove_component!(gui::LiveView, obj)
+    reason = _removal_reason(gui, obj)
+    isnothing(reason) || throw(ArgumentError(reason))
+    ctrl = gui.controls
+    comp = gui.components
+    sys = _component_system(gui, obj)
+    h_sys = _system_handle(gui, sys)
+    name = _label(gui, obj)
+    parts = _component_parts(obj)
+    leaves = _leaves(obj)
+    # Stops a solve in the background, which traces the objects of the system
+    _change!(() -> delete!(sys, obj), ctrl, nothing)
+    # A component the view started with is listed by `export_changes` as removed, under its name
+    added = findfirst(o -> o === obj, comp.added)
+    _release!(gui, obj, parts; keep_name = isnothing(added))
     # The handles in the combined handle of the controls, before the system handle forgets them
     ohs = filter(!isnothing, [_child_handle(ctrl.h, leaf) for leaf in leaves])
     remove_render!(h_sys, obj)
