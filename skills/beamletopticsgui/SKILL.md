@@ -28,6 +28,7 @@ When this Skill is active:
 - The window needs GLMakie and a display. It is not for headless scripts; on headless Linux run under
   `xvfb-run -a`. Say so to the user when you cannot open it, and do not claim that the window works
   when you did not run it.
+- Moving objects from a script goes through the verbs with the window first, e.g. `translate3d!(gui, obj, d)`, see "Scripting a window" in API.md.
 - Changes of the optics from own widgets go through `retrace!(f, gui)`. Widgets of an object belong on
   its card (`card_rows`), parameters without an object in `add_controls!`, plots in `add_panel!`.
 - Card functions are extended as `BeamletOpticsGUI.card_rows(x::MyType)`, in a package extension of

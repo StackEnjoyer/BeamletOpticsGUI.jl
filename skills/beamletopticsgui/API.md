@@ -22,6 +22,7 @@ Look up the docstring of any name before use, e.g.
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `export_changes`, `retrace!` |
+| Scripting | `select!`, `spectator!`, `wait_solve` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
 | Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
@@ -77,6 +78,24 @@ refractive index as `λ -> n`; an added source is its constructor at the origin 
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
 keyboard controls to a live-rendered system on its own, without `live_view`.
+
+## Scripting a window
+
+Never change an object of a window with the plain verbs (`translate3d!(lens, d)`): the window is not
+told and neither the drawing nor the beams follow. Use the verbs with the window first, which do
+what a gesture does (redraw, selection box, cards, solve like a drag, one undo entry, constraints;
+static objects throw `ArgumentError`):
+
+```julia
+translate3d!(gui, lens, [0, 1e-3, 0]);  translate_to3d!(gui, lens, [0, 0.12, 0])
+rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))   # or rotate3d!(gui, mirror, R)
+select!(gui, lens); select!(gui, nothing)       # like a click
+spectator!(gui, true)                           # like the key v
+wait_solve(gui)                                 # solve in the background shown, deferred solves done
+```
+
+Call `wait_solve(gui)` before reading detectors or saving an image. Never use `BeamletOpticsGUI._x`
+internals or `gui.controls.on_change` for this.
 
 ## Rules
 
