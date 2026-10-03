@@ -332,7 +332,7 @@ const GUI = BeamletOpticsGUI
         # "remove" of the card: a row below the rows of `card_rows`, not an action in the head
         @test [w.name for w in card_actions(m2)] == [:hide]
         @test length(GUI._card_rows(m2)) == length(card_rows(m2)) + 1
-        @test only(last(GUI._card_rows(m2)).cells).name === :remove
+        @test last(last(GUI._card_rows(m2)).cells).name === :remove
         gui.controls.selected[] = m2
         GUI._update_selection_box!(gui.controls)
         GUI._update_cards!(gui)

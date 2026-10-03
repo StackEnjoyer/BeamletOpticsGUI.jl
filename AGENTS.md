@@ -86,6 +86,10 @@ describe it as available in docs or the skill.
   `src/LivePlacement.jl`: placing a new component with the mouse, with snapping onto beams.
   `src/LiveSnap.jl`: snapping of dragged components onto beams (the beams of the live view for
   the snapping of the controls, see `_set_snap!` in `src/LiveInteraction.jl`).
+  `src/LiveTable.jl`: the optical table, an overlay with a grid of holes that dragged and placed
+  components snap onto (the `snap_grid` of the controls). `src/LiveAlign.jl`: the buttons of the
+  card of a component that align it to the nearest beam. `src/LiveAim.jl`: aiming a source with
+  the mouse.
 - `src/LiveMarkers.jl`: clip planes and source markers.
 - `docs/`: Documenter site. `skills/beamletopticsgui/`: the agent skill.
 

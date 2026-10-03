@@ -514,8 +514,9 @@ end
     _declarations(gui, c, obj) -> (actions, rows)
 
 The declarations of the widgets of `obj` on the card `c`: [`card_actions`](@ref) with the button
-"parts" of an object with parts (see `_head_actions`) and [`card_rows`](@ref) with the row "remove"
-of a component (see `_card_rows`), which a host may extend, e.g. the docked card of the app layout.
+"parts" of an object with parts (see `_head_actions`) and [`card_rows`](@ref) with the row of buttons
+of a component or a source (see `_card_rows`), which a host may extend, e.g. the docked card of
+the app layout.
 """
 _declarations(gui::LiveView, c::_AbstractCard, obj) =
     (_head_actions(obj), _page_rows(gui, obj, c.page))
@@ -523,14 +524,15 @@ _declarations(gui::LiveView, c::_AbstractCard, obj) =
 """
     _card_rows(obj)
 
-The rows of the card of `obj`: those of [`card_rows`](@ref) and, for a component and a source,
-i.e. an `AbstractObject`, a beam or a beam group, the row "remove" below them, see
-`remove_component!`. It is a row and not an action in the head, whose width the name of the object
+The rows of the card of `obj`: those of [`card_rows`](@ref) and, below them, a row of buttons for
+a component, i.e. an `AbstractObject` ("onto beam", "face beam" and "remove", see
+`_component_row`), and for a source, i.e. a beam or a beam group ("aim" and "remove", see
+`_source_row`). They are a row and not actions in the head, whose width the name of the object
 needs in the inspector of the app layout.
 """
 _card_rows(obj) = card_rows(obj)
-_card_rows(obj::Union{BMO.AbstractObject, BMO.AbstractBeam, BMO.AbstractBeamGroup}) =
-    (card_rows(obj)..., _remove_row())
+_card_rows(obj::BMO.AbstractObject) = (card_rows(obj)..., _component_row())
+_card_rows(obj::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (card_rows(obj)..., _source_row())
 
 """
     _head_actions(obj)

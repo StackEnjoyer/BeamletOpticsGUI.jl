@@ -55,6 +55,10 @@ When this Skill is active:
   dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card)
   and are written with their constructors by `export_script`. Adding, removing and changing are undone with
   `Ctrl+Z` and redone with `Ctrl+Y`.
+- Aligning is done in the window only: the buttons "onto beam" and "face beam" of the card of a
+  component, "aim" of the card of a source and the optical table (`table = true`, a grid of holes that
+  dragged components snap onto). There is no public function for them; from code, set the poses with
+  BeamletOptics (`translate_to3d!`, `rotate3d!`) and call `retrace!`.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
 - The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for

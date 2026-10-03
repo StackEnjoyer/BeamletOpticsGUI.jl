@@ -68,11 +68,11 @@ card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text;
 card_actions(obj) = (CardWidget(Button; name = :hide, label = "hide",
     value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
 
-# The row "remove" of a component or a source, below its other rows (see `_card_rows`): removes a
-# top-level object of a `System` or a source from the view (see `remove_component!`) and names the
-# reason in the status line for any other object, e.g. an object of a group or an extra
-_remove_row() = CardRow(CardWidget(Button; name = :remove, label = "remove",
-    on = (gui, o, _) -> _remove_selected!(gui, o)))
+# The button "remove" of a component or a source, in the last row of its card (see `_card_rows`):
+# removes a top-level object of a `System` or a source from the view (see `remove_component!`) and
+# names the reason in the status line for any other object, e.g. an object of a group or an extra
+_remove_button() = CardWidget(Button; name = :remove, label = "remove",
+    on = (gui, o, _) -> _remove_selected!(gui, o))
 
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),

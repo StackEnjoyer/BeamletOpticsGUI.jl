@@ -113,6 +113,30 @@ BeamletOpticsGUI. An added source is its constructor at the origin along +y, the
 `translate_to3d!` to its pose and the `solve_system!` that traces it; a removed source that the
 view started with is a comment.
 
+## Aligning on the table and to the beams
+
+The toggle "Table" among the tools shows an optical table below the setup, like the keyword
+`table = true`: a grid of holes at a distance of 25 mm, perpendicular to the rotation axis of the
+controls, at the lowest point of the components. While it is shown, a component or source that is
+dragged or placed with the mouse sits on the hole closest to it, at its own height, and in the
+rotate mode its optical axis snaps to the multiples of 45° to the rows of the holes. With the
+snapping onto beams switched on (`Tab`), a beam within reach comes first, such that a component is
+put on the grid beside the beams and on the beam near it. The table grows with the setup.
+
+```julia
+gui = live_view(System(); table = true)
+# an imperial table 50 mm below the beams, shown without snapping
+gui = live_view(system, beam; table = (; pitch = 25.4e-3, height = -50e-3, snap = false))
+```
+
+The card of a component aligns it to the nearest beam, i.e. the central beam of a source as far as
+it does not depend on the component: "onto beam" moves it to the point of the beam closest to it,
+"face beam" turns its optical axis along the beam, e.g. a lens straight in the beam or a mirror
+that sends it back. The card of a source has "aim": a dashed line then follows the mouse, and a
+click turns the source such that it points at the center of the component under the mouse, or at
+the point of the plane of the mouse elsewhere, which is a hole of the table while it is shown.
+`Esc` cancels it. Each of these is one step of the undo history.
+
 ## Changing, undoing and the whole script
 
 A component or source that was placed from the catalog has the page "Edit" on its card: the form

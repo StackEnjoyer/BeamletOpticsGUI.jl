@@ -356,7 +356,8 @@ is traced through, and a removed source of the start has its systems in `source_
 shown object is `target_shown`, see `_catalog_target`; the
 `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
-is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`; the
+is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
+likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
 `window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
 """
 Base.@kwdef mutable struct _ComponentState
@@ -375,6 +376,10 @@ Base.@kwdef mutable struct _ComponentState
     # the inputs of the page "Edit" of an object that are not applied yet, see `_edit_strings`
     const edits::IdDict{Any, Vector{String}} = IdDict{Any, Vector{String}}()
     placement::Any = nothing
+    # the source that is being aimed with the mouse, see `_start_aim!`
+    aim::Any = nothing
+    # the optical table of the view (a `_Table`), see `_set_table!`
+    table::Any = nothing
     window::Any = nothing
 end
 
@@ -1018,6 +1023,32 @@ snaps onto the beam that reaches it, continued as a straight line, and not onto 
 deflects itself. Locked axes (see `constraints`) stay locked. The keyboard steps do not snap, and
 neither do sources and clip planes.
 
+# Optical table
+
+The toggle "Table" among the tools (or the `table` kwarg) shows an optical table below the setup: a
+grid of holes at a distance of 25 mm in the plane perpendicular to the rotation axis of the controls
+(z by default), at the lowest point of the components, drawn with its outline. While it is shown,
+a component or source that is dragged or placed with the mouse beside the beams sits on the hole
+closest to it, at its own height above the table; with the snapping onto beams switched on, a beam
+within its radius comes first. In the rotate mode, the angle of the optical axis to the rows of the
+holes snaps to the multiples of 45° within 3°, unless a beam through the component takes it. The
+table grows with the setup while it is shown and never shrinks. The keyboard steps and the clip
+planes do not snap. It is an overlay: nothing of it is traced, clipped or exported.
+
+# Aligning and aiming
+
+The last row of the card of a component has two buttons that align it to the nearest beam, i.e. to
+the central beam of a source that is switched on, as far as it does not depend on the component:
+"onto beam" moves the component to the point of that beam closest to it, "face beam" turns its
+optical axis (the local y-axis) along the beam, in its direction or against it, whichever is
+closer. "aim" in the last row of the card of a source starts aiming it: a dashed line follows the
+mouse, and a click turns the source about its position such that it points at the center of the
+component under the mouse (or at the position of another source), elsewhere at the point of the
+plane in which the mouse moves objects, through the source, which snaps onto the holes of the
+table while it is shown. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
+still moves the camera. Each of them is one step of the undo history and is solved like a move;
+locked axes (see `constraints`) stay locked.
+
 # Keyword args
 
 - `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
@@ -1088,6 +1119,11 @@ neither do sources and clip planes.
 - `snap = false`: whether the components snap onto the beams while they are dragged with the mouse:
   `false`, `true` or `:position` (the position), or `:pose` (the position and the rotation), see
   "Snapping onto beams"
+- `table = false`: the optical table, see "Optical table": `true` shows it at the start, a
+  `NamedTuple` sets some of `pitch = 25e-3` (the distance of its holes [m], e.g. `25.4e-3` for an
+  imperial table), `height = nothing` (its coordinate along the rotation axis [m], by default the
+  lowest point of the components), `snap = true` (whether components snap onto its holes) and
+  `shown = true`
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -1121,6 +1157,7 @@ function live_view(
         background_card = nothing,
         catalog = component_catalog(),
         snap::Union{Bool, Symbol} = false,
+        table = false,
         kwargs...
     )
     isempty(args) &&
@@ -1145,6 +1182,7 @@ function live_view(
     slider_specs = [_slider_spec(s) for s in sliders]
     clip_specs = _clip_plane_specs(clip_planes)
     view_specs = _view_specs(views)
+    table_spec = _table_spec(table)
 
     lay = _live_layout(layout, theme)
     fig = _figure(lay, something(size, _default_size(lay)))
@@ -1200,6 +1238,8 @@ function live_view(
     change = function (obj)
         gui = gui_ref[]
         _on_moved!(gui, obj)
+        # The table grows with the setup, see `_Table`
+        _table_include!(gui, obj)
         _update_inspector!(gui)
         return nothing
     end
@@ -1256,9 +1296,13 @@ function live_view(
     add_tool!(_export_script!, gui, "Script"; icon = :script,
         tooltip = "Export the whole setup as a script")
     _connect_placement!(gui)
+    # Aiming a source with the mouse, see `_start_aim!`
+    _connect_aim!(gui)
     # The components snap onto the beams while they are dragged, see the `snap` kwarg
     _connect_snap!(gui)
     _set_snap!(controls, snap)
+    # The optical table, onto whose holes they snap beside the beams, see the `table` kwarg
+    _build_table!(gui, table_spec)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,

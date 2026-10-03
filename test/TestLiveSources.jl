@@ -381,7 +381,7 @@ const GUI = BeamletOpticsGUI
 
         # "remove" of the card of a source: a row below the rows of `card_rows`
         @test length(GUI._card_rows(src)) == length(card_rows(src)) + 1
-        @test only(last(GUI._card_rows(src)).cells).name === :remove
+        @test last(last(GUI._card_rows(src)).cells).name === :remove
         GUI._update_selection_box!(gui.controls)
         GUI._update_cards!(gui)
         GUI._update_inspector!(gui)

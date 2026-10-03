@@ -111,6 +111,7 @@ function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing
         deleteat!(comp.removed, i)
         delete!(comp.system, obj)
     end
+    _table_include!(gui, obj)
     _on_components_changed!(gui)
     if select
         _is_movable(ctrl, obj) ? _select!(gui, obj) : _inspect!(gui, obj)

@@ -121,6 +121,7 @@ function add_component!(gui::LiveView, src::_Source; system = nothing, select::B
         comp.system[src] = sys
         comp.origin[src] = origin
     end
+    _table_include!(gui, src)
     _on_components_changed!(gui)
     _update_info!(gui)
     if select

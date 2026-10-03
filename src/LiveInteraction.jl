@@ -429,6 +429,10 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # onto when it is dragged to the `point` [m], with the direction of the beam there. Without
     # beams nothing snaps; `live_view` knows them, see `_snap_beam`
     snap_beam::Function
+    # `(obj, point) -> (; point, direction)`, or `nothing`: the point of a grid that `obj` snaps onto
+    # when it is dragged to the `point` [m] beside the beams, with a direction of the grid, to which
+    # its rotation snaps; `live_view` has the holes of its table, see `_table_snap`
+    snap_grid::Function
     # number of drags so far, such that `snap_beam` can tell a new drag
     drag_count::Int
     # rotation of the current drag in the rotate mode: the angle by the mouse and the angle that is
@@ -833,15 +837,18 @@ end
 """
 Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
 and for the rotate mode the angle of the optical axis of `obj` to the beam through its position,
-see `_snap_angle`.
+see `_snap_angle`; without such a beam, or with the snapping onto beams switched off, its angle to
+the direction of the grid at its position (see `ctrl.snap_grid`), if there is one.
 """
 function _start_snap!(ctrl::KinematicController, obj)
     ctrl.drag_count += 1
     ctrl.drag_angle = ctrl.drag_applied = 0.0
     ctrl.drag_beam_angle = nothing
-    (ctrl.snap[] == :off || ctrl.mode[] != :rotate) && return nothing
+    ctrl.mode[] == :rotate || return nothing
     P, R = _pose(obj)
-    beam = ctrl.snap_beam(obj, Vector{Float64}(P))
+    beam = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, Vector{Float64}(P))
+    # beside the beams, the angle to the grid
+    isnothing(beam) && (beam = ctrl.snap_grid(obj, Vector{Float64}(P)))
     isnothing(beam) && return nothing
     ctrl.drag_beam_angle = _angle_about(ctrl.rotation_axis, Vector{Float64}(beam.direction), R[:, 2])
     return nothing
@@ -1394,7 +1401,7 @@ function kinematic_controls!(
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
-        Observable(:off), (obj, point) -> nothing, 0, 0.0, 0.0, nothing
+        Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1512,7 +1519,13 @@ function kinematic_controls!(
                 allowed = _allowed_axes(ctrl, obj, :move)
                 if !isempty(allowed)
                     snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
-                    isnothing(snapped) || (target = Vector{Float64}(snapped.point))
+                    if isnothing(snapped)
+                        # beside the beams: onto the grid, e.g. the holes of the table
+                        grid = ctrl.snap_grid(obj, target)
+                        isnothing(grid) || (target = Vector{Float64}(grid.point))
+                    else
+                        target = Vector{Float64}(snapped.point)
+                    end
                     Δ = target .- Vector{Float64}(position(obj))
                     A = hcat(_axis_vectors(ctrl, obj, allowed)...)
                     R = _snap_orientation(ctrl, obj, snapped)
