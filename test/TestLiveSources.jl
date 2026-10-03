@@ -150,7 +150,8 @@ const GUI = BeamletOpticsGUI
         # the kwargs of `live_render!` of the beam
         other = UniformDiscSource([0.0, 0, 0], [0.0, 1, 0], 5e-3, 532e-9; num_rays = 20)
         add_component!(gui, other; select = false, beam_kwargs = (; render_every = 2, flen = 0.02))
-        @test gui.beams.kwargs[other] == (; render_every = 2, flen = 0.02)
+        @test gui.beams.kwargs[other] ==
+              (; render_every = 2, color = GUI._wavelength_color(532e-9), flen = 0.02)
         @test GUI._flen(gui, other) == 0.02
 
         # moved like the sources of the start: the beam follows
@@ -171,6 +172,49 @@ const GUI = BeamletOpticsGUI
         @test length(gui.pairs) == length(gui.beam_handles) == n
         close(gui)
         @test nplots > 0
+    end
+
+    @testset "color of the wavelength" begin
+        color = GUI._wavelength_color
+        # the colors of the spectrum
+        @test color(450e-9).b > 0.9 && color(450e-9).r < 0.1
+        @test color(532e-9).g > 0.9 && color(532e-9).b < 0.1
+        @test color(589e-9).r > 0.9 && color(589e-9).g > 0.8 && color(589e-9).b == 0
+        @test color(632.8e-9).r > 0.9 && color(632.8e-9).g < 0.3 && color(632.8e-9).b == 0
+        # continuous, also at the ends of the visible range, beyond which the color is kept
+        λs = range(350e-9, 850e-9; length = 2001)
+        cs = color.(λs)
+        @test maximum(i -> maximum(abs, (cs[i + 1].r - cs[i].r, cs[i + 1].g - cs[i].g, cs[i + 1].b - cs[i].b)),
+            1:(length(cs) - 1)) < 0.05
+        @test color(1064e-9) == color(780e-9) == color(1550e-9)
+        @test color(355e-9) == color(380e-9)
+        # never too dark to be seen
+        @test all(c -> max(c.r, c.g, c.b) > 0.5, cs)
+
+        # an added source has the color of its wavelength, the sources of the start the color of
+        # the layout
+        first_beam = _beam(0.2)
+        gui = _live_view(System([_mirror()]) => first_beam)
+        _colors(src) = [Makie.to_color(p.color[]) for p in
+                        GUI._beam_plots(gui.beam_handles[findfirst(p -> p.second === src, gui.pairs)])]
+        _is(c, ref) = Makie.RGBf(c) ≈ Makie.RGBf(ref)
+        @test all(c -> _is(c, gui.layout.theme.rays), _colors(first_beam))
+        green = Beam([0.0, 0, 0], [0.0, 1, 0], 532e-9)
+        add_component!(gui, green)
+        @test !isempty(_colors(green)) && all(c -> _is(c, color(532e-9)), _colors(green))
+        group = UniformDiscSource([0.0, 0, 0], [0.0, 1, 0], 5e-3, 450e-9; num_rays = 20)
+        add_component!(gui, group)
+        @test all(c -> _is(c, color(450e-9)), _colors(group))
+        gauss = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 632.8e-9, 1e-3)
+        add_component!(gui, gauss)
+        @test gui.beams.kwargs[gauss].color == color(632.8e-9)
+        # the color is kept when the beam is rendered again, and `beam_kwargs` set another one
+        GUI._set_flen!(gui, green, 0.05)
+        @test all(c -> _is(c, color(532e-9)), _colors(green))
+        other = Beam([0.0, 0, 0], [0.0, 1, 0], 532e-9)
+        add_component!(gui, other; beam_kwargs = (; color = :black))
+        @test all(c -> _is(c, Makie.to_color(:black)), _colors(other))
+        close(gui)
     end
 
     @testset "overlays of an added source" begin

@@ -43,8 +43,11 @@ remove_component!(gui, laser)
 ```
 
 A source is traced through one system of the view (keyword `system`, also a `StaticSystem`) and
-gets a marker, with which it is selected and moved like the sources the view started with. The
-keyword `beam_kwargs` takes the keywords of its rendering, e.g. `(; render_every = 10)`.
+gets a marker, with which it is selected and moved like the sources the view started with. It is
+drawn in the color of its wavelength: violet to red between 380 nm and 780 nm, a dark violet for
+ultraviolet and a dark red for infrared light. The sources that the view started with keep the
+color of the layout. The keyword `beam_kwargs` takes the keywords of its rendering, e.g.
+`(; render_every = 10)` or another `color`.
 
 ## The catalog and the placement
 

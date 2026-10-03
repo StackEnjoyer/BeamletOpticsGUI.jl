@@ -966,8 +966,9 @@ still moves the camera, and a click selects nothing.
 A source of the group "Sources" (a beam, a Gaussian beamlet, a collimated or a point source) is
 placed by its marker in the same way. It does not snap onto beams and points along +y, as it is
 constructed; turn it with the controls afterwards. Its beam is traced through the system that the
-line "into" names, which may be a `StaticSystem`, once it is dropped. Placing a source shows the
-markers of the sources if they were hidden.
+line "into" names, which may be a `StaticSystem`, once it is dropped, and drawn in the color of its
+wavelength (a dark red for infrared, a dark violet for ultraviolet light). Placing a source shows
+the markers of the sources if they were hidden.
 
 The button "remove" below the rows of the card of a component or a source, or the key `Delete`
 while it is selected, removes it: a component from its system, a source from the view, also the

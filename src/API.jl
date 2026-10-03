@@ -396,7 +396,9 @@ The components of the catalog are added this way once they are placed, see
 Adds the `source` (a beam or a beam group, e.g. a `Beam`, a `GaussianBeamlet` or a
 `CollimatedSource`) to the `gui`: it is traced through the `system` with every solve, rendered with
 the `beam_kwargs` (those of `live_render!` of the beam, as an entry of the `beam_kwargs` of
-`live_view`; a beam group is rendered with `render_every = 5` by default) and gets a marker, with
+`live_view`; by default in the color of its wavelength, e.g. red for 632.8 nm and a dark red for
+infrared light, and a beam group with `render_every = 5`; `beam_kwargs = (; color = :blue)` sets
+another color) and gets a marker, with
 which it is selected and moved like the sources the view started with, also in a view with
 `movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
 source does not change; by default the system that gets a component, otherwise the first system of

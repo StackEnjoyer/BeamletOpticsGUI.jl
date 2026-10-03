@@ -54,7 +54,9 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 `translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and
-gives it a marker, `remove_component!(gui, source)` removes it, also the last one. A view may start
+gives it a marker, `remove_component!(gui, source)` removes it, also the last one. An added source is
+drawn in the color of its wavelength (dark red for infrared), unless `beam_kwargs = (; color = ...)`
+sets one; the sources of the start keep the color of the layout or of the `beam_kwargs` of `live_view`. A view may start
 without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
