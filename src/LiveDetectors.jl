@@ -88,6 +88,16 @@ function _register_view!(gui::LiveView, pd::BMO.Detector, view)
     return view
 end
 
+"""
+    _unregister_view!(gui, view)
+
+Removes the `view` that `_register_view!` registered: it is no longer computed or shown by the `gui`.
+"""
+function _unregister_view!(gui::LiveView, view)
+    filter!(((_, v),) -> v !== view, gui.detectors.registered)
+    return nothing
+end
+
 #=
 Computation: a request per detector with a shown view, computed with the fields of a solve (see
 `_compute`) or in a job of its own for a view that is shown later, see `_refresh_views!`

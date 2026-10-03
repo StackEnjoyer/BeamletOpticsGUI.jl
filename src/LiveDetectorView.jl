@@ -93,8 +93,10 @@ Base.hash(o::_ViewOptions, h::UInt) =
 
 What the view of a detector shows after a solve, computed by `_view_result`: the `kinds` that the
 hits offer, the `kind` that is shown (`nothing` without hits), its `data` (the points [m] of a
-spot diagram, or `(x, z, I)` of a field), its `metrics` (see `_kind_metrics`) and the exception
-`error` of a failed computation (then without data and metrics). `n` is the grid of the field as
+spot diagram, or `(x, z, I)` of a field), its `metrics` (see `_kind_metrics`), the `hits` of a spot
+diagram (a copy of the hits of the detector, in the order of the points, for their colors, see
+`_DetectorView`; `nothing` for a field) and the exception `error` of a failed computation (then
+without data and metrics). `n` is the grid of the field as
 computed (after the reduction of a `coarse` result; as requested for a spot diagram), `coarse` and
 `preview` mark a result on a coarse grid and after a preview solve.
 """
@@ -103,6 +105,7 @@ struct _ViewResult
     kind::Union{Nothing, _ViewKind}
     data::Any
     metrics::Any
+    hits::Any
     n::Int
     coarse::Bool
     preview::Bool
@@ -166,6 +169,10 @@ end
 _result_n(::_FieldKind, n, coarse) = _view_grid(n, coarse)
 _result_n(::_ViewKind, n, _) = Int(n)
 
+# The hits of a spot diagram are kept for the colors of its spots, a field has none
+_result_hits(::_SpotKind, hits) = copy(hits)
+_result_hits(::_ViewKind, _) = nothing
+
 """
     _view_result(pd, opts::_ViewOptions; n = opts.n, coarse = false, preview = false) -> _ViewResult
 
@@ -181,14 +188,14 @@ function _view_result(pd, opts::_ViewOptions; n::Integer = opts.n, coarse::Bool 
     try
         hits = BMO.hits(pd)
         kinds = _view_kinds(hits)
-        isempty(kinds) && return _ViewResult(kinds, nothing, nothing, nothing, Int(n), coarse, preview, nothing)
+        isempty(kinds) && return _ViewResult(kinds, nothing, nothing, nothing, nothing, Int(n), coarse, preview, nothing)
         kind = _resolve_kind(kinds, opts.kind)
         kind, data = _shown_data(kind, pd, hits, opts, n, coarse)
-        return _ViewResult(kinds, kind, data, _kind_metrics(kind, data), _result_n(kind, n, coarse),
-            coarse, preview, nothing)
+        return _ViewResult(kinds, kind, data, _kind_metrics(kind, data), _result_hits(kind, hits),
+            _result_n(kind, n, coarse), coarse, preview, nothing)
     catch e
         BMO.is_cancelled(e) && rethrow()
-        return _ViewResult(kinds, kind, nothing, nothing, Int(n), coarse, preview, e)
+        return _ViewResult(kinds, kind, nothing, nothing, nothing, Int(n), coarse, preview, e)
     end
 end
 
@@ -375,6 +382,9 @@ an `Axis` are drawn below its plots; they follow its limits, see `_update_decora
 interactions of the axes are deregistered: in a floating card they never fire, see
 `_connect_view!` for the zoom, the pan and the reset of the view.
 
+The spots of a spot diagram have the text color of the theme, or the colors of `spot_colors`, see
+`_set_spot_colors!`.
+
 The widget does not change the options itself: it calls `on_options` with the changed option and
 `on_expanded`, and the host shows the result again.
 """
@@ -451,6 +461,8 @@ mutable struct _DetectorView
     on_options::Any
     on_expanded::Any
     const listeners::Vector{Any}
+    # the colors of the spots, see `_set_spot_colors!`
+    spot_colors::Any
 end
 
 # Axis of a view in the tokens `t`: equal scales that fill the frame, nothing outside the frame
@@ -481,7 +493,7 @@ function _view_plots!(ax::Axis, t::NamedTuple, margin::Float32)
     end
     image = image!(ax, (0.0, 1.0), (0.0, 1.0), zeros(Float32, 2, 2); colormap = :viridis,
         colorrange = (0.0f0, 1.0f0), interpolate = true, visible = false, inspectable = false)
-    spots = scatter!(ax, Point2f[]; markersize = 3, color = t.text, visible = false, inspectable = false)
+    spots = scatter!(ax, Point2f[]; markersize = 3, color = RGBAf[], visible = false, inspectable = false)
     cross = scatter!(ax, Point2f[]; marker = :cross, markersize = 11, color = :red, inspectable = false)
     foreach(((k, p),) -> translate!(p, 0, 0, k), enumerate((frame, image, spots, cross)))
     # An image sets the margins of the automatic limits to zero, the spots need them
@@ -572,7 +584,7 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
         profile_x, profile_z, select_fill, select_line, xlabels, zlabels, xname, zname, status, Rect2f[],
         _tree_font(ax.blockscene, :regular), Dict{String, Vec2f}(), false, "", nothing,
         _ViewOptions(), nothing, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, false,
-        false, nothing, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[])
+        false, nothing, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[], nothing)
 
     on(_ -> _update_decorations!(v), ax.finallimits)
     on(_ -> _update_decorations!(v), ax.scene.viewport)
@@ -883,6 +895,38 @@ function _draw_data!(v::_DetectorView, ::Nothing, r::_ViewResult, opts::_ViewOpt
     return nothing
 end
 
+# The colors of the spots of the result `r`, one per spot (a plot keeps the type of its color
+# attribute): the text color of the theme, or those that `spot_colors` returns for its hits (one color
+# for all spots or one per spot, else the text color)
+_spot_colors(v::_DetectorView, r::_ViewResult) = _spot_colors(v.spot_colors, v.theme, r)
+_spot_colors(::Nothing, t, r::_ViewResult) = fill(RGBAf(Makie.to_color(t.text)), length(r.data))
+_spot_colors(f, t, r::_ViewResult) = _spot_colors(f(r.hits), t, r, length(r.data))
+_spot_colors(color, _, _, n::Int) = fill(RGBAf(Makie.to_color(color)), n)
+function _spot_colors(colors::AbstractVector, t, r::_ViewResult, n::Int)
+    length(colors) == n || return _spot_colors(nothing, t, r)
+    return RGBAf[Makie.to_color(c) for c in colors]
+end
+
+"""
+    _set_spot_colors!(view, f)
+
+Colors the spots of the spot diagrams that the `view` shows by `f(hits)`, which returns one color
+for all spots or a vector with one per hit, in the order of the hits of the detector (also those
+that it shows next); `nothing` takes the text color of the theme again. A vector of another length
+than the number of spots gives the text color.
+"""
+function _set_spot_colors!(v::_DetectorView, f)
+    v.spot_colors = f
+    r = v.result
+    _paint_spots!(v, v.kind, r)
+    return nothing
+end
+
+# Colors the spots again for the result `r`, if the spot diagram of it is shown
+_paint_spots!(v::_DetectorView, ::_SpotKind, r::_ViewResult) =
+    isnothing(r.error) ? foreach(p -> Makie.update!(p; color = _spot_colors(v, r)), v.spots) : nothing
+_paint_spots!(::_DetectorView, _, _) = nothing
+
 _preview_text(r::_ViewResult) = (r.coarse || r.preview) ? "preview" : ""
 _with_preview(s::String, r::_ViewResult) = (r.coarse || r.preview) ? s * " (preview)" : s
 
@@ -893,7 +937,7 @@ function _draw_kind!(v::_DetectorView, kind::_SpotKind, r::_ViewResult, ::_ViewO
     if fresh || changed
         v.xy = [Point2f(1e3 * q[1], 1e3 * q[2]) for q in r.data]
         foreach(p -> Makie.update!(p; visible = false), v.images)
-        foreach(p -> Makie.update!(p; arg1 = v.xy, visible = true), v.spots)
+        foreach(p -> Makie.update!(p; arg1 = v.xy, color = _spot_colors(v, r), visible = true), v.spots)
         _show_centroid!(v, r.metrics)
         _fit_spots!(v.thumb_ax, v.xy)
         v.zoomed || _fit_spots!(v.ax, v.xy)

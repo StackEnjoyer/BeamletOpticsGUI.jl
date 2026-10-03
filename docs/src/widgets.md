@@ -19,6 +19,7 @@ copied unchanged.
 | a parameter without a scene object, e.g. a setting of the whole setup | a controls section | [`add_controls!`](@ref) |
 | an action, e.g. a button or a toggle with a key | a tool | [`add_tool!`](@ref) |
 | a plot or a result that is updated after each solve | a panel | [`add_panel!`](@ref) |
+| the spot diagram, PSF or intensity of a `Detector` in a figure of my own, e.g. a second window | a detector view | [`detector_view!`](@ref) |
 
 A card needs a scene object because the object gives the card its anchor (the card is placed next
 to the bounding box of the object and follows it), its selection (the card shows what is selected,
@@ -281,6 +282,24 @@ function add_block_controls!(gui, block)
         return gui -> card_show!(stepper, 1e3 * position(block)[3])
     end
 end
+```
+
+## Recipe: a detector view in a layout of your own
+
+[`detector_view!`](@ref) builds the view of the page "Results" of a card (spot diagram, PSF or
+intensity, with metrics and the mouse interaction of an `Axis`) into any position of a `Figure`, e.g.
+a second window with several detectors. Given the `gui`, the view is updated after each solve of the
+live view, like the views of the cards, and shares their options. The returned [`DetectorView`](@ref)
+gives the `Axis`, the kind and the metrics, the spots can be colored per hit. The code is run as a test
+in `test/TestLiveDetectorWidget.jl` of BeamletOpticsGUI (without the second window).
+
+```julia
+fig = Figure(; size = (900, 450), backgroundcolor = gui.layout.theme.background)
+v1 = detector_view!(fig[1, 1], gui, pd1; kind = :spot,
+    spot_colors = hit -> BeamletOptics.wavelength(hit.ray) > 600e-9 ? :red : :blue)   # per spot, e.g. by wavelength
+v2 = detector_view!(fig[1, 2], gui, pd2; kind = :intensity, colorscale = :log)
+display(GLMakie.Screen(), fig)   # updated after each solve of `gui`
+v1.metrics.rms                   # RMS radius [m] of the spots of pd1
 ```
 
 ## Recipe: controls without a scene object

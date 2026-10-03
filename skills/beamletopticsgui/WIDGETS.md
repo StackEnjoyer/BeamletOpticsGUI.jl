@@ -20,6 +20,7 @@ puts these methods into a package extension (`[weakdeps] BeamletOpticsGUI`,
 | a parameter without a scene object (a setting of the whole setup) | a controls section | `add_controls!` |
 | an action (button, or toggle, optionally with a key) | a tool | `add_tool!` |
 | a plot or result updated after each solve | a panel | `add_panel!` (see `VISUALIZATION.md`) |
+| the spot diagram, PSF or intensity of a `Detector` in a figure of my own (e.g. a second window) | a detector view | `detector_view!` (recipe below) |
 
 A card needs a scene object: it gives the card its anchor (next to the bounding box, follows the
 object), its selection, its pin and its row in the object tree. Without such an object use controls.
@@ -238,6 +239,36 @@ function add_block_controls!(gui, block)
         return gui -> card_show!(stepper, 1e3 * position(block)[3])
     end
 end
+```
+
+## Recipe: a detector view in a layout of your own
+
+`detector_view!(position, gui, pd; kwargs...)` builds the view of the page "Results" of a `Detector` into a
+position of any `Figure`, e.g. a second window with several detectors, and returns a `DetectorView`
+(`view.detector`, `view.axis`, `view.kind` (`:spot`, `:psf`, `:intensity` or `nothing`), `view.metrics` (a
+`NamedTuple` in SI units: spot `(; n, cx, cz, rms, rmax)`, intensity `(; P, cx, cz, wx, wz, peak)`, PSF without
+`P`)). Never use `BeamletOpticsGUI._DetectorView`, `_spot_metrics` etc. or draw an own spot panel.
+
+1. Make a figure in the theme of the view, e.g. `Figure(; backgroundcolor = gui.layout.theme.background)`, call
+   `detector_view!(fig[1, 1], gui, pd; kind = :spot)` per detector and show the figure
+   (`display(GLMakie.Screen(), fig)`); the mouse works only in a shown figure.
+2. With the `gui`, the view is updated like those of the cards, after each solve of the live view (computed in the
+   background, also while no card shows the detector). It shares kind, grid, color scale, profiles and zoom window
+   with the cards and the other views of its detector; the keywords that are passed are applied to them.
+3. Per-spot colors (e.g. by wavelength): `spot_colors = hit -> color` (called for each hit of each result, in the
+   order of the hits) or `set_spot_colors!(view, f_or_color_or_vector)`; a vector is dropped when the number of
+   hits changes, use a function for results that change.
+4. Without a `gui`: `detector_view!(position, pd; theme = :light)` is computed when built; call
+   `update_detector_view!(view)` after own `solve_system!`. `close(view)` removes a view.
+5. `kind` (`:auto`, `:spot`, `:psf`, `:intensity`), `expanded` (false: thumbnail), `width`, `height` [px], and the
+   field options `n`, `colorscale`, `colorrange`, `profiles` (others go to `BeamletOptics.intensity`) are the
+   keywords of the card (`detectors = [...]`); `history` throws an `ArgumentError`.
+
+```julia
+fig = Figure(; size = (900, 450), backgroundcolor = gui.layout.theme.background)
+v1 = detector_view!(fig[1, 1], gui, pd1; kind = :spot, spot_colors = hit -> color_of(BeamletOptics.wavelength(hit.ray)))
+v2 = detector_view!(fig[1, 2], gui, pd2; kind = :intensity, colorscale = :log)
+display(GLMakie.Screen(), fig)
 ```
 
 ## Recipe: controls without a scene object

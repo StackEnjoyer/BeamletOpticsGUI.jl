@@ -25,6 +25,7 @@ Look up the docstring of any name before use, e.g.
 | Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
+| Detector views | `detector_view!`, `DetectorView`, `update_detector_view!`, `set_spot_colors!` |
 | Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
 
 Not exported: `BeamletOpticsGUI.install_agent_skill`.

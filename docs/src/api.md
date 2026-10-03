@@ -32,6 +32,15 @@ component_catalog
 catalog_glasses
 ```
 
+## Detector views
+
+```@docs
+detector_view!
+DetectorView
+update_detector_view!
+set_spot_colors!
+```
+
 ## Interactive helpers
 
 ```@docs
