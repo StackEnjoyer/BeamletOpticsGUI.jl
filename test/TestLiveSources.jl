@@ -453,9 +453,33 @@ const GUI = BeamletOpticsGUI
         a, b = System([_mirror()]), System([_mirror(0.2; x = 0.1)])
         gui = _live_view(a, b)
         w = GUI._catalog_widget(GUI._catalog_window(gui))
-        @test w.target.text[] == "into: System 1"
+        menu = w.target_menu
+        @test w.target.text[] == "into" && menu.selection[] == "System 1"
         GUI._inspect!(gui, b)
-        @test w.target.text[] == "into: System 2"
+        @test menu.selection[] == "System 2"
+        # the menu chooses the system that the source is traced through
+        menu.i_selected[] = 1
+        src = GUI._place_catalog!(gui, GUI._catalog_entry(w), ["632.8"])
+        GUI._drop_placement!(gui)
+        @test only(gui.pairs).second === src && only(gui.pairs).first === a
+        close(gui)
+
+        # a source is also traced through a `StaticSystem`, a component is not added to it: the
+        # menu offers the systems that can get the chosen entry
+        static = StaticSystem([_mirror(0.3)])
+        gui = _live_view(a, static)
+        w = GUI._catalog_widget(GUI._catalog_window(gui))
+        menu = w.target_menu
+        @test GUI._catalog_entry(w).source && menu.options[] == ["System 1", "System 2"]
+        menu.i_selected[] = 2
+        @test GUI._catalog_target(gui, GUI._catalog_entry(w)) === static
+        src = GUI._place_catalog!(gui, GUI._catalog_entry(w), ["632.8"])
+        GUI._drop_placement!(gui)
+        @test only(gui.pairs).first === static
+        gui.controls.selected[] = nothing
+        GUI._select_catalog_entry!(gui, w, findfirst(e -> !e.source, w.entries))
+        @test menu.options[] == ["System 1"] && menu.selection[] == "System 1"
+        @test GUI._catalog_target(gui, GUI._catalog_entry(w)) === a
         close(gui)
     end
 

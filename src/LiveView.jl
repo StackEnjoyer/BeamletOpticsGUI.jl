@@ -349,7 +349,9 @@ the systems, with which added components are rendered; the `catalog` of the view
 [`component_catalog`](@ref)); the `added` components that are still part of a system and the
 `removed` ones that the view started with, both in the order of the calls, with the `system` of
 each; sources are added and removed like components, the `system` of an added one is the system it
-is traced through, and a removed source of the start has its systems in `source_systems`; the
+is traced through, and a removed source of the start has its systems in `source_systems`;
+`target` is the system that was chosen in the menu "into" of the catalog, which holds while the
+shown object is `target_shown`, see `_catalog_target`; the
 `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`; the
@@ -363,6 +365,9 @@ Base.@kwdef mutable struct _ComponentState
     const system::IdDict{Any, Any} = IdDict{Any, Any}()
     const origin::IdDict{Any, Any} = IdDict{Any, Any}()
     const source_systems::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the system chosen in the menu "into" of the catalog and the object that was shown then
+    target::Any = nothing
+    target_shown::Any = nothing
     placement::Any = nothing
     window::Any = nothing
 end
@@ -939,7 +944,9 @@ boxes of the form take its numbers, e.g. the radii of a lens [mm], and a menu se
 among those of [`catalog_glasses`](@ref) or "constant", for which a box takes a constant refractive
 index. "Place" attaches the component to the mouse. An input that is no number, or that the
 constructor of the component rejects, is reported in the status line. The line "into" names the
-system that gets the component.
+system that gets the component: the system of the selected or inspected object, else the first
+one. In a view with several systems it is a menu of the systems, which chooses another one; the
+choice holds until another object is selected, which sets the system again.
 
 The catalog is a window over the 3D view with the head of a card. The key `Insert` opens it with
 its top left corner at the mouse, as a popup: it closes when the component was dropped. Its pin
@@ -962,8 +969,8 @@ the orientation in which it was constructed: seen from above, it is placed at th
 beam. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
 local y-axis as constructed) along the beam. Of a beam group, e.g. a `CollimatedSource`, it snaps
 only onto the central beam, and of a Gaussian beamlet onto its chief ray. A left click drops it:
-it becomes part of its system, i.e. the system of the selected or inspected object when "Place"
-was pressed, else the first `System` of the view, all beams of that system are traced through it,
+it becomes part of its system, i.e. the system that the line "into" named when "Place" was
+pressed, all beams of that system are traced through it,
 and it is selected. `Esc` cancels the placement. Meanwhile the component is not traced, a drag
 still moves the camera, and a click selects nothing.
 

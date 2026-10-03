@@ -264,6 +264,8 @@ end
 function _blur_catalog!(widget::_CatalogWidget)
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), widget.boxes)
     foreach(m -> m.is_open[] && (m.is_open[] = false), widget.menus)
+    menu = widget.target_menu
+    (isnothing(menu) || !menu.is_open[]) || (menu.is_open[] = false)
     return nothing
 end
 

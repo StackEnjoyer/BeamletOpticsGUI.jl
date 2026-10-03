@@ -452,17 +452,51 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
     @testset "target system ($layout)" for layout in (:compact, :app)
         gui, sys, m, sys2, m2 = _fixture(; layout, two = true, label = "Main")
         w = _widgets(gui)
-        # the first system, by its label
+        widget = w.widget
+        menu = widget.target_menu
+        entry = GUI._catalog_entry(widget)
+        target() = GUI._catalog_target(gui, entry)
+        # several systems: a menu of the systems next to the label, on the first system, by its label
+        @test menu isa Menu && w.target.text[] == "into"
+        @test menu.options[] == ["Main", "System 2"]
         @test GUI._target_system(gui) === sys
-        @test w.target.text[] == "into: Main"
+        @test menu.selection[] == "Main" && target() === sys
         # the system of the selected component
         gui.controls.selected[] = m2
         @test GUI._target_system(gui) === sys2
-        @test w.target.text[] == "into: System 2"
+        @test menu.selection[] == "System 2" && target() === sys2
         gui.controls.selected[] = m
-        @test w.target.text[] == "into: Main"
+        @test menu.selection[] == "Main" && target() === sys
         gui.controls.selected[] = nothing
-        @test w.target.text[] == "into: Main"
+        @test menu.selection[] == "Main" && target() === sys
+
+        # the menu chooses another system, for the components that are placed then
+        menu.i_selected[] = 2
+        @test target() === sys2 && menu.selection[] == "System 2"
+        # ... in all widgets of the catalog, e.g. its window and its dock
+        @test all(x -> x.target_menu.selection[] == "System 2", GUI._catalog_widgets(_window(gui)))
+        obj = GUI._place_catalog!(gui, entry, GUI._catalog_strings(widget))
+        @test gui.components.placement.system === sys2
+        GUI._drop_placement!(gui)
+        @test any(o -> o === obj, sys2.objects) && !any(o -> o === obj, sys.objects)
+        # the dropped component is selected, the menu stays on its system
+        @test gui.controls.selected[] === obj && menu.selection[] == "System 2"
+        # the selection sets the system again, and no selection is the first system
+        gui.controls.selected[] = m
+        @test menu.selection[] == "Main" && target() === sys
+        menu.i_selected[] = 2
+        @test target() === sys2
+        gui.controls.selected[] = nothing
+        @test menu.selection[] == "Main" && target() === sys
+        # `add_component!` without a `system` is not changed by the menu
+        menu.i_selected[] = 2
+        @test GUI._target_system(gui) === sys
+        close(gui)
+
+        # a single system: a label, no menu
+        gui, sys, m = _fixture(; layout, label = "Main")
+        w = _widgets(gui)
+        @test isnothing(w.widget.target_menu) && w.target.text[] == "into: Main"
         close(gui)
     end
 

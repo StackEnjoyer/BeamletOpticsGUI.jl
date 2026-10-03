@@ -61,7 +61,9 @@ without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
 the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in
-the left sidebar (section "Components"), from where its buttons move it into the window and back. Its icons select a
+the left sidebar (section "Components"), from where its buttons move it into the window and back. Its
+line "into" names the system that gets the entry (of the selection, else the first one) and is a menu
+of the systems in a view with several systems. Its icons select a
 group (sources, lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
 component (all components of BeamletOptics with a constructor of numbers and glasses) or a source
 (`Beam`, `GaussianBeamlet`, `CollimatedSource`, `UniformDiscSource`, `PointSource`,

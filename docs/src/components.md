@@ -85,7 +85,12 @@ form take its numbers; the other arguments of the constructor keep their default
 `thickness` and the `hole_diameter` of a curved mirror. An entry with a refractive index has a menu
 of glasses instead of a number: N-BK7, fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2,
 N-BAF10 and N-LAK22 with their dispersion (see [`catalog_glasses`](@ref)), and "constant" with a box
-for a constant refractive index. "Place" attaches the component
+for a constant refractive index. The line "into" at the top names the system that gets the
+component or source: the system of the selected or inspected object, else the first one. In a view
+with several systems it is a menu, which chooses another system; the choice holds until another
+object is selected, which sets the system again. A source can be traced through any system, a
+component is added to a `System` only, hence the menu lists the systems that can get the chosen
+entry. "Place" attaches the component
 to the mouse, which moves it in the plane of the view through the first source of its system: seen
 from above it lies at the height of the beam, seen from the front at the depth of the source. A
 left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
