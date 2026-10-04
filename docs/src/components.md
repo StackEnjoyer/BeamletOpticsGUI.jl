@@ -91,10 +91,15 @@ with several systems it is a menu, which chooses another system; the choice hold
 object is selected, which sets the system again. A source can be traced through any system, a
 component is added to a `System` only, hence the menu lists the systems that can get the chosen
 entry. "Place" attaches the component
-to the mouse, which moves it in the plane of the view through the first source of its system: seen
-from above it lies at the height of the beam, seen from the front at the depth of the source. A
-left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
-only onto its central beam, of a Gaussian beamlet onto its chief ray. The component that is being
+to the mouse, which moves it in the plane of the table (perpendicular to the rotation axis) through
+the first source of its system: beside the beams it lies at the height of the beam, also in an
+oblique view; seen from the front or the side, it moves in the plane of the view at the depth of
+the source. The first component or source of an empty view is placed at the origin, where the
+camera of an empty view looks: it does not follow the mouse. A
+left click drops it, `Esc` cancels. With the snapping onto beams switched on (the chip "Snap" or
+the key `Tab`, also while placing; off by default, see the keyword `snap`), it snaps onto a
+rendered beam within 12 px; of a beam group only onto its central beam, of a Gaussian beamlet onto
+its chief ray. With "position + rotation" its optical axis also turns along the beam. The component that is being
 placed is not traced until it is dropped. See the section "Adding and removing components" of
 [`live_view`](@ref) for the details of the placement.
 

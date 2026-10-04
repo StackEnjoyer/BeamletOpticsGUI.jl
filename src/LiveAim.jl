@@ -38,8 +38,8 @@ _aim_point(::KinematicController, leaf) = Vector{Float64}(position(leaf))
 What the source `a.src` of the `gui` is aimed at for the current mouse position, as
 `(; point, obj)`: the component or other source `obj` under the cursor (see `_ray_pick`) with its
 `_aim_point`; elsewhere (`obj = nothing`) the point where the camera ray through the cursor meets
-the plane through the source in which the mouse moves objects (see `_drag_normal`), e.g. the plane
-of the beams in a view from above, snapped onto the grid of the controls, if any, e.g. a hole of
+the plane through the source on which components are placed (see `_placement_normal`), i.e. the
+plane of the table, such that the beam stays in it, snapped onto the grid of the controls, if any, e.g. a hole of
 the table. `nothing` if the ray does not meet the plane in front of the camera.
 """
 function _aim_target(gui::LiveView, a::_Aim)
@@ -50,7 +50,7 @@ function _aim_target(gui::LiveView, a::_Aim)
         return (; point = _aim_point(ctrl, leaf), obj = leaf)
     end
     origin, dir = _cursor_ray(scene)
-    hit = _ray_plane_intersect(origin, dir, Vector{Float64}(position(a.src)), _drag_normal(scene, ctrl))
+    hit = _ray_plane_intersect(origin, dir, Vector{Float64}(position(a.src)), _placement_normal(scene, ctrl))
     (isnothing(hit) || norm(hit .- origin) <= 1e-9) && return nothing
     point = Vector{Float64}(hit)
     grid = ctrl.snap_grid(a.src, point)

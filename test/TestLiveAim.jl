@@ -153,6 +153,25 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "in the plane of the table" begin
+        # without a `plane_normal`, in an oblique view: the beam stays in the plane of the table
+        m = RoundPlanoMirror(25e-3, 5e-3)
+        translate3d!(m, [0.1, 0.2, 0.0])
+        a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
+        gui = live_view(System([m]) => a; trace_budget = Inf, throttle = false)
+        set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
+        GUI._start_aim!(gui, a)
+        _mouse!(gui, _pixel(gui, [-0.08, 0.12, 0.0]))
+        target = GUI._aim_target(gui, gui.components.aim)
+        @test isnothing(target.obj)
+        @test abs(target.point[3]) < 1e-9
+        @test norm(target.point .- [-0.08, 0.12, 0.0]) < 2e-3
+        _click!(gui)
+        @test !GUI._aiming(gui)
+        @test abs(_dir(a)[3]) < 1e-9 && _dir(a)[1] < 0
+        close(gui)
+    end
+
     @testset "cancelled" begin
         gui, sys, m, a, b = _fixture()
         ctrl = gui.controls

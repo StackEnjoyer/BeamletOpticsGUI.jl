@@ -606,8 +606,8 @@ The 3D view uses the controls of [`kinematic_controls!`](@ref), see
 [Manual tracing](@ref), `p`, `Delete`, `c` and `Shift+c` control the clip planes, see
 [Clip planes](@ref), `1` shows or hides the source markers, see
 [Movable sources in the live view](@ref), `g` zooms to the selection, see [Camera tools](@ref), and
-`Insert` opens the catalog of the components at the mouse, see [Adding and removing components](@ref components_page). `Tab` switches the snapping onto beams: a component that is dragged with the mouse
-then snaps onto the central beam of a source like one that is being placed, and in the rotate mode
+`Insert` opens the catalog of the components at the mouse, see [Adding and removing components](@ref components_page). `Tab` switches the snapping onto beams: a component that is dragged or placed with the mouse
+then snaps onto the central beam of a source, and in the rotate mode
 the angle of its optical axis to the beam snaps to the multiples of 45°. Each `Tab` goes to the
 next of three states: off, only the position snaps, the position and the rotation snap, and off
 again; `Shift`+`Tab` goes the other way round. The chip "Snap" next to the mode at the top left of

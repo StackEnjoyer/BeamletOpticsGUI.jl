@@ -1003,12 +1003,20 @@ rail or toolbar) opens and closes the catalog.
   least 160 px, and the catalog are higher than the window; over the tree, the wheel scrolls its
   rows first.
 
-The component then follows the mouse, drawn at half of its opacity, on the plane of the view
-through the first source of its system (or the plane with the `plane_normal` of the controls), in
-the orientation in which it was constructed: seen from above, it is placed at the height of the
-beam. Within 12 px of a rendered beam it snaps onto the beam, with its optical axis (its
-local y-axis as constructed) along the beam. Of a beam group, e.g. a `CollimatedSource`, it snaps
-only onto the central beam, and of a Gaussian beamlet onto its chief ray. A left click drops it:
+The component then follows the mouse, drawn at half of its opacity, on the plane of the table, i.e.
+the plane perpendicular to the `rotation_axis` of the controls (or the one with their
+`plane_normal`) through the first source of its system, or through the origin without one, in the
+orientation in which it was constructed: beside the beams it lies at the height of the beam, also
+in an oblique view. Only where the camera looks along the table within 10°, e.g. from the front,
+it follows the mouse on the plane of the view. The first component or source of an empty view does
+not follow the mouse: it sits at the origin, which the camera of an empty view looks at, and the
+click drops it there, such that e.g. the beam of the first source is the y-axis. With the snapping
+switched on (see "Snapping onto beams"), it snaps onto a rendered beam within 12 px: with
+"position" in the orientation as constructed, with "position + rotation" with its optical axis
+(its local y-axis as constructed) along the beam. Of a beam group, e.g. a `CollimatedSource`, it
+snaps only onto the central beam, and of a Gaussian beamlet onto its chief ray. With the snapping
+off, it ignores the beams and stays under the mouse. `Tab` switches the snapping also while a
+component is being placed. A left click drops it:
 it becomes part of its system, i.e. the system that the line "into" named when "Place" was
 pressed, all beams of that system are traced through it,
 and it is selected. `Esc` cancels the placement. Meanwhile the component is not traced, a drag
@@ -1035,8 +1043,8 @@ the removed ones. A `Detector` added at runtime shows its view on the page "Resu
 # Snapping onto beams
 
 With the snapping switched on (the chip "Snap" next to the mode at the top left, the key `Tab`, or
-the `snap` kwarg), a component that is dragged with the mouse snaps onto the beams like one that is
-being placed. In the move mode, a component whose position comes within 12 px of a beam sits on the
+the `snap` kwarg), a component that is dragged or placed with the mouse snaps onto the beams. In
+the move mode, a component whose position comes within 12 px of a beam sits on the
 beam and slides along it; of a beam group only the central beam takes part, of a Gaussian beamlet
 its chief ray. `Tab` and a click on the chip switch to the next of three states, `Shift`+`Tab` to
 the one before: off, the "position" only, such that e.g. a mirror keeps its tilt, and
@@ -1071,9 +1079,10 @@ the central beam of a source that is switched on, as far as it does not depend o
 optical axis (the local y-axis) along the beam, in its direction or against it, whichever is
 closer. "aim" in the last row of the card of a source starts aiming it: a dashed line follows the
 mouse, and a click turns the source about its position such that it points at the center of the
-component under the mouse (or at the position of another source), elsewhere at the point of the
-plane in which the mouse moves objects, through the source, which snaps onto the holes of the
-table while it is shown. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
+component under the mouse (or at the position of another source), elsewhere at the point under the
+mouse of the plane of the table through the source (the plane on which components are placed),
+such that the beam stays in that plane; the point snaps onto the holes of the table while it is
+shown. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
 still moves the camera. Each of them is one step of the undo history and is solved like a move;
 locked axes (see `constraints`) stay locked.
 
@@ -1152,7 +1161,8 @@ them changes in the other one as well, and only the window in which something ch
   click on the empty background shows, see "Background card"
 - `catalog = component_catalog()`: the components that the catalog "Components" offers, a vector of
   [`CatalogEntry`](@ref); an empty vector shows no catalog, see "Adding and removing components"
-- `snap = false`: whether the components snap onto the beams while they are dragged with the mouse:
+- `snap = false`: whether the components snap onto the beams while they are dragged or placed with
+  the mouse:
   `false`, `true` or `:position` (the position), or `:pose` (the position and the rotation), see
   "Snapping onto beams"
 - `table = false`: the optical table, see "Optical table": `true` shows it at the start, a
@@ -1373,6 +1383,8 @@ function live_view(
     dist = norm(Vector{Float64}(cam.eyeposition[]) .- lookat)
     o, up = _region_view((1, -1, 1))
     set_view(ax, lookat .+ dist .* o, lookat, up)
+    # An empty view shows the origin, where its first component or source is placed
+    _show_origin!(gui)
     # Replaced by the view at the first tick, i.e. when the window is shown
     gui.camera.home = _current_view(gui)
     return gui

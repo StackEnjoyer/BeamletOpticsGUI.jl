@@ -204,7 +204,7 @@ const _CATALOG_HELP = _HelpSection["Components" => [
     _HelpEntry(["Ins"], "open the catalog at the mouse, until a component is dropped"),
     _HelpEntry([:mouse => "click"], "pin of the catalog: keep it open"),
     _HelpEntry([:mouse => "drag"], "head of the catalog: move it"),
-    _HelpEntry([:mouse => "move"], "while placing: near a beam, snap onto it"),
+    _HelpEntry([:mouse => "move"], "while placing: with the snapping on, onto a beam near it"),
     _HelpEntry([:mouse => "click"], "while placing: drop it, Esc cancels")]]
 # Sizes of the widgets of the catalog [px]: the boxes of the numbers and the menus of the glasses
 const _CATALOG_BOX_WIDTH = 64

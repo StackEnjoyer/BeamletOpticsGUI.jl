@@ -48,7 +48,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
 | `catalog = component_catalog()` | the entries of the component catalog (`CatalogEntry`s); `CatalogEntry[]` shows no catalog |
-| `snap = false` | components snap onto the central beams while dragged with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: `Tab` or the chip "Snap" cycles off, position, position and rotation; `Shift`+`Tab` backwards |
+| `snap = false` | components snap onto the central beams while dragged or placed with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: `Tab` or the chip "Snap" cycles off, position, position and rotation; `Shift`+`Tab` backwards |
 | `table = false` | optical table below the setup, also the toggle "Table" among the tools: `true`, or `(; pitch = 25e-3, height = nothing, snap = true, shown = true)` [m]; while shown, dragged and placed components and sources snap onto its holes beside the beams, rotations in steps of 45° to its rows |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
@@ -81,7 +81,9 @@ component (all components of BeamletOptics with a constructor of numbers and gla
 the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,
 N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. "Place"
 attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
-selected component or source. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
+selected component or source. It moves in the plane of the table (perpendicular to `rotation_axis`,
+at the height of the source of its system) and snaps onto beams while `snap` is on; the first component or source of
+an empty view is placed at the origin. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
 refractive index as `λ -> n`; an added source is its constructor at the origin along +y, its
 `rotate3d!`/`translate_to3d!` and `solve_system!(system, name)`, a removed source of the start a comment.
 
