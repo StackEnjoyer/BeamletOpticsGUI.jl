@@ -1234,7 +1234,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             close(ctrl)
         end
 
-        @testset "rotate drag is blocked when :v is locked" begin
+        @testset "rotate drag about the allowed axis" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
             pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
@@ -1248,7 +1248,24 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mouseposition[] = (110.0, 100.0)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
-            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0 # :v (rotation_axis) is locked
+            # :v (rotation_axis) is locked: the drag rotates about the red axis, the only one allowed
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d([1, 0, 0], 0.1) * R0
+            close(ctrl)
+
+            # no axis allowed: the drag rotates nothing
+            fig, ax, h, m1, m2 = _fixture()
+            scene = ax.scene
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
+                rotate_speed = 1e-2, constraints = Dict(m1 => (; rotate = ())))
+            events(scene).mouseposition[] = (100.0, 100.0)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            events(scene).mouseposition[] = (110.0, 100.0)
+            @test isnothing(ctrl.drag_axis)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
             close(ctrl)
         end
 
@@ -1313,6 +1330,88 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             close(ctrl)
         end
+    end
+
+    @testset "rotate drag about the ring that faces the camera" begin
+        # The axis of a drag of m1, whose local axes are x and y, seen from `eye`
+        function axis_from(eye; up = [0.0, 0, 1], kwargs...)
+            fig, ax, h, m1, m2 = _fixture()
+            scene = ax.scene
+            Makie.update_cam!(scene, Vec3d(eye), Vec3d(0, 0, 0), Vec3d(up))
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, kwargs...)
+            a = GUI._drag_rotation_axis(scene, ctrl, m1)
+            close(ctrl)
+            return a
+        end
+        x, y, z = [1.0, 0, 0], [0.0, 1, 0], [0.0, 0, 1]
+        # from above the table: the rotation axis, to the right counterclockwise
+        a = axis_from([0.0, 0, 1]; up = y)
+        @test a.sym == :v && a.axis == z && a.sign == 1
+        # ... from below, the same on the screen is the other way round about the axis
+        a = axis_from([0.0, 0, -1]; up = y)
+        @test a.sym == :v && a.sign == -1
+        # an oblique view, more than 30° above the table, also along a local axis
+        a = axis_from([0.0, -cosd(35), sind(35)])
+        @test a.sym == :v && a.sign == 1
+        a = axis_from([1.0, 1, 1])
+        @test a.sym == :v && a.sign == 1
+        # from the front: the local axis along which the camera looks, from either side
+        a = axis_from([0.0, -cosd(20), sind(20)])
+        @test a.sym == :y && a.axis ≈ y && a.sign == -1
+        a = axis_from([0.0, cosd(20), sind(20)])
+        @test a.sym == :y && a.sign == 1
+        # from the side
+        a = axis_from([1.0, 0, 0.1])
+        @test a.sym == :x && a.axis ≈ x && a.sign == 1
+        a = axis_from([-1.0, 0, 0.1])
+        @test a.sym == :x && a.sign == -1
+
+        # only the axes that the constraints allow
+        fig, ax, h, m1, m2 = _fixture()
+        scene = ax.scene
+        Makie.update_cam!(scene, Vec3d(0.3, 0.2, 1), Vec3d(0, 0, 0), Vec3d(0, 1, 0))
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false,
+            constraints = Dict(m1 => (; rotate = (:x, :y)), m2 => (; rotate = ())))
+        @test GUI._drag_rotation_axis(scene, ctrl, m1).sym == :x
+        @test isnothing(GUI._drag_rotation_axis(scene, ctrl, m2))
+        close(ctrl)
+        # with a `plane_normal`, the drags do not follow the camera
+        a = axis_from([0.0, -1, 0.1]; plane_normal = [0, 0, 1])
+        @test a.sym == :v && a.axis == z && a.sign == 1
+        a = axis_from([0.0, 0, -1]; up = y, plane_normal = [0, 0, 1])
+        @test a.sym == :v && a.sign == 1
+
+        # a drag seen from the front: about the local y-axis, clockwise about it for the camera
+        # that looks along it; only its ring keeps its color meanwhile
+        fig, ax, h, m1, m2 = _fixture()
+        scene = ax.scene
+        Makie.update_cam!(scene, Vec3d(0, -cosd(20), sind(20)), Vec3d(0, 0, 0), Vec3d(0, 0, 1))
+        pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
+            rotate_speed = 1e-2)
+        R0 = Matrix{Float64}(BMO.orientation(m1))
+        ev = events(scene)
+        ev.mouseposition[] = (100.0, 100.0)
+        ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test ctrl.selected[] === m1
+        # the rings in the order green (y), red (x), blue (v)
+        alphas() = [ctrl.ring_color[][1 + (i - 1) * 2 * GUI._RING_RES].alpha for i in 1:3]
+        @test alphas() == [1, 1, 1]
+        ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        ev.mouseposition[] = (110.0, 100.0)
+        @test ctrl.drag_axis.sym == :y
+        @test alphas()[1] == 1 && all(<(0.5), alphas()[2:3])
+        @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d([0, 1, 0], -0.1) * R0
+        # the axis of the start of the drag is kept, also for a vertical move, which does nothing
+        ev.mouseposition[] = (110.0, 140.0)
+        @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d([0, 1, 0], -0.1) * R0
+        ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test isnothing(ctrl.drag_axis) && alphas() == [1, 1, 1]
+        # one step of the undo history
+        @test GUI._undo!(ctrl)
+        @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
+        close(ctrl)
     end
 
     @testset "drag in the plane of the view" begin

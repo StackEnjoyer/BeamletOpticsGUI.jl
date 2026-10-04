@@ -221,9 +221,10 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["↑", "↓"], along(up); color = up),
             _HelpEntry(["←", "→"], along(left); color = left),
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
-            _HelpEntry([:mouse => "drag"], !move ? "rotate around the blue ring" :
-                                            view_plane ? "move in the plane of the view" : "move in the plane";
-                color = move ? "" : "blue"),
+            _HelpEntry([:mouse => "drag"], move ? (view_plane ? "move in the plane of the view" : "move in the plane") :
+                                            view_plane ? "rotate around the ring that faces the camera" :
+                                            "rotate around the blue ring";
+                color = move || view_plane ? "" : "blue"),
             _HelpEntry(["+", "−"], "keyboard step, now $step"),
             _HelpEntry(["Shift"], "with a key: 10× step"),
             _HelpEntry(["Bksp"], "reset the pose")],
@@ -295,6 +296,9 @@ function _next_step(x::Real, dir::Int)
     isnothing(i) || return grid[i + dir]
     return dir > 0 ? grid[findfirst(>(x), grid)] : grid[findlast(<(x), grid)]
 end
+
+# The axis of a drag in the rotate mode, see `_drag_rotation_axis`
+const _DragAxis = @NamedTuple{sym::Symbol, axis::Vector{Float64}, sign::Float64}
 
 # Green, red and blue axes of the controls: local y-axis, local x-axis and rotation axis
 const _AXES_COLORS = [:green, :red, :blue]
@@ -473,6 +477,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     drag_angle::Float64
     drag_applied::Float64
     drag_beam_angle::Union{Nothing, Float64}
+    # the axis of the current drag in the rotate mode, see `_drag_rotation_axis`
+    drag_axis::Union{Nothing, _DragAxis}
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -630,9 +636,11 @@ function _validate_constraints(constraints)
 end
 
 """Returns the colors of the gizmo axes `[y, x, v]` (green, red, blue) of `obj`'s `kind` controls
-(`:move` or `:rotate`), faded to indicate axes locked by the `constraints`."""
+(`:move` or `:rotate`), faded to indicate axes locked by the `constraints`. While the mouse rotates
+`obj`, only the ring of the axis of the drag keeps its color, see `_drag_rotation_axis`."""
 function _gizmo_colors(ctrl::KinematicController, obj, kind::Symbol)
     allowed = _allowed_axes(ctrl, obj, kind)
+    kind == :rotate && ctrl.dragging && !isnothing(ctrl.drag_axis) && (allowed = (ctrl.drag_axis.sym,))
     colors = Makie.RGBAf[]
     for (sym, c) in zip(_AXES_SYMS, _AXES_COLORS)
         rgba = Makie.RGBAf(Makie.to_color(c))
@@ -868,7 +876,8 @@ end
 
 """
 Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
-and for the rotate mode the angle of the optical axis of `obj` to the beam through its position,
+and for the rotate mode the angle of the optical axis of `obj` to the beam through its position
+about the axis of the drag (see `_drag_rotation_axis`; the rotation axis without one),
 see `_snap_angle`; without such a beam, or with the snapping onto beams switched off, its angle to
 the direction of the grid at its position (see `ctrl.snap_grid`), if there is one.
 """
@@ -882,7 +891,8 @@ function _start_snap!(ctrl::KinematicController, obj)
     # beside the beams, the angle to the grid
     isnothing(beam) && (beam = ctrl.snap_grid(obj, Vector{Float64}(P)))
     isnothing(beam) && return nothing
-    ctrl.drag_beam_angle = _angle_about(ctrl.rotation_axis, Vector{Float64}(beam.direction), R[:, 2])
+    axis = isnothing(ctrl.drag_axis) ? ctrl.rotation_axis : ctrl.drag_axis.axis
+    ctrl.drag_beam_angle = _angle_about(axis, Vector{Float64}(beam.direction), R[:, 2])
     return nothing
 end
 
@@ -1163,6 +1173,41 @@ view, e.g. also in a view from the front.
 _drag_normal(scene, ctrl::KinematicController) =
     isnothing(ctrl.plane_normal) ? _view_direction(scene) : ctrl.plane_normal
 
+# How much more the rotation axis counts than the local axes of an object when the mouse rotates
+# it, see `_drag_rotation_axis`: with √3, it is the axis in every view from more than 30° above the
+# plane of the table
+const _ROTATION_AXIS_WEIGHT = sqrt(3)
+
+"""
+    _drag_rotation_axis(scene, ctrl, obj) -> Union{Nothing, _DragAxis}
+
+The axis about which a drag of the mouse rotates `obj` in the rotate mode, taken at the start of the
+drag: of the gizmo axes that the constraints of `obj` allow (see `_control_axes`), the one whose
+ring faces the camera, i.e. along which the camera looks most (see `_view_direction`). The rotation
+axis counts `_ROTATION_AXIS_WEIGHT` times, such that a view from above turns the object on the table
+as before, also an oblique one, and a view from the front or from the side turns it about its
+local axis in the direction of the view. Returns its symbol `sym`, the unit vector `axis` and the
+`sign` of the angle for a move of the mouse to the right, such that the object turns the same way
+on the screen from either side of the axis: counterclockwise. `nothing` if no axis is allowed.
+
+With a `plane_normal`, the drags of the controls do not follow the camera (see `_drag_normal`): the
+axis is the rotation axis then, with a positive angle to the right, if it is allowed.
+"""
+function _drag_rotation_axis(scene, ctrl::KinematicController, obj)
+    allowed = _allowed_axes(ctrl, obj, :rotate)
+    if !isnothing(ctrl.plane_normal)
+        return :v in allowed ? (; sym = :v, axis = copy(ctrl.rotation_axis), sign = 1.0) : nothing
+    end
+    d = _view_direction(scene)
+    best, score = nothing, -Inf
+    for (sym, a) in zip(_AXES_SYMS, _control_axes(ctrl, obj))
+        sym in allowed || continue
+        s = abs(dot(a, d)) * (sym == :v ? _ROTATION_AXIS_WEIGHT : 1.0)
+        s > score && ((best, score) = ((; sym, axis = Vector{Float64}(a), sign = dot(a, d) > 0 ? -1.0 : 1.0), s))
+    end
+    return best
+end
+
 """Returns the drag plane intersection of the ray through the mouse position, see `_drag_normal`."""
 function _mouse_plane_hit(scene, ctrl::KinematicController)
     origin, dir = _cursor_ray(scene)
@@ -1292,7 +1337,12 @@ A click selects, a drag moves only what is already selected, every other drag ro
   point, i.e. the plane perpendicular to the direction in which the camera looks, such that the
   point under the cursor at the start of the drag stays under the cursor in every view: a view
   from above moves it on the table, a view from the front changes its height. With a
-  `plane_normal`, it moves within that plane instead; or rotates it around the `rotation_axis` in the rotate mode. If the exact point under the
+  `plane_normal`, it moves within that plane instead. In the rotate mode, the drag rotates it:
+  a move of the mouse to the right turns it counterclockwise on the screen, about the axis of the
+  gizmo whose ring faces the camera, which keeps its color during the drag. Seen from above, also
+  in an oblique view (more than 30° above the table), that is the `rotation_axis`; seen from the
+  front or from the side, the local axis of the object along which the camera looks. Only the axes
+  that the `constraints` allow are taken, and with a `plane_normal` always the `rotation_axis`. If the exact point under the
   cursor is not known (a custom `pick` function, or the `Makie.pick` fallback), the object's
   `position` is used instead
 - left-drag elsewhere (background or an unselected object): rotates the camera as usual
@@ -1465,7 +1515,8 @@ function kinematic_controls!(
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
-        Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing
+        Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
+        nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1544,6 +1595,11 @@ function kinematic_controls!(
                     ctrl.last_key_step = nothing
                     _push_history!(ctrl, obj, P0, R0, P1, R1)
                 end
+                if !isnothing(ctrl.drag_axis)
+                    # all rings of the gizmo again
+                    ctrl.drag_axis = nothing
+                    _update_selection_box!(ctrl)
+                end
             elseif kind == :pending_drag
                 # Released before crossing the threshold: a click, not a drag
                 moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
@@ -1573,7 +1629,11 @@ function kinematic_controls!(
             moved >= ctrl.drag_threshold || return Consume(true)
             ctrl.dragging = true
             ctrl.drag_start = _pose(ctrl.selected[])
+            ctrl.drag_axis = ctrl.mode[] == :rotate ?
+                             _drag_rotation_axis(scene, ctrl, ctrl.selected[]) : nothing
             _start_snap!(ctrl, ctrl.selected[])
+            # the ring of the axis of the drag, see `_gizmo_colors`
+            isnothing(ctrl.drag_axis) || _update_selection_box!(ctrl)
         end
         obj = ctrl.selected[]
         if ctrl.mode[] == :move
@@ -1606,10 +1666,11 @@ function kinematic_controls!(
             mp = _px(scene)
             dx = mp[1] - ctrl.last_mouse[1]
             ctrl.last_mouse = mp
-            if dx != 0 && :v in _allowed_axes(ctrl, obj, :rotate)
-                δ = _snap_rotation!(ctrl, ctrl.rotate_speed * dx)
+            drag_axis = ctrl.drag_axis
+            if dx != 0 && !isnothing(drag_axis)
+                δ = _snap_rotation!(ctrl, drag_axis.sign * ctrl.rotate_speed * dx)
                 if δ != 0
-                    _change!(() -> rotate3d!(obj, ctrl.rotation_axis, δ), ctrl, obj)
+                    _change!(() -> rotate3d!(obj, drag_axis.axis, δ), ctrl, obj)
                     _request_update!(ctrl)
                 end
             end
