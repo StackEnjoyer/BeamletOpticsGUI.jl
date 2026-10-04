@@ -88,7 +88,10 @@ refractive index as `λ -> n`; an added source is its constructor at the origin 
 `rotate3d!`/`translate_to3d!` and `solve_system!(system, name)`, a removed source of the start a comment.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
-keyboard controls to a live-rendered system on its own, without `live_view`.
+keyboard controls to a live-rendered system on its own, without `live_view`. In the rotate mode a
+mouse drag on a ring of the gizmo (highlighted under the cursor) rotates the selected component around
+that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) can not be dragged, a
+drag elsewhere on the selection rotates around `rotation_axis` as before.
 
 ## Rules
 
