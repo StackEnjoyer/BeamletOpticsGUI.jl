@@ -261,6 +261,8 @@ const GUI = BeamletOpticsGUI
         @test lens !== old && !_in(old, b.sys.objects)
         @test _shown(gui, lens) && !_shown(gui, old)
         @test GUI._label(gui, lens) == GUI._label(new, lens) == name
+        # the head of the inspector shows the name that the new component took over
+        @test new.controls.selected[] === lens && new.layout.inspector.name.text[] == name
         @test GUI._editable(gui, lens)
         # undo in the window that edited
         GUI._undo!(new.controls)

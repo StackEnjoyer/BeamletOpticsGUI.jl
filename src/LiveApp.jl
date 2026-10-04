@@ -388,7 +388,13 @@ end
 
 _on_clip_planes_changed!(gui::AppView) = _update_tree!(gui)
 _on_hidden!(gui::AppView) = _update_tree!(gui)
-_on_components_changed!(gui::AppView) = _update_tree!(gui)
+# Also the name in the head of the inspector: a component that takes the place of another one gets
+# its name after it was selected, see `_replace!`
+function _on_components_changed!(gui::AppView)
+    _update_tree!(gui)
+    gui.layout.right.shown && _show_header!(gui, gui.layout.inspector.shown)
+    return nothing
+end
 _show_hint(::AppView) = "click its eye in the object tree to show it again"
 
 function _on_clipping!(gui::AppView)
