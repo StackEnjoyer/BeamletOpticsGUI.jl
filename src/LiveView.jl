@@ -207,6 +207,10 @@ is `true` from such a solve (of the moved `preview_obj`) until the full solve. A
 longer than `budget` continues in the background as `job`, the `progress` window shows its loops
 after `progress_delay` [s]. The duration fields are named by `_SolveJob.timing`. `error` holds
 the rows of the message of the last failed solve until a solve succeeds, see `_show_solve_error!`.
+`link_stale` is `true` while the view is `stale` only because a linked view changed a system that
+both show, see `_follow!`: the solve of that view makes it up to date again. Otherwise the
+`stale_systems` are the systems whose changes made it `stale`, unless it is not known which
+(`stale_all`), see `_note_stale!`: a linked view that traces all of them makes it up to date as well.
 """
 Base.@kwdef mutable struct _TraceState
     auto::Observable{Bool}
@@ -228,6 +232,9 @@ Base.@kwdef mutable struct _TraceState
     preview_obj::Any = nothing
     job::Union{Nothing, _SolveJob} = nothing
     error::Union{Nothing, Vector{Pair{String, String}}} = nothing
+    link_stale::Bool = false
+    stale_systems::Vector{Any} = Any[]
+    stale_all::Bool = false
 end
 
 """
@@ -452,6 +459,22 @@ Base.@kwdef mutable struct _LayoutWidgets
 end
 
 """
+    _ViewLinks
+
+The live views that show the same systems in several windows, see [`open_system`](@ref): the
+`views`, each of which has this object as its `links` (a view on its own has an empty one). A view
+that changes a system solves it, the others follow, see `_sync_links!`; `following` is `true`
+meanwhile, such that what they do is not sent back. The linked views share their `labels` and the
+`names` and `counters` of their objects, i.e. an object has the same name in all windows.
+"""
+mutable struct _ViewLinks
+    const views::Vector{Any}
+    following::Bool
+end
+
+_ViewLinks() = _ViewLinks(Any[], false)
+
+"""
     LiveView
 
 Interactive window returned by [`live_view`](@ref). The `Figure` is stored in `fig`, the `LScene`
@@ -469,6 +492,7 @@ objects of the `extras` kwarg are rendered, selectable and movable, but not part
 see `_live_render_extras!`. Panels, widgets and tool keys added via the customization API are in
 `custom`, see `LiveCustom.jl`. `background_card` is the kwarg of [`live_view`](@ref): the object
 (or `gui -> object`) whose card a click on the empty background shows, see `_show_background!`.
+`links` holds the views that show systems of this one in other windows, see `_ViewLinks`.
 
 The type parameter `L` is the type of the `layout`, see `AbstractLiveLayout`: `CompactView` and
 `AppView` are the `LiveView`s of `live_view(...; layout = :compact)` and `layout = :app`.
@@ -498,6 +522,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     detectors::_DetectorStates = _DetectorStates()
     components::_ComponentState
     background_card::Any = nothing
+    links::_ViewLinks = _ViewLinks()
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -545,6 +570,8 @@ function Base.show(io::IO, gui::LiveView)
 end
 
 function Base.close(gui::LiveView)
+    # The linked views no longer follow it, and it stops only its own solve
+    _unlink!(gui)
     _cancel_solve!(gui)
     _end_placement!(gui)
     _close_layout!(gui)
@@ -1050,6 +1077,14 @@ table while it is shown. `Esc`, "cancel" on the card and the spectator mode canc
 still moves the camera. Each of them is one step of the undo history and is solved like a move;
 locked axes (see `constraints`) stay locked.
 
+# Several windows
+
+The button "new window" in the head of the card of a system (shown after a click on the system in
+the object tree or in the component menu) opens the system with its components and sources in a
+window of its own, e.g. one of several systems of the view, see [`open_system`](@ref). Both windows
+show the same objects and follow each other: what is moved, added, removed or edited in one of
+them changes in the other one as well, and only the window in which something changed solves.
+
 # Keyword args
 
 - `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
@@ -1270,8 +1305,9 @@ function live_view(
     _name_objects!(gui)
     # The parents of the parts of groups and multi-shape objects, for the selection card
     _map_parts!(gui)
-    # Objects must not change while a solve in the background traces them
-    controls.before_change = () -> _cancel_solve!(gui)
+    # Objects must not change while a solve in the background traces them, also one of a linked
+    # view; a view that follows a linked one stops none, see `_follow!`
+    controls.before_change = () -> gui.links.following || _cancel_solve!(gui)
     for (point, normal) in clip_specs
         _add_clip_plane!(gui, point, normal; select = false)
     end

@@ -38,7 +38,8 @@ When this Skill is active:
 1) Build and check the system without the GUI first (the `beamletoptics` skill): solve it, look at the
    numbers, render it statically with `render!`.
 2) Open the window: `gui = live_view(system, beam); display(gui)`. Several systems and beams:
-   `live_view(sys1 => beam1, sys2 => beam2)`. Pass `labels`, `detectors`, `extras` (housings),
+   `live_view(sys1 => beam1, sys2 => beam2)`; `open_system(gui, sys2)` opens one of them in a second,
+   linked window. Pass `labels`, `detectors`, `extras` (housings),
    `constraints`, `on_change` as needed (`API.md`).
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
    controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added

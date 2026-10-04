@@ -72,6 +72,8 @@ end
 """`LiveView` with the app layout, i.e. `live_view(...; layout = :app)`."""
 const AppView = LiveView{AppLayout}
 
+_layout_name(::AppLayout) = :app
+
 _default_size(::AppLayout) = (1600, 950)
 
 _figure(layout::AppLayout, size) =

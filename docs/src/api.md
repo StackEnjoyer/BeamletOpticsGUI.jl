@@ -16,6 +16,7 @@ live_view
 retrace!
 export_changes
 export_script
+open_system
 add_panel!
 add_controls!
 add_tool!

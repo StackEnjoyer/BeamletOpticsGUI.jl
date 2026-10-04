@@ -17,6 +17,9 @@ function _live_layout(layout::Symbol, theme::Symbol)
     throw(ArgumentError("layout must be :compact or :app, got :$layout"))
 end
 
+# The name of the layout for the `layout` kwarg, e.g. `:app`, the inverse of `_live_layout`
+_layout_name(layout::AbstractLiveLayout) = _slot_error(layout, "name")
+
 _default_size(::AbstractLiveLayout) = (1400, 800)
 _figure(::AbstractLiveLayout, size) = Figure(; size)
 

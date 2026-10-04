@@ -547,6 +547,23 @@ gui = live_view(system, beam;
     views = ["top" => ([0.0, 0.05, 0.5], [0.0, 0.05, 0.0], [0.0, 1.0, 0.0])])
 ```
 
+## A system in a window of its own
+
+In a view of several systems, one of them can be opened in a second window with its components
+and its sources: click the system in the object tree (or choose it in the component menu) and
+press "new window" in the head of its card, or call [`open_system`](@ref).
+
+```julia
+gui = live_view(interferometer => laser, telescope => star; layout = :app)
+window = open_system(gui, telescope)
+```
+
+The new window is a live view of the same objects, not of copies, and both windows are linked: a
+component or source that is moved, added, removed or edited in one of them changes in the other
+one as well. Only the window in which something changed solves the systems, the other one shows
+the result. The selection, the camera, colors, hidden objects, clip planes and the undo history
+are kept per window. Closing one of the windows ends the link.
+
 ## Adding and removing components
 
 Components can be added to a `System` of the view and removed again at runtime, from a catalog in

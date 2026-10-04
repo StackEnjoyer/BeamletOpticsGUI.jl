@@ -73,22 +73,43 @@ _forget_detector!(::LiveView, _) = nothing
 function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing,
         select::Bool = true, label = nothing, origin = nothing)
     ctrl = gui.controls
-    comp = gui.components
     sys = _add_system(gui, system)
-    h_sys = _system_handle(gui, sys)
     for leaf in _leaves(obj)
         isnothing(_child_handle(ctrl.h, leaf)) || throw(ArgumentError(
             "the $(nameof(typeof(leaf))) is already shown in the live view, as an object of a system or as an extra"))
     end
     # Stops a solve in the background, which traces the objects of the system
     _change!(() -> push!(sys, obj), ctrl, nothing)
-    ohs = try
-        live_render!(h_sys, obj; comp.render_kwargs...)
+    try
+        _attach!(gui, obj, sys; label, origin)
     catch
         # e.g. render kwargs that the object does not take: the system stays as it was
         delete!(sys, obj)
         rethrow()
     end
+    # The linked views show it before the solve, see `_sync_structure!`
+    _sync_structure!(gui)
+    if select
+        _is_movable(ctrl, obj) ? _select!(gui, obj) : _inspect!(gui, obj)
+    end
+    _on_change!(gui, obj)
+    _record_added!(gui, obj)
+    return obj
+end
+
+"""
+    _attach!(gui, obj, sys; label = nothing, origin = nothing)
+
+Shows the component `obj` of the `System` `sys` in the `gui`: the part of [`add_component!`](@ref)
+that does not change the system, i.e. its plots, the controls, its name and what the `gui` records
+of it (see `_ComponentState`). Also for a view that follows a linked one, in which `obj` was added,
+see `_follow_structure!`. Throws what `live_render!` throws, before the view changes.
+"""
+function _attach!(gui::LiveView, obj::BMO.AbstractObject, sys::BMO.System; label = nothing,
+        origin = nothing)
+    ctrl = gui.controls
+    comp = gui.components
+    ohs = live_render!(_system_handle(gui, sys), obj; comp.render_kwargs...)
     foreach(oh -> push!(ctrl.h, oh), ohs)
     _theme_render!(gui.layout, ctrl.h)
     _apply_clip_planes!(gui)
@@ -104,7 +125,7 @@ function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing
     # A component the view started with, removed and added again, is no change
     i = findfirst(o -> o === obj, comp.removed)
     if isnothing(i)
-        push!(comp.added, obj)
+        any(o -> o === obj, comp.added) || push!(comp.added, obj)
         comp.system[obj] = sys
         comp.origin[obj] = origin
     else
@@ -113,12 +134,7 @@ function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing
     end
     _table_include!(gui, obj)
     _on_components_changed!(gui)
-    if select
-        _is_movable(ctrl, obj) ? _select!(gui, obj) : _inspect!(gui, obj)
-    end
-    _on_change!(gui, obj)
-    _record_added!(gui, obj)
-    return obj
+    return nothing
 end
 
 #=
@@ -182,6 +198,8 @@ function _restore_names!(gui::LiveView, snap)
     end
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
+    # The linked views share the names, see `_ViewLinks`
+    _refresh_links!(gui)
     return nothing
 end
 
@@ -327,16 +345,34 @@ end
 function remove_component!(gui::LiveView, obj)
     reason = _removal_reason(gui, obj)
     isnothing(reason) || throw(ArgumentError(reason))
-    ctrl = gui.controls
-    comp = gui.components
     sys = _component_system(gui, obj)
-    h_sys = _system_handle(gui, sys)
     name = _label(gui, obj)
-    parts = _component_parts(obj)
-    leaves = _leaves(obj)
     snap = _snapshot(gui, obj)
     # Stops a solve in the background, which traces the objects of the system
-    _change!(() -> delete!(sys, obj), ctrl, nothing)
+    _change!(() -> delete!(sys, obj), gui.controls, nothing)
+    _detach!(gui, obj, sys)
+    # The linked views let go of it before the solve, see `_sync_structure!`
+    _sync_structure!(gui)
+    gui.status.text[] = "$name removed"
+    _on_change!(gui, nothing)
+    _record_removed!(gui, obj, snap)
+    return obj
+end
+
+"""
+    _detach!(gui, obj, sys)
+
+Lets go of the component `obj`, which was removed from the `System` `sys`, in the `gui`: the part
+of [`remove_component!`](@ref) that does not change the system, i.e. its plots, the controls, its
+name and what the `gui` records of it (see `_release!` and `_ComponentState`). Also for a view that
+follows a linked one, in which `obj` was removed, see `_follow_structure!`.
+"""
+function _detach!(gui::LiveView, obj::BMO.AbstractObject, sys::BMO.System)
+    ctrl = gui.controls
+    comp = gui.components
+    h_sys = _system_handle(gui, sys)
+    parts = _component_parts(obj)
+    leaves = _leaves(obj)
     # A component the view started with is listed by `export_changes` as removed, under its name
     added = findfirst(o -> o === obj, comp.added)
     _release!(gui, obj, parts; keep_name = isnothing(added))
@@ -355,10 +391,7 @@ function remove_component!(gui::LiveView, obj)
     end
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
-    gui.status.text[] = "$name removed"
-    _on_change!(gui, nothing)
-    _record_removed!(gui, obj, snap)
-    return obj
+    return nothing
 end
 
 """

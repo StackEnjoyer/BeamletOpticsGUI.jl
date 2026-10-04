@@ -74,6 +74,10 @@ card_actions(obj) = (CardWidget(Button; name = :hide, label = "hide",
 _remove_button() = CardWidget(Button; name = :remove, label = "remove",
     on = (gui, o, _) -> _remove_selected!(gui, o))
 
+# Systems: also "new window", which opens the system in a window of its own, see `open_system`
+card_actions(sys::BMO.AbstractSystem) = (invoke(card_actions, Tuple{Any}, sys)...,
+    CardWidget(Button; name = :open, label = "new window", on = (gui, s, _) -> _open_system!(gui, s)))
+
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),
     CardWidget(Button; name = :remove, label = "remove", on = (gui, p, _) -> _remove_clip_plane!(gui, p)))

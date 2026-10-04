@@ -17,7 +17,7 @@ const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
        pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
-       add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!,
+       add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
        CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses
 
 import Makie
@@ -87,6 +87,7 @@ include("LiveSnap.jl")
 include("LiveTable.jl")
 include("LiveAlign.jl")
 include("LiveAim.jl")
+include("LiveLinks.jl")
 include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")

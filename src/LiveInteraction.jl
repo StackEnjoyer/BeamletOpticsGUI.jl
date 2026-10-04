@@ -973,6 +973,40 @@ _undo_entry!(::KinematicController, e::_ActionEntry) = (e.undo(); nothing)
 _redo_entry!(::KinematicController, e::_ActionEntry) = (e.redo(); nothing)
 
 """
+    _history_step!(step!, ctrl, e, stack) -> Bool
+
+Takes the entry `e` of the history back or does it again by `step!(ctrl, e)`, after it was moved to
+the `stack`. An action that no longer applies, e.g. on a component that another window of the same
+system removed meanwhile (see [`open_system`](@ref)), is dropped with a warning instead of an
+error. Returns whether the step was done.
+"""
+function _history_step!(step!, ctrl::KinematicController, e, stack)
+    try
+        step!(ctrl, e)
+    catch err
+        (err isa ArgumentError && e isa _ActionEntry) || rethrow()
+        filter!(x -> x !== e, stack)
+        @warn "the entry of the undo history no longer applies and was dropped" exception = err
+        return false
+    end
+    return true
+end
+
+"""
+    _drop_history!(ctrl, objs)
+
+Drops the entries of the undo history of the `ctrl` on the objects `objs`, e.g. after another window
+of the same system added or removed them, see `_follow_structure!`.
+"""
+function _drop_history!(ctrl::KinematicController, objs)
+    dropped = Base.IdSet{Any}(objs)
+    filter!(e -> !(e.obj in dropped), ctrl.undo_stack)
+    filter!(e -> !(e.obj in dropped), ctrl.redo_stack)
+    !isnothing(ctrl.last_key_step) && ctrl.last_key_step.obj in dropped && (ctrl.last_key_step = nothing)
+    return nothing
+end
+
+"""
     _undo!(ctrl::KinematicController)
 
 Undoes the last recorded gesture (a mouse drag, a reset or one or several merged keyboard steps)
@@ -984,8 +1018,7 @@ function _undo!(ctrl::KinematicController)
     e = pop!(ctrl.undo_stack)
     push!(ctrl.redo_stack, e)
     ctrl.last_key_step = nothing
-    _undo_entry!(ctrl, e)
-    return true
+    return _history_step!(_undo_entry!, ctrl, e, ctrl.redo_stack)
 end
 
 """
@@ -999,8 +1032,7 @@ function _redo!(ctrl::KinematicController)
     e = pop!(ctrl.redo_stack)
     push!(ctrl.undo_stack, e)
     ctrl.last_key_step = nothing
-    _redo_entry!(ctrl, e)
-    return true
+    return _history_step!(_redo_entry!, ctrl, e, ctrl.undo_stack)
 end
 
 """
