@@ -92,6 +92,7 @@ include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")
 include("LiveCatalogWindow.jl")
+include("LiveCopy.jl")
 # agent skill of the package
 include("AgentSkill.jl")
 # precompiles the live view and the interaction call paths, must come last

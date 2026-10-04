@@ -64,7 +64,8 @@ describe it as available in docs or the skill.
   `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Color", "Results", "Properties").
   `src/LiveBeamColor.jl`: the page "Color" of the sources (color, opacity and line width of their
   beams). `src/LiveEdit.jl`: the page "Edit" of the components and sources from the catalog, which
-  builds them again with other parameters. Adding, removing and changing are actions of the undo
+  builds them again with other parameters. `src/LiveCopy.jl`: `Ctrl+C` and `Ctrl+V`, which build
+  one of them again as it is and place it with the mouse. Adding, removing and changing are actions of the undo
   history of the controls (`_push_action!` in `src/LiveInteraction.jl`, `_record_added!` in
   `src/LiveComponents.jl`).
 - `src/LiveDetectorView.jl`: the view of a detector on the page "Results" of its card: the kinds

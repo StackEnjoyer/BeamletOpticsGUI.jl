@@ -55,7 +55,9 @@ When this Skill is active:
   inside a group cannot be added or removed; a component or source that is being placed is not traced until it is
   dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card)
   and are written with their constructors by `export_script`. Adding, removing and changing are undone with
-  `Ctrl+Z` and redone with `Ctrl+Y`.
+  `Ctrl+Z` and redone with `Ctrl+Y`. `Ctrl+C` and `Ctrl+V` copy and paste the selected component or
+  source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
+  the object again and call `add_component!`.
 - Aligning is done in the window only: the buttons "onto beam" and "face beam" of the card of a
   component, "aim" of the card of a source and the optical table (`table = true`, a grid of holes that
   dragged components snap onto). There is no public function for them; from code, set the poses with

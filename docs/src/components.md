@@ -152,6 +152,13 @@ follows the new wavelength. An invalid input changes nothing and is reported in 
 Objects that the view started with have no page "Edit": the view does not know how they were
 constructed.
 
+`Ctrl+C` copies the selected component or source from the catalog, `Ctrl+V` builds it again with
+the same values and attaches it to the mouse like "Place": in the orientation of the original, a
+source also with the look of its beam (color, opacity, line width). A click drops it into the system
+of the selection, else the first one, `Esc` cancels, and each further `Ctrl+V` pastes another one,
+also in another window. Objects that the view started with can not be copied, for the same reason;
+the status line says so.
+
 Adding, removing and changing are part of the undo history of the controls, together with the
 moves: `Ctrl+Z` takes the last step back, `Ctrl+Y` (or `Ctrl+Shift+Z`) does it again, e.g. a removed
 component comes back in its pose, with its label. How a source is drawn (color, opacity, line

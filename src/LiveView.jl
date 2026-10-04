@@ -1037,6 +1037,11 @@ undo history: `Ctrl+Z` takes them back, `Ctrl+Y` does them again (the keys with 
 the keyboard layout, e.g. of a German keyboard). A component or source from the
 catalog has the page "Edit" on its card, the form of its entry: "Apply", or Enter in a box,
 builds it again with the new values in the same pose, which is one step of the undo history.
+`Ctrl+C` copies the selected component or source from the catalog, and `Ctrl+V` attaches another
+one with the same values to the mouse, in the orientation of the original, a source with the look
+of its beam: it is placed like one of the catalog, into the system of the selection, also in
+another window. An object that the view started with can not be copied, since its constructor is
+not known.
 The tool "Script" prints the whole setup as a script, see [`export_script`](@ref). From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
 [`export_changes`](@ref) lists the added components and sources, with their constructor calls, and
 the removed ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
@@ -1344,6 +1349,8 @@ function live_view(
     add_tool!(_export_script!, gui, "Script"; icon = :script,
         tooltip = "Export the whole setup as a script")
     _connect_placement!(gui)
+    # Copying and pasting of the components of the catalog, see `_copy_selected!`
+    _connect_copy!(gui)
     # Aiming a source with the mouse, see `_start_aim!`
     _connect_aim!(gui)
     # The components snap onto the beams while they are dragged, see the `snap` kwarg

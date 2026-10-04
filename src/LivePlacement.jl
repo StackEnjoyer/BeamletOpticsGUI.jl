@@ -13,8 +13,8 @@ const _GHOST_OPACITY = 0.5
 
 A component or source of a `LiveView` that follows the mouse until a click drops it, see
 `_start_placement!`: the object or source `obj` and its `ghost`, i.e. its render handle while it is
-not part of the view (of a source: its marker); the `system` that gets it and its `origin` (see
-`_ComponentState`); its orientation
+not part of the view (of a source: its marker); the `system` that gets it, its `origin` (see
+`_ComponentState`) and further `kwargs` of its `add_component!`; its orientation
 `R0` as constructed, which it has off the beams; the `plane_point` of the plane it moves on; the
 `ignore_mouse` of the controls, which ignore all presses meanwhile; the mouse position of the
 `press` that may become the click that drops it; `snapped` is `true` while it sits on a beam. The
@@ -26,6 +26,7 @@ mutable struct _Placement
     const ghost::AbstractObjectRenderHandle
     const system::BMO.AbstractSystem
     const origin::Any
+    const kwargs::NamedTuple
     const R0::Matrix{Float64}
     const plane_point::Vector{Float64}
     const ignore_mouse::Function
@@ -201,12 +202,13 @@ _ghost!(gui::LiveView, src::_Source, _) = _live_render_source!(gui.ax, src;
     size = gui.beams.marker_size[], strokecolor = _marker_stroke(gui.layout))
 
 """
-    _start_placement!(gui, obj; origin = nothing, system = _placement_system(gui, obj))
+    _start_placement!(gui, obj; origin = nothing, system = _placement_system(gui, obj), kwargs = (;))
 
 Attaches the new component or source `obj` to the mouse in the 3D view of the `gui`: it is rendered
 in its pose (see `_ghost!`) without being part of the view and follows the mouse, see
 `_placement_pose`, until a left click drops it, which adds it to the `system` via
-[`add_component!`](@ref) with its `origin` (see `_ComponentState`). `Esc` and the spectator mode
+[`add_component!`](@ref) with its `origin` (see `_ComponentState`) and the `kwargs`, e.g. the
+`beam_kwargs` of a source. `Esc` and the spectator mode
 cancel the placement, see `_cancel_placement!`; a component that is being placed already is
 cancelled first. A drag still moves the camera, and presses on cards and on the layout keep their
 meaning, e.g. another "Place" of the catalog. The controls ignore the mouse meanwhile: nothing is
@@ -220,7 +222,7 @@ follow the mouse and is added where it is. A source is placed by its marker, hen
 the sources are shown if they were hidden.
 """
 function _start_placement!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source};
-        origin = nothing, system = _placement_system(gui, obj))
+        origin = nothing, system = _placement_system(gui, obj), kwargs::NamedTuple = (;))
     ctrl = gui.controls
     _check_placement_system(obj, system)
     _cancel_placement!(gui)
@@ -231,7 +233,7 @@ function _start_placement!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source
         return nothing
     end
     if BMO.is_static(obj)
-        add_component!(gui, obj; system, origin)
+        add_component!(gui, obj; system, origin, kwargs...)
         return nothing
     end
     fixed = _view_empty(gui)
@@ -242,7 +244,7 @@ function _start_placement!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source
     _set_pose_exact!(obj, fixed ? zeros(3) : lookat .- dot(lookat .- plane_point, n) .* n, R0)
     _show_placed_markers!(gui, obj)
     ghost = _ghost!(gui, obj, system)
-    gui.components.placement = _Placement(obj, ghost, system, origin, R0, plane_point,
+    gui.components.placement = _Placement(obj, ghost, system, origin, kwargs, R0, plane_point,
         ctrl.ignore_mouse, fixed, nothing, false)
     # The camera still gets the presses, e.g. to rotate the view
     ctrl.ignore_mouse = () -> true
@@ -283,7 +285,7 @@ of the catalog closes then, unless it is pinned, see `_close_unpinned_catalog!`.
 function _drop_placement!(gui::LiveView)
     p = _end_placement!(gui)
     isnothing(p) && return nothing
-    add_component!(gui, p.obj; system = p.system, origin = p.origin)
+    add_component!(gui, p.obj; system = p.system, origin = p.origin, p.kwargs...)
     _close_unpinned_catalog!(gui)
     return nothing
 end
