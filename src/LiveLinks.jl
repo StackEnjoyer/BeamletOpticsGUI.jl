@@ -176,6 +176,29 @@ function _link!(gui::LiveView, new::LiveView, system)
     push!(links.views, new)
     _watch_window!(new)
     _refresh_names!(new)
+    # One switch of the auto tracing for all of them: the one of `new`, which is the one of the
+    # `gui` unless a kwarg of `open_system` set it, see `_connect_links!`
+    _share_auto_trace!(new, new.trace.auto[])
+    return nothing
+end
+
+# Sets the switch of the auto tracing of the views that are linked with the `gui` like its own
+function _share_auto_trace!(gui::LiveView, active::Bool)
+    _each_linked(gui) do view
+        view.trace.auto[] == active || (view.trace.auto[] = active)
+        return nothing
+    end
+    return nothing
+end
+
+"""
+Connects what the `gui` shares with the views that are linked with it beside their objects, see
+`_link!`: the switch of the auto tracing. The linked views solve for each other, such that one of
+them that traces on its own would bring the other ones up to date although their auto tracing is
+off. Nothing for a view on its own.
+"""
+function _connect_links!(gui::LiveView)
+    push!(gui.controls.listeners, on(active -> _share_auto_trace!(gui, active), gui.trace.auto))
     return nothing
 end
 

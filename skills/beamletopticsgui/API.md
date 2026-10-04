@@ -57,8 +57,9 @@ and sources in a second window and returns its `LiveView` (in the window: the bu
 the card of the system). Both windows show the same objects and are linked: moving, adding, removing
 and editing in one of them shows in the other one, only the window that changed solves. `kwargs`
 are those of `live_view` and override what the new window takes over (layout, theme, catalog, names,
-beam colors, snap, table, settings of the controls); the selection, camera, colors, hidden objects,
-clip planes and the undo history are per window. Closing a window ends the link.
+beam colors, snap, table, settings of the controls); the switch of the auto tracing is shared by the
+linked windows, the selection, camera, colors, hidden objects, clip planes and the undo history are
+per window. Closing a window ends the link.
 
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
 `translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.

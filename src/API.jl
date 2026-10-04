@@ -459,8 +459,10 @@ moved, added, removed or edited in one window changes in the other one as well, 
 and the variables of the script stay valid. Only the window in which something changed solves the
 systems, the other one shows the result; while the beams of one window are outdated, e.g. without
 auto tracing, those of the other one are dimmed as well, and tracing in either window brings both
-up to date. Everything else is kept per window: the selection, the camera, colors, hidden objects,
-clip planes, auto tracing and the undo history, from which the entries on a component that the
+up to date. The switch of the auto tracing is one for the linked windows: switching it in one of
+them switches it in the other ones, also the `auto_trace` kwarg given here. Everything else is
+kept per window: the selection, the camera, colors, hidden objects,
+clip planes and the undo history, from which the entries on a component that the
 other window added or removed are dropped. The link ends when one of the windows is closed.
 
 A system can be opened several times, and also from the new window. It throws an `ArgumentError`

@@ -561,8 +561,9 @@ window = open_system(gui, telescope)
 The new window is a live view of the same objects, not of copies, and both windows are linked: a
 component or source that is moved, added, removed or edited in one of them changes in the other
 one as well. Only the window in which something changed solves the systems, the other one shows
-the result. The selection, the camera, colors, hidden objects, clip planes and the undo history
-are kept per window. Closing one of the windows ends the link.
+the result. The switch of the auto tracing is shared: switched in one window, it is switched in
+the other one as well. The selection, the camera, colors, hidden objects, clip planes and the undo
+history are kept per window. Closing one of the windows ends the link.
 
 ## Adding and removing components
 
