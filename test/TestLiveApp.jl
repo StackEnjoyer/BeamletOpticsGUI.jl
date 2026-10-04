@@ -116,7 +116,8 @@ const GUI = BeamletOpticsGUI
         dark.controls.selected[] = pd
         view = dark.layout.inspector.card.view
         @test view isa GUI._DetectorView && view.theme == t
-        @test all(p -> p.color[] == t.text, view.spots)
+        # (one color per spot, since `spot_colors` may color them per hit, see `detector_view!`)
+        @test all(p -> all(==(t.text), p.color[]), view.spots)
         @test (view.profile_x.color[], view.profile_z.color[]) == (t.gizmo[1], t.gizmo[3])
         close(dark)
         # the light theme keeps the colors of the compact layout

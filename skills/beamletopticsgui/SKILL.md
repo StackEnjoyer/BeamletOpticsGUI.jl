@@ -62,9 +62,9 @@ When this Skill is active:
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
 - The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for
-  views of own types. Own plots are added with `add_panel!`.
-- There are no detector panels beside the 3D view or in the dock and no `history` option: record
-  values in `on_change` and plot them in an `add_panel!` panel.
+  views of own types. Own plots are added with `add_panel!`. A detector view in a figure of your own is
+  `detector_view!` (`WIDGETS.md`); there are no detector panels beside the 3D view or in the dock, and
+  no `history` option: record values in `on_change` and plot them in an `add_panel!` panel.
 
 Do not describe these as available.
 

@@ -112,6 +112,11 @@ pins the card at start (floating next to the detector in compact, docked in the 
 app); other entries go to `BeamletOptics.intensity`, `x_min`/`x_max`/`z_min`/`z_max` set the area
 that "fit" shows. `history` is gone (`ArgumentError`): record in `on_change`, plot in `add_panel!`.
 
+The same view in a figure of your own (a second window, any layout) is `detector_view!(fig[1, 1], gui, pd;
+kind, spot_colors, ...)`, which returns a `DetectorView` with `.axis`, `.kind` and `.metrics`; it is updated
+after each solve of the `gui` and shares the options of the detector with its cards. See `WIDGETS.md` ("a
+detector view in a layout of your own").
+
 Own GUI parts go into a `gui = live_view(...)` via three functions that work with both
 `layout = :compact` and `layout = :app` (the layout places them); do not place blocks at fixed
 `gui.fig[...]` positions, those only exist in the compact layout:
