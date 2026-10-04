@@ -37,9 +37,10 @@ const GUI = BeamletOpticsGUI
     _mouse!(gui, px) = (events(gui.ax.scene).mouseposition[] = (Float64(px[1]), Float64(px[2])))
     _press!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
     _release!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
-    function _drag!(gui, obj, by; steps = 4)
+    # `at` [px] is where the object is grabbed, from its position
+    function _drag!(gui, obj, by; steps = 4, at = (0, 0))
         gui.controls.selected[] = obj
-        p0 = _pixel(gui, position(obj))
+        p0 = _pixel(gui, position(obj)) .+ Point2f(at)
         _mouse!(gui, p0)
         _press!(gui)
         foreach(k -> _mouse!(gui, p0 .+ (k / steps) .* Point2f(by)), 1:steps)
@@ -250,9 +251,13 @@ const GUI = BeamletOpticsGUI
         @test angle() ≈ π / 2 atol = 1e-9
         GUI._undo!(ctrl)
         @test angle() ≈ φ0 atol = 1e-9
-        # hidden: the angle follows the mouse
+        # hidden: the angle follows the mouse. The gizmo of the lens is shown by now, and seen from
+        # above its rings lie over the lens: it is grabbed beside them, a press on a ring drags the ring
         gui.components.table.toggle.active[] = false
-        _drag!(gui, lens, (dx, 0.0))
+        at = (0, -6)
+        _mouse!(gui, _pixel(gui, position(lens)) .+ Point2f(at))
+        @test isnothing(GUI._pick_ring(ctrl, gui.ax.scene))
+        _drag!(gui, lens, (dx, 0.0); at)
         @test isnothing(ctrl.drag_beam_angle)
         @test angle() ≈ φ0 + dx * ctrl.rotate_speed atol = 1e-9
         close(gui)
