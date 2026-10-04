@@ -1375,6 +1375,31 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             end
         end
 
+        @testset "the angle does not depend on the steps of the mouse" begin
+            # The bounding box of the mirror changes with its rotation, which would move the gizmo:
+            # the ring rests during the drag, such that many small moves give the angle of one
+            for (i, sym) in enumerate(GUI._AXES_SYMS)
+                ctrl, scene, m1 = _setup()
+                R0 = Matrix{Float64}(BMO.orientation(m1))
+                axis = only(GUI._axis_vectors(ctrl, m1, (sym,)))
+                path = [_vertex_px(ctrl, scene, i, j) for j in 4:12]
+                origin = copy(ctrl.gizmo_origin)
+                _press!(scene, path[1])
+                foreach(p -> _move!(scene, p), path[2:end])
+                @test ctrl.gizmo_origin == origin
+                R = Matrix{Float64}(BMO.orientation(m1))
+                @test R ≈ BMO.rotate3d(axis, _Δθ(4, 12)) * R0 atol = 1e-4
+                # a cursor that rests turns nothing
+                foreach(_ -> notify(events(scene).mouseposition), 1:5)
+                @test Matrix{Float64}(BMO.orientation(m1)) == R
+                _release!(scene)
+                # the gizmo follows the object again: tilted, the mirror is less high
+                sym == :x && @test ctrl.gizmo_origin[3] < origin[3] - 1e-4
+                @test length(ctrl.undo_stack) == 1
+                close(ctrl)
+            end
+        end
+
         @testset "a click on a ring does nothing, the ring under the cursor is highlighted" begin
             ctrl, scene, m1 = _setup()
             R0 = Matrix{Float64}(BMO.orientation(m1))

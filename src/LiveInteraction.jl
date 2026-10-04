@@ -360,7 +360,8 @@ end
     _RingDrag
 
 The state of a mouse drag on a ring of the gizmo in the rotate mode: the `sym` (`:x`, `:y` or `:v`)
-and the unit vector `axis` of the ring, which stay fixed during the drag, the angle `θ` [rad] of the
+and the unit vector `axis` of the ring and its `center` [m] at the press, which stay fixed during
+the drag (the gizmo rests meanwhile, see `_update_selection_box!`), the angle `θ` [rad] of the
 cursor on the plane of the ring at the last step (`nothing` if it was seen edge-on), and the
 `tangent` of the ring at the press, a unit vector in pixels, which turns the movement of the cursor
 into an angle if the plane is seen edge-on.
@@ -368,6 +369,7 @@ into an angle if the plane is seen edge-on.
 mutable struct _RingDrag
     sym::Symbol
     axis::Vector{Float64}
+    center::Vector{Float64}
     θ::Union{Nothing, Float64}
     tangent::NTuple{2, Float64}
 end
@@ -785,6 +787,11 @@ function _update_selection_box!(ctrl::KinematicController)
     v = ctrl.rotation_axis
     offset = ctrl.mode[] == :move ? 0.3 * l : 1.4 * l
     origin = Vector{Float64}(position(obj)) + (dot(abs.(v), w) / 2 + offset) * v
+    # The gizmo rests while one of its rings is dragged: the bounding box changes with the rotation
+    # of the object, and a ring that moves away under the cursor would turn the object further
+    if ctrl.dragging && !isnothing(ctrl.ring)
+        l, origin = ctrl.gizmo_size[], ctrl.ring.center
+    end
     arrow_pos, arrow_dir, label_pos, ring_pts = _gizmo(ctrl.mode[], origin, _control_axes(ctrl, obj), l)
     ctrl.gizmo_origin = origin
     ctrl.arrow_pos.val = arrow_pos
@@ -1421,7 +1428,8 @@ A click selects, a drag moves only what is already selected, every other drag ro
 - left-drag on a ring of the gizmo (rotate mode, only unlocked rings): rotates the selected object
   around the axis of that ring through its `position`, i.e. its `position` stays, groups turn
   around their `position`. The angle follows the cursor around the ring (the angle between the
-  press and the cursor on the plane of the ring); if the ring is seen almost edge-on, the movement
+  press and the cursor on the plane of the ring, which rests during the drag, also if the
+  bounding box of the object changes); if the ring is seen almost edge-on, the movement
   of the cursor along the ring is turned into an angle with `rotate_speed` instead. The ring
   within about 8 px of the cursor (the nearest one) is highlighted and is grabbed, before the
   object itself is. The drag is one entry of the undo history, a click on a ring does nothing
@@ -1621,7 +1629,8 @@ function kinematic_controls!(
                 ctrl.press_pos = ctrl.last_mouse = _px(scene)
                 ctrl.press_leaf = nothing
                 ctrl.press_kind = :pending_ring
-                ctrl.ring = _RingDrag(sym, axis, _ring_angle(scene, ctrl.gizmo_origin, axis), tangent)
+                center = copy(ctrl.gizmo_origin)
+                ctrl.ring = _RingDrag(sym, axis, center, _ring_angle(scene, center, axis), tangent)
                 return Consume(true)
             end
             local t
@@ -1705,7 +1714,11 @@ function kinematic_controls!(
             ctrl.press_kind = :none
             ctrl.press_leaf = nothing
             ctrl.press_pos = nothing
-            ctrl.ring = nothing
+            if !isnothing(ctrl.ring)
+                # the gizmo follows the object again, see `_update_selection_box!`
+                ctrl.ring = nothing
+                _update_selection_box!(ctrl)
+            end
             return Consume(consume)
         end
         return Consume(false)
@@ -1732,7 +1745,7 @@ function kinematic_controls!(
             mp = _px(scene)
             Δ = (mp[1] - ctrl.last_mouse[1], mp[2] - ctrl.last_mouse[2])
             ctrl.last_mouse = mp
-            θ = _ring_angle(scene, ctrl.gizmo_origin, ring.axis)
+            θ = _ring_angle(scene, ring.center, ring.axis)
             # The cursor follows the ring, or, if its plane is seen edge-on, moves along it
             δ = isnothing(θ) || isnothing(ring.θ) ? ctrl.rotate_speed * (Δ[1] * ring.tangent[1] + Δ[2] * ring.tangent[2]) :
                 mod(θ - ring.θ + π, 2π) - π
