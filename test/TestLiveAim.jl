@@ -217,7 +217,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "onto the holes of the table" begin
-        gui, sys, m, a, b = _fixture(; table = true)
+        gui, sys, m, a, b = _fixture(; table = true, snap = true)
         GUI._start_aim!(gui, a)
         _mouse!(gui, _pixel(gui, [0.031, 0.108, 0.0]))
         target = GUI._aim_target(gui, gui.components.aim)

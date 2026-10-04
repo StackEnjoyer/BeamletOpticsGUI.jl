@@ -205,8 +205,9 @@ end
 
 Shows or hides the optical table of the `gui`, see `_Table`. Shown for the first time, it gets its
 height (see `_table_height`) unless the `table` kwarg gave one; each time it is shown, it is
-extended to the setup as it is, see `_table_range`, and never shrinks. While it is shown, dragged
-and placed components and sources snap onto its holes, see `_table_snap`.
+extended to the setup as it is, see `_table_range`, and never shrinks. While it is shown and the
+snapping of the controls is switched on, dragged and placed components and sources snap onto its
+holes, see `_table_snap`; the status line tells if the snapping is off.
 """
 function _set_table!(gui::LiveView, shown::Bool)
     t = gui.components.table
@@ -218,6 +219,8 @@ function _set_table!(gui::LiveView, shown::Bool)
     end
     foreach(p -> p.visible[] == shown || (p.visible[] = shown), t.plots)
     gui.status.text[] = !shown ? "table hidden" : !t.snap ? "table shown" :
+                        gui.controls.snap[] == :off ?
+                        "table shown: with the snapping on (Tab), components snap onto its holes ($(_length_string(t.pitch)))" :
                         "table shown: components snap onto its holes ($(_length_string(t.pitch)))"
     return nothing
 end
@@ -250,11 +253,13 @@ _grid_snaps(_) = false
 The `snap_grid` of the controls of the `gui`: the hole of the table that the component or source
 `obj` snaps onto at the `point` [m] (see `_grid_point`), as `(; point, direction)` with the
 direction `e1` of the rows of the holes, to which its rotation snaps in steps of 45° (see
-`_snap_angle`). `nothing` while the table is hidden or does not snap, and for a clip plane.
+`_snap_angle`). `nothing` while the table is hidden or does not snap, while the snapping of the
+controls is switched off (see `_set_snap!`), which switches all snapping, and for a clip plane.
 """
 function _table_snap(gui::LiveView, obj, point)
     t = gui.components.table
     (isnothing(t) || !t.shown || !t.snap || !_grid_snaps(obj)) && return nothing
+    gui.controls.snap[] == :off && return nothing
     return (; point = _grid_point(t, point), direction = t.e1)
 end
 
@@ -270,7 +275,7 @@ function _build_table!(gui::LiveView, spec)
     t = _Table(gui.controls.rotation_axis, spec)
     gui.components.table = t
     t.toggle = add_tool!(_set_table!, gui, "Table"; icon = :table, toggle = true,
-        tooltip = "Optical table: components snap onto its holes")
+        tooltip = "Optical table: with the snapping on, components snap onto its holes")
     gui.controls.snap_grid = (obj, point) -> _table_snap(gui, obj, point)
     if spec.shown
         status = gui.status.text[]

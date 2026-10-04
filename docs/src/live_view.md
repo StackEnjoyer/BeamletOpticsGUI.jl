@@ -614,7 +614,7 @@ again; `Shift`+`Tab` goes the other way round. The chip "Snap" next to the mode 
 the 3D view names the state, and a click on it does the same as `Tab`. The keyword `snap` of
 [`live_view`](@ref) sets the start, see the section "Snapping onto beams" of its docstring. The toggle
 "Table" among the tools shows an optical table, onto whose holes dragged and placed components
-snap beside the beams, see [Aligning on the table and to the beams](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
+snap beside the beams while the snapping is switched on, see [Aligning on the table and to the beams](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
 `250 nm` or `50 µrad`, where the unit selects the move or rotate mode (`pm`, `nm`, `µm`, `mm`,
 `cm` or `m`; `nrad`, `µrad`, `mrad`, `rad` or `deg`), see
 [Component card and component menu](@ref). The step is shown in the unit of its size, e.g. `5 mm`,

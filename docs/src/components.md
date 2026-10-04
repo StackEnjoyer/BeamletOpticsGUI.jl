@@ -122,11 +122,13 @@ view started with is a comment.
 
 The toggle "Table" among the tools shows an optical table below the setup, like the keyword
 `table = true`: a grid of holes at a distance of 25 mm, perpendicular to the rotation axis of the
-controls, at the lowest point of the components. While it is shown, a component or source that is
+controls, at the lowest point of the components. While it is shown and the snapping is switched on
+(the chip "Snap" or `Tab`, the same switch as for the beams), a component or source that is
 dragged or placed with the mouse sits on the hole closest to it, at its own height, and in the
-rotate mode its optical axis snaps to the multiples of 45° to the rows of the holes. With the
-snapping onto beams switched on (`Tab`), a beam within reach comes first, such that a component is
-put on the grid beside the beams and on the beam near it. The table grows with the setup.
+rotate mode its optical axis snaps to the multiples of 45° to the rows of the holes. A beam within
+reach comes first, such that a component is put on the grid beside the beams and on the beam near
+it. With the snapping off, nothing snaps and the table is only shown. The table grows with the
+setup.
 
 ```julia
 gui = live_view(System(); table = true)

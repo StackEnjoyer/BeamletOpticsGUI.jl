@@ -113,7 +113,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "shown and hidden ($layout)" for layout in (:compact, :app)
-        gui, sys, m, lens, a = _fixture(; layout)
+        gui, sys, m, lens, a = _fixture(; layout, snap = true)
         t = gui.components.table
         scene = gui.ax.scene
         @test t isa GUI._Table && !t.shown && isempty(t.plots) && !t.toggle.active[]
@@ -126,7 +126,7 @@ const GUI = BeamletOpticsGUI
         @test t.shown && length(t.plots) == 2 && all(p -> _in_scene(gui, p), t.plots)
         @test length(scene.plots) == n_plots + 2
         @test all(p -> p.visible[], t.plots)
-        @test occursin("table shown", gui.status.text[]) && occursin("25 mm", gui.status.text[])
+        @test gui.status.text[] == "table shown: components snap onto its holes (25 mm)"
         # below the components: at their lowest point, here the edge of the mirror
         bb = GUI._visible_bbox((gui.system_handles..., gui.extras))
         @test t.height ≈ minimum(bb)[3]
@@ -148,6 +148,14 @@ const GUI = BeamletOpticsGUI
         @test GUI._table_snap(gui, a, [0.031, 0.108, 0.0]).point ≈ [0.025, 0.1, 0.0]
         plane = GUI._add_clip_plane!(gui, [0.0, 0.1, 0.0], [0.0, 1, 0]; select = false)
         @test isnothing(GUI._table_snap(gui, plane, [0.031, 0.108, 0.0]))
+        # the snapping of the controls switches the one onto the holes as well
+        GUI._set_snap!(gui.controls, false)
+        @test isnothing(GUI._table_snap(gui, lens, [0.031, 0.108, 0.0]))
+        t.toggle.active[] = false
+        t.toggle.active[] = true
+        @test occursin("with the snapping on (Tab)", gui.status.text[]) && occursin("25 mm", gui.status.text[])
+        GUI._set_snap!(gui.controls, :pose)
+        @test GUI._table_snap(gui, lens, [0.031, 0.108, 0.0]).point ≈ [0.025, 0.1, 0.0]
 
         # hidden again: the plots are kept, shown again at the same height
         h = t.height
@@ -167,7 +175,8 @@ const GUI = BeamletOpticsGUI
         @test !occursin("table", gui.status.text[])
         close(gui)
 
-        gui, sys, m, lens, a = _fixture(; layout = :app, table = (; pitch = 12.5e-3, height = -0.1, snap = false))
+        gui, sys, m, lens, a = _fixture(; layout = :app, snap = true,
+            table = (; pitch = 12.5e-3, height = -0.1, snap = false))
         t = gui.components.table
         @test t.shown && t.pitch == 12.5e-3 && t.height == -0.1 && !t.snap
         @test all(h -> h[3] ≈ -0.1f0, t.holes[])
@@ -200,7 +209,14 @@ const GUI = BeamletOpticsGUI
         gui, sys, m, lens, a = _fixture(; table = true)
         ctrl = gui.controls
         t = gui.components.table
+        # with the snapping off, as by default, the table is only shown
         @test ctrl.snap[] == :off
+        _drag!(gui, lens, _to(gui, lens, [0.062, 0.139, 0.0]))
+        P = _pose(lens)[1]
+        @test !_on_grid(P[1], t.pitch) && !_on_grid(P[2], t.pitch)
+        GUI._undo!(ctrl)
+        @test _pose(lens)[1] ≈ [0.031, 0.108, 0.0] atol = 1e-9
+        GUI._set_snap!(ctrl, true)
         _drag!(gui, lens, _to(gui, lens, [0.062, 0.139, 0.0]))
         P = _pose(lens)[1]
         @test P ≈ [0.05, 0.15, 0.0] atol = 1e-9
@@ -221,7 +237,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a table that does not snap
-        gui, sys, m, lens, a = _fixture(; table = (; snap = false))
+        gui, sys, m, lens, a = _fixture(; table = (; snap = false), snap = true)
         _drag!(gui, lens, _to(gui, lens, [0.062, 0.139, 0.0]))
         P = _pose(lens)[1]
         @test !_on_grid(P[1], 25e-3) && !_on_grid(P[2], 25e-3)
@@ -238,7 +254,8 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "rotation in steps of 45° to the rows of the holes" begin
-        gui, sys, m, lens, a = _fixture(; lens_at = [0.1, 0.1, 0.0], lens_angle = deg2rad(10), table = true)
+        gui, sys, m, lens, a = _fixture(; lens_at = [0.1, 0.1, 0.0], lens_angle = deg2rad(10), table = true,
+            snap = true)
         ctrl = gui.controls
         GUI._set_mode!(gui, :rotate)
         angle() = GUI._angle_about(ctrl.rotation_axis, x, _pose(lens)[2][:, 2])
@@ -264,7 +281,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "placed components snap onto the holes" begin
-        gui, sys, m, lens, a = _fixture(; table = true)
+        gui, sys, m, lens, a = _fixture(; table = true, snap = true)
         new = SphericalLens(0.05, -0.05, 0.01, 0.02)
         GUI._start_placement!(gui, new)
         _mouse!(gui, _pixel(gui, [0.112, 0.068, 0.0]))

@@ -1069,10 +1069,12 @@ neither do sources and clip planes.
 
 The toggle "Table" among the tools (or the `table` kwarg) shows an optical table below the setup: a
 grid of holes at a distance of 25 mm in the plane perpendicular to the rotation axis of the controls
-(z by default), at the lowest point of the components, drawn with its outline. While it is shown,
-a component or source that is dragged or placed with the mouse beside the beams sits on the hole
-closest to it, at its own height above the table; with the snapping onto beams switched on, a beam
-within its radius comes first. In the rotate mode, the angle of the optical axis to the rows of the
+(z by default), at the lowest point of the components, drawn with its outline. While it is shown
+and the snapping is switched on (the chip "Snap", `Tab` or the `snap` kwarg, which switch the
+snapping onto the beams and onto the table together), a component or source that is dragged or
+placed with the mouse beside the beams sits on the hole closest to it, at its own height above the
+table; a beam within its radius comes first. With the snapping off, nothing snaps, and the table
+is only shown. In the rotate mode, the angle of the optical axis to the rows of the
 holes snaps to the multiples of 45° within 3°, unless a beam through the component takes it. The
 table grows with the setup while it is shown and never shrinks. The keyboard steps and the clip
 planes do not snap. It is an overlay: nothing of it is traced, clipped or exported.
@@ -1088,7 +1090,7 @@ mouse, and a click turns the source about its position such that it points at th
 component under the mouse (or at the position of another source), elsewhere at the point under the
 mouse of the plane of the table through the source (the plane on which components are placed),
 such that the beam stays in that plane; the point snaps onto the holes of the table while it is
-shown. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
+shown and the snapping is switched on. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
 still moves the camera. Each of them is one step of the undo history and is solved like a move;
 locked axes (see `constraints`) stay locked.
 
@@ -1167,14 +1169,15 @@ them changes in the other one as well, and only the window in which something ch
   click on the empty background shows, see "Background card"
 - `catalog = component_catalog()`: the components that the catalog "Components" offers, a vector of
   [`CatalogEntry`](@ref); an empty vector shows no catalog, see "Adding and removing components"
-- `snap = false`: whether the components snap onto the beams while they are dragged or placed with
-  the mouse:
+- `snap = false`: whether the components snap onto the beams, and onto the holes of a table that is
+  shown, while they are dragged or placed with the mouse:
   `false`, `true` or `:position` (the position), or `:pose` (the position and the rotation), see
   "Snapping onto beams"
 - `table = false`: the optical table, see "Optical table": `true` shows it at the start, a
   `NamedTuple` sets some of `pitch = 25e-3` (the distance of its holes [m], e.g. `25.4e-3` for an
   imperial table), `height = nothing` (its coordinate along the rotation axis [m], by default the
-  lowest point of the components), `snap = true` (whether components snap onto its holes) and
+  lowest point of the components), `snap = true` (whether components snap onto its holes while the
+  snapping is switched on, see `snap`; `false` for a table that is only shown) and
   `shown = true`
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
