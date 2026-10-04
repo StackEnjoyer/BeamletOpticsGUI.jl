@@ -33,15 +33,16 @@ const GUI = BeamletOpticsGUI
         @test GUI._align_rotation(2 .* y, 3 .* [1.0, 0, 0], z) * y ≈ [1.0, 0, 0] atol = 1e-12
     end
 
-    # Beam A along +y, reflected along +x by a mirror at 45°; beam B along -y beside it
-    function _fixture(; kwargs...)
+    # Beam A along +y, reflected along +x by a mirror at 45°; beam B along -y beside it. The
+    # snapping onto beams is on, with the rotation
+    function _fixture(; snap = :pose, kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
         translate3d!(m, [0, 0.2, 0])
         sys = System([m])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         b = Beam([-0.05, 0.3, 0], [0.0, -1, 0], 1e-6)
-        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, kwargs...)
+        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, snap, kwargs...)
         set_view(gui.ax, [0.35, -0.25, 0.45], [0.0, 0.1, 0.0], [0.0, 0, 1])
         return gui, sys, m
     end
@@ -88,17 +89,17 @@ const GUI = BeamletOpticsGUI
         @test !any(o -> o === lens, sys.objects)
         ghost_plots = copy(render_plots(p.ghost))
         @test !isempty(ghost_plots) && all(q -> _in_scene(gui, q), ghost_plots)
-        # shown on its plane, i.e. the plane of the view through the source; the controls ignore
-        # the mouse
-        n = GUI._view_direction(scene)
-        @test n ≈ normalize([0.0, 0.1, 0.0] .- [0.35, -0.25, 0.45])
+        # shown on its plane, i.e. the plane of the table through the source, also in this oblique
+        # view; the controls ignore the mouse
+        @test GUI._view_direction(scene) ≈ normalize([0.0, 0.1, 0.0] .- [0.35, -0.25, 0.45])
+        n = GUI._placement_normal(scene, ctrl)
+        @test n == [0.0, 0, 1]
         @test dot(_pose(lens)[1], n) ≈ 0 atol = 1e-9
-        @test abs(_pose(lens)[1][3]) > 1e-3
         @test ctrl.ignore_mouse()
         @test occursin("placing Lens", gui.status.text[])
 
-        # 1: beside the beam, under the mouse on the plane of the view through the source, as
-        # constructed
+        # 1: beside the beam, under the mouse on the plane of the table through the source, i.e. at
+        # the height of the beam, as constructed
         _mouse!(gui, [0, 0.05, 0]; shift = 30)
         origin, dir = GUI._cursor_ray(scene)
         hit = GUI._ray_plane_intersect(origin, dir, [0.0, 0, 0], n)
@@ -166,6 +167,50 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "the snapping of the controls" begin
+        # off, as by default: the beams are ignored, the lens stays under the mouse
+        gui, sys, m = _fixture(; snap = false)
+        ctrl = gui.controls
+        scene = gui.ax.scene
+        lens = _lens()
+        R0 = _pose(lens)[2]
+        GUI._start_placement!(gui, lens)
+        p = gui.components.placement
+        under_mouse() = GUI._ray_plane_intersect(GUI._cursor_ray(scene)..., zeros(3), [0.0, 0, 1])
+        _mouse!(gui, [0.05, 0.2, 0]; dir = [1.0, 0, 0], shift = 5)
+        @test ctrl.snap[] == :off && !p.snapped
+        @test _pose(lens)[1] ≈ under_mouse() atol = 1e-9
+        @test abs(_pose(lens)[1][2] - 0.2) > 1e-4
+        @test _pose(lens)[2] ≈ R0 atol = 1e-9
+
+        # `:position`, shown at once: on the beam along +x, in the orientation as constructed
+        GUI._cycle_snap!(ctrl)
+        @test ctrl.snap[] == :position && p.snapped
+        @test _pose(lens)[1][2] ≈ 0.2 atol = 1e-6
+        @test _pose(lens)[2] ≈ R0 atol = 1e-9
+
+        # `:pose`: the optical axis along the beam
+        GUI._cycle_snap!(ctrl)
+        @test ctrl.snap[] == :pose && p.snapped
+        @test _pose(lens)[1][2] ≈ 0.2 atol = 1e-6
+        @test _pose(lens)[2][:, 2] ≈ [1.0, 0, 0] atol = 1e-9
+
+        # off again: back under the mouse, as constructed, and dropped there
+        GUI._cycle_snap!(ctrl)
+        @test ctrl.snap[] == :off && !p.snapped
+        P = under_mouse()
+        @test _pose(lens)[1] ≈ P atol = 1e-9
+        @test _pose(lens)[2] ≈ R0 atol = 1e-9
+        _press!(gui)
+        _release!(gui)
+        @test sys.objects[end] === lens
+        @test _pose(lens)[1] ≈ P atol = 1e-9
+        # without a placement, switching the snapping moves nothing
+        GUI._cycle_snap!(ctrl)
+        @test _pose(lens)[1] ≈ P atol = 1e-9
+        close(gui)
+    end
+
     @testset "a fixed plane ($layout)" for layout in (:compact, :app)
         # with a `plane_normal`, the component stays on that plane through the source
         gui, sys, m = _fixture(; layout, plane_normal = [0, 0, 1])
@@ -203,7 +248,7 @@ const GUI = BeamletOpticsGUI
         source = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 20e-3, 1e-6; num_rings = 2)
         gauss = GaussianBeamlet([0.03, 0, 0], [0.0, 1, 0], 1e-6, 1e-3)
         sys = System()
-        gui = live_view(sys => source, sys => gauss; trace_budget = Inf, throttle = false)
+        gui = live_view(sys => source, sys => gauss; trace_budget = Inf, throttle = false, snap = :pose)
         # from above, such that the beams of the source lie apart on the screen
         set_view(gui.ax, [0.0, 0.05, 0.1], [0.0, 0.05, 0.0], [0.0, 1, 0])
         central = GUI._central_beam(source)
@@ -340,8 +385,9 @@ const GUI = BeamletOpticsGUI
         @test gui.widgets.sources_toggle.active[]
         @test all(q -> _in_scene(gui, q), render_plots(p.ghost))
 
-        # it follows the mouse in the plane of the view through the first source, as constructed
-        n = GUI._view_direction(scene)
+        # it follows the mouse in the plane of the table through the first source, as constructed
+        n = GUI._placement_normal(gui.ax.scene, gui.controls)
+        @test n == [0.0, 0, 1]
         target = [0.1, 0.15, 0.05]
         _mouse!(gui, target)
         P = collect(Float64, position(src))
@@ -386,14 +432,96 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "the first source of a view" begin
-        gui = live_view(System(); trace_budget = Inf, throttle = false)
+    @testset "the plane of the placement" begin
+        gui, sys, m = _fixture()
+        scene, ctrl = gui.ax.scene, gui.controls
+        z = [0.0, 0, 1]
+        # the plane of the table in any view from above, also a flat one
+        for eye in ([0.0, 0.1, 0.5], [0.35, -0.25, 0.45], [0.5, 0.1, 0.1])
+            set_view(gui.ax, eye, [0.0, 0.1, 0.0], z)
+            @test GUI._placement_normal(scene, ctrl) == z
+        end
+        # the plane of the view where the camera looks along the table, e.g. from the front
+        for eye in ([0.0, -0.5, 0.0], [0.5, 0.1, 0.0], [0.5, -0.4, 0.05])
+            set_view(gui.ax, eye, [0.0, 0.1, 0.0], z)
+            @test GUI._placement_normal(scene, ctrl) ≈ GUI._view_direction(scene)
+        end
+        # a lens beside the beam lies at the height of the beam, in the oblique view
+        set_view(gui.ax, [0.35, -0.25, 0.45], [0.0, 0.1, 0.0], z)
+        lens = _lens()
+        GUI._start_placement!(gui, lens)
+        _mouse!(gui, [0.08, 0.05, 0]; shift = 40)
+        @test !gui.components.placement.snapped
+        @test _pose(lens)[1][3] == 0
+        GUI._cancel_placement!(gui)
+        close(gui)
+
+        # the `plane_normal` of the controls takes precedence
+        gui, sys, m = _fixture(; plane_normal = [0, 1, 0])
+        @test GUI._placement_normal(gui.ax.scene, gui.controls) == [0.0, 1, 0]
+        close(gui)
+
+        # a system without a source: the plane through the origin
+        sys = System([RoundPlanoMirror(25e-3, 5e-3)])
+        gui = live_view(sys; trace_budget = Inf, throttle = false)
+        @test !GUI._view_empty(gui)
+        GUI._start_placement!(gui, _lens())
+        @test gui.components.placement.plane_point == zeros(3) && !gui.components.placement.fixed
+        close(gui)
+    end
+
+    @testset "the first part of an empty view ($layout)" for layout in (:compact, :app)
+        gui = live_view(System(); trace_budget = Inf, throttle = false, layout, snap = true)
+        scene = gui.ax.scene
+        cam = cameracontrols(scene)
+        # the camera looks at the origin, also after Makie centered it for the window
+        looks_at_origin() = norm(cam.lookat[]) < 1e-9 &&
+                            0.2 < norm(cam.eyeposition[]) < 2 * GUI._EMPTY_VIEW_SIZE / sind(cam.fov[] / 2)
+        @test GUI._view_empty(gui) && looks_at_origin()
+        Makie.update_cam!(scene, Makie.Rect3d(Makie.Vec3d(0.5), Makie.Vec3d(0.005)))
+        @test !looks_at_origin()
+        notify(events(scene).tick)
+        @test looks_at_origin() && gui.camera.home_set
+        @test gui.camera.home[2] ≈ zeros(3) atol = 1e-9
+
+        # the first source sits at the origin whatever the mouse does, and is dropped there
         src = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
         GUI._start_placement!(gui, src)
-        # without a source, the plane goes through the point the camera looks at
-        @test gui.components.placement.plane_point ≈ collect(Float64, cameracontrols(gui.ax.scene).lookat[])
+        p = gui.components.placement
+        @test p.fixed && p.plane_point == zeros(3)
+        @test occursin("placing Beam at the origin", gui.status.text[])
+        for point in ([0.05, 0.02, 0.0], [-0.1, 0.1, 0.03])
+            _mouse!(gui, point)
+            @test collect(Float64, position(src)) == zeros(3)
+        end
         GUI._drop_placement!(gui)
         @test only(gui.pairs).second === src
+        @test collect(Float64, position(src)) == zeros(3) && BMO.direction(src) == [0.0, 1, 0]
+        @test !GUI._view_empty(gui)
+
+        # the next part follows the mouse, and snaps onto the beam, which is the y-axis
+        lens = _lens()
+        GUI._start_placement!(gui, lens)
+        p = gui.components.placement
+        @test !p.fixed && !occursin("origin", gui.status.text[])
+        _mouse!(gui, [0, 0.1, 0]; shift = 5)
+        @test p.snapped
+        P = _pose(lens)[1]
+        @test P[1] == 0 && P[3] == 0
+        @test P[2] ≈ 0.1 atol = 5e-3
+        _mouse!(gui, [0.05, 0.1, 0]; shift = 40)
+        @test !p.snapped && _pose(lens)[1][3] == 0
+        GUI._drop_placement!(gui)
+        close(gui)
+
+        # a component is the first part as well
+        gui = live_view(System(); trace_budget = Inf, throttle = false, layout)
+        lens = _lens()
+        GUI._start_placement!(gui, lens)
+        @test gui.components.placement.fixed
+        _mouse!(gui, [0.05, 0.02, 0.0])
+        GUI._drop_placement!(gui)
+        @test _pose(lens)[1] == zeros(3)
         close(gui)
     end
 

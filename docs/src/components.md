@@ -45,9 +45,9 @@ remove_component!(gui, laser)
 A source is traced through one system of the view (keyword `system`, also a `StaticSystem`) and
 gets a marker, with which it is selected and moved like the sources the view started with. It is
 drawn in the color of its wavelength: violet to red between 380 nm and 780 nm, a dark violet for
-ultraviolet and a dark red for infrared light. The sources that the view started with keep the
-color of the layout. The keyword `beam_kwargs` takes the keywords of its rendering, e.g.
-`(; render_every = 10)` or another `color`.
+ultraviolet and a dark red for infrared light, like the sources that the view started with. The
+keyword `beam_kwargs` takes the keywords of its rendering, e.g. `(; render_every = 10)` or another
+`color`.
 
 ## The catalog and the placement
 
@@ -91,10 +91,15 @@ with several systems it is a menu, which chooses another system; the choice hold
 object is selected, which sets the system again. A source can be traced through any system, a
 component is added to a `System` only, hence the menu lists the systems that can get the chosen
 entry. "Place" attaches the component
-to the mouse, which moves it in the plane of the view through the first source of its system: seen
-from above it lies at the height of the beam, seen from the front at the depth of the source. A
-left click drops it, `Esc` cancels. Within 12 px of a rendered beam, it snaps onto the beam; of a beam group
-only onto its central beam, of a Gaussian beamlet onto its chief ray. The component that is being
+to the mouse, which moves it in the plane of the table (perpendicular to the rotation axis) through
+the first source of its system: beside the beams it lies at the height of the beam, also in an
+oblique view; seen from the front or the side, it moves in the plane of the view at the depth of
+the source. The first component or source of an empty view is placed at the origin, where the
+camera of an empty view looks: it does not follow the mouse. A
+left click drops it, `Esc` cancels. With the snapping onto beams switched on (the chip "Snap" or
+the key `Tab`, also while placing; off by default, see the keyword `snap`), it snaps onto a
+rendered beam within 12 px; of a beam group only onto its central beam, of a Gaussian beamlet onto
+its chief ray. With "position + rotation" its optical axis also turns along the beam. The component that is being
 placed is not traced until it is dropped. See the section "Adding and removing components" of
 [`live_view`](@ref) for the details of the placement.
 
@@ -113,13 +118,73 @@ BeamletOpticsGUI. An added source is its constructor at the origin along +y, the
 `translate_to3d!` to its pose and the `solve_system!` that traces it; a removed source that the
 view started with is a comment.
 
+## Aligning on the table and to the beams
+
+The toggle "Table" among the tools shows an optical table below the setup, like the keyword
+`table = true`: a grid of holes at a distance of 25 mm, perpendicular to the rotation axis of the
+controls, at the lowest point of the components. While it is shown, a component or source that is
+dragged or placed with the mouse sits on the hole closest to it, at its own height, and in the
+rotate mode its optical axis snaps to the multiples of 45° to the rows of the holes. With the
+snapping onto beams switched on (`Tab`), a beam within reach comes first, such that a component is
+put on the grid beside the beams and on the beam near it. The table grows with the setup.
+
+```julia
+gui = live_view(System(); table = true)
+# an imperial table 50 mm below the beams, shown without snapping
+gui = live_view(system, beam; table = (; pitch = 25.4e-3, height = -50e-3, snap = false))
+```
+
+The card of a component aligns it to the nearest beam, i.e. the central beam of a source as far as
+it does not depend on the component: "onto beam" moves it to the point of the beam closest to it,
+"face beam" turns its optical axis along the beam, e.g. a lens straight in the beam or a mirror
+that sends it back. The card of a source has "aim": a dashed line then follows the mouse, and a
+click turns the source such that it points at the center of the component under the mouse, or at
+the point of the plane of the mouse elsewhere, which is a hole of the table while it is shown.
+`Esc` cancels it. Each of these is one step of the undo history.
+
+## Changing, undoing and the whole script
+
+A component or source that was placed from the catalog has the page "Edit" on its card: the form
+of its entry with the values it was built with. "Apply", or Enter in a box, builds it again with the
+new values in the same pose, in the same system and under the same label, e.g. a lens with other
+radii or a source with another wavelength; a source that is drawn in the color of its wavelength
+follows the new wavelength. An invalid input changes nothing and is reported in the status line.
+Objects that the view started with have no page "Edit": the view does not know how they were
+constructed.
+
+`Ctrl+C` copies the selected component or source from the catalog, `Ctrl+V` builds it again with
+the same values and attaches it to the mouse like "Place": in the orientation of the original, a
+source also with the look of its beam (color, opacity, line width). A click drops it into the system
+of the selection, else the first one, `Esc` cancels, and each further `Ctrl+V` pastes another one,
+also in another window. Objects that the view started with can not be copied, for the same reason;
+the status line says so.
+
+Adding, removing and changing are part of the undo history of the controls, together with the
+moves: `Ctrl+Z` takes the last step back, `Ctrl+Y` (or `Ctrl+Shift+Z`) does it again, e.g. a removed
+component comes back in its pose, with its label. How a source is drawn (color, opacity, line
+width, on and off) is not part of the history.
+
+The tool "Script" next to "Export" prints the whole setup as a script and copies it to the
+clipboard, like [`export_script`](@ref): the constructors and poses of all components and sources,
+the systems, the `solve_system!` calls and the `live_view` call. A view that was built from an
+empty `System()` with the catalog gives a script that runs as it is. An object that the view
+started with is a comment with its type and its pose, since its constructor is not known; fill it
+in there.
+
+```julia
+gui = live_view(System())
+# place sources and components from the catalog, then
+code = export_script(gui)
+```
+
 Limits of this version:
 
-- Adding and removing is not part of the undo history.
 - A `StaticSystem` can not be changed: a view without a `System` only offers the sources of the
   catalog. Objects inside a group can not be added or removed, remove the group instead.
-- The parameters of a source are fixed once it is placed, except its number of rays, which the
-  slider "rays" of its card changes. To change e.g. its wavelength, remove it and place a new one.
+- Only components and sources from the catalog can be changed on the page "Edit" and are written
+  with their constructors by [`export_script`](@ref).
+- The script does not contain how the sources are drawn, the extras, the clip planes and the other
+  keywords of `live_view`.
 
 ## Own catalog entries
 
@@ -131,7 +196,9 @@ groups or a new one; its `icon` is the name of an icon of the live view, as for
 [`add_tool!`](@ref), or an own `Makie.BezierPath`, and the icon of its group without one. An entry
 with `source = true` is a source: its constructor gets the position `[0, 0, 0]` and the direction
 `[0, 1, 0]` before the values of its parameters and returns a beam or a beam group; a
-`CatalogParam` with `integer = true` passes an `Int`, e.g. a number of rays. A package
+`CatalogParam` with `integer = true` passes an `Int`, e.g. a number of rays, and one with `presets`
+(`["532 nm" => 532e-9, ...]`) has a menu of these values next to its box, like the laser lines at
+the wavelength of the built-in sources. A package
 with own components adds its entries to [`component_catalog`](@ref) and its glasses to
 [`catalog_glasses`](@ref), e.g. in the `__init__` of its package extension on BeamletOpticsGUI (see
 [Cards and widgets](@ref)); a single view gets other entries via the keyword `catalog`:
@@ -161,4 +228,5 @@ CatalogParam
 CatalogGlass
 component_catalog
 catalog_glasses
+export_script
 ```

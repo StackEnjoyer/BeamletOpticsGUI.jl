@@ -24,7 +24,9 @@ const GUI = BeamletOpticsGUI
             :linear_polarizer,
             # the sources of the component catalog
             :beam, :gaussian_beam, :collimated_source, :disc_source, :point_source,
-            :uniform_point_source, :astigmatic_beam)
+            :uniform_point_source, :astigmatic_beam,
+            # the tool that exports the whole setup, see `export_script`, and the optical table
+            :script, :table)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)

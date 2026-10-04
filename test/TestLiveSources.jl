@@ -191,14 +191,14 @@ const GUI = BeamletOpticsGUI
         # never too dark to be seen
         @test all(c -> max(c.r, c.g, c.b) > 0.5, cs)
 
-        # an added source has the color of its wavelength, the sources of the start the color of
-        # the layout
+        # added sources and the sources of the start have the color of their wavelength
         first_beam = _beam(0.2)
         gui = _live_view(System([_mirror()]) => first_beam)
         _colors(src) = [Makie.to_color(p.color[]) for p in
                         GUI._beam_plots(gui.beam_handles[findfirst(p -> p.second === src, gui.pairs)])]
         _is(c, ref) = Makie.RGBf(c) ≈ Makie.RGBf(ref)
-        @test all(c -> _is(c, gui.layout.theme.rays), _colors(first_beam))
+        @test all(c -> _is(c, color(632.8e-9)), _colors(first_beam))
+        @test GUI._color_preset(gui, first_beam) == "wavelength"
         green = Beam([0.0, 0, 0], [0.0, 1, 0], 532e-9)
         add_component!(gui, green)
         @test !isempty(_colors(green)) && all(c -> _is(c, color(532e-9)), _colors(green))
@@ -381,7 +381,7 @@ const GUI = BeamletOpticsGUI
 
         # "remove" of the card of a source: a row below the rows of `card_rows`
         @test length(GUI._card_rows(src)) == length(card_rows(src)) + 1
-        @test only(last(GUI._card_rows(src)).cells).name === :remove
+        @test last(last(GUI._card_rows(src)).cells).name === :remove
         GUI._update_selection_box!(gui.controls)
         GUI._update_cards!(gui)
         GUI._update_inspector!(gui)

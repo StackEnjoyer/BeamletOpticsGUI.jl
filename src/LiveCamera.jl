@@ -131,6 +131,32 @@ function _scene_extent(handles)
     return isnothing(bb) ? 0.125 : Float64(maximum(GeometryBasics.widths(bb)))
 end
 
+# The size [m] of the part of an empty view around the origin that the camera shows
+const _EMPTY_VIEW_SIZE = 0.4
+
+"""Whether the `gui` shows nothing yet: no object of a system, no extra and no source."""
+_view_empty(gui::LiveView) = isempty(gui.pairs) &&
+    all(h -> isempty(render_children(h)), (gui.system_handles..., gui.extras))
+
+"""
+    _show_origin!(gui)
+
+Points the camera of an empty view (see `_view_empty`) at the origin, from its direction and at the
+distance at which `_EMPTY_VIEW_SIZE` fills the view; nothing for a view with content. Makie centers
+the camera on the content of the scene when the window is shown, which without content is no place
+of the setup, whereas the first component or source is placed at the origin, see `_start_placement!`.
+"""
+function _show_origin!(gui::LiveView)
+    _view_empty(gui) || return nothing
+    cam = cameracontrols(gui.ax.scene)
+    eye, lookat, up = _current_view(gui)
+    o = norm(eye .- lookat) > 0 ? normalize(eye .- lookat) : normalize([1.0, -1.0, 1.0])
+    d = _EMPTY_VIEW_SIZE
+    dist = cam.settings.projectiontype[] == Makie.Perspective ? (d / 2) / sind(cam.fov[] / 2) : d / 2
+    set_view(gui.ax, dist .* o, zeros(3), up)
+    return nothing
+end
+
 """
     _zoom_to_selection!(gui)
 
@@ -239,6 +265,8 @@ function _connect_camera!(gui::LiveView)
     push!(listeners, on(events(scene).tick) do tick
         # The home view is the view when the window is shown, e.g. after `set_view`
         if !gui.camera.home_set
+            # An empty view has nothing that Makie could center the camera on
+            _show_origin!(gui)
             gui.camera.home = _current_view(gui)
             gui.camera.home_set = true
             _keep_camera!(gui)

@@ -38,7 +38,8 @@ When this Skill is active:
 1) Build and check the system without the GUI first (the `beamletoptics` skill): solve it, look at the
    numbers, render it statically with `render!`.
 2) Open the window: `gui = live_view(system, beam); display(gui)`. Several systems and beams:
-   `live_view(sys1 => beam1, sys2 => beam2)`. Pass `labels`, `detectors`, `extras` (housings),
+   `live_view(sys1 => beam1, sys2 => beam2)`; `open_system(gui, sys2)` opens one of them in a second,
+   linked window. Pass `labels`, `detectors`, `extras` (housings),
    `constraints`, `on_change` as needed (`API.md`).
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
    controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added
@@ -50,11 +51,17 @@ When this Skill is active:
 ## Limits of the current version
 
 - Extras are fixed when the view starts (they can be hidden). Components of a `System` and sources can
-  be added and removed at runtime, with these limits: adding and removing is not part of the undo
-  history; the objects of a `StaticSystem` and objects
+  be added and removed at runtime, with these limits: the objects of a `StaticSystem` and objects
   inside a group cannot be added or removed; a component or source that is being placed is not traced until it is
-  dropped; the parameters of a source of the catalog (wavelength, diameter) are fixed once it is placed,
-  except the number of rays on its card.
+  dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card)
+  and are written with their constructors by `export_script`. Adding, removing and changing are undone with
+  `Ctrl+Z` and redone with `Ctrl+Y`. `Ctrl+C` and `Ctrl+V` copy and paste the selected component or
+  source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
+  the object again and call `add_component!`.
+- Aligning is done in the window only: the buttons "onto beam" and "face beam" of the card of a
+  component, "aim" of the card of a source and the optical table (`table = true`, a grid of holes that
+  dragged components snap onto). There is no public function for them; from code, set the poses with
+  BeamletOptics (`translate_to3d!`, `rotate3d!`) and call `retrace!`.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
 - The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for

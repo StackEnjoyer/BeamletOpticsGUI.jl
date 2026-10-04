@@ -249,8 +249,10 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
             "Point source", "Uniform point source", "Astigmatic Gaussian beamlet"]
         @test _active(widget) == ["Beam"] && widget.entry_label.text[] == "Beam"
         @test GUI._catalog_entry(widget) === first(entries) && first(entries).source
-        @test _texts(w.boxes) == ["632.8"] && isempty(w.menus)
+        @test _texts(w.boxes) == ["632.8"]
         @test "wavelength" in w.labels && "nm" in w.labels
+        # ... with the menu of the laser lines, on the one of the default
+        @test only(w.menus).selection[] == "632.8 nm" && last(only(w.menus).options[]) == "custom"
         # whole numbers and an angle in degrees
         w = _choose!(gui, "Point source")
         @test _texts(w.boxes) == ["5", "632.8", "10"]
@@ -397,6 +399,145 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
             close(gui)
         finally
             filter!(g -> g !== own, catalog_glasses())
+        end
+    end
+
+    @testset "presets ($layout)" for layout in (:compact, :app)
+        sizes = ["half inch" => 12.7e-3, "inch" => 25.4e-3]
+        width = CatalogParam("width", 10e-3; unit = "mm", scale = 1e-3, presets = sizes)
+        @test width.presets isa Vector{Pair{String, Float64}} && width.presets == sizes
+        @test isempty(width_param().presets)
+        @test CatalogParam("n", 2; integer = true, presets = ("two" => 2, "four" => 4)).presets ==
+              ["two" => 2.0, "four" => 4.0]
+        # the preset that a text of the box holds
+        @test GUI._catalog_preset(width, "12.7") == 1 && GUI._catalog_preset(width, " 25.40 ") == 2
+        @test all(s -> isnothing(GUI._catalog_preset(width, s)), ("10", "", "abc", "12.71"))
+        default = CatalogParam("width", 25.4e-3; unit = "mm", scale = 1e-3, presets = sizes)
+        @test GUI._catalog_preset(default, "") == 2
+
+        entry = CatalogEntry("Block", CatalogBlock; group = "Blocks",
+            params = [width, CatalogParam("scale", 2.0; keyword = :scale)])
+        none = CatalogEntry("Plain block", checked_block; group = "Blocks")
+        gui, sys, m = _fixture(; layout, catalog = [entry, none])
+        win = _window(gui)
+        # the window lays the menu out right of the unit, the dock below the box
+        docks = layout == :app
+        docks || GUI._show_catalog!(gui, true)
+        w = _widgets(gui)
+        widget = w.widget
+        @test widget.style.constant_inline == !docks
+        bbox(x) = Rect2f(x.layoutobservables.computedbbox[])
+        # a menu for the parameter with presets only: their names and "custom", which is shown
+        # for the default, which is none of them
+        menu = only(w.menus)
+        @test widget.menus == [menu] && menu in gui.custom.menus
+        @test menu.options[] == ["half inch", "inch", "custom"]
+        @test menu.selection[] == "custom"
+        @test _texts(w.boxes) == ["10", "2"] && widget.inputs[1] === w.boxes[1]
+        _tick!(gui)
+        box, unit = bbox(w.boxes[1]), bbox(only(filter(b -> b isa Label && b.text[] == "mm",
+            GUI._blocks!(Any[], widget.layout))))
+        if docks
+            # in a row of its own below the box, inside the sidebar
+            @test maximum(bbox(menu))[2] < minimum(box)[2] + 1
+            @test minimum(bbox(menu))[1] ≈ minimum(box)[1] atol = 1
+            @test minimum(bbox(menu))[2] > maximum(bbox(w.boxes[2]))[2] - 1
+            side = bbox(gui.layout.left.grid)
+            @test maximum(bbox(menu))[1] <= maximum(side)[1] - GUI._SIDEBAR_PADDING + 0.5
+        else
+            # in the row of the box, right of its unit, inside the window
+            @test minimum(bbox(menu))[1] > maximum(unit)[1] - 1
+            @test minimum(bbox(menu))[2] < maximum(box)[2] && maximum(bbox(menu))[2] > minimum(box)[2]
+            @test maximum(bbox(menu))[1] < maximum(GUI._catalog_rect(win))[1]
+        end
+
+        # a preset sets the box, in its unit
+        menu.i_selected[] = 2
+        @test _texts(w.boxes) == ["25.4", "2"]
+        @test GUI._catalog_strings(widget) == ["25.4", "2"]
+        # "Place" takes the value of the box
+        w.place.clicks[] += 1
+        @test GUI._placing(gui)
+        @test gui.components.placement.origin.code == "CatalogBlock(0.0254; scale = 2.0)"
+        GUI._end_placement!(gui)
+        menu.i_selected[] = 1
+        @test _texts(w.boxes) == ["12.7", "2"]
+        # another input: "custom", also for an invalid one; the value of a preset: that preset
+        w.boxes[1].displayed_string[] = "13"
+        @test menu.selection[] == "custom" && _texts(w.boxes) == ["13", "2"]
+        w.place.clicks[] += 1
+        @test gui.components.placement.origin.code == "CatalogBlock(0.013; scale = 2.0)"
+        GUI._end_placement!(gui)
+        w.boxes[1].displayed_string[] = "25.40"
+        @test menu.selection[] == "inch" && _texts(w.boxes) == ["25.40", "2"]
+        w.boxes[1].displayed_string[] = "abc"
+        @test menu.selection[] == "custom"
+        w.boxes[1].displayed_string[] = "12.7"
+        @test menu.selection[] == "half inch"
+        # "custom" leaves the box as it is
+        menu.i_selected[] = 3
+        @test menu.selection[] == "custom" && _texts(w.boxes) == ["12.7", "2"]
+        # the other box does not change the menu
+        menu.i_selected[] = 2
+        w.boxes[2].displayed_string[] = "3"
+        @test menu.selection[] == "inch" && GUI._catalog_strings(widget) == ["25.4", "3"]
+
+        if docks
+            # the window shows what the dock shows: the box and, with it, the menu
+            w.boxes[1].displayed_string[] = "12.7"
+            win.dock.float_button.clicks[] += 1
+            @test GUI._catalog_widget(win) === win.widget && win.widget.style.constant_inline
+            @test GUI._catalog_strings(win.widget) == ["12.7", "3"]
+            @test only(win.widget.menus).selection[] == "half inch"
+            only(win.widget.menus).i_selected[] = 2
+            @test GUI._catalog_strings(win.widget) == ["25.4", "3"]
+            win.dock_button.clicks[] += 1
+            @test GUI._catalog_widget(win) === widget
+            @test GUI._catalog_strings(widget) == ["25.4", "3"]
+            w = _widgets(gui)
+            menu = only(w.menus)
+            @test menu.selection[] == "inch"
+        end
+
+        # another entry: the menu is gone and no longer takes the keyboard, its listeners are
+        # released; back: a new one, with the defaults
+        n = length(gui.controls.listeners)
+        menu.is_open[] = true
+        @test GUI._typing(gui)
+        w = _choose!(gui, "Plain block")
+        @test isempty(w.menus) && isempty(widget.menus) && !(menu in gui.custom.menus)
+        @test !menu.is_open[] && !GUI._typing(gui)
+        @test length(gui.controls.listeners) < n
+        w = _choose!(gui, "Block")
+        @test only(w.menus) !== menu && only(w.menus).selection[] == "custom"
+        @test _texts(w.boxes) == ["10", "2"]
+        @test length(gui.controls.listeners) <= n
+        @test sys.objects == [m]
+        close(gui)
+
+        # two columns: the menu is in the column of its number, in the row of its box, and the
+        # window is as wide as both
+        layout == :compact && for at in (2, 5)
+            others = [CatalogParam("p$k", 1.0) for k in 1:5]
+            many = CatalogEntry("Block", CatalogBlock; group = "Blocks",
+                params = [others[1:(at - 1)]; width; others[at:end]])
+            gui, _ = _fixture(; layout, catalog = [many])
+            GUI._show_catalog!(gui, true)
+            _tick!(gui)
+            GUI._arrange_catalog!(gui)
+            w = _widgets(gui)
+            inputs = w.widget.inputs
+            @test length(w.boxes) == 6 && w.widget.style.two_columns <= 6
+            tb = inputs[at]
+            menu = only(w.menus)
+            @test minimum(bbox(menu))[1] > maximum(bbox(tb))[1]
+            @test minimum(bbox(menu))[2] < maximum(bbox(tb))[2] && maximum(bbox(menu))[2] > minimum(bbox(tb))[2]
+            # the second column is right of the first one and of its menu
+            @test minimum(bbox(inputs[4]))[1] > maximum(bbox(inputs[1]))[1]
+            @test at == 5 || minimum(bbox(inputs[4]))[1] > maximum(bbox(menu))[1]
+            @test maximum(bbox(menu))[1] < maximum(GUI._catalog_rect(_window(gui)))[1]
+            @test maximum(bbox(inputs[6]))[1] < maximum(GUI._catalog_rect(_window(gui)))[1]
+            close(gui)
         end
     end
 

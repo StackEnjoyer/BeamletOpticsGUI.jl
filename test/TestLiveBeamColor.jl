@@ -58,10 +58,12 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(System([m]) => beam, System([m]) => group, System([m]) => gauss; layout)
         layout_hex = _hex(gui.layout.theme.rays)
 
-        # the sources of the start have the color of the layout, a beamlet the one of BeamletOptics
-        @test _plot_colors(gui, beam) == [layout_hex] && GUI._color_preset(gui, beam) == "layout"
-        @test _plot_colors(gui, group) == [layout_hex]
-        @test GUI._color_preset(gui, gauss) == "custom"
+        # the sources of the start have the color of their wavelength
+        @test _plot_colors(gui, beam) == [_hex(GUI._wavelength_color(632.8e-9))]
+        @test GUI._color_preset(gui, beam) == "wavelength"
+        @test _plot_colors(gui, group) == [_hex(GUI._wavelength_color(532e-9))]
+        @test GUI._color_preset(gui, group) == "wavelength"
+        @test GUI._color_preset(gui, gauss) == "wavelength"
         @test GUI._beam_opacity(gui, beam) == 1
 
         # a color: of all of its plots and of its kwargs
@@ -122,6 +124,14 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "beam_kwargs color wins over the wavelength" begin
+        beam = _beam()
+        gui = _live_view(System([_mirror()]) => beam; beam_kwargs = Dict(beam => (; color = :orange)))
+        @test _plot_colors(gui, beam) == [_hex(:orange)]
+        @test GUI._color_preset(gui, beam) == "custom"
+        close(gui)
+    end
+
     @testset "outdated beams stay dimmed" begin
         m = _mirror()
         beam = _beam()
@@ -174,14 +184,14 @@ const GUI = BeamletOpticsGUI
         box = GUI._card_widget(card, :color_hex)
         slider = GUI._card_widget(card, :beam_opacity)
         @test menu isa Menu && box isa Textbox && slider isa Slider
-        @test menu.selection[] == "layout"
-        @test box.displayed_string[] == _hex(gui.layout.theme.rays)
+        @test menu.selection[] == "wavelength"
+        @test box.displayed_string[] == _hex(GUI._wavelength_color(532e-9))
         @test slider.value[] == 100
 
         # the menu sets the color and the box shows it
-        menu.i_selected[] = findfirst(==("wavelength"), menu.options[])
-        @test _plot_colors(gui, beam) == [_hex(GUI._wavelength_color(532e-9))]
-        @test box.displayed_string[] == _hex(GUI._wavelength_color(532e-9))
+        menu.i_selected[] = findfirst(==("layout"), menu.options[])
+        @test _plot_colors(gui, beam) == [_hex(gui.layout.theme.rays)]
+        @test box.displayed_string[] == _hex(gui.layout.theme.rays)
         # the box sets the color and the menu shows "custom"
         box.stored_string[] = "#102030"
         @test _plot_colors(gui, beam) == ["#102030"]
@@ -190,6 +200,20 @@ const GUI = BeamletOpticsGUI
         Makie.set_close_to!(slider, 30)
         @test GUI._beam_opacity(gui, beam) ≈ 0.3
         @test GUI._card_widget(card, :beam_opacity_value).text[] == "30 %"
+        # the slider of the line width sets it, without a solve, and it survives a new length
+        @test :beam_linewidth in names && :beam_linewidth_value in names
+        lw = GUI._card_widget(card, :beam_linewidth)
+        @test lw isa Slider
+        gui.trace.stale = false
+        Makie.set_close_to!(lw, 3.0)
+        @test GUI._beam_linewidth(gui, beam) ≈ 3.0
+        @test gui.beams.kwargs[beam].linewidth ≈ 3.0
+        @test !isempty(GUI._linewidth_plots(gui, beam))
+        @test all(p -> p.linewidth[] ≈ 3.0, GUI._linewidth_plots(gui, beam))
+        @test GUI._card_widget(card, :beam_linewidth_value).text[] == "3.0"
+        GUI._set_flen!(gui, beam, 0.06)
+        @test all(p -> p.linewidth[] ≈ 3.0, GUI._linewidth_plots(gui, beam))
+        @test !gui.trace.stale
 
         # keys go to the search of the open menu, presses to its options
         @test !GUI._typing(gui)

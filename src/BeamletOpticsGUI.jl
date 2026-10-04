@@ -15,10 +15,10 @@ import BeamletOptics: live_render!, update_render!, remove_render!, pick_object,
 
 const BMO = BeamletOptics
 
-export live_view, kinematic_controls!, view_cube!, export_changes, card_rows, pose_card_rows,
-       beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!,
-       add_controls!, add_tool!, retrace!, add_component!, remove_component!, CatalogEntry,
-       CatalogParam, CatalogGlass, component_catalog, catalog_glasses
+export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
+       pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
+       add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
+       CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -51,6 +51,7 @@ include("LiveCardPages.jl")
 include("LiveCard.jl")
 include("LiveView.jl")
 include("LiveLayout.jl")
+include("LiveScroll.jl")
 include("LiveDetectors.jl")
 include("LiveTrace.jl")
 include("LiveBeamSwitch.jl")
@@ -80,12 +81,18 @@ include("LiveCustom.jl")
 include("LiveComponents.jl")
 include("LiveSources.jl")
 include("LiveBeamColor.jl")
+include("LiveEdit.jl")
 include("LivePlacement.jl")
 include("LiveSnap.jl")
+include("LiveTable.jl")
+include("LiveAlign.jl")
+include("LiveAim.jl")
+include("LiveLinks.jl")
 include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")
 include("LiveCatalogWindow.jl")
+include("LiveCopy.jl")
 # agent skill of the package
 include("AgentSkill.jl")
 # precompiles the live view and the interaction call paths, must come last

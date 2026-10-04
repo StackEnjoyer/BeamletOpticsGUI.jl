@@ -75,6 +75,38 @@ _modifier_name(btns) = join(string.(btns), "/")
 const _CTRL_OR_CMD_KEYS = (Keyboard.left_control, Keyboard.right_control,
     Keyboard.left_super, Keyboard.right_super)
 
+"""
+The name of the `key` in the keyboard layout of the user, e.g. `"z"`, or `nothing` if the backend
+does not tell it: only GLMakie does, via GLFW, for the keys that print a character.
+"""
+function _key_letter(key::Keyboard.Button)
+    backend = Makie.current_backend()
+    (ismissing(backend) || !isdefined(backend, :GLFW)) && return nothing
+    glfw = backend.GLFW
+    try
+        return glfw.GetKeyName(glfw.Key(Int(key)), 0)
+    catch
+        # a key that GLFW does not know, or GLFW is not initialized
+        return nothing
+    end
+end
+
+"""
+    _layout_key(key::Keyboard.Button, name = _key_letter(key)) -> Keyboard.Button
+
+The key of the letter that the pressed `key` types in the keyboard layout of the user, where it has
+the `name`. Makie names a key by its place on a US keyboard, hence the key labelled "Z" of a German
+keyboard is `Keyboard.y`: a shortcut that is known by its letter, like `Ctrl`+`z`, compares the
+result of this function instead of the key of the event. Returns the `key` itself if it types no
+letter of `a` to `z`, or if the layout is not known, see `_key_letter`.
+"""
+function _layout_key(key::Keyboard.Button, name = _key_letter(key))
+    (name isa AbstractString && length(name) == 1) || return key
+    c = lowercase(only(name))
+    'a' <= c <= 'z' || return key
+    return Keyboard.Button(Int(Keyboard.a) + (c - 'a'))
+end
+
 _px(scene) = Tuple(Float64.(mouseposition_px(scene)))
 
 _other_mode(mode::Symbol) = mode == :move ? :rotate : :move
@@ -350,6 +382,20 @@ struct _HistoryEntry
     R1::Matrix{Float64}
 end
 
+"""
+An entry of the undo history that is no change of a pose: an action on `obj`, e.g. adding it to or
+removing it from the [`live_view`](@ref), which `undo()` takes back and `redo()` does again, see
+`_push_action!`.
+"""
+struct _ActionEntry
+    obj::Any
+    undo::Function
+    redo::Function
+end
+
+# The entries of the undo history, in the order of the gestures and actions
+const _AnyHistoryEntry = Union{_HistoryEntry, _ActionEntry}
+
 # Last key step, see `_record_key_step!`
 const _KeyStepInfo = NamedTuple{(:obj, :key, :time), Tuple{_LiveMovable, Keyboard.Button, Float64}}
 
@@ -397,8 +443,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # pose of the selected object at the start of the current drag, for the undo history
     drag_start::Union{Nothing, Tuple{Point3{Float64}, Matrix{Float64}}}
     # undo/redo history, one entry per gesture, see `_push_history!` / `_record_key_step!`
-    undo_stack::Vector{_HistoryEntry}
-    redo_stack::Vector{_HistoryEntry}
+    undo_stack::Vector{_AnyHistoryEntry}
+    redo_stack::Vector{_AnyHistoryEntry}
     last_key_step::Union{Nothing, _KeyStepInfo}
     # selection box and gizmo of the keyboard controls
     box_obs::Observable{Vector{Point3f}}
@@ -447,6 +493,10 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # onto when it is dragged to the `point` [m], with the direction of the beam there. Without
     # beams nothing snaps; `live_view` knows them, see `_snap_beam`
     snap_beam::Function
+    # `(obj, point) -> (; point, direction)`, or `nothing`: the point of a grid that `obj` snaps onto
+    # when it is dragged to the `point` [m] beside the beams, with a direction of the grid, to which
+    # its rotation snaps; `live_view` has the holes of its table, see `_table_snap`
+    snap_grid::Function
     # number of drags so far, such that `snap_beam` can tell a new drag
     drag_count::Int
     # rotation of the current drag in the rotate mode: the angle by the mouse and the angle that is
@@ -874,15 +924,18 @@ end
 """
 Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
 and for the rotate mode the angle of the optical axis of `obj` to the beam through its position,
-see `_snap_angle`.
+see `_snap_angle`; without such a beam, or with the snapping onto beams switched off, its angle to
+the direction of the grid at its position (see `ctrl.snap_grid`), if there is one.
 """
 function _start_snap!(ctrl::KinematicController, obj)
     ctrl.drag_count += 1
     ctrl.drag_angle = ctrl.drag_applied = 0.0
     ctrl.drag_beam_angle = nothing
-    (ctrl.snap[] == :off || ctrl.mode[] != :rotate) && return nothing
+    ctrl.mode[] == :rotate || return nothing
     P, R = _pose(obj)
-    beam = ctrl.snap_beam(obj, Vector{Float64}(P))
+    beam = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, Vector{Float64}(P))
+    # beside the beams, the angle to the grid
+    isnothing(beam) && (beam = ctrl.snap_grid(obj, Vector{Float64}(P)))
     isnothing(beam) && return nothing
     ctrl.drag_beam_angle = _angle_about(ctrl.rotation_axis, Vector{Float64}(beam.direction), R[:, 2])
     return nothing
@@ -966,7 +1019,7 @@ function _record_key_step!(ctrl::KinematicController, obj, key, P0, R0, P1, R1)
     now = time()
     m = ctrl.last_key_step
     if !isnothing(m) && m.obj === obj && m.key === key && (now - m.time) <= 1.0 &&
-       !isempty(ctrl.undo_stack)
+       !isempty(ctrl.undo_stack) && last(ctrl.undo_stack) isa _HistoryEntry
         e = pop!(ctrl.undo_stack)
         push!(ctrl.undo_stack, _HistoryEntry(obj, e.P0, e.R0, P1, R1))
     else
@@ -977,39 +1030,96 @@ function _record_key_step!(ctrl::KinematicController, obj, key, P0, R0, P1, R1)
 end
 
 """
+    _push_action!(ctrl, obj, undo, redo)
+
+Pushes an action on `obj` to the undo history, e.g. adding it to the [`live_view`](@ref): `undo()`
+takes it back, `redo()` does it again. Like a gesture, it clears the redo stack and drops the
+oldest entry once the history exceeds `_HISTORY_LIMIT`. Both functions must not push entries
+themselves.
+"""
+function _push_action!(ctrl::KinematicController, obj, undo, redo)
+    push!(ctrl.undo_stack, _ActionEntry(obj, undo, redo))
+    length(ctrl.undo_stack) > _HISTORY_LIMIT && popfirst!(ctrl.undo_stack)
+    empty!(ctrl.redo_stack)
+    ctrl.last_key_step = nothing
+    return nothing
+end
+
+# Sets the pose of the object of the gesture `e` and selects it
+function _apply_entry!(ctrl::KinematicController, e::_HistoryEntry, P, R)
+    _change!(() -> _set_pose!(e.obj, P, R), ctrl, e.obj)
+    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
+    _update_selection_box!(ctrl)
+    _request_update!(ctrl)
+    return nothing
+end
+
+_undo_entry!(ctrl::KinematicController, e::_HistoryEntry) = _apply_entry!(ctrl, e, e.P0, e.R0)
+_redo_entry!(ctrl::KinematicController, e::_HistoryEntry) = _apply_entry!(ctrl, e, e.P1, e.R1)
+_undo_entry!(::KinematicController, e::_ActionEntry) = (e.undo(); nothing)
+_redo_entry!(::KinematicController, e::_ActionEntry) = (e.redo(); nothing)
+
+"""
+    _history_step!(step!, ctrl, e, stack) -> Bool
+
+Takes the entry `e` of the history back or does it again by `step!(ctrl, e)`, after it was moved to
+the `stack`. An action that no longer applies, e.g. on a component that another window of the same
+system removed meanwhile (see [`open_system`](@ref)), is dropped with a warning instead of an
+error. Returns whether the step was done.
+"""
+function _history_step!(step!, ctrl::KinematicController, e, stack)
+    try
+        step!(ctrl, e)
+    catch err
+        (err isa ArgumentError && e isa _ActionEntry) || rethrow()
+        filter!(x -> x !== e, stack)
+        @warn "the entry of the undo history no longer applies and was dropped" exception = err
+        return false
+    end
+    return true
+end
+
+"""
+    _drop_history!(ctrl, objs)
+
+Drops the entries of the undo history of the `ctrl` on the objects `objs`, e.g. after another window
+of the same system added or removed them, see `_follow_structure!`.
+"""
+function _drop_history!(ctrl::KinematicController, objs)
+    dropped = Base.IdSet{Any}(objs)
+    filter!(e -> !(e.obj in dropped), ctrl.undo_stack)
+    filter!(e -> !(e.obj in dropped), ctrl.redo_stack)
+    !isnothing(ctrl.last_key_step) && ctrl.last_key_step.obj in dropped && (ctrl.last_key_step = nothing)
+    return nothing
+end
+
+"""
     _undo!(ctrl::KinematicController)
 
-Undoes the last recorded gesture (a mouse drag, a reset or one or several merged keyboard steps),
-if any, and selects its object. Returns whether an entry was undone.
+Undoes the last recorded gesture (a mouse drag, a reset or one or several merged keyboard steps)
+or action (see `_push_action!`), if any; a gesture selects its object. Returns whether an entry was
+undone.
 """
 function _undo!(ctrl::KinematicController)
     isempty(ctrl.undo_stack) && return false
     e = pop!(ctrl.undo_stack)
     push!(ctrl.redo_stack, e)
     ctrl.last_key_step = nothing
-    _change!(() -> _set_pose!(e.obj, e.P0, e.R0), ctrl, e.obj)
-    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
-    _update_selection_box!(ctrl)
-    _request_update!(ctrl)
-    return true
+    return _history_step!(_undo_entry!, ctrl, e, ctrl.redo_stack)
 end
 
 """
     _redo!(ctrl::KinematicController)
 
-Redoes the last undone gesture, if any, and selects its object. Returns whether an entry was
-redone.
+Redoes the last undone gesture or action, if any; a gesture selects its object. Returns whether an
+entry was redone.
 """
 function _redo!(ctrl::KinematicController)
     isempty(ctrl.redo_stack) && return false
     e = pop!(ctrl.redo_stack)
     push!(ctrl.undo_stack, e)
     ctrl.last_key_step = nothing
-    _change!(() -> _set_pose!(e.obj, e.P1, e.R1), ctrl, e.obj)
-    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
-    _update_selection_box!(ctrl)
-    _request_update!(ctrl)
-    return true
+    return _history_step!(_redo_entry!, ctrl, e, ctrl.undo_stack)
 end
 
 """
@@ -1480,12 +1590,12 @@ function kinematic_controls!(
         Observable(spectator), select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
-        nothing, _HistoryEntry[], _HistoryEntry[], nothing,
+        nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing,
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
-        Observable(:off), (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
+        Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
         center, nothing, nothing
     )
 
@@ -1639,7 +1749,13 @@ function kinematic_controls!(
                 allowed = _allowed_axes(ctrl, obj, :move)
                 if !isempty(allowed)
                     snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
-                    isnothing(snapped) || (target = Vector{Float64}(snapped.point))
+                    if isnothing(snapped)
+                        # beside the beams: onto the grid, e.g. the holes of the table
+                        grid = ctrl.snap_grid(obj, target)
+                        isnothing(grid) || (target = Vector{Float64}(grid.point))
+                    else
+                        target = Vector{Float64}(snapped.point)
+                    end
                     Δ = target .- Vector{Float64}(position(obj))
                     A = hcat(_axis_vectors(ctrl, obj, allowed)...)
                     R = _snap_orientation(ctrl, obj, snapped)
@@ -1686,8 +1802,10 @@ function kinematic_controls!(
             _update_help!(ctrl)
             return Consume(true)
         end
-        if event.key in (Keyboard.z, Keyboard.y) && _modifier_held(scene, _CTRL_OR_CMD_KEYS)
-            if event.key == Keyboard.y || _shift_pressed(scene)
+        # By the letter of the key, not by its place: "Z" and "Y" are swapped on e.g. a German keyboard
+        if _modifier_held(scene, _CTRL_OR_CMD_KEYS) &&
+           (key = _layout_key(event.key)) in (Keyboard.z, Keyboard.y)
+            if key == Keyboard.y || _shift_pressed(scene)
                 _redo!(ctrl)
             else
                 _undo!(ctrl)

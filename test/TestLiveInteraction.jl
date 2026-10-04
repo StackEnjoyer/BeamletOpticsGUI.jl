@@ -1003,12 +1003,34 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test exceptions ⊆ camera_keys
     end
 
+    # The key that types the letter of `key` in the keyboard layout of this machine: the shortcuts by
+    # letter follow the layout, see `_layout_key`
+    _typed(key) = first(k for k in Keyboard.Button.(Int(Keyboard.a):Int(Keyboard.z)) if GUI._layout_key(k) == key)
+
+    @testset "keys by their letter" begin
+        # a US keyboard, and a backend that does not tell the layout
+        @test GUI._layout_key(Keyboard.z, "z") == Keyboard.z
+        @test GUI._layout_key(Keyboard.z, nothing) == Keyboard.z
+        # a German keyboard: "Z" and "Y" are swapped
+        @test GUI._layout_key(Keyboard.y, "z") == Keyboard.z
+        @test GUI._layout_key(Keyboard.z, "y") == Keyboard.y
+        @test GUI._layout_key(Keyboard.y, "Z") == Keyboard.z
+        # keys without a letter of a to z
+        @test GUI._layout_key(Keyboard.semicolon, "ö") == Keyboard.semicolon
+        @test GUI._layout_key(Keyboard.m, ",") == Keyboard.m
+        @test GUI._layout_key(Keyboard.escape) == Keyboard.escape
+        @test GUI._layout_key(Keyboard.up) == Keyboard.up
+        # the layout of this machine
+        @test GUI._layout_key(_typed(Keyboard.z)) == Keyboard.z
+        @test GUI._layout_key(_typed(Keyboard.y)) == Keyboard.y
+    end
+
     @testset "undo/redo" begin
         _ctrl_z!(scene) = (push!(events(scene).keyboardstate, Keyboard.left_control);
-                            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.z, Keyboard.press);
+                            events(scene).keyboardbutton[] = Makie.KeyEvent(_typed(Keyboard.z), Keyboard.press);
                             delete!(events(scene).keyboardstate, Keyboard.left_control))
         _ctrl_y!(scene) = (push!(events(scene).keyboardstate, Keyboard.left_control);
-                            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.y, Keyboard.press);
+                            events(scene).keyboardbutton[] = Makie.KeyEvent(_typed(Keyboard.y), Keyboard.press);
                             delete!(events(scene).keyboardstate, Keyboard.left_control))
 
         @testset "undo/redo of a drag" begin

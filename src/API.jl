@@ -328,9 +328,9 @@ function beam_card_rows end
 
 Buttons in the head of the card of `obj` in [`live_view`](@ref), a tuple of
 [`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default "hide"
-(or "show" for a hidden object), for clip planes "flip" and "remove". The card of an object with
-parts (a group or a `MultiShape` object) gets the button "parts ›" after them, which opens its
-selection card.
+(or "show" for a hidden object), for clip planes "flip" and "remove", for systems "hide" and "new
+window" (see [`open_system`](@ref)). The card of an object with parts (a group or a `MultiShape`
+object) gets the button "parts ›" after them, which opens its selection card.
 """
 function card_actions end
 
@@ -420,10 +420,10 @@ function add_component! end
     remove_component!(gui, obj) -> obj
 
 Removes the object `obj` from its system in the [`live_view`](@ref) window `gui`, like "remove" on
-its card or the key `Delete` while it is selected: `obj` is deleted from the system, its plots, its
-cards and its entries of the undo history are removed, and the systems are solved again, or the
-beams are marked as outdated without auto tracing. Removing can not be undone; add the object
-again via [`add_component!`](@ref).
+its card or the key `Delete` while it is selected: `obj` is deleted from the system, its plots and
+its cards are removed, and the systems are solved again, or the beams are marked as outdated without
+auto tracing. Adding and removing are entries of the undo history of the controls: `Ctrl+Z` in the
+window brings a removed object back, as does [`add_component!`](@ref).
 
 `obj` is a top-level object (or object group) of a `System` of the `gui`. An object of a group can
 not be removed on its own, remove the group instead. It throws an `ArgumentError`, like an object
@@ -439,7 +439,38 @@ source of the `gui`.
 function remove_component! end
 
 """
-    CatalogParam(name, default; unit = "", scale = 1.0, keyword = nothing, integer = false)
+    open_system(gui, system; display = true, kwargs...) -> LiveView
+
+Opens the `system` of the [`live_view`](@ref) window `gui` in a new window with its components and
+the sources that are traced through it, like the button "new window" on the card of the system
+(shown after a click on the system in the object tree or in the component menu). Useful for a view
+of several systems, one of which is worked on in a window of its own. Returns the new live view,
+which is shown unless `display` is `false`.
+
+The new window is a live view of its own: it takes over the layout, the theme, the catalog, the
+names and labels, how the system and the beams are drawn, the beams that are switched off, the
+tracing, the snapping, the table and the settings of the controls (e.g. the steps of the keys and
+the constraints) of the `gui`, but not its clip planes, sliders, panels, tools, pinned cards,
+hidden objects and camera. The `kwargs` are those of [`live_view`](@ref) and take
+precedence, e.g. `layout = :app` or `size = (1000, 700)`.
+
+Both windows are linked: they show the same objects, not copies. A component or source that is
+moved, added, removed or edited in one window changes in the other one as well, with the same name,
+and the variables of the script stay valid. Only the window in which something changed solves the
+systems, the other one shows the result; while the beams of one window are outdated, e.g. without
+auto tracing, those of the other one are dimmed as well, and tracing in either window brings both
+up to date. Everything else is kept per window: the selection, the camera, colors, hidden objects,
+clip planes, auto tracing and the undo history, from which the entries on a component that the
+other window added or removed are dropped. The link ends when one of the windows is closed.
+
+A system can be opened several times, and also from the new window. It throws an `ArgumentError`
+for a system that the `gui` does not show.
+"""
+function open_system end
+
+"""
+    CatalogParam(name, default; unit = "", scale = 1.0, keyword = nothing, integer = false,
+        presets = ())
 
 A numeric parameter of a [`CatalogEntry`](@ref), passed to its constructor: the `default` value in
 the units of the constructor (SI in BeamletOptics, e.g. [m]), shown and entered in the catalog as
@@ -450,6 +481,11 @@ argument, the other parameters are passed as positional arguments in their order
 A parameter with `integer = true` is passed as an `Int`, e.g. the `num_rays` of a source: its
 `default` must be a whole number, otherwise an `ArgumentError` is thrown, and the catalog only takes
 whole numbers for it.
+
+`presets` are named values of the parameter, as pairs `"name" => value` in the units of the
+constructor, e.g. `presets = ["532 nm" => 532e-9, "632.8 nm" => 632.8e-9]` for the laser lines of a
+wavelength. The catalog shows them in a menu next to the box of the parameter: choosing one writes
+its value into the box, and the menu shows "custom" for any other value of the box.
 """
 struct CatalogParam
     name::String
@@ -458,15 +494,18 @@ struct CatalogParam
     scale::Float64
     keyword::Union{Nothing, Symbol}
     integer::Bool
+    presets::Vector{Pair{String, Float64}}
 end
 
 function CatalogParam(name::AbstractString, default::Real; unit::AbstractString = "",
-        scale::Real = 1.0, keyword::Union{Nothing, Symbol} = nothing, integer::Bool = false)
+        scale::Real = 1.0, keyword::Union{Nothing, Symbol} = nothing, integer::Bool = false,
+        presets = ())
     (isfinite(scale) && scale != 0) ||
         throw(ArgumentError("the scale of the parameter \"$name\" must be finite and not zero, got $scale"))
     (!integer || isinteger(default)) ||
         throw(ArgumentError("the default of the integer parameter \"$name\" must be a whole number, got $default"))
-    return CatalogParam(String(name), Float64(default), String(unit), Float64(scale), keyword, integer)
+    return CatalogParam(String(name), Float64(default), String(unit), Float64(scale), keyword, integer,
+        Pair{String, Float64}[String(first(p)) => Float64(last(p)) for p in presets])
 end
 
 """
