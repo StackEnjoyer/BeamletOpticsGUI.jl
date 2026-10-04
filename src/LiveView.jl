@@ -1033,7 +1033,8 @@ The button "remove" below the rows of the card of a component or a source, or th
 while it is selected, removes it: a component from its system, a source from the view, also the
 last one. An object of a group and an extra can not be
 removed: they are kept, and the status line names the reason. Adding and removing are part of the
-undo history: `Ctrl+Z` takes them back, `Ctrl+Y` does them again. A component or source from the
+undo history: `Ctrl+Z` takes them back, `Ctrl+Y` does them again (the keys with these letters in
+the keyboard layout, e.g. of a German keyboard). A component or source from the
 catalog has the page "Edit" on its card, the form of its entry: "Apply", or Enter in a box,
 builds it again with the new values in the same pose, which is one step of the undo history.
 The tool "Script" prints the whole setup as a script, see [`export_script`](@ref). From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.

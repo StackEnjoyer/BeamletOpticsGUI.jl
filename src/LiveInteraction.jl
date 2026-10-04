@@ -75,6 +75,38 @@ _modifier_name(btns) = join(string.(btns), "/")
 const _CTRL_OR_CMD_KEYS = (Keyboard.left_control, Keyboard.right_control,
     Keyboard.left_super, Keyboard.right_super)
 
+"""
+The name of the `key` in the keyboard layout of the user, e.g. `"z"`, or `nothing` if the backend
+does not tell it: only GLMakie does, via GLFW, for the keys that print a character.
+"""
+function _key_letter(key::Keyboard.Button)
+    backend = Makie.current_backend()
+    (ismissing(backend) || !isdefined(backend, :GLFW)) && return nothing
+    glfw = backend.GLFW
+    try
+        return glfw.GetKeyName(glfw.Key(Int(key)), 0)
+    catch
+        # a key that GLFW does not know, or GLFW is not initialized
+        return nothing
+    end
+end
+
+"""
+    _layout_key(key::Keyboard.Button, name = _key_letter(key)) -> Keyboard.Button
+
+The key of the letter that the pressed `key` types in the keyboard layout of the user, where it has
+the `name`. Makie names a key by its place on a US keyboard, hence the key labelled "Z" of a German
+keyboard is `Keyboard.y`: a shortcut that is known by its letter, like `Ctrl`+`z`, compares the
+result of this function instead of the key of the event. Returns the `key` itself if it types no
+letter of `a` to `z`, or if the layout is not known, see `_key_letter`.
+"""
+function _layout_key(key::Keyboard.Button, name = _key_letter(key))
+    (name isa AbstractString && length(name) == 1) || return key
+    c = lowercase(only(name))
+    'a' <= c <= 'z' || return key
+    return Keyboard.Button(Int(Keyboard.a) + (c - 'a'))
+end
+
 _px(scene) = Tuple(Float64.(mouseposition_px(scene)))
 
 _other_mode(mode::Symbol) = mode == :move ? :rotate : :move
@@ -1604,8 +1636,10 @@ function kinematic_controls!(
             _update_help!(ctrl)
             return Consume(true)
         end
-        if event.key in (Keyboard.z, Keyboard.y) && _modifier_held(scene, _CTRL_OR_CMD_KEYS)
-            if event.key == Keyboard.y || _shift_pressed(scene)
+        # By the letter of the key, not by its place: "Z" and "Y" are swapped on e.g. a German keyboard
+        if _modifier_held(scene, _CTRL_OR_CMD_KEYS) &&
+           (key = _layout_key(event.key)) in (Keyboard.z, Keyboard.y)
+            if key == Keyboard.y || _shift_pressed(scene)
                 _redo!(ctrl)
             else
                 _undo!(ctrl)

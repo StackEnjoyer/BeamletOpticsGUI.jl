@@ -1184,8 +1184,11 @@ _points(h) = only(render_plots(h))[1][]
         close(gui_ref[])
     end
 
+    # The key that types the letter of `key` in the keyboard layout of this machine: the shortcuts by
+    # letter follow the layout, see `_layout_key`
+    _typed(key) = first(k for k in Keyboard.Button.(Int(Keyboard.a):Int(Keyboard.z)) if GUI._layout_key(k) == key)
     _ctrl_z!(gui) = (push!(events(gui.ax.scene).keyboardstate, Keyboard.left_control);
-                     _key!(gui, Keyboard.z);
+                     _key!(gui, _typed(Keyboard.z));
                      delete!(events(gui.ax.scene).keyboardstate, Keyboard.left_control))
 
     # Angle between the rotation matrices R1 and R2

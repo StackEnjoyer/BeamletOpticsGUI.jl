@@ -182,11 +182,12 @@ const GUI = BeamletOpticsGUI
         GUI._start_placement!(gui, m)
         GUI._drop_placement!(gui)
         @test _in(m, sys.objects) && length(gui.controls.undo_stack) == 1
-        # Ctrl+Z and Ctrl+Y
+        # Ctrl+Z and Ctrl+Y, by the letters of the keys in the layout of this machine
+        typed(key) = first(k for k in Keyboard.Button.(Int(Keyboard.a):Int(Keyboard.z)) if GUI._layout_key(k) == key)
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.press)
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.z, Keyboard.press)
+        events(scene).keyboardbutton[] = Makie.KeyEvent(typed(Keyboard.z), Keyboard.press)
         @test isempty(sys.objects)
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.y, Keyboard.press)
+        events(scene).keyboardbutton[] = Makie.KeyEvent(typed(Keyboard.y), Keyboard.press)
         @test _in(m, sys.objects)
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.release)
         # Delete, then undo

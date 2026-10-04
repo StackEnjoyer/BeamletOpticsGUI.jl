@@ -69,7 +69,8 @@ the view cube). In an oblique view, a drag changes the height as well; the keywo
 and the `constraints` below lock axes. Each drag,
 reset and series of steps with the same key (less than 1 s apart) is one entry of the undo history,
 which undoes up to 100 changes. In a [`live_view`](@ref), adding, removing and changing a component
-or source are entries of the same history.
+or source are entries of the same history. `Ctrl+Z` and `Ctrl+Y` are the keys with these letters in
+the keyboard layout, e.g. on a German keyboard, where the two are swapped.
 
 The `constraints` lock axes of individual components, e.g. a mirror in a kinematic mount that can
 only be tilted. The axes are named after the gizmo: `:x` (red), `:y` (green) and `:v` (blue, the
