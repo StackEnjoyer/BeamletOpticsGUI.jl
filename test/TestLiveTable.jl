@@ -261,7 +261,7 @@ const GUI = BeamletOpticsGUI
         angle() = GUI._angle_about(ctrl.rotation_axis, x, _pose(lens)[2][:, 2])
         φ0 = angle()
         @test φ0 ≈ deg2rad(100)
-        # 9° back by the mouse: within 3° of 90° to the rows
+        # 9° back by the mouse: within 5° of 90° to the rows
         dx = -round(deg2rad(9) / ctrl.rotate_speed)
         _drag!(gui, lens, (dx, 0.0))
         @test ctrl.drag_beam_angle ≈ φ0

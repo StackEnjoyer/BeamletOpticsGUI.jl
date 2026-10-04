@@ -1057,7 +1057,7 @@ the one before: off, the "position" only, such that e.g. a mirror keeps its tilt
 "position + rotation", which also turns the optical axis (the local y-axis) along the beam; beside
 the beams the component then has the orientation of the start of the drag again. The chip names the
 state. In the rotate mode, the angle between the optical axis and the beam
-through the component snaps to the multiples of 43° within 3°, e.g. a lens straight in the beam or
+through the component snaps to the multiples of 45° within 5°, e.g. a lens straight in the beam or
 a mirror at 45°.
 
 The beams are those at the start of the drag, without what lies behind the dragged component: it
@@ -1075,7 +1075,7 @@ snapping onto the beams and onto the table together), a component or source that
 placed with the mouse beside the beams sits on the hole closest to it, at its own height above the
 table; a beam within its radius comes first. With the snapping off, nothing snaps, and the table
 is only shown. In the rotate mode, the angle of the optical axis to the rows of the
-holes snaps to the multiples of 43° within 3°, unless a beam through the component takes it. The
+holes snaps to the multiples of 45° within 5°, unless a beam through the component takes it. The
 table grows with the setup while it is shown and never shrinks. The keyboard steps and the clip
 planes do not snap. It is an overlay: nothing of it is traced, clipped or exported.
 

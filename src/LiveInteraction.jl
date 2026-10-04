@@ -882,7 +882,7 @@ Snapping of the mouse drags onto beams
 const _SNAP_STATES = (:off, :position, :pose)
 # The angles of the optical axis to the beam at which a rotation snaps, and how close it snaps [rad]
 const _SNAP_ANGLE_STEP = π / 4
-const _SNAP_ANGLE_TOLERANCE = deg2rad(3)
+const _SNAP_ANGLE_TOLERANCE = deg2rad(5)
 
 """
     _set_snap!(ctrl, snap)
