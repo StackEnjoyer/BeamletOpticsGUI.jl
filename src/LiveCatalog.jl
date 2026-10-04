@@ -156,7 +156,7 @@ end
 
 The step from the form of the catalog to a component: parses the `strings` of the inputs of the
 parameters of the `entry` (see `_catalog_value`), constructs the object or source `obj` and returns
-it with its `origin = (; code, pose0)`, the call of its constructor as code and its pose as constructed,
+it with its `origin = (; code, pose0, entry, strings)`, the call of its constructor as code, its pose as constructed, the `entry` and the `strings`, with which it can be built again,
 see `_ComponentState`. Throws for an invalid input and what the constructor throws.
 """
 function _catalog_component(entry::CatalogEntry, strings)
@@ -164,7 +164,8 @@ function _catalog_component(entry::CatalogEntry, strings)
         throw(ArgumentError("\"$(entry.name)\" has $(length(entry.params)) parameters, got $(length(strings)) values"))
     values = Any[_catalog_value(p, s) for (p, s) in zip(entry.params, strings)]
     obj = _catalog_object(entry, values)
-    return (; obj, origin = (; code = _catalog_code(entry, values), pose0 = _pose(obj)))
+    return (; obj, origin = (; code = _catalog_code(entry, values), pose0 = _pose(obj), entry,
+        strings = String[String(s) for s in strings]))
 end
 
 """
@@ -208,6 +209,9 @@ const _CATALOG_HELP = _HelpSection["Components" => [
 # Sizes of the widgets of the catalog [px]: the boxes of the numbers and the menus of the glasses
 const _CATALOG_BOX_WIDTH = 64
 const _CATALOG_GLASS_WIDTH = 128
+# ... and the menus of the presets of a number, and their option for a value that is no preset
+const _CATALOG_PRESET_WIDTH = 96
+const _CATALOG_PRESET_CUSTOM = "custom"
 # Gap between the name, the box and the unit of a parameter in the form of the catalog, and
 # between its two columns [px]
 const _CATALOG_GAP = 8
@@ -260,7 +264,8 @@ theme tokens `theme`, from top to bottom:
   with the index `entry` is chosen; `entry_label` names it, see `_show_catalog_entry!`
 - `form`: the inputs of the parameters of the chosen entry (`inputs`, one per parameter): a
   `Textbox` per number, and per glass its menu and, for "constant", the box of the refractive
-  index, as `(; menu, box)`. `boxes` and `menus` hold all of them.
+  index, as `(; menu, box)`. `boxes` and `menus` hold all of them; the `menus` also hold the menus
+  of the presets of the numbers, which set their boxes, see `_catalog_preset_menu!`.
 - `place`: the button "Place"
 
 The tiles are built again when another group is chosen (see `_build_catalog_tiles!`), the form
@@ -628,14 +633,66 @@ _catalog_form(layout::GridLayout) = GridLayout(layout[6, 1]; halign = :left, def
 _catalog_form_grid(pos) = GridLayout(pos; halign = :left, default_rowgap = 6, default_colgap = _CATALOG_GAP)
 
 """
+    _catalog_preset(p, s) -> Union{Int, Nothing}
+
+The index of the preset of the parameter `p` whose value the text `s` of its box holds (see
+`_catalog_value`), `nothing` for another value and for an invalid text.
+"""
+function _catalog_preset(p::CatalogParam, s::AbstractString)
+    v = try
+        _catalog_value(p, s)
+    catch e
+        e isa ArgumentError || rethrow()
+        return nothing
+    end
+    return findfirst(preset -> isapprox(last(preset), v; rtol = 1e-9), p.presets)
+end
+
+"""
+    _catalog_preset_menu!(gui, pos, p, tb, theme; text = tb.displayed_string[]) -> Menu
+
+Builds the menu of the presets of the parameter `p` (see [`CatalogParam`](@ref)) at the layout
+position `pos`, for its box `tb` with the `text`, in the colors of the theme tokens `theme`: the
+names of the presets and "custom". Choosing a preset writes its value into the box, in the unit of
+the box; "custom" leaves the box as it is. The menu follows the box: it shows the preset whose
+value the box holds, "custom" for any other text. The value of the parameter is always the one of
+the box, see `_catalog_input_string`.
+
+The listeners are those of the `gui` on `menu.i_selected` and `tb.displayed_string`, see
+`_release_catalog_inputs!`. The menu is not registered, see `_register_widget!`.
+"""
+function _catalog_preset_menu!(gui::LiveView, pos, p::CatalogParam, tb::Textbox, theme;
+        text::AbstractString = tb.displayed_string[])
+    names = String[first.(p.presets); _CATALOG_PRESET_CUSTOM]
+    index(s) = something(_catalog_preset(p, s), length(names))
+    menu = Menu(pos; options = names, default = names[index(text)], _card_style(theme, Menu)...,
+        width = _CATALOG_PRESET_WIDTH, halign = :left)
+    listeners = gui.controls.listeners
+    push!(listeners, on(menu.i_selected) do k
+        # not for "custom", and not for the preset that the box holds, e.g. typed as "532.0"
+        (k in eachindex(p.presets) && _catalog_preset(p, tb.displayed_string[]) != k) || return nothing
+        tb.focused[] && Makie.defocus!(tb)
+        _set_box!(tb, _catalog_number_string(last(p.presets[k]) / p.scale))
+        return nothing
+    end)
+    push!(listeners, on(tb.displayed_string) do s
+        k = index(s)
+        menu.i_selected[] == k || (menu.i_selected[] = k)
+        return nothing
+    end)
+    return menu
+end
+
+"""
     _fill_catalog_form!(gui, w, strings)
 
 Builds the form of the catalog widget `w` for its chosen entry with the `strings` as the texts of
 its inputs (see `_catalog_strings`): first the numbers, each with its name, a `Textbox` and its
 unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
 with its name and the menu of the glasses and "constant", for which a box takes the refractive
-index, right of the menu or below it. The boxes and the menus take the keyboard like those of the
-controls, see `_register_widget!`.
+index, right of the menu or below it. A number with presets has their menu right of its unit, or
+below its box where the box of "constant" is below its menu, see `_catalog_preset_menu!`. The boxes
+and the menus take the keyboard like those of the controls, see `_register_widget!`.
 """
 function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     params = _catalog_entry(w).params
@@ -651,12 +708,22 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
         grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
         push!(grids, grid)
         two = length(numbers) >= w.style.two_columns
-        rows = two ? cld(length(numbers), 2) : length(numbers)
+        per_column = two ? cld(length(numbers), 2) : length(numbers)
+        # The menu of the presets of a number: right of its unit, or in a row of its own below it
+        inline = w.style.constant_inline
+        # The cells of a number are its name, its box and its unit; the first column gets a
+        # fourth one for such a menu only if it has one, since a layout with an empty column has
+        # no width
+        first_column = numbers[1:per_column]
+        cells = inline && any(i -> !isempty(params[i].presets), first_column) ? 4 : 3
+        column, row = 1, 0
         for (k, i) in enumerate(numbers)
             p = params[i]
             # down the first column, then down the second one
-            column, row = fldmod1(k, rows)
-            col = 3 * (column - 1)
+            c = fld1(k, per_column)
+            c == column || ((column, row) = (c, 0))
+            row += 1
+            col = cells * (column - 1)
             Label(grid[row, col + 1], p.name; label...)
             # An emptied box shows the default as its placeholder, see `_catalog_value`
             tb = Textbox(grid[row, col + 2]; stored_string = strings[i],
@@ -664,8 +731,12 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
             Label(grid[row, col + 3], p.unit; label...)
             w.inputs[i] = tb
             push!(w.boxes, tb)
+            isempty(p.presets) && continue
+            inline || (row += 1)
+            pos = inline ? grid[row, col + 4] : grid[row, (col + 2):(col + 3)]
+            push!(w.menus, _catalog_preset_menu!(gui, pos, p, tb, t; text = strings[i]))
         end
-        two && Makie.colgap!(grid, 3, _CATALOG_COLUMN_GAP)
+        two && Makie.colgap!(grid, cells, _CATALOG_COLUMN_GAP)
     end
     glasses = findall(p -> p isa CatalogGlass, params)
     if !isempty(glasses)
@@ -738,8 +809,10 @@ function _release_catalog_inputs!(gui::LiveView, w::_CatalogWidget)
     foreach(m -> m.is_open[] && (m.is_open[] = false), w.menus)
     filter!(b -> !any(tb -> tb === b, w.boxes), gui.custom.boxes)
     filter!(b -> !any(m -> m === b, w.menus), gui.custom.menus)
+    # ... and the menus of the presets no longer follow their boxes, see `_catalog_preset_menu!`
     _release_listeners!(gui, Any[[tb.focused for tb in w.boxes]; [m.is_open for m in w.menus];
-        [m.selection for m in w.menus]])
+        [m.selection for m in w.menus]; [m.i_selected for m in w.menus];
+        [tb.displayed_string for tb in w.boxes]])
     empty!(w.boxes)
     empty!(w.menus)
     empty!(w.inputs)

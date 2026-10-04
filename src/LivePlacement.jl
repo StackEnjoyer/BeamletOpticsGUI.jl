@@ -87,7 +87,8 @@ component is not traced while it is placed, hence the beams it snaps onto do not
 does not snap, see `_snaps`. Elsewhere, the position is where the camera ray through the cursor meets the plane through `p.plane_point`
 in which the mouse moves objects (see `_drag_normal`: the plane of the view, or the one with the
 `plane_normal` of the controls), in the orientation `p.R0` as constructed; the position is kept if
-the ray does not meet the plane in front of the camera.
+the ray does not meet the plane in front of the camera. There, a component or source snaps onto
+the grid of the controls, if any, e.g. the holes of the table (see `_table_snap`).
 """
 function _placement_pose(gui::LiveView, p::_Placement)
     ctrl = gui.controls
@@ -101,6 +102,9 @@ function _placement_pose(gui::LiveView, p::_Placement)
     # A camera in the plane meets it at the eye with every ray, which is no place for a component
     met = !isnothing(hit) && norm(hit .- origin) > 1e-9
     P = met ? Point3{Float64}(hit) : _pose(p.obj)[1]
+    # beside the beams: onto the grid, e.g. the holes of the table
+    grid = ctrl.snap_grid(p.obj, Vector{Float64}(P))
+    isnothing(grid) || (P = Point3{Float64}(grid.point))
     return P, p.R0, false
 end
 
@@ -183,6 +187,8 @@ function _start_placement!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source
     ctrl = gui.controls
     _check_placement_system(obj, system)
     _cancel_placement!(gui)
+    # the controls ignore the mouse for one of them at a time
+    _cancel_aim!(gui)
     if ctrl.spectator[]
         gui.status.text[] = "spectator mode, press v to place components"
         return nothing

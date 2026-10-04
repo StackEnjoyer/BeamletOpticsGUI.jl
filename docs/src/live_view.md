@@ -146,12 +146,13 @@ The results of a detector are on its card. Every card has pages, chosen by a pag
 and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
 has a third page, "Results", between them, which shows the detector view. The card of a source (a
 beam, a beam group or a Gaussian beamlet) has the page "Color": a menu sets the color in which it is
-drawn ("wavelength" for the color of its wavelength, "layout" for the color of the layout, or a
-fixed color), a box takes any color as a hex value such as `#ff8000` or by its name, and a slider
-sets the opacity, e.g. to see the components through the envelope of a Gaussian beamlet. Color and
-opacity only change the display: nothing is traced again, and they are not part of
-[`export_changes`](@ref). In a script, `beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5))`
-sets them from the start. A card with a single
+drawn ("wavelength" for the color of its wavelength, in which every source starts, "layout" for the
+color of the layout, or a fixed color), a box takes any color as a hex value such as `#ff8000` or
+by its name, a slider sets the opacity, e.g. to see the components through the envelope of a
+Gaussian beamlet, and another one the line width of its rays. They only change the display: nothing
+is traced again, and they are not part of [`export_changes`](@ref). In a script,
+`beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5, linewidth = 2))` sets them from the
+start. A card with a single
 page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
 detector and on "Pose" for every other object; a pinned card keeps its page.
 
@@ -202,8 +203,9 @@ hides the cards and with them the views.
 
 The floating card with an expanded view is resizable: a grip at its bottom right corner changes
 its size from 160 px up to the size of the 3D view. In the sidebar of the app layout, the view
-takes the width of the sidebar and has no grip; pinned cards there collapse or shrink their views
-when the sidebar is full, and the float button moves a pinned card with its view into the 3D view.
+takes the width of the sidebar, is as high as wide and has no grip; the sidebar scrolls with the
+mouse wheel if its cards are higher than the window, and the float button moves a pinned card with
+its view into the 3D view.
 
 By default (`detectors = :auto`, or `[]`), every `Detector` of every system, deduplicated by
 identity, has its page "Results", and no card is pinned at start. A vector pins the cards of
@@ -491,10 +493,10 @@ actions, and below it the pinned cards, one below the other, each with its own h
 actions, pin and chevron) and the same pages as a floating card; its state, including its page and
 its view, moves with the card when it floats or is docked. The pin of the selection pins
 a card, the pin of a pinned card unpins
-it. The sidebar does not scroll: if the cards do not fit, the older pinned cards collapse to their
-heads (the one pinned or expanded last stays open) and the property list of the selection, then
-those of the pinned cards, and the detector views are
-shortened or collapsed; a collapsed card is only expanded again by its chevron. The float button in the head of
+it. Both sidebars scroll with the mouse wheel if their content is higher than the window, with a
+scroll bar at their right edge: the cards keep their full size, the chevron of a pinned card
+collapses it to its head. Over the object tree, the wheel scrolls its rows first, and over a
+detector view it zooms the view. The float button in the head of
 a pinned card moves it out of the sidebar into the 3D view, where it floats next to its component
 as in the compact layout; the dock button in its head moves it back. Only the docked cards take
 room in the sidebar. The floating cards and the docked cards are built by the same code from the
@@ -559,7 +561,9 @@ the window or from code with [`add_component!`](@ref) and [`remove_component!`](
 
 The "Export" button of the tool rail (or the toolbar) prints the changed poses as Julia code and copies it
 to the clipboard, such that an alignment found interactively can be pasted into the script that
-builds the system. [`export_changes`](@ref) returns the same code:
+builds the system. The tool "Script" next to it prints the whole setup as a script, see
+[`export_script`](@ref) and [Adding and removing components](@ref components_page).
+[`export_changes`](@ref) returns the same code:
 
 ```julia
 gui = live_view(system, beam; labels = Dict(m1 => "m1", lens => "lens"))
@@ -594,7 +598,9 @@ the angle of its optical axis to the beam snaps to the multiples of 45°. Each `
 next of three states: off, only the position snaps, the position and the rotation snap, and off
 again; `Shift`+`Tab` goes the other way round. The chip "Snap" next to the mode at the top left of
 the 3D view names the state, and a click on it does the same as `Tab`. The keyword `snap` of
-[`live_view`](@ref) sets the start, see the section "Snapping onto beams" of its docstring. The keyboard step can be typed into the box `step` of the component card, e.g.
+[`live_view`](@ref) sets the start, see the section "Snapping onto beams" of its docstring. The toggle
+"Table" among the tools shows an optical table, onto whose holes dragged and placed components
+snap beside the beams, see [Aligning on the table and to the beams](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
 `250 nm` or `50 µrad`, where the unit selects the move or rotate mode (`pm`, `nm`, `µm`, `mm`,
 `cm` or `m`; `nrad`, `µrad`, `mrad`, `rad` or `deg`), see
 [Component card and component menu](@ref). The step is shown in the unit of its size, e.g. `5 mm`,

@@ -28,7 +28,7 @@ GUI._has_properties(::NoProperties) = false
               (:pose, :color, :properties)
         @test GUI._default_page(beam) == :pose
         # the rows of the pages: those of the page "Pose" unless a page has its own
-        @test length(GUI._page_rows(beam, :color)) == 3
+        @test length(GUI._page_rows(beam, :color)) == 4
         @test length(GUI._page_rows(beam, :pose)) == length(GUI._page_rows(beam, :properties)) ==
               length(GUI._card_rows(beam))
         @test length(GUI._page_rows(m, :color)) == length(GUI._card_rows(m))

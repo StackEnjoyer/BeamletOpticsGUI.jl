@@ -15,6 +15,7 @@ BeamletOpticsGUI
 live_view
 retrace!
 export_changes
+export_script
 add_panel!
 add_controls!
 add_tool!

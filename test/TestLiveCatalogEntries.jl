@@ -93,6 +93,20 @@ const GUI = BeamletOpticsGUI
             # the wavelength is shown in nm, whole numbers are written without a decimal point
             wavelength = only(filter(p -> p.name == "wavelength", entry.params))
             @test wavelength.unit == "nm" && GUI._catalog_string(wavelength) == "632.8"
+            # ... with the laser lines as its presets, among them the default
+            @test first.(wavelength.presets) == ["405 nm", "450 nm", "488 nm", "532 nm", "589 nm",
+                "632.8 nm", "780 nm", "850 nm", "1064 nm", "1310 nm", "1550 nm"]
+            @test last.(wavelength.presets) == [405e-9, 450e-9, 488e-9, 532e-9, 589e-9, 632.8e-9,
+                780e-9, 850e-9, 1064e-9, 1310e-9, 1550e-9]
+            @test wavelength.default == 632.8e-9 && GUI._catalog_preset(wavelength, "") == 6
+            # a line as chosen in the form is the value of its preset
+            for (k, (name, value)) in enumerate(wavelength.presets)
+                text = GUI._catalog_number_string(value / wavelength.scale)
+                @test name == "$text nm" && GUI._catalog_preset(wavelength, text) == k
+                @test GUI._catalog_value(wavelength, text) == value
+            end
+            # the other parameters have none
+            @test all(p -> isempty(p.presets), filter(p -> p isa CatalogParam && p !== wavelength, entry.params))
             for p in filter(p -> p.integer, entry.params)
                 @test p.keyword in (:num_rings, :num_rays)
                 @test !occursin(".", last(split(code, "$(p.keyword) = ")))

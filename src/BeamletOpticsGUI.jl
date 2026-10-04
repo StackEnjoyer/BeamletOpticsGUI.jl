@@ -15,11 +15,11 @@ import BeamletOptics: live_render!, update_render!, remove_render!, pick_object,
 
 const BMO = BeamletOptics
 
-export live_view, kinematic_controls!, view_cube!, export_changes, card_rows, pose_card_rows,
-       beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, add_panel!,
-       add_controls!, add_tool!, retrace!, add_component!, remove_component!, CatalogEntry,
-       CatalogParam, CatalogGlass, component_catalog, catalog_glasses, detector_view!, DetectorView,
-       update_detector_view!, set_spot_colors!
+export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
+       pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
+       add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!,
+       CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, detector_view!,
+       DetectorView, update_detector_view!, set_spot_colors!
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -52,6 +52,7 @@ include("LiveCardPages.jl")
 include("LiveCard.jl")
 include("LiveView.jl")
 include("LiveLayout.jl")
+include("LiveScroll.jl")
 include("LiveDetectors.jl")
 include("LiveDetectorWidget.jl")
 include("LiveTrace.jl")
@@ -82,8 +83,12 @@ include("LiveCustom.jl")
 include("LiveComponents.jl")
 include("LiveSources.jl")
 include("LiveBeamColor.jl")
+include("LiveEdit.jl")
 include("LivePlacement.jl")
 include("LiveSnap.jl")
+include("LiveTable.jl")
+include("LiveAlign.jl")
+include("LiveAim.jl")
 include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")

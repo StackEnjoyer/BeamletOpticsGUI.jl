@@ -61,8 +61,8 @@ _wavelength_style(_) = (;)
 
 The kwargs of a source that is added to the live view from its `beam_kwargs`, which are those of
 the `beam_kwargs` of `live_view`: by default it is drawn in the color of its wavelength (see
-`_wavelength_color`), unlike the sources of the start, which have the color of the layout, and a
-beam group with `render_every = 5`. Throws an `ArgumentError` for `show_polarization = true` of a
+`_wavelength_color`), like the sources of the start (see `_beam_style`), and a beam group with
+`render_every = 5`. Throws an `ArgumentError` for `show_polarization = true` of a
 source without polarized rays and for `show_beams = true` of one that is no Gaussian beamlet.
 """
 function _source_kwargs(src, beam_kwargs)
@@ -121,6 +121,7 @@ function add_component!(gui::LiveView, src::_Source; system = nothing, select::B
         comp.system[src] = sys
         comp.origin[src] = origin
     end
+    _table_include!(gui, src)
     _on_components_changed!(gui)
     _update_info!(gui)
     if select
@@ -135,7 +136,59 @@ function add_component!(gui::LiveView, src::_Source; system = nothing, select::B
     # After the solve, like the overlays of the sources of the start, see `_init_overlays!`
     get(kw, :show_polarization, false) === true && _set_polarization!(gui, src, true)
     get(kw, :show_beams, false) === true && _set_generating_beams!(gui, src, true)
+    _record_added!(gui, src)
     return src
+end
+
+#=
+Sources in the undo history, see `_record_added!` and `_record_removed!`
+=#
+
+# Of a source: also the systems it is traced through, the kwargs with which it is drawn (e.g. its
+# color), whether it is switched on and its overlays
+function _snapshot(gui::LiveView, src::_Source)
+    ctrl = gui.controls
+    beams = gui.beams
+    kwargs = merge(get(beams.overlay_kwargs, src, (;)), get(beams.kwargs, src, (;)),
+        (; show_polarization = haskey(beams.pol, src), show_beams = haskey(beams.gen, src)))
+    names = haskey(gui.objects.names, src) ? Pair{Any, String}[src => gui.objects.names[src]] :
+            Pair{Any, String}[]
+    init_poses = haskey(ctrl.init_poses, src) ? Pair{Any, Any}[src => ctrl.init_poses[src]] :
+                 Pair{Any, Any}[]
+    return (; systems = Any[p.first for p in gui.pairs if p.second === src],
+        label = get(gui.labels, src, nothing), origin = get(gui.components.origin, src, nothing),
+        names, init_poses, kwargs, on = _beam_on(gui, src),
+        # a source that the view started with
+        start = !any(o -> o === src, gui.components.added))
+end
+
+function _restore!(gui::LiveView, src::_Source, snap)
+    comp = gui.components
+    _unrecorded(gui) do
+        add_component!(gui, src; system = first(snap.systems), label = snap.label,
+            origin = snap.origin, beam_kwargs = snap.kwargs)
+        # A source of the start that was traced through several systems
+        for sys in snap.systems[2:end]
+            _change!(gui.controls, src) do
+                push!(gui.pairs, sys => src)
+                push!(gui.beam_handles, _live_render_beam!(gui.ax, gui.layout, src, gui.beams.kwargs[src]))
+            end
+        end
+    end
+    if snap.start && length(snap.systems) > 1
+        # no change for `export_changes`, like a source of the start with a single system
+        filter!(o -> o !== src, comp.removed)
+        filter!(o -> o !== src, comp.added)
+        delete!(comp.source_systems, src)
+        delete!(comp.system, src)
+        delete!(comp.origin, src)
+        gui.trace.stale && _dim_beams!(gui)
+        _apply_clip_planes!(gui)
+        _on_change!(gui, src)
+    end
+    snap.on || _set_beam_on!(gui, src, false)
+    _restore_names!(gui, snap)
+    return nothing
 end
 
 function remove_component!(gui::LiveView, src::_Source)
@@ -144,6 +197,7 @@ function remove_component!(gui::LiveView, src::_Source)
     ctrl = gui.controls
     comp = gui.components
     name = _label(gui, src)
+    snap = _snapshot(gui, src)
     # A source can be traced through several systems
     idx = findall(p -> p.second === src, gui.pairs)
     systems = Any[gui.pairs[i].first for i in idx]
@@ -188,5 +242,6 @@ function remove_component!(gui::LiveView, src::_Source)
     # The detectors lose the hits of the source with the next solve
     _on_change!(gui, nothing)
     isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
+    _record_removed!(gui, src, snap)
     return src
 end

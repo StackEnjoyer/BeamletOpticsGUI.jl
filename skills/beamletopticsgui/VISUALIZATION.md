@@ -25,8 +25,10 @@ moves it to a fixed place in the view (kept when pinned; double click on the hea
 its component). Every card has pages, chosen by a page bar below its head: "Pose" (the pose
 boxes and the rows of the type) and "Properties"; the card of a `Detector` has "Results" between
 them (details below), the card of a source "Color" (a menu of colors with "wavelength" and
-"layout", a box for a hex value or a color name, a slider for the opacity; display only, the same
-as `beam_kwargs = Dict(source => (; color, alpha))` from a script); a card with a single page (inspected point, measurement) has no bar. A card
+"layout", a box for a hex value or a color name, sliders for the opacity and the line width;
+display only, the same as `beam_kwargs = Dict(source => (; color, alpha, linewidth))` from a
+script; sources start in the color of their wavelength), a component or source from the catalog
+"Edit" (the form of its entry, "Apply" builds it again in its pose); a card with a single page (inspected point, measurement) has no bar. A card
 opens on "Results" for a detector, else on "Pose"; a pinned card keeps its page. Rows of the
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
 beamsplitters, the polarizer axis, detector `signal` (power or number of rays of its view while a
@@ -71,7 +73,7 @@ orthographic); the status line appears as a toast.
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
 moves it into the 3D view next to its component, its dock button moves it back; docked pinned
 cards have the same pages as floating ones (a detector view takes the width of the sidebar, has no
-resize grip and collapses or shrinks when the sidebar is full). The dock below the 3D view only has
+resize grip; both sidebars scroll with the mouse wheel when their content is higher than the window). The dock below the 3D view only has
 tabs of `add_panel!` and stays collapsed until the first one exists. Its 3D view has
 the same help pill, chips and help card at the top left.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the

@@ -279,13 +279,15 @@ Cards of a `LiveView`: the card of the `selection` next to the selected object, 
 rows and actions declared for it (see [`card_rows`](@ref)); `all` cards, including the pinned
 ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`); the
 selection card of groups (`browse`, a `_BrowseCard`, see `_browse!`), `nothing` until it is
-connected.
+connected; `settle` holds the row layouts of cards whose widgets were just built, with the clock
+time of the build, until their boxes were moved once, see `_settle_cards!`.
 """
 Base.@kwdef mutable struct _CardState
     selection::_ComponentCard
     all::Vector{_ComponentCard} = [selection]
     shield::Vector{Any} = Any[]
     browse::Any = nothing
+    settle::Vector{Tuple{Float64, Vector{GridLayout}}} = Tuple{Float64, Vector{GridLayout}}[]
 end
 
 """
@@ -354,7 +356,8 @@ is traced through, and a removed source of the start has its systems in `source_
 shown object is `target_shown`, see `_catalog_target`; the
 `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
-is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`; the
+is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
+likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
 `window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
 """
 Base.@kwdef mutable struct _ComponentState
@@ -368,7 +371,15 @@ Base.@kwdef mutable struct _ComponentState
     # the system chosen in the menu "into" of the catalog and the object that was shown then
     target::Any = nothing
     target_shown::Any = nothing
+    # `false` while an action of the undo history adds or removes, see `_unrecorded`
+    recording::Bool = true
+    # the inputs of the page "Edit" of an object that are not applied yet, see `_edit_strings`
+    const edits::IdDict{Any, Vector{String}} = IdDict{Any, Vector{String}}()
     placement::Any = nothing
+    # the source that is being aimed with the mouse, see `_start_aim!`
+    aim::Any = nothing
+    # the optical table of the view (a `_Table`), see `_set_table!`
+    table::Any = nothing
     window::Any = nothing
 end
 
@@ -598,9 +609,10 @@ Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of 
 "Properties" with its properties (see [`properties`](@ref), the same rows as in the inspector of
 the app layout) and, for a `Detector`, "Results" with its view between them, see "Detector view".
 The card of a source (a beam, a beam group or a Gaussian beamlet) has the page "Color": a menu of
-colors ("wavelength" for the color of its wavelength, "layout" for the color of the layout, or a
-fixed color), a box for any color as a hex value such as `#ff8000` or by its name, and a slider for
-the opacity. They only change how the source is drawn: nothing is traced again.
+colors ("wavelength" for the color of its wavelength, in which every source starts, "layout" for
+the color of the layout, or a fixed color), a box for any color as a hex value such as `#ff8000` or
+by its name, and sliders for the opacity and the line width. They only change how the source is
+drawn: nothing is traced again.
 A card with a single page, e.g. of an inspected point, has no page bar. A card opens on "Results"
 for a detector and on "Pose" for any other object; a pinned card keeps its page.
 
@@ -874,9 +886,9 @@ actions in the 3D view are unchanged:
   a detector, "Properties" with the properties of the object (see [`properties`](@ref)); without a
   selection, a summary of the live view. The pinned cards are docked below, one below the other,
   each with its own head (icon, label, actions, float button, pin and chevron) and its pages. A
-  detector view takes the width of the sidebar. The sidebar does not scroll: if the docked cards
-  do not fit, the older ones collapse to their heads, then the property lists are shortened and the
-  views shrink. The float button of a docked
+  detector view takes the width of the sidebar and is as high as wide. The sidebar scrolls with
+  the mouse wheel if the cards are higher than the window, a scroll bar at its right edge shows
+  the position; the chevron of a pinned card collapses it to its head. The float button of a docked
   card moves it into the 3D view, where it floats next to its object like a pinned card of the
   compact layout; the dock button in its head moves it back to the end of the docked cards. A
   card keeps its collapsed state, its page and the state of its view when it moves; pinned again
@@ -960,8 +972,9 @@ rail or toolbar) opens and closes the catalog.
   below them. The buttons at the title of the section move it into its window over the 3D view
   (pinned) and minimize it. The window has a dock button instead of the close button, and closing
   it docks the catalog again; `Insert` shows it as a popup at the mouse, which is docked again
-  after the drop. The sidebar does not scroll: in a low window, minimize the catalog or move it
-  into its window.
+  after the drop. The sidebar scrolls with the mouse wheel if the tree, which keeps a height of at
+  least 160 px, and the catalog are higher than the window; over the tree, the wheel scrolls its
+  rows first.
 
 The component then follows the mouse, drawn at half of its opacity, on the plane of the view
 through the first source of its system (or the plane with the `plane_normal` of the controls), in
@@ -984,8 +997,11 @@ the markers of the sources if they were hidden.
 The button "remove" below the rows of the card of a component or a source, or the key `Delete`
 while it is selected, removes it: a component from its system, a source from the view, also the
 last one. An object of a group and an extra can not be
-removed: they are kept, and the status line names the reason. Removing is not part of the undo
-history. From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
+removed: they are kept, and the status line names the reason. Adding and removing are part of the
+undo history: `Ctrl+Z` takes them back, `Ctrl+Y` does them again. A component or source from the
+catalog has the page "Edit" on its card, the form of its entry: "Apply", or Enter in a box,
+builds it again with the new values in the same pose, which is one step of the undo history.
+The tool "Script" prints the whole setup as a script, see [`export_script`](@ref). From code, [`add_component!`](@ref) and [`remove_component!`](@ref) do the same.
 [`export_changes`](@ref) lists the added components and sources, with their constructor calls, and
 the removed ones. A `Detector` added at runtime shows its view on the page "Results" of its card like any other.
 
@@ -1007,6 +1023,32 @@ The beams are those at the start of the drag, without what lies behind the dragg
 snaps onto the beam that reaches it, continued as a straight line, and not onto the part that it
 deflects itself. Locked axes (see `constraints`) stay locked. The keyboard steps do not snap, and
 neither do sources and clip planes.
+
+# Optical table
+
+The toggle "Table" among the tools (or the `table` kwarg) shows an optical table below the setup: a
+grid of holes at a distance of 25 mm in the plane perpendicular to the rotation axis of the controls
+(z by default), at the lowest point of the components, drawn with its outline. While it is shown,
+a component or source that is dragged or placed with the mouse beside the beams sits on the hole
+closest to it, at its own height above the table; with the snapping onto beams switched on, a beam
+within its radius comes first. In the rotate mode, the angle of the optical axis to the rows of the
+holes snaps to the multiples of 45° within 3°, unless a beam through the component takes it. The
+table grows with the setup while it is shown and never shrinks. The keyboard steps and the clip
+planes do not snap. It is an overlay: nothing of it is traced, clipped or exported.
+
+# Aligning and aiming
+
+The last row of the card of a component has two buttons that align it to the nearest beam, i.e. to
+the central beam of a source that is switched on, as far as it does not depend on the component:
+"onto beam" moves the component to the point of that beam closest to it, "face beam" turns its
+optical axis (the local y-axis) along the beam, in its direction or against it, whichever is
+closer. "aim" in the last row of the card of a source starts aiming it: a dashed line follows the
+mouse, and a click turns the source about its position such that it points at the center of the
+component under the mouse (or at the position of another source), elsewhere at the point of the
+plane in which the mouse moves objects, through the source, which snaps onto the holes of the
+table while it is shown. `Esc`, "cancel" on the card and the spectator mode cancel it; a drag
+still moves the camera. Each of them is one step of the undo history and is solved like a move;
+locked axes (see `constraints`) stay locked.
 
 # Keyword args
 
@@ -1034,7 +1076,8 @@ neither do sources and clip planes.
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups. `show_polarization = true` of a polarized beam and
+  `(; render_every = 5)` for beam groups. A source is drawn in the color of its wavelength (a dark
+  red for infrared, a dark violet for ultraviolet light) unless its kwargs set a `color`. `show_polarization = true` of a polarized beam and
   `show_beams = true` of a Gaussian beamlet start with the toggles "polarization" and "beams" of
   its card on, `pol_λ`, `pol_amplitude` and `pol_scale` set the start values of the sliders of
   the polarization curve, see [`beam_card_rows`](@ref); of a beam group only its central beam is
@@ -1077,6 +1120,11 @@ neither do sources and clip planes.
 - `snap = false`: whether the components snap onto the beams while they are dragged with the mouse:
   `false`, `true` or `:position` (the position), or `:pose` (the position and the rotation), see
   "Snapping onto beams"
+- `table = false`: the optical table, see "Optical table": `true` shows it at the start, a
+  `NamedTuple` sets some of `pitch = 25e-3` (the distance of its holes [m], e.g. `25.4e-3` for an
+  imperial table), `height = nothing` (its coordinate along the rotation axis [m], by default the
+  lowest point of the components), `snap = true` (whether components snap onto its holes) and
+  `shown = true`
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -1110,6 +1158,7 @@ function live_view(
         background_card = nothing,
         catalog = component_catalog(),
         snap::Union{Bool, Symbol} = false,
+        table = false,
         kwargs...
     )
     isempty(args) &&
@@ -1134,6 +1183,7 @@ function live_view(
     slider_specs = [_slider_spec(s) for s in sliders]
     clip_specs = _clip_plane_specs(clip_planes)
     view_specs = _view_specs(views)
+    table_spec = _table_spec(table)
 
     lay = _live_layout(layout, theme)
     fig = _figure(lay, something(size, _default_size(lay)))
@@ -1189,6 +1239,8 @@ function live_view(
     change = function (obj)
         gui = gui_ref[]
         _on_moved!(gui, obj)
+        # The table grows with the setup, see `_Table`
+        _table_include!(gui, obj)
         _update_inspector!(gui)
         return nothing
     end
@@ -1240,10 +1292,18 @@ function live_view(
     # The catalog of components that can be added to the systems, see `add_component!`, and their
     # placement with the mouse
     _build_catalog!(gui)
+    # The whole setup as a script, see `export_script`; after the catalog, whose dock needs the
+    # layout as it is built: a tool of a view that starts in the spectator mode hides the UI
+    add_tool!(_export_script!, gui, "Script"; icon = :script,
+        tooltip = "Export the whole setup as a script")
     _connect_placement!(gui)
+    # Aiming a source with the mouse, see `_start_aim!`
+    _connect_aim!(gui)
     # The components snap onto the beams while they are dragged, see the `snap` kwarg
     _connect_snap!(gui)
     _set_snap!(controls, snap)
+    # The optical table, onto whose holes they snap beside the beams, see the `table` kwarg
+    _build_table!(gui, table_spec)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,
