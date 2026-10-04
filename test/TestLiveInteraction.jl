@@ -1507,6 +1507,202 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         end
     end
 
+    @testset "drag on an arrow moves along it" begin
+        _press!(scene, pos) = (events(scene).mouseposition[] = pos;
+                                events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
+        _move!(scene, pos) = (events(scene).mouseposition[] = pos)
+        _release!(scene) = (events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
+        _at(obj) = collect(Float64.(BMO.position(obj)))
+        # Position [px of the window] of the point of the arrow `i` (1:3, in the order `_AXES_SYMS`)
+        # of the gizmo at the fraction `f` of its length
+        function _arrow_px(ctrl, scene, i, f)
+            p = ctrl.arrow_pos[][i] .+ f .* ctrl.arrow_dir[][i]
+            q = Makie.project(scene, :data, :pixel, Point3(p))
+            o = scene.viewport[].origin
+            return (Float64(q[1] + o[1]), Float64(q[2] + o[2]))
+        end
+        _length(ctrl, i) = Float64(norm(ctrl.arrow_dir[][i]))
+        eye = Vec3d(0.12, -0.14, 0.15)
+        function _setup(; constraints = m1 -> Dict(), eye = eye, up = Vec3d(0, 0, 1), kwargs...)
+            fig, ax, h, m1, m2 = _fixture()
+            scene = ax.scene
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+                constraints = constraints(m1), kwargs...)
+            for key in (haskey(kwargs, :select_modifier) ? (kwargs[:select_modifier],) : ())
+                push!(events(scene).keyboardstate, key)
+            end
+            events(scene).mouseposition[] = (100.0, 100.0)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test ctrl.selected[] === m1
+            # close to the gizmo, which stands above the mirror, such that its arrows are long
+            Makie.update_cam!(scene, eye, Vec3d(0, 0, 0.03), up)
+            return ctrl, scene, m1
+        end
+
+        @testset "the object follows the cursor along each arrow" begin
+            for (i, sym) in enumerate(GUI._AXES_SYMS)
+                ctrl, scene, m1 = _setup()
+                P0 = _at(m1)
+                R0 = Matrix{Float64}(BMO.orientation(m1))
+                axis = only(GUI._axis_vectors(ctrl, m1, (sym,)))
+                l = _length(ctrl, i)
+                a = _arrow_px(ctrl, scene, i, 0.5)
+                # the points of the arrow of the press: the gizmo moves with the object
+                path = [_arrow_px(ctrl, scene, i, f) for f in 0.55:0.05:0.9]
+                events(scene).mouseposition[] = a
+                @test GUI._pick_arrow(ctrl, scene) === sym
+                @test ctrl.arrow_hover === sym
+                _press!(scene, a)
+                @test ctrl.press_kind == :pending_arrow
+                foreach(p -> _move!(scene, p), path)
+                @test ctrl.dragging
+                # by 0.4 of its length along the arrow, and not beside it
+                @test _at(m1) ≈ P0 .+ 0.4 * l .* axis atol = 2e-5
+                @test Matrix{Float64}(BMO.orientation(m1)) == R0
+                # a cursor that rests moves nothing
+                P = _at(m1)
+                foreach(_ -> notify(events(scene).mouseposition), 1:5)
+                @test _at(m1) == P
+                # beside the arrow: only the part of the movement along it
+                _move!(scene, path[end] .+ (0.0, 0.0))
+                _release!(scene)
+                @test !ctrl.dragging && isnothing(ctrl.arrow)
+                @test ctrl.selected[] === m1
+                e = only(ctrl.undo_stack)
+                @test e.obj === m1 && e.P0 ≈ P0 && e.P1 ≈ _at(m1)
+                @test GUI._undo!(ctrl)
+                @test _at(m1) ≈ P0
+                close(ctrl)
+            end
+        end
+
+        @testset "a click on an arrow does nothing, the arrow under the cursor is highlighted" begin
+            ctrl, scene, m1 = _setup()
+            P0 = _at(m1)
+            a = _arrow_px(ctrl, scene, 2, 0.6)
+            @test ctrl.arrow_color[][2].r ≈ 1 && ctrl.arrow_color[][2].g ≈ 0
+            _move!(scene, a)
+            @test ctrl.arrow_hover === :x
+            @test ctrl.arrow_color[][2].g > 0.5 # the red arrow is brighter
+            @test ctrl.arrow_color[][1] == Makie.RGBAf(Makie.to_color(:green))
+            _press!(scene, a)
+            _release!(scene)
+            @test _at(m1) == P0 && isempty(ctrl.undo_stack) && ctrl.selected[] === m1
+            # off the arrows: no highlight
+            _move!(scene, a .+ (40.0, 40.0))
+            @test isnothing(ctrl.arrow_hover)
+            @test ctrl.arrow_color[][2] == Makie.RGBAf(Makie.to_color(:red))
+            # where the three arrows meet, none is grabbed: a quarter of the arrow, at least 20 px
+            _move!(scene, _arrow_px(ctrl, scene, 2, 0.0))
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            o, tip = _arrow_px(ctrl, scene, 2, 0.0), _arrow_px(ctrl, scene, 2, 1.0)
+            along = (tip .- o) ./ hypot((tip .- o)...)
+            _move!(scene, o .+ (GUI._ARROW_PICK_FREE - GUI._RING_PICK_RADIUS - 1) .* along)
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            _move!(scene, _arrow_px(ctrl, scene, 2, 0.1))
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            _move!(scene, _arrow_px(ctrl, scene, 2, 0.3))
+            @test GUI._pick_arrow(ctrl, scene) === :x
+            # the rotate mode has no arrows to grab, the move mode no rings
+            @test isnothing(GUI._pick_ring(ctrl, scene))
+            _move!(scene, a)
+            ctrl.mode[] = :rotate
+            GUI._update_selection_box!(ctrl)
+            @test isnothing(GUI._pick_arrow(ctrl, scene)) && isnothing(ctrl.arrow_hover)
+            close(ctrl)
+        end
+
+        @testset "an arrow that points at the camera is not grabbed" begin
+            # from above: the blue arrow is a point on the screen
+            ctrl, scene, m1 = _setup(eye = Vec3d(0, 0, 0.4), up = Vec3d(0, 1, 0))
+            P0 = _at(m1)
+            for f in (0.3, 0.6, 1.0)
+                _move!(scene, _arrow_px(ctrl, scene, 3, f))
+                @test isnothing(GUI._pick_arrow(ctrl, scene))
+            end
+            # the other two are grabbed, and move the mirror on the table
+            a, b = _arrow_px(ctrl, scene, 2, 0.5), _arrow_px(ctrl, scene, 2, 0.9)
+            l = _length(ctrl, 2)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1) ≈ P0 .+ [0.4 * l, 0, 0] atol = 2e-5
+            # a line that is seen end-on tells no coordinate
+            @test isnothing(GUI._arrow_coordinate(scene, ctrl.gizmo_origin, [0.0, 0, 1]))
+            @test GUI._arrow_coordinate(scene, ctrl.gizmo_origin, [1.0, 0, 0]) isa Float64
+            close(ctrl)
+        end
+
+        @testset "locked arrows can not be dragged" begin
+            # only the red arrow is unlocked: the green and the blue one are faded
+            ctrl, scene, m1 = _setup(constraints = m -> Dict(m => (; move = (:x,))))
+            P0 = _at(m1)
+            @test ctrl.arrow_color[][1].alpha ≈ GUI._GIZMO_FADE_ALPHA
+            @test ctrl.arrow_color[][3].alpha ≈ GUI._GIZMO_FADE_ALPHA
+            for i in (1, 3)
+                _move!(scene, _arrow_px(ctrl, scene, i, 0.8))
+                @test isnothing(GUI._pick_arrow(ctrl, scene)) && isnothing(ctrl.arrow_hover)
+            end
+            a, b = _arrow_px(ctrl, scene, 2, 0.5), _arrow_px(ctrl, scene, 2, 0.8)
+            l = _length(ctrl, 2)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1) ≈ P0 .+ [0.3 * l, 0, 0] atol = 2e-5
+            close(ctrl)
+        end
+
+        @testset "off the arrows the drag moves in the plane of the view" begin
+            ctrl, scene, m1 = _setup()
+            P0 = _at(m1)
+            p = Makie.project(scene, :data, :pixel, Point3(P0))
+            o = scene.viewport[].origin
+            at = (Float64(p[1] + o[1]), Float64(p[2] + o[2]))
+            _move!(scene, at)
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            _press!(scene, at)
+            @test ctrl.press_kind == :pending_drag && isnothing(ctrl.arrow)
+            _move!(scene, at .+ (30.0, 12.0))
+            _release!(scene)
+            Δ = _at(m1) .- P0
+            @test norm(Δ) > 1e-3
+            @test abs(dot(Δ, GUI._view_direction(scene))) < 1e-6
+            close(ctrl)
+        end
+
+        @testset "select_modifier and the spectator mode" begin
+            ctrl, scene, m1 = _setup(select_modifier = Keyboard.left_shift)
+            P0 = _at(m1)
+            a, b = _arrow_px(ctrl, scene, 2, 0.5), _arrow_px(ctrl, scene, 2, 0.8)
+            # without the modifier the press goes to the camera and nothing is highlighted
+            delete!(events(scene).keyboardstate, Keyboard.left_shift)
+            _move!(scene, a)
+            @test isnothing(ctrl.arrow_hover)
+            _press!(scene, a)
+            @test ctrl.press_kind == :none
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1) == P0
+            # with it, the arrow is dragged
+            push!(events(scene).keyboardstate, Keyboard.left_shift)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1)[1] > P0[1] + 1e-3
+            close(ctrl)
+
+            # the spectator mode ends a drag of an arrow, and has no arrows
+            ctrl, scene, m1 = _setup()
+            _press!(scene, _arrow_px(ctrl, scene, 2, 0.5))
+            @test !isnothing(ctrl.arrow)
+            GUI._set_spectator!(ctrl, true)
+            @test isnothing(ctrl.arrow) && isnothing(GUI._pick_arrow(ctrl, scene))
+            close(ctrl)
+        end
+    end
+
     @testset "drag in the plane of the view" begin
         # Selects m1 at the center of the view (the camera looks at it) and drags it by `d` px.
         # Returns its displacement, the direction of the view and the distance [px] between the

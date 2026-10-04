@@ -23,7 +23,7 @@ mode, which is switched with `m`:
 |:----------------------------------------|:------------------------------|:------------------------------|
 | Left-click on a component               | Select it                     | Select it                     |
 | Left-drag on the selected component     | Move in the plane of the view | Rotate around the blue axis   |
-| Left-drag on a ring                     |                               | Rotate around that ring       |
+| Left-drag on an arrow or a ring         | Move along that arrow         | Rotate around that ring       |
 | Left-drag elsewhere                     | Rotate the camera             | Rotate the camera             |
 | `↑` / `↓`                               | Move along the green arrow    | Rotate around the red ring    |
 | `→` / `←`                               | Move along the red arrow      | Rotate around the blue ring   |
@@ -57,7 +57,11 @@ direction of the arrow, or rotates it in the direction of the ring. In the rotat
 a ring (the ring under the cursor is highlighted) rotates the component around that ring, through
 its position: the angle follows the cursor around the ring, or, if the ring is seen edge-on, the
 movement of the cursor along it. This tilts a component out of the plane of the table with the
-mouse. Locked rings, see `constraints` below, can not be dragged. The current mode and step
+mouse. Locked rings, see `constraints` below, can not be dragged. In the move mode, a drag on an
+arrow (highlighted under the cursor in the same way) moves the component along that arrow only,
+e.g. along its optical axis or straight up, without snapping; a drag on the component itself moves
+it in the plane of the view as before. An arrow that points at the camera can not be grabbed, nor
+can a locked one. The current mode and step
 size are shown in the hint line at the top of the 3D view.
 
 Clicking a component inside an `ObjectGroup` selects the outermost group first. Clicking the same

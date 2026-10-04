@@ -223,7 +223,8 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
             _HelpEntry([:mouse => "drag"],
                 !move ? "rotate around the ring you grab, else the blue ring" :
-                view_plane ? "move in the plane of the view" : "move in the plane";
+                view_plane ? "move along the arrow you grab, else in the plane of the view" :
+                "move along the arrow you grab, else in the plane";
                 color = move ? "" : "blue"),
             _HelpEntry(["+", "−"], "keyboard step, now $step"),
             _HelpEntry(["Shift"], "with a key: 10× step"),
@@ -309,6 +310,13 @@ const _RING_RES = 32
 const _RING_PICK_RADIUS = 8.0
 const _RING_HOVER_BRIGHTEN = 0.55
 const _RING_EDGE_ON = 0.15
+# The part of an arrow of the gizmo from its start that is not grabbed, where the three arrows meet:
+# a quarter of its length, and at least this distance on the screen [px], such that an object that
+# is small on the screen and lies under the start of the arrows, e.g. seen from above, is still
+# grabbed itself. An arrow that is shorter on the screen, e.g. one that points at the camera, is
+# not grabbed at all
+const _ARROW_PICK_START = 0.25
+const _ARROW_PICK_FREE = 20.0
 
 """
     _ring_basis(a) -> (e1, e2)
@@ -372,6 +380,22 @@ mutable struct _RingDrag
     center::Vector{Float64}
     θ::Union{Nothing, Float64}
     tangent::NTuple{2, Float64}
+end
+
+"""
+    _ArrowDrag
+
+The state of a mouse drag on an arrow of the gizmo in the move mode: the `sym` (`:x`, `:y` or `:v`)
+and the unit vector `axis` of the arrow and the `origin` [m] of the gizmo at the press, i.e. the
+line along which the object is moved, which stays fixed during the drag, and the coordinate `s` [m]
+of the cursor along that line at the last step (`nothing` if the line was seen end-on), see
+`_arrow_coordinate`.
+"""
+mutable struct _ArrowDrag
+    sym::Symbol
+    axis::Vector{Float64}
+    origin::Vector{Float64}
+    s::Union{Nothing, Float64}
 end
 
 """One entry of the undo history of [`kinematic_controls!`](@ref): the pose of `obj` before and
@@ -513,6 +537,9 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     ring_hover::Union{Nothing, Symbol}
     # the drag of a ring in the rotate mode, from its press to its release, see `_pick_ring`
     ring::Union{Nothing, _RingDrag}
+    # likewise the arrow under the cursor and the drag of an arrow in the move mode, see `_pick_arrow`
+    arrow_hover::Union{Nothing, Symbol}
+    arrow::Union{Nothing, _ArrowDrag}
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -695,6 +722,18 @@ function _ring_colors(ctrl::KinematicController, colors)
     return out
 end
 
+"""Returns the colors of the arrows of the gizmo for the `colors` of the axes: the arrow under the
+cursor, see `ctrl.arrow_hover`, is brighter, like the ring under the cursor."""
+function _arrow_colors(ctrl::KinematicController, colors)
+    i = findfirst(==(ctrl.arrow_hover), _AXES_SYMS)
+    isnothing(i) && return colors
+    out = copy(colors)
+    c = out[i]
+    out[i] = Makie.RGBAf(c.r + _RING_HOVER_BRIGHTEN * (1 - c.r), c.g + _RING_HOVER_BRIGHTEN * (1 - c.g),
+        c.b + _RING_HOVER_BRIGHTEN * (1 - c.b), c.alpha)
+    return out
+end
+
 _help_sections(ctrl::KinematicController) = _merge_sections(
     _help_sections(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
         ctrl.click_help, spectator = ctrl.spectator[], view_plane = isnothing(ctrl.plane_normal)),
@@ -776,7 +815,7 @@ function _update_selection_box!(ctrl::KinematicController)
     if isempty(plots)
         isempty(ctrl.box_obs[]) || (empty!(ctrl.box_obs[]); notify(ctrl.box_obs))
         ctrl.gizmo_visible[] && (ctrl.gizmo_visible[] = false)
-        ctrl.ring_hover = nothing
+        ctrl.ring_hover = ctrl.arrow_hover = nothing
         return nothing
     end
     bb = _selection_bbox(ctrl, obj, plots)
@@ -800,7 +839,8 @@ function _update_selection_box!(ctrl::KinematicController)
     ctrl.ring_pts.val = ring_pts
     ctrl.gizmo_size.val = l
     colors = _gizmo_colors(ctrl, obj, ctrl.mode[])
-    ctrl.arrow_color.val = colors
+    ctrl.mode[] == :move || (ctrl.arrow_hover = nothing)
+    ctrl.arrow_color.val = _arrow_colors(ctrl, colors)
     ctrl.label_color.val = colors
     ctrl.mode[] == :rotate || (ctrl.ring_hover = nothing)
     ctrl.ring_color.val = _ring_colors(ctrl, colors)
@@ -1174,7 +1214,7 @@ function _set_spectator!(ctrl::KinematicController, on::Bool)
         ctrl.dragging = false
         ctrl.press_kind = :none
         ctrl.drag_start = nothing
-        ctrl.ring = nothing
+        ctrl.ring = ctrl.arrow = nothing
         ctrl.last_key_step = nothing
         ctrl.selected[] = nothing
         _update_selection_box!(ctrl)
@@ -1287,17 +1327,73 @@ function _ring_angle(scene, center, axis)
     return atan(dot(d, e2), dot(d, e1))
 end
 
-"""Highlights the ring under the cursor, see `ctrl.ring_hover`, if the mouse is not busy otherwise."""
+"""
+    _pick_arrow(ctrl, scene) -> Union{Nothing, Symbol}
+
+Returns the arrow of the gizmo under the cursor in the move mode (`:x`, `:y` or `:v`), or `nothing`:
+the unlocked arrow (see `constraints`) that is nearest to the cursor in pixels, within
+`_RING_PICK_RADIUS`. The start of the arrows, where the three meet, is not grabbed (see
+`_ARROW_PICK_START` and `_ARROW_PICK_FREE`), such that the object below it can be, nor is an
+arrow that points at the camera, i.e. one that is shorter than that on the screen, along which the
+cursor can not move.
+"""
+function _pick_arrow(ctrl::KinematicController, scene)
+    obj = ctrl.selected[]
+    (ctrl.mode[] == :move && ctrl.gizmo_visible[] && !isnothing(obj)) || return nothing
+    length(ctrl.arrow_pos[]) == length(_AXES_SYMS) || return nothing
+    origin, dir = _cursor_ray(scene)
+    cursor = _px(scene)
+    allowed = _allowed_axes(ctrl, obj, :move)
+    best, dmin = nothing, _RING_PICK_RADIUS
+    for (i, sym) in enumerate(_AXES_SYMS)
+        sym in allowed || continue
+        p, d = ctrl.arrow_pos[][i], ctrl.arrow_dir[][i]
+        a, b = p, p .+ d
+        # An arrow behind the camera is not visible
+        (dot(a .- origin, dir) > 0 && dot(b .- origin, dir) > 0) || continue
+        pa = Makie.project(scene, :data, :pixel, Point3(a))
+        pb = Makie.project(scene, :data, :pixel, Point3(b))
+        len = hypot(pb[1] - pa[1], pb[2] - pa[2])
+        len > _ARROW_PICK_FREE || continue
+        start = max(_ARROW_PICK_START, _ARROW_PICK_FREE / len)
+        dist = _point_segment_distance(cursor, pa .+ start .* (pb .- pa), pb)
+        dist < dmin && ((best, dmin) = (sym, dist))
+    end
+    return best
+end
+
+"""
+    _arrow_coordinate(scene, origin, axis) -> Union{Nothing, Float64}
+
+Returns the coordinate [m] along the unit vector `axis` from the `origin` of the point of that line
+that is closest to the ray through the cursor, i.e. the point of an arrow under the cursor;
+`nothing` if the line is seen end-on (see `_RING_EDGE_ON`), where the point is not defined well.
+"""
+function _arrow_coordinate(scene, origin, axis)
+    o, dir = _cursor_ray(scene)
+    d = normalize(Vector{Float64}(dir))
+    b = dot(axis, d)
+    1 - b^2 < _RING_EDGE_ON^2 && return nothing
+    w = Vector{Float64}(origin) .- Vector{Float64}(o)
+    return (b * dot(d, w) - dot(axis, w)) / (1 - b^2)
+end
+
+"""Highlights the ring or the arrow under the cursor, see `ctrl.ring_hover` and `ctrl.arrow_hover`,
+if the mouse is not busy otherwise."""
 function _update_hover!(ctrl::KinematicController, scene)
-    pick = ctrl.spectator[] || ctrl.ignore_mouse() ||
-           (!isnothing(ctrl.select_modifier) && !_modifier_held(scene, ctrl.select_modifier)) ?
-           nothing : _pick_ring(ctrl, scene)
-    sym = isnothing(pick) ? nothing : first(pick)
-    sym === ctrl.ring_hover && return nothing
-    ctrl.ring_hover = sym
+    busy = ctrl.spectator[] || ctrl.ignore_mouse() ||
+           (!isnothing(ctrl.select_modifier) && !_modifier_held(scene, ctrl.select_modifier))
+    pick = busy ? nothing : _pick_ring(ctrl, scene)
+    ring = isnothing(pick) ? nothing : first(pick)
+    arrow = busy ? nothing : _pick_arrow(ctrl, scene)
+    (ring === ctrl.ring_hover && arrow === ctrl.arrow_hover) && return nothing
+    ring_changed, arrow_changed = ring !== ctrl.ring_hover, arrow !== ctrl.arrow_hover
+    ctrl.ring_hover, ctrl.arrow_hover = ring, arrow
     obj = ctrl.selected[]
     isnothing(obj) && return nothing
-    ctrl.ring_color[] = _ring_colors(ctrl, _gizmo_colors(ctrl, obj, ctrl.mode[]))
+    colors = _gizmo_colors(ctrl, obj, ctrl.mode[])
+    ring_changed && (ctrl.ring_color[] = _ring_colors(ctrl, colors))
+    arrow_changed && (ctrl.arrow_color[] = _arrow_colors(ctrl, colors))
     return nothing
 end
 
@@ -1433,6 +1529,12 @@ A click selects, a drag moves only what is already selected, every other drag ro
   of the cursor along the ring is turned into an angle with `rotate_speed` instead. The ring
   within about 8 px of the cursor (the nearest one) is highlighted and is grabbed, before the
   object itself is. The drag is one entry of the undo history, a click on a ring does nothing
+- left-drag on an arrow of the gizmo (move mode, only unlocked arrows): moves the selected object
+  along that arrow, such that the point of the arrow under the cursor stays under the cursor. It
+  does not snap, neither onto beams nor onto a grid: the arrow names the direction. The arrow
+  within about 8 px of the cursor is highlighted and is grabbed, before the object itself is,
+  except where the three arrows meet and an arrow that points at the camera. The drag is one entry
+  of the undo history, a click on an arrow does nothing
 - left-drag elsewhere (background or an unselected object): rotates the camera as usual
 - left-click on empty space: deselects the current object
 
@@ -1604,7 +1706,7 @@ function kinematic_controls!(
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
         Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
-        center, nothing, nothing
+        center, nothing, nothing, nothing, nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1631,6 +1733,17 @@ function kinematic_controls!(
                 ctrl.press_kind = :pending_ring
                 center = copy(ctrl.gizmo_origin)
                 ctrl.ring = _RingDrag(sym, axis, center, _ring_angle(scene, center, axis), tangent)
+                return Consume(true)
+            end
+            arrow = _pick_arrow(ctrl, scene)
+            if !isnothing(arrow)
+                # A drag on an arrow of the gizmo moves the selection along it, a click does nothing
+                axis = Vector{Float64}(only(_axis_vectors(ctrl, ctrl.selected[], (arrow,))))
+                line = copy(ctrl.gizmo_origin)
+                ctrl.press_pos = ctrl.last_mouse = _px(scene)
+                ctrl.press_leaf = nothing
+                ctrl.press_kind = :pending_arrow
+                ctrl.arrow = _ArrowDrag(arrow, axis, line, _arrow_coordinate(scene, line, axis))
                 return Consume(true)
             end
             local t
@@ -1696,7 +1809,7 @@ function kinematic_controls!(
                     ctrl.last_key_step = nothing
                     _push_history!(ctrl, obj, P0, R0, P1, R1)
                 end
-            elseif kind == :pending_ring
+            elseif kind in (:pending_ring, :pending_arrow)
                 consume = true
             elseif kind == :pending_drag
                 # Released before crossing the threshold: a click, not a drag
@@ -1719,6 +1832,7 @@ function kinematic_controls!(
                 ctrl.ring = nothing
                 _update_selection_box!(ctrl)
             end
+            ctrl.arrow = nothing
             return Consume(consume)
         end
         return Consume(false)
@@ -1726,7 +1840,7 @@ function kinematic_controls!(
 
     l2 = on(events(scene).mouseposition, priority = 200) do _
         if !ctrl.dragging
-            if !(ctrl.press_kind in (:pending_drag, :pending_ring))
+            if !(ctrl.press_kind in (:pending_drag, :pending_ring, :pending_arrow))
                 _update_hover!(ctrl, scene)
                 return Consume(false)
             end
@@ -1753,6 +1867,18 @@ function kinematic_controls!(
             δ = ring.sym == :v ? _snap_rotation!(ctrl, δ) : δ
             if δ != 0
                 _change!(() -> rotate3d!(obj, ring.axis, δ), ctrl, obj)
+                _request_update!(ctrl)
+            end
+        elseif !isnothing(ctrl.arrow)
+            arrow = ctrl.arrow
+            ctrl.last_mouse = _px(scene)
+            # The point of the arrow under the cursor at the press stays under the cursor; on a line
+            # that is seen end-on, the cursor tells no point
+            s = _arrow_coordinate(scene, arrow.origin, arrow.axis)
+            δ = isnothing(s) || isnothing(arrow.s) ? 0.0 : s - arrow.s
+            arrow.s = s
+            if δ != 0
+                _change!(() -> translate3d!(obj, δ .* arrow.axis), ctrl, obj)
                 _request_update!(ctrl)
             end
         elseif ctrl.mode[] == :move

@@ -92,7 +92,9 @@ refractive index as `λ -> n`; an added source is its constructor at the origin 
 keyboard controls to a live-rendered system on its own, without `live_view`. In the rotate mode a
 mouse drag on a ring of the gizmo (highlighted under the cursor) rotates the selected component around
 that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) can not be dragged, a
-drag elsewhere on the selection rotates around `rotation_axis` as before.
+drag elsewhere on the selection rotates around `rotation_axis` as before. In the move mode a drag on
+an arrow of the gizmo moves the component along that arrow only, a drag elsewhere on the selection
+in the plane of the view.
 
 ## Rules
 
