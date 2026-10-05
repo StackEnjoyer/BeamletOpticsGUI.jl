@@ -78,8 +78,8 @@ tabs of `add_panel!` and stays collapsed until the first one exists. Its 3D view
 the same help pill, chips and help card at the top left.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the
 start) shows only the 3D view and the help in both layouts: tools, status, view cube, cards,
-source markers (and with the cards the detector views), panels, toolbar, sidebars and dock are hidden and come back as they were; the progress window of a
-running trace stays. `add_panel!`, `add_controls!` and `add_tool!` also work while it is on.
+source markers (and with the cards the detector views), panels, toolbar, sidebars and dock are hidden and come back as they were, with the selection from before; the progress window of a
+running trace stays. `Shift+V` hides the help as well (only the 3D view, for screenshots; `v` leaves), from code `spectator!(gui; help = false)`. `add_panel!`, `add_controls!` and `add_tool!` also work while it is on.
 
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
 `extras = [housing => (; color = :lightblue), ...]` (`obj` or `obj => render_kwargs`), not into

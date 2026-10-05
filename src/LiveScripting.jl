@@ -132,14 +132,52 @@ function select!(gui::LiveView, ::Nothing)
 end
 
 """
-    spectator!(gui::LiveView, on::Bool)
+    spectator!(gui::LiveView, on::Bool = true; help = true, background = nothing, cards = false, view_cube = false)
 
 Switches the spectator mode of the [`live_view`](@ref) window `gui` on or off, like the key `v`: on,
-the selection is cleared, the tools, cards and help are hidden and all mouse and keyboard input
-goes to the camera; off, they come back as they were. The objects can still be moved from code,
-see [`translate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector)`](@ref).
+the selection is cleared, the tools (the button "⋯" and the tool rail of the compact layout, the
+toolbar and the sidebars of the app layout), the status line, the floating cards, the view cube, the
+markers of the sources, the selection box and the gizmo are hidden, the 3D view fills the window
+and all mouse and keyboard input goes to the camera. The objects can still be moved from code, see
+[`translate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector)`](@ref). Off, everything comes
+back as it was, e.g. a sidebar that was collapsed stays collapsed, and the object that was selected
+before is selected again, if it is still in the view.
+
+# Keyword arguments
+
+They apply while the mode is on and are reset when it is left, also by the key `v`:
+
+- `help = true`: the help pill with the chip of the mode stays, which tells how to leave the mode.
+  `false` hides it as well, such that only the 3D view is left, for screenshots and videos (in the
+  window: `Shift+V`)
+- `background = nothing`: the color of the background of the 3D view and the window, e.g. `:black`
+  or `RGBf(0.1, 0.1, 0.12)` (anything `Makie.to_color` accepts), by default the one of the theme
+- `cards = false`: keep the pinned cards, e.g. of the detectors of the `detectors` kwarg of
+  `live_view`: floating in the 3D view with `layout = :compact`, in the inspector sidebar (which
+  stays) with `layout = :app`
+- `view_cube = false`: keep the view cube
+
+Calling it again with `on = true` applies the new keyword arguments, relative to the state before
+the mode. Use [`Makie.record`](@ref) with a `gui` to record a video.
+
+```julia
+spectator!(gui; help = false, background = :black)
+wait_solve(gui)
+save("setup.png", gui.fig; px_per_unit = 2)
+spectator!(gui, false)
+```
 """
-spectator!(gui::LiveView, on::Bool) = _set_spectator!(gui.controls, on)
+function spectator!(gui::LiveView, on::Bool = true; help::Bool = true, background = nothing,
+        cards::Bool = false, view_cube::Bool = false)
+    if on
+        s = gui.spectator
+        s.cards, s.view_cube = cards, view_cube
+        s.background = isnothing(background) ? nothing : Makie.to_color(background)
+    end
+    # Notifies `_on_spectator!`, which applies the options, also while the mode is on
+    _set_spectator!(gui.controls, on; help)
+    return nothing
+end
 
 """
     wait_solve(gui::LiveView; timeout = Inf) -> Bool

@@ -172,7 +172,9 @@ function _set_spectator_ui!(gui::AppView, on::Bool)
     layout.ui_hidden = on
     foreach(p -> _set_shown!(p, !on), (layout.bar, layout.status_bar))
     _set_shown!(layout.left, !on && layout.collapse.left.active[])
-    _set_shown!(layout.right, !on && layout.collapse.right.active[])
+    # The spectator mode may keep the inspector with the pinned cards, see `spectator!`
+    keep = !on || gui.spectator.cards
+    _set_shown!(layout.right, keep && layout.collapse.right.active[])
     _update_dock!(layout)
     # Also when the UI is hidden: the detector views of the inspector are not shown then
     _refresh_inspector!(gui; force = true)

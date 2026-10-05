@@ -74,7 +74,8 @@ const GUI = BeamletOpticsGUI
         @test first.(merged) == ["Select", "Move the selection", "Edit", "View", "Own"]
         @test last(merged[4].second).text == "one"
         @test [e.text for e in merged[5].second] == ["two", "three"]
-        @test length(move[4].second) == 2
+        @test length(move[4].second) == 3
+        @test move[4].second[3].keys == ["Shift", "V"]
 
         # the text of the standalone controls: a line per title and entry
         text = GUI._help_text(move)

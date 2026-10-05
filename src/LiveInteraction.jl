@@ -234,7 +234,8 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry([_ctrl_cap(), "Y"], "redo, also $(_ctrl_cap())+Shift+Z"; combo = true)],
         "View" => [
             _HelpEntry([:mouse => "drag"], "beside the selection: camera"),
-            _HelpEntry(["V"], "spectator mode: camera only")]]
+            _HelpEntry(["V"], "spectator mode: camera only"),
+            _HelpEntry(["Shift", "V"], "spectator mode without the help"; combo = true)]]
 end
 
 """
@@ -449,6 +450,11 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     throttle::Bool
     # all input goes to the camera, toggled via v
     spectator::Observable{Bool}
+    # whether the mode shows how to leave it (the hint of the overlay, the help of `live_view`),
+    # see `_set_spectator!`
+    spectator_help::Bool
+    # the selection from before the spectator mode, selected again when it is left
+    spectator_selected::Any
     select_modifier::Any
     drag_threshold::Float64
     # locked move/rotate axes per object, see the `constraints` kwarg
@@ -748,7 +754,9 @@ function _update_help!(ctrl::KinematicController)
         ctrl.help_view(ctrl)
         return nothing
     end
-    ctrl.help_obs[] = ctrl.help_shown ? _help_text(_help_sections(ctrl)) : _default_hint(ctrl)
+    # The spectator mode without help shows nothing, see `_set_spectator!`
+    muted = ctrl.spectator[] && !ctrl.spectator_help
+    ctrl.help_obs[] = muted ? "" : ctrl.help_shown ? _help_text(_help_sections(ctrl)) : _default_hint(ctrl)
     return nothing
 end
 
@@ -1210,12 +1218,21 @@ function _key_step!(ctrl::KinematicController, obj, key, factor)
 end
 
 """
-    _set_spectator!(ctrl, on::Bool)
+    _set_spectator!(ctrl, on::Bool; help = true)
 
 Switches the spectator mode of the `ctrl` on or off. In the spectator mode, the selection is
-cleared and all mouse and keyboard input goes to the camera.
+cleared and all mouse and keyboard input goes to the camera; when it is left, the object that was
+selected before is selected again, if it is still one of the controls. With `help = false` the
+mode does not show how to leave it (the hint of the overlay, the help of `live_view`), such that
+only the scene is left, e.g. for a screenshot; the key `v` leaves it all the same. Switching on a
+mode that is on applies `help` and notifies the listeners of `ctrl.spectator` again.
 """
-function _set_spectator!(ctrl::KinematicController, on::Bool)
+function _set_spectator!(ctrl::KinematicController, on::Bool; help::Bool = true)
+    was = ctrl.spectator[]
+    if on
+        was || (ctrl.spectator_selected = ctrl.selected[])
+        ctrl.spectator_help = help
+    end
     ctrl.spectator[] = on
     if on
         ctrl.dragging = false
@@ -1225,6 +1242,14 @@ function _set_spectator!(ctrl::KinematicController, on::Bool)
         ctrl.last_key_step = nothing
         ctrl.selected[] = nothing
         _update_selection_box!(ctrl)
+    else
+        obj = ctrl.spectator_selected
+        ctrl.spectator_selected = nothing
+        ctrl.spectator_help = true
+        if was && !isnothing(obj) && isnothing(ctrl.selected[]) && haskey(ctrl.init_poses, obj)
+            ctrl.selected[] = obj
+            _update_selection_box!(ctrl)
+        end
     end
     _update_help!(ctrl)
     return nothing
@@ -1510,7 +1535,9 @@ two, such that the object can be moved in all directions. In the move mode the a
 mode as rings. The key `h` shows or hides an overlay of all controls.
 
 The key `v` switches the spectator mode on or off, in which the selection is cleared and all
-mouse and keyboard input goes to the camera, such that nothing can be moved by accident.
+mouse and keyboard input goes to the camera, such that nothing can be moved by accident. Leaving
+the mode selects the object again that was selected before. `Shift+V` enters the mode without the
+hint of how to leave it, such that only the scene is shown, e.g. for a screenshot; `v` leaves it.
 
 Objects with a `Static` kinematic trait, see `BeamletOptics.kinematic_trait_of`, can not be
 selected. Sources can be moved via their marker, see [`live_view`](@ref).
@@ -1704,7 +1731,7 @@ function kinematic_controls!(
         mode_obs, on_change, isnothing(plane_normal) ? nothing : normalize(Float64.(plane_normal)),
         normalize(Float64.(rotation_axis)),
         Float64(rotate_speed), Float64(fine_step), Float64(fine_angle), throttle,
-        Observable(spectator), select_modifier, Float64(drag_threshold),
+        Observable(spectator), true, nothing, select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
         nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing,
@@ -1933,7 +1960,8 @@ function kinematic_controls!(
         ctrl.ignore_keys() && return Consume(false)
         event.action in (Keyboard.press, Keyboard.repeat) || return Consume(false)
         if event.action == Keyboard.press && event.key == Keyboard.v
-            _set_spectator!(ctrl, !ctrl.spectator[])
+            # Shift+V enters the mode without its help, v leaves any variant of it
+            _set_spectator!(ctrl, !ctrl.spectator[]; help = !_shift_pressed(scene))
             return Consume(true)
         end
         # Only the overlay can be toggled in the spectator mode
