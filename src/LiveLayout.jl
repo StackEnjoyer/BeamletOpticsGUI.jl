@@ -293,7 +293,7 @@ _clip_plane_color(layout::AbstractLiveLayout) = layout.theme.clip_plane
 _marker_stroke(layout::AbstractLiveLayout) = layout.theme.marker_stroke
 
 """
-Default kwargs of `live_render!` of the source `beam` in the `layout`: the color of its wavelength
+Default kwargs of `live_render!` of the source `beam` in the `layout`: the colors of its wavelengths
 (see `_wavelength_style`) for beams, Gaussian beamlets and beam groups, nothing for anything else
 and for astigmatic beam groups. `layout.theme.rays` is the color of the entry "layout" of the menu
 of colors of the card of a source.

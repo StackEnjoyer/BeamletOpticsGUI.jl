@@ -3,8 +3,8 @@ Color and opacity in which the beams of the live view are drawn, set on the page
 cards of the sources. Display only: nothing is solved.
 =#
 
-# The entries of the menu of colors that are no fixed color: the color of the wavelength (see
-# `_wavelength_color`), the color of the rays of the layout, and any other color
+# The entries of the menu of colors that are no fixed color: the color of the wavelength of each ray
+# (see `BeamletOptics.wavelength_color`), the color of the rays of the layout, and any other color
 const _COLOR_WAVELENGTH = "wavelength"
 const _COLOR_LAYOUT = "layout"
 const _COLOR_CUSTOM = "custom"
@@ -31,50 +31,83 @@ _has_page(::_Source, ::Val{:color}) = true
 _page_rows(src::_Source, ::Val{:color}) = _color_rows(src)
 
 """
-    _color_plots(gui, beam) -> Vector
+    _by_wavelength(color) -> Bool
 
-The plots of the `beam` of the `gui` that are drawn in its color: those of its render handles (a
-beam can be part of several pairs) with a single color, i.e. its rays or its envelope, not those
-of its overlays, whose colors tell their curves apart.
+Returns `true` if the `color` of a beam, as a kwarg of `live_render!` or a render setting, is the
+one of the wavelength of each ray: `:wavelength` or `(:wavelength, alpha)`.
 """
-function _color_plots(gui::LiveView, beam)
-    plots = Any[]
-    for (p, h) in zip(gui.pairs, gui.beam_handles)
-        p.second === beam || continue
-        for plot in _beam_plots(h)
-            (haskey(plot, :color) && !(plot.color[] isa AbstractArray)) && push!(plots, plot)
-        end
+_by_wavelength(color::Symbol) = color === :wavelength
+_by_wavelength(color::Tuple{Symbol, Real}) = first(color) === :wavelength
+_by_wavelength(_) = false
+
+"""
+    _color_setting(gui, beam)
+
+The color with which the `beam` of the `gui` is drawn, as it was given: the render setting `color`
+of its render handle (of the first one, a beam can be part of several pairs), see
+`BeamletOptics.render_settings`, e.g. `:wavelength`. For a beam that is not part of the pairs the
+color of its kwargs, `nothing` without one.
+"""
+function _color_setting(gui::LiveView, beam)
+    i = findfirst(p -> p.second === beam, gui.pairs)
+    isnothing(i) && return get(get(gui.beams.kwargs, beam, (;)), :color, nothing)
+    return get(render_settings(gui.beam_handles[i]), :color, nothing)
+end
+
+# The wavelength [m] of the first ray of the `beam`, `nothing` for a beam group without beams
+_first_wavelength(beam) = BMO.wavelength(_first_ray(beam))
+_first_wavelength(bg::BMO.AbstractBeamGroup) =
+    isempty(BMO.beams(bg)) ? nothing : _first_wavelength(first(BMO.beams(bg)))
+
+# The single color that the `color` of a beam is, `nothing` for anything else, e.g. several colors
+function _single_color(color)
+    c = try
+        Makie.to_color(color)
+    catch e
+        e isa InterruptException && rethrow()
+        return nothing
     end
-    return plots
+    return c isa Makie.Colorant ? RGBf(c) : nothing
 end
 
 """
     _beam_color(gui, beam) -> RGBf
 
-The color in which the `beam` of the `gui` is drawn: the one set on its card or by its
-`beam_kwargs`, otherwise the color of its plots, i.e. of the layout or of BeamletOptics.
+The color in which the `beam` of the `gui` is drawn, see `_color_setting`. Of a beam that is drawn
+in the colors of its wavelengths, the color of the wavelength of its first ray; the color of the
+rays of the layout for a beam without a single color.
 """
 function _beam_color(gui::LiveView, beam)
-    kw = get(gui.beams.kwargs, beam, (;))
-    haskey(kw, :color) && return RGBf(Makie.to_color(kw.color))
-    plots = _color_plots(gui, beam)
-    return isempty(plots) ? RGBf(gui.layout.theme.rays) : RGBf(Makie.to_color(first(plots).color[]))
+    setting = _color_setting(gui, beam)
+    if _by_wavelength(setting)
+        λ = _first_wavelength(beam)
+        return isnothing(λ) ? RGBf(gui.layout.theme.rays) : RGBf(wavelength_color(λ)...)
+    end
+    c = isnothing(setting) ? nothing : _single_color(setting)
+    return isnothing(c) ? RGBf(gui.layout.theme.rays) : c
 end
+
+# The color as it is kept and set: the mode of the wavelength as it is, else without opacity, which
+# is the `alpha` of the plots, see `_set_beam_opacity!`
+_color_value(color) = _by_wavelength(color) ? color : RGBf(Makie.to_color(color))
 
 """
     _set_beam_color!(gui, beam, color)
 
-Draws the `beam` (a beam or beam group of the pairs) of the `gui` in the `color`, anything that
-`Makie.to_color` takes: the color of its plots (see `_color_plots`) and of its kwargs, with which
-it is rendered again, e.g. for another length of its final rays, see `_set_flen!`. Display only:
-nothing is solved, and beams that are dimmed as outdated stay dimmed.
+Draws the `beam` (a beam or beam group of the pairs) of the `gui` in the `color`: anything that
+`Makie.to_color` turns into one color, or `:wavelength` for each ray in the color of its
+wavelength. The color is a setting of its render handles, which keep their plots (see
+`_render_settings!`), and is kept in its kwargs, with which the beam is rendered when it is added
+again. Throws an `ArgumentError`, and changes nothing, for a beam whose color the handle does not
+manage, e.g. one that was given several colors by its `beam_kwargs`. Display only: nothing is
+solved, and beams that are dimmed as outdated stay dimmed.
 """
 function _set_beam_color!(gui::LiveView, beam, color)
-    c = RGBf(Makie.to_color(color))
-    new = (; color = c)
+    new = (; color = _color_value(color))
+    # First the handles, which refuse a color they do not manage: then nothing is changed
+    _render_settings!(gui, beam; new...)
     gui.beams.kwargs[beam] = merge(get(gui.beams.kwargs, beam, (;)), new)
     gui.beams.overlay_kwargs[beam] = merge(get(gui.beams.overlay_kwargs, beam, (;)), new)
-    foreach(plot -> Makie.update!(plot; color = c), _color_plots(gui, beam))
     return nothing
 end
 
@@ -169,8 +202,9 @@ _color_hex(c) = (c = RGBf(c); "#" * join(string(round(Int, 255 * clamp(x, 0, 1))
 _same_color(a, b) = _color_hex(a) == _color_hex(b)
 
 """
-The color of the entry `name` of the menu of colors for the `beam` of the `gui`, `nothing` for
-"custom" and unknown names, see `_color_options`.
+The color of the entry `name` of the menu of colors for the `beam` of the `gui`: `:wavelength` for
+"wavelength" (see `_wavelength_style`), `nothing` for "custom" and unknown names, see
+`_color_options`.
 """
 function _preset_color(gui::LiveView, beam, name::AbstractString)
     name == _COLOR_LAYOUT && return RGBf(gui.layout.theme.rays)
@@ -179,20 +213,40 @@ function _preset_color(gui::LiveView, beam, name::AbstractString)
     return isnothing(i) ? nothing : last(_COLOR_PRESETS[i])
 end
 
-"""The entry of the menu of colors that the color of the `beam` of the `gui` is, else "custom"."""
+"""
+The entry of the menu of colors that the color of the `beam` of the `gui` is: "wavelength" exactly
+if it is drawn in the colors of its wavelengths (see `_color_setting`), the entry of its single
+color, else "custom", also for a beam without a single color.
+"""
 function _color_preset(gui::LiveView, beam)
+    setting = _color_setting(gui, beam)
+    _by_wavelength(setting) && return _COLOR_WAVELENGTH
+    (isnothing(setting) || !isnothing(_single_color(setting))) || return _COLOR_CUSTOM
     c = _beam_color(gui, beam)
     for name in _color_options()
+        name == _COLOR_WAVELENGTH && continue
         ref = _preset_color(gui, beam, name)
         isnothing(ref) || !_same_color(c, ref) || return name
     end
     return _COLOR_CUSTOM
 end
 
+# Sets the color of the `beam` from its card; a beam whose color can not be set (see
+# `_set_beam_color!`) only shows the message of the error in the status line
+function _try_set_beam_color!(gui::LiveView, beam, color)
+    try
+        _set_beam_color!(gui, beam, color)
+    catch e
+        e isa ArgumentError || rethrow()
+        gui.status.text[] = "color not changed: $(first(split(sprint(showerror, e), '\n')))"
+    end
+    return nothing
+end
+
 # The menu of colors chose the entry `name`; "custom" keeps the color
 function _apply_color_preset!(gui::LiveView, beam, name)
     c = name isa AbstractString ? _preset_color(gui, beam, name) : nothing
-    isnothing(c) || _set_beam_color!(gui, beam, c)
+    isnothing(c) || _try_set_beam_color!(gui, beam, c)
     return nothing
 end
 
@@ -200,7 +254,8 @@ end
     _apply_color_input!(gui, beam, s)
 
 Applies the input `s` of the box "hex" of the card of the `beam`: a color as `#rrggbb`, `rrggbb` or
-a name that Makie knows, e.g. `orange`. Any other input only shows a message in the status line.
+a name that Makie knows, e.g. `orange`. Any other input only shows a message in the status line,
+and so does a beam whose color can not be set, see `_set_beam_color!`.
 """
 function _apply_color_input!(gui::LiveView, beam, s)
     text = isnothing(s) ? "" : String(strip(s))
@@ -209,7 +264,7 @@ function _apply_color_input!(gui::LiveView, beam, s)
         gui.status.text[] = "invalid color \"$text\", enter e.g. #ff8000 or a name like orange"
         return nothing
     end
-    _set_beam_color!(gui, beam, c)
+    _try_set_beam_color!(gui, beam, c)
     return nothing
 end
 
@@ -230,9 +285,10 @@ _beam_opacity_percent(gui::LiveView, beam) = round(Int, 100 * _beam_opacity(gui,
 """
     _color_rows(beam)
 
-The rows of the page "Color" of the card of a beam or a beam group: the menu of colors (the color of
-its wavelength, of the layout, fixed colors, see `_color_options`), the box of the color as a hex
-value, the slider of the opacity and the slider of the line width.
+The rows of the page "Color" of the card of a beam or a beam group: the menu of colors (the colors
+of its wavelengths, the color of the layout, fixed colors, see `_color_options`), the box of the
+color as a hex value (of the wavelength of its first ray while it is drawn in the colors of its
+wavelengths), the slider of the opacity and the slider of the line width.
 """
 function _color_rows(_)
     label(text) = CardWidget(Label; text, width = 48, halign = :left)

@@ -2,6 +2,7 @@ module TestLiveBeamColor
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
+using BeamletOptics: render_plots, render_settings
 using Test
 
 const BMO = BeamletOptics
@@ -25,7 +26,13 @@ const GUI = BeamletOpticsGUI
     _card(gui::GUI.AppView) = gui.layout.inspector.card
     _card(gui) = gui.cards.selection
     _hex(c) = GUI._color_hex(Makie.to_color(c))
-    _plot_colors(gui, beam) = unique(_hex(p.color[]) for p in GUI._color_plots(gui, beam))
+    _wavelength_hex(λ) = _hex(Makie.RGBf(wavelength_color(λ)...))
+    _handles(gui, beam) = [h for (p, h) in zip(gui.pairs, gui.beam_handles) if p.second === beam]
+    # The plots of the render handles of the `beam` that draw its color: one color per vertex
+    _color_plots(gui, beam) = [p for h in _handles(gui, beam) for p in render_plots(h)
+                               if haskey(p, :color) && p.color[] isa AbstractVector]
+    _plot_colors(gui, beam) = unique(_hex(c) for p in _color_plots(gui, beam) for c in p.color[])
+    _mode(gui, beam) = only(unique(render_settings(h).color for h in _handles(gui, beam)))
     # Shows the page of the card of the selected `obj`
     function _show!(gui, obj, page)
         gui.controls.selected[] = obj
@@ -59,11 +66,13 @@ const GUI = BeamletOpticsGUI
         layout_hex = _hex(gui.layout.theme.rays)
 
         # the sources of the start have the color of their wavelength
-        @test _plot_colors(gui, beam) == [_hex(GUI._wavelength_color(632.8e-9))]
+        @test _plot_colors(gui, beam) == [_wavelength_hex(632.8e-9)]
         @test GUI._color_preset(gui, beam) == "wavelength"
-        @test _plot_colors(gui, group) == [_hex(GUI._wavelength_color(532e-9))]
+        @test _plot_colors(gui, group) == [_wavelength_hex(532e-9)]
         @test GUI._color_preset(gui, group) == "wavelength"
         @test GUI._color_preset(gui, gauss) == "wavelength"
+        @test all(src -> _mode(gui, src) === :wavelength, (beam, group, gauss))
+        @test !haskey(gui.beams.kwargs[beam], :color)
         @test GUI._beam_opacity(gui, beam) == 1
 
         # a color: of all of its plots and of its kwargs
@@ -79,10 +88,12 @@ const GUI = BeamletOpticsGUI
 
         # the entries of the menu
         GUI._apply_color_preset!(gui, beam, "wavelength")
-        @test _hex(GUI._beam_color(gui, beam)) == _hex(GUI._wavelength_color(632.8e-9))
+        @test _hex(GUI._beam_color(gui, beam)) == _wavelength_hex(632.8e-9)
         @test GUI._color_preset(gui, beam) == "wavelength"
+        @test _mode(gui, beam) === :wavelength && gui.beams.kwargs[beam].color === :wavelength
+        @test _plot_colors(gui, beam) == [_wavelength_hex(632.8e-9)]
         GUI._apply_color_preset!(gui, group, "wavelength")
-        @test _plot_colors(gui, group) == [_hex(GUI._wavelength_color(532e-9))]
+        @test _plot_colors(gui, group) == [_wavelength_hex(532e-9)]
         GUI._apply_color_preset!(gui, beam, "layout")
         @test _plot_colors(gui, beam) == [layout_hex] && GUI._color_preset(gui, beam) == "layout"
         GUI._apply_color_preset!(gui, beam, "magenta")
@@ -101,13 +112,13 @@ const GUI = BeamletOpticsGUI
         GUI._apply_color_input!(gui, beam, nothing)
         @test _plot_colors(gui, beam) == ["#123456"]
 
-        # kept when the beam is rendered again, switched off and on, and solved
+        # kept with another length of the final rays, switched off and on, and solved
         GUI._set_flen!(gui, beam, 0.05)
         @test _plot_colors(gui, beam) == ["#123456"]
         GUI._set_beam_on!(gui, beam, false)
         GUI._set_beam_on!(gui, beam, true)
         @test _plot_colors(gui, beam) == ["#123456"]
-        @test all(p -> p.visible[], GUI._color_plots(gui, beam))
+        @test all(p -> p.visible[], _color_plots(gui, beam))
 
         # the opacity: of its plots and its kwargs, clamped
         GUI._set_beam_opacity!(gui, gauss, 0.4)
@@ -129,6 +140,73 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(System([_mirror()]) => beam; beam_kwargs = Dict(beam => (; color = :orange)))
         @test _plot_colors(gui, beam) == [_hex(:orange)]
         @test GUI._color_preset(gui, beam) == "custom"
+        close(gui)
+
+        # the mode of the wavelength as a kwarg, also with an opacity
+        beam = _beam()
+        gui = _live_view(System([_mirror()]) => beam; beam_kwargs = Dict(beam => (; color = (:wavelength, 0.5))))
+        @test GUI._color_preset(gui, beam) == "wavelength"
+        @test _hex(GUI._beam_color(gui, beam)) == _wavelength_hex(632.8e-9)
+        close(gui)
+    end
+
+    @testset "the handles keep the color" begin
+        m = _mirror()
+        beam = _beam()
+        gui = _live_view(System([m]) => beam, System([_mirror(0.2)]) => beam)
+        handles = _handles(gui, beam)
+        plots = [copy(render_plots(h)) for h in handles]
+        @test length(handles) == 2 && _mode(gui, beam) === :wavelength
+
+        # a fixed color and back: the same handles and plots, of each pair of the beam
+        GUI._set_beam_color!(gui, beam, :orange)
+        @test _hex(_mode(gui, beam)) == _hex(:orange) && GUI._color_preset(gui, beam) == "custom"
+        @test _plot_colors(gui, beam) == [_hex(:orange)]
+        @test all(splat(===), zip(_handles(gui, beam), handles))
+        # it survives a solve
+        zrotate3d!(m, deg2rad(5))
+        retrace!(gui)
+        @test !gui.trace.stale
+        @test _plot_colors(gui, beam) == [_hex(:orange)] && _hex(_mode(gui, beam)) == _hex(:orange)
+        GUI._set_beam_color!(gui, beam, :wavelength)
+        @test _mode(gui, beam) === :wavelength && GUI._color_preset(gui, beam) == "wavelength"
+        @test _plot_colors(gui, beam) == [_wavelength_hex(632.8e-9)]
+        @test all(splat(===), zip(_handles(gui, beam), handles))
+        @test all(i -> all(splat(===), zip(render_plots(handles[i]), plots[i])), eachindex(handles))
+        @test length.(render_plots.(handles)) == length.(plots)
+        close(gui)
+    end
+
+    @testset "each ray in the color of its wavelength" begin
+        beams = [Beam([x, 0.0, 0.0], [0.0, 1.0, 0.0], λ) for (x, λ) in ((-1e-3, 450e-9), (1e-3, 650e-9))]
+        group = CollimatedSource(beams, 1e-3, [0.0, 0, 0], [0.0, 1.0, 0.0])
+        gui = _live_view(System([_mirror()]) => group; beam_kwargs = Dict(group => (; render_every = 1)))
+        @test _mode(gui, group) === :wavelength && GUI._color_preset(gui, group) == "wavelength"
+        @test Set(_plot_colors(gui, group)) == Set(_wavelength_hex.((450e-9, 650e-9)))
+        # the box shows the color of the first ray
+        @test _hex(GUI._beam_color(gui, group)) == _wavelength_hex(450e-9)
+        GUI._apply_color_preset!(gui, group, "green")
+        @test length(_plot_colors(gui, group)) == 1 && GUI._color_preset(gui, group) == "green"
+        GUI._apply_color_preset!(gui, group, "wavelength")
+        @test Set(_plot_colors(gui, group)) == Set(_wavelength_hex.((450e-9, 650e-9)))
+        close(gui)
+    end
+
+    @testset "a color that the handle does not manage" begin
+        beam = _beam()
+        colors = [Makie.RGBAf(1, 0, 0, 1), Makie.RGBAf(0, 0, 1, 1)]
+        gui = _live_view(System([]) => beam; beam_kwargs = Dict(beam => (; color = colors)))
+        @test GUI._color_preset(gui, beam) == "custom"
+        @test _hex(GUI._beam_color(gui, beam)) == _hex(gui.layout.theme.rays)
+        @test_throws ArgumentError GUI._set_beam_color!(gui, beam, :orange)
+        @test gui.beams.kwargs[beam].color === colors
+        # the card only shows a message
+        GUI._apply_color_preset!(gui, beam, "red")
+        @test occursin("color not changed", gui.status.text[])
+        gui.status.text[] = ""
+        GUI._apply_color_input!(gui, beam, "orange")
+        @test occursin("color not changed", gui.status.text[])
+        @test gui.beams.kwargs[beam].color === colors && only(render_plots(only(_handles(gui, beam)))).color[] == colors
         close(gui)
     end
 
@@ -158,11 +236,11 @@ const GUI = BeamletOpticsGUI
         beam = _beam()
         gui = _live_view(System([_mirror()]) => beam; clip_planes = [[0, 0.05, 0] => [0, 1, 0]],
             clip_beams = true)
-        planes = [p.clip_planes[] for p in GUI._color_plots(gui, beam)]
+        planes = [p.clip_planes[] for p in _color_plots(gui, beam)]
         @test all(!isempty, planes)
         GUI._set_beam_color!(gui, beam, :green)
         GUI._set_beam_opacity!(gui, beam, 0.5)
-        @test [p.clip_planes[] for p in GUI._color_plots(gui, beam)] == planes
+        @test [p.clip_planes[] for p in _color_plots(gui, beam)] == planes
         close(gui)
     end
 
@@ -185,7 +263,7 @@ const GUI = BeamletOpticsGUI
         slider = GUI._card_widget(card, :beam_opacity)
         @test menu isa Menu && box isa Textbox && slider isa Slider
         @test menu.selection[] == "wavelength"
-        @test box.displayed_string[] == _hex(GUI._wavelength_color(532e-9))
+        @test box.displayed_string[] == _wavelength_hex(532e-9)
         @test slider.value[] == 100
 
         # the menu sets the color and the box shows it

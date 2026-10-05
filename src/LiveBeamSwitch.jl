@@ -115,23 +115,27 @@ drawn, see `BeamletOptics.render_settings!`: of each render handle of a pair wit
 beam can be part of several pairs), and `flen` also of its overlays (see `_add_overlay!`), which
 draw the same rays. The handles and their plots stay, hidden, dimmed and clipped as they are.
 Display only: nothing is solved, except that a solve that runs in the background is cancelled and
-started again, since the handles draw the rays as they are.
+started again, since the handles draw the rays as they are; also if a setting is refused with an
+`ArgumentError`, see `BeamletOptics.render_settings!`.
 """
 function _render_settings!(gui::LiveView, beam; kwargs...)
     isempty(kwargs) && return nothing
     running = _running(gui)
-    _change!(gui.controls, beam) do
-        for (p, h) in zip(gui.pairs, gui.beam_handles)
-            p.second === beam && render_settings!(h; kwargs...)
-        end
-        if haskey(kwargs, :flen)
-            for store in _overlay_stores(gui)
-                h = get(store, beam, nothing)
-                isnothing(h) || render_settings!(h; flen = kwargs[:flen])
+    try
+        _change!(gui.controls, beam) do
+            for (p, h) in zip(gui.pairs, gui.beam_handles)
+                p.second === beam && render_settings!(h; kwargs...)
+            end
+            if haskey(kwargs, :flen)
+                for store in _overlay_stores(gui)
+                    h = get(store, beam, nothing)
+                    isnothing(h) || render_settings!(h; flen = kwargs[:flen])
+                end
             end
         end
+    finally
+        running && gui.controls.on_change(beam)
     end
-    running && gui.controls.on_change(beam)
     return nothing
 end
 
