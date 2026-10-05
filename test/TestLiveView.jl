@@ -78,7 +78,7 @@ _points(h) = only(render_plots(h))[1][]
         @test _result(gui).metrics.P ≈ optical_power(pd)
         # no card is pinned at the start
         @test !any(c -> c.pinned, gui.cards.all) && isempty(gui.detectors.start)
-        @test sprint(show, gui) == "LiveView(1 systems, 1 detectors)"
+        @test sprint(show, gui) == "LiveView(1 systems, 1 sources, 1 detectors)"
         @test isnothing(gui.sliders)
         close(gui)
 
@@ -133,7 +133,7 @@ _points(h) = only(render_plots(h))[1][]
         b2 = Beam([0.05, 0.1, 0.001], [1.0, 0, 0])
         gui = _live_view(sys1 => b1, sys2 => b2; throttle = false, mode = :rotate, fine_angle = 1e-3)
         @test length(_detectors(gui)) == 1 # deduplicated
-        @test sprint(show, gui) == "LiveView(2 systems, 1 detectors)"
+        @test sprint(show, gui) == "LiveView(2 systems, 2 sources, 1 detectors)"
         # both systems and the markers of both sources are handled by one controller
         @test length(render_children(gui.controls.h)) == 5
         @test length(BMO.hits(pd)) == 2
@@ -1041,12 +1041,6 @@ _points(h) = only(render_plots(h))[1][]
             @test maximum(abs.(GUI._normal(plane2) - view_dir)) < 1e-6
             @test _planes(gui) == GUI._plane3f.([plane, plane2])
 
-            # Delete with a component selected does nothing
-            gui.controls.selected[] = m
-            _key!(gui, Keyboard.delete)
-            @test length(gui.clip.planes) == 2
-            @test gui.controls.selected[] === m
-
             # Delete removes the marker and the plane
             marker_plots = copy(render_plots(_handle(gui, plane2)))
             gui.controls.selected[] = plane2
@@ -1190,8 +1184,11 @@ _points(h) = only(render_plots(h))[1][]
         close(gui_ref[])
     end
 
+    # The key that types the letter of `key` in the keyboard layout of this machine: the shortcuts by
+    # letter follow the layout, see `_layout_key`
+    _typed(key) = first(k for k in Keyboard.Button.(Int(Keyboard.a):Int(Keyboard.z)) if GUI._layout_key(k) == key)
     _ctrl_z!(gui) = (push!(events(gui.ax.scene).keyboardstate, Keyboard.left_control);
-                     _key!(gui, Keyboard.z);
+                     _key!(gui, _typed(Keyboard.z));
                      delete!(events(gui.ax.scene).keyboardstate, Keyboard.left_control))
 
     # Angle between the rotation matrices R1 and R2
@@ -1667,7 +1664,8 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.layout isa GUI.CompactLayout
         @test gui.fig.scene.backgroundcolor[] == t.background
         @test gui.ax.scene.backgroundcolor[] == t.view
-        @test _rgb(only(render_plots(gui.beam_handles[1])).color[]) == _rgb(:blue)
+        # the rays in the color of their wavelength, here 1000 nm, in both themes
+        @test _rgb(only(render_plots(gui.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
         plane = only(gui.clip.planes)
         @test _plane_color(gui, plane) == _rgb(:purple)
         @test all(==(_rgb(:black)), _strokes(gui, plane, beam))
@@ -1701,7 +1699,7 @@ _points(h) = only(render_plots(h))[1][]
         @test _rgb(o.rail.box.strokecolor[]) == _rgb(t.border)
         @test _rgb(dark.widgets.auto_trace_toggle.box.color[]) == _rgb(t.accent_soft)
         @test Makie.Colors.alpha(Makie.to_color(dark.widgets.measure_toggle.box.color[])) == 0
-        @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
+        @test _rgb(only(render_plots(dark.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
         @test all(==(_rgb(t.marker_stroke)), _strokes(dark, only(dark.clip.planes), beam))
         @test _detector_color(dark, pd) == t.materials[:detector]

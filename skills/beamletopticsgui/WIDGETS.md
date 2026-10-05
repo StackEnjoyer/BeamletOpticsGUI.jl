@@ -33,7 +33,8 @@ control on its page "Pose" (the rows of `card_rows`), and every card, also a pin
 
 1. Define `BeamletOpticsGUI.card_rows(x::MyType)`. For movable objects start with `pose_card_rows(x)...`;
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
-   `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams).
+   `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams, the box
+   `:flen` for the drawn length of rays that hit nothing).
 2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
 3. `value(gui, obj)` returns what the widget shows, in display units (mm, mrad, %); it must be cheap,
@@ -282,6 +283,40 @@ function add_tilt_controls!(gui, mirror)
     end
 end
 ```
+
+## Recipe: a catalog entry for your type
+
+The catalog "Components" of the live view (a movable window, opened with the key `Insert`; docked in the left sidebar of the app layout) lets the user
+pick a component by the icon of its group and its tile, type its parameters and place it with the mouse.
+An own type joins it with a
+`CatalogEntry(name, constructor; group, params, code_name, icon, source)`: a name, a constructor that is called
+with the parameter values, one `CatalogParam(name, default; unit, scale, keyword, integer, presets)` per number
+(`integer = true` passes an `Int`, e.g. a number of rays; `presets = ["532 nm" => 532e-9, ...]` adds a menu
+of values next to the box, like the laser lines of the sources) and one
+`CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword)` per refractive index. The default
+of a number is in the units of the constructor (SI), the box shows `value / scale` with the `unit`. A
+glass is chosen in a menu of the glasses of `catalog_glasses()` and "constant" (a box for the number,
+default `n`); the constructor gets the glass as stored there (a `SellmeierEquation`) or `λ -> n`. A
+parameter with `keyword = :name` is passed as that keyword argument, the others positionally in order.
+The constructor should be a function or type that a script can call by name, since `export_changes`
+prints the call. An entry with `source = true` is a source: its constructor is called as
+`constructor([0, 0, 0], [0, 1, 0], values...; keywords...)` and returns a beam or beam group, e.g.
+`CatalogEntry("My laser", MySource; group = "Sources", source = true, params = [...])`.
+`group` is a built-in group ("Sources", "Lenses", "Mirrors", "Curved mirrors", "Beamsplitters",
+"Prisms", "Polarizers", "Detectors") or a new one; `icon` is the name of an icon as for `add_tool!`
+(e.g. `:singlet`, `:round_mirror`, `:prism`) or a `Makie.BezierPath`, by default the icon of the group.
+
+```julia
+push!(component_catalog(), CatalogEntry("My lens", MyLens; group = "Lenses", icon = :singlet,
+    params = [CatalogParam("f", 100e-3; unit = "mm", scale = 1e-3), CatalogGlass()]))
+# an own glass, as `name => n(λ)`: a SellmeierEquation, a DiscreteRefractiveIndex or a named function
+push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))
+```
+
+A package adds its entries in the `__init__` of its package extension on BeamletOpticsGUI; views opened
+afterwards show them. One view gets other entries with `live_view(...; catalog = entries)`, none with
+`catalog = CatalogEntry[]`. The constructor returns the object in its construction pose; the catalog
+moves it to where it is placed.
 
 ## Pitfalls
 

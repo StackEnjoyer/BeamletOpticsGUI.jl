@@ -183,14 +183,35 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     end
 
     @testset "drag with a local axis parallel to the rotation axis" begin
-        # the local x-axis of m1 points along -z, i.e. along the rotation axis, hence the allowed
-        # axes of the drag are linearly dependent
+        # the local x-axis of m1 points along -z, i.e. along the rotation axis: the axes of the
+        # controls would span only the y-z plane, hence the axis perpendicular to the local y-axis
+        # and the rotation axis takes its place
         fig, ax, h, m1, m2 = _fixture()
         BMO.yrotate3d!(m1, π / 2)
         GUI.update_render!(h)
         scene = ax.scene
         P0 = collect(Float64.(BMO.position(m1)))
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = ax2 -> (render_plots(render_children(h)[1])[1], 0))
+        @test abs(GUI._pose(m1)[2][3, 1]) ≈ 1 atol = 1e-12
+        y, x, v = GUI._control_axes(ctrl, m1)
+        @test abs(det(hcat(y, x, v))) ≈ 1 atol = 1e-12
+        @test y ≈ GUI._pose(m1)[2][:, 2] && v == [0, 0, 1]
+        @test x ≈ cross(y, v) atol = 1e-12
+        # the same for the local y-axis, e.g. of an object that looks upwards
+        BMO.xrotate3d!(m2, π / 2)
+        y2, x2, v2 = GUI._control_axes(ctrl, m2)
+        @test abs(GUI._pose(m2)[2][3, 2]) ≈ 1 atol = 1e-9
+        @test abs(det(hcat(y2, x2, v2))) ≈ 1 atol = 1e-9
+        @test x2 ≈ GUI._pose(m2)[2][:, 1]
+        # axes in general position are the local ones
+        BMO.xrotate3d!(m2, 0.3)
+        @test GUI._control_axes(ctrl, m2)[1] ≈ GUI._pose(m2)[2][:, 2]
+        # the key of the x-axis moves m1 along the new axis, i.e. sideways
+        ctrl.selected[] = m1
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)
+        @test collect(Float64.(BMO.position(m1))) .- P0 ≈ ctrl.fine_step .* x atol = 1e-12
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
+        ctrl.selected[] = nothing
         events(scene).mouseposition[] = (100.0, 100.0)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -982,12 +1003,34 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test exceptions ⊆ camera_keys
     end
 
+    # The key that types the letter of `key` in the keyboard layout of this machine: the shortcuts by
+    # letter follow the layout, see `_layout_key`
+    _typed(key) = first(k for k in Keyboard.Button.(Int(Keyboard.a):Int(Keyboard.z)) if GUI._layout_key(k) == key)
+
+    @testset "keys by their letter" begin
+        # a US keyboard, and a backend that does not tell the layout
+        @test GUI._layout_key(Keyboard.z, "z") == Keyboard.z
+        @test GUI._layout_key(Keyboard.z, nothing) == Keyboard.z
+        # a German keyboard: "Z" and "Y" are swapped
+        @test GUI._layout_key(Keyboard.y, "z") == Keyboard.z
+        @test GUI._layout_key(Keyboard.z, "y") == Keyboard.y
+        @test GUI._layout_key(Keyboard.y, "Z") == Keyboard.z
+        # keys without a letter of a to z
+        @test GUI._layout_key(Keyboard.semicolon, "ö") == Keyboard.semicolon
+        @test GUI._layout_key(Keyboard.m, ",") == Keyboard.m
+        @test GUI._layout_key(Keyboard.escape) == Keyboard.escape
+        @test GUI._layout_key(Keyboard.up) == Keyboard.up
+        # the layout of this machine
+        @test GUI._layout_key(_typed(Keyboard.z)) == Keyboard.z
+        @test GUI._layout_key(_typed(Keyboard.y)) == Keyboard.y
+    end
+
     @testset "undo/redo" begin
         _ctrl_z!(scene) = (push!(events(scene).keyboardstate, Keyboard.left_control);
-                            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.z, Keyboard.press);
+                            events(scene).keyboardbutton[] = Makie.KeyEvent(_typed(Keyboard.z), Keyboard.press);
                             delete!(events(scene).keyboardstate, Keyboard.left_control))
         _ctrl_y!(scene) = (push!(events(scene).keyboardstate, Keyboard.left_control);
-                            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.y, Keyboard.press);
+                            events(scene).keyboardbutton[] = Makie.KeyEvent(_typed(Keyboard.y), Keyboard.press);
                             delete!(events(scene).keyboardstate, Keyboard.left_control))
 
         @testset "undo/redo of a drag" begin
@@ -1250,7 +1293,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mouseposition[] = (cx + 30, cy + 15)
             r1 = Makie.ray_at_cursor(scene)
             hit1 = GUI._ray_plane_intersect(Vector{Float64}(r1.origin), Vector{Float64}(r1.direction),
-                ctrl.plane_point, ctrl.plane_normal)
+                ctrl.plane_point, GUI._drag_normal(scene, ctrl))
             # the grabbed point (position - grab_offset) is still exactly the new plane hit
             @test isapprox(collect(Float64.(BMO.position(m1))) .- grab_offset, hit1; atol = 1e-9)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
@@ -1270,6 +1313,475 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             close(ctrl)
         end
+    end
+
+    @testset "drag on a ring rotates around it" begin
+        _press!(scene, pos) = (events(scene).mouseposition[] = pos;
+                                events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
+        _move!(scene, pos) = (events(scene).mouseposition[] = pos)
+        _release!(scene) = (events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
+        # Position [px of the window] of the vertex `j` (1:_RING_RES + 1) of the ring `i` (1:3, in
+        # the order `_AXES_SYMS`) of the gizmo, which is at the angle (j - 1) / 32 * 3π/2 on it
+        function _vertex_px(ctrl, scene, i, j)
+            n = 2 * GUI._RING_RES
+            p = j <= GUI._RING_RES ? ctrl.ring_pts[][(i - 1) * n + 2j - 1] : ctrl.ring_pts[][(i - 1) * n + n]
+            q = Makie.project(scene, :data, :pixel, Point3(p))
+            o = scene.viewport[].origin
+            return (Float64(q[1] + o[1]), Float64(q[2] + o[2]))
+        end
+        _Δθ(j1, j2) = (j2 - j1) / GUI._RING_RES * 1.5π
+        function _setup(; constraints = m1 -> Dict(), kwargs...)
+            fig, ax, h, m1, m2 = _fixture()
+            scene = ax.scene
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1, mode = :rotate,
+                rotate_speed = 1e-2, constraints = constraints(m1), kwargs...)
+            for key in (haskey(kwargs, :select_modifier) ? (kwargs[:select_modifier],) : ())
+                push!(events(scene).keyboardstate, key)
+            end
+            events(scene).mouseposition[] = (100.0, 100.0)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test ctrl.selected[] === m1
+            # close to the gizmo, which stands above the mirror, such that its rings are large
+            Makie.update_cam!(scene, Vec3d(0.12, -0.14, 0.15), Vec3d(0, 0, 0.06), Vec3d(0, 0, 1))
+            return ctrl, scene, m1
+        end
+
+        @testset "the angle follows the cursor around each ring" begin
+            for (i, sym) in enumerate(GUI._AXES_SYMS)
+                ctrl, scene, m1 = _setup()
+                R0 = Matrix{Float64}(BMO.orientation(m1))
+                P0 = collect(Float64.(BMO.position(m1)))
+                axis = only(GUI._axis_vectors(ctrl, m1, (sym,)))
+                a, b = _vertex_px(ctrl, scene, i, 4), _vertex_px(ctrl, scene, i, 12)
+                events(scene).mouseposition[] = a
+                @test first(GUI._pick_ring(ctrl, scene)) === sym
+                _press!(scene, a)
+                @test ctrl.press_kind == :pending_ring
+                _move!(scene, b)
+                @test ctrl.dragging
+                @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d(axis, _Δθ(4, 12)) * R0 atol = 1e-4
+                @test collect(Float64.(BMO.position(m1))) ≈ P0
+                _release!(scene)
+                @test !ctrl.dragging
+                @test length(ctrl.undo_stack) == 1
+                @test ctrl.selected[] === m1
+                e = only(ctrl.undo_stack)
+                @test e.obj === m1 && e.R0 ≈ R0 && e.R1 ≈ Matrix{Float64}(BMO.orientation(m1))
+                @test GUI._undo!(ctrl)
+                @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
+                close(ctrl)
+            end
+        end
+
+        @testset "the angle does not depend on the steps of the mouse" begin
+            # The bounding box of the mirror changes with its rotation, which would move the gizmo:
+            # the ring rests during the drag, such that many small moves give the angle of one
+            for (i, sym) in enumerate(GUI._AXES_SYMS)
+                ctrl, scene, m1 = _setup()
+                R0 = Matrix{Float64}(BMO.orientation(m1))
+                axis = only(GUI._axis_vectors(ctrl, m1, (sym,)))
+                path = [_vertex_px(ctrl, scene, i, j) for j in 4:12]
+                origin = copy(ctrl.gizmo_origin)
+                _press!(scene, path[1])
+                foreach(p -> _move!(scene, p), path[2:end])
+                @test ctrl.gizmo_origin == origin
+                R = Matrix{Float64}(BMO.orientation(m1))
+                @test R ≈ BMO.rotate3d(axis, _Δθ(4, 12)) * R0 atol = 1e-4
+                # a cursor that rests turns nothing
+                foreach(_ -> notify(events(scene).mouseposition), 1:5)
+                @test Matrix{Float64}(BMO.orientation(m1)) == R
+                _release!(scene)
+                # the gizmo follows the object again: tilted, the mirror is less high
+                sym == :x && @test ctrl.gizmo_origin[3] < origin[3] - 1e-4
+                @test length(ctrl.undo_stack) == 1
+                close(ctrl)
+            end
+        end
+
+        @testset "a click on a ring does nothing, the ring under the cursor is highlighted" begin
+            ctrl, scene, m1 = _setup()
+            R0 = Matrix{Float64}(BMO.orientation(m1))
+            a = _vertex_px(ctrl, scene, 2, 8)
+            _move!(scene, a)
+            @test ctrl.ring_hover === :x
+            @test ctrl.ring_color[][2 * GUI._RING_RES + 1].r > 0.9 # the red ring is brighter
+            _press!(scene, a)
+            _release!(scene)
+            @test ctrl.selected[] === m1
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
+            @test isempty(ctrl.undo_stack)
+            _move!(scene, (1.0, 1.0))
+            @test isnothing(ctrl.ring_hover)
+            close(ctrl)
+        end
+
+        @testset "a ring seen edge-on follows the movement along it" begin
+            ctrl, scene, m1 = _setup()
+            # view along the table: the plane of the blue ring is seen edge-on
+            Makie.update_cam!(scene, Vec3d(0, -1, 0), Vec3d(0, 0, 0), Vec3d(0, 0, 1))
+            GUI._update_selection_box!(ctrl)
+            R0 = Matrix{Float64}(BMO.orientation(m1))
+            @test isnothing(GUI._ring_angle(scene, ctrl.gizmo_origin, [0.0, 0, 1]))
+            a = _vertex_px(ctrl, scene, 3, 8)
+            events(scene).mouseposition[] = a
+            ring = GUI._pick_ring(ctrl, scene)
+            @test first(ring) === :v
+            _press!(scene, a)
+            _move!(scene, a .+ (20.0, 0.0))
+            _release!(scene)
+            expected = 1e-2 * 20 * ring[2][1]
+            @test abs(expected) > 0.05
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d([0, 0, 1], expected) * R0 atol = 1e-6
+            close(ctrl)
+        end
+
+        @testset "locked rings can not be dragged" begin
+            # only the red ring is unlocked: the green and the blue one are faded
+            ctrl, scene, m1 = _setup(constraints = m -> Dict(m => (; rotate = (:x,))))
+            R0 = Matrix{Float64}(BMO.orientation(m1))
+            @test ctrl.ring_color[][1].alpha ≈ GUI._GIZMO_FADE_ALPHA
+            for i in (1, 3)
+                a = _vertex_px(ctrl, scene, i, 6)
+                events(scene).mouseposition[] = a
+                @test first(something(GUI._pick_ring(ctrl, scene), (nothing,))) in (nothing, :x)
+                _press!(scene, a)
+                _move!(scene, a .+ (30.0, 10.0))
+                _release!(scene)
+                # a drag on a locked ring starts no ring drag, and :v is locked, too
+                @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
+                @test isempty(ctrl.undo_stack)
+            end
+            # the red ring still works
+            axis = only(GUI._axis_vectors(ctrl, m1, (:x,)))
+            _press!(scene, _vertex_px(ctrl, scene, 2, 4))
+            _move!(scene, _vertex_px(ctrl, scene, 2, 10))
+            _release!(scene)
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d(axis, _Δθ(4, 10)) * R0 atol = 1e-4
+            close(ctrl)
+        end
+
+        @testset "off the rings the drag rotates around the rotation axis" begin
+            ctrl, scene, m1 = _setup()
+            R0 = Matrix{Float64}(BMO.orientation(m1))
+            _press!(scene, (100.0, 100.0))
+            @test ctrl.press_kind == :pending_drag
+            _move!(scene, (110.0, 100.0))
+            _release!(scene)
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ BMO.rotate3d([0, 0, 1], 0.1) * R0
+            close(ctrl)
+        end
+
+        @testset "select_modifier and the spectator mode" begin
+            ctrl, scene, m1 = _setup(select_modifier = Keyboard.left_shift)
+            R0 = Matrix{Float64}(BMO.orientation(m1))
+            a, b = _vertex_px(ctrl, scene, 2, 4), _vertex_px(ctrl, scene, 2, 10)
+            # without the modifier the press goes to the camera and nothing is highlighted
+            delete!(events(scene).keyboardstate, Keyboard.left_shift)
+            _move!(scene, a)
+            @test isnothing(ctrl.ring_hover)
+            _press!(scene, a)
+            @test ctrl.press_kind == :none
+            _move!(scene, b)
+            _release!(scene)
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
+            # with it, the ring is dragged
+            push!(events(scene).keyboardstate, Keyboard.left_shift)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test !(Matrix{Float64}(BMO.orientation(m1)) ≈ R0)
+            close(ctrl)
+
+            # nothing is selected in the spectator mode, which has no rings
+            ctrl, scene, m1 = _setup()
+            GUI._set_spectator!(ctrl, true)
+            R0 = Matrix{Float64}(BMO.orientation(m1))
+            _press!(scene, (100.0, 100.0))
+            _move!(scene, (140.0, 100.0))
+            _release!(scene)
+            @test isnothing(GUI._pick_ring(ctrl, scene))
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
+            close(ctrl)
+        end
+    end
+
+    @testset "drag on an arrow moves along it" begin
+        _press!(scene, pos) = (events(scene).mouseposition[] = pos;
+                                events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press))
+        _move!(scene, pos) = (events(scene).mouseposition[] = pos)
+        _release!(scene) = (events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
+        _at(obj) = collect(Float64.(BMO.position(obj)))
+        # Position [px of the window] of the point of the arrow `i` (1:3, in the order `_AXES_SYMS`)
+        # of the gizmo at the fraction `f` of its length
+        function _arrow_px(ctrl, scene, i, f)
+            p = ctrl.arrow_pos[][i] .+ f .* ctrl.arrow_dir[][i]
+            q = Makie.project(scene, :data, :pixel, Point3(p))
+            o = scene.viewport[].origin
+            return (Float64(q[1] + o[1]), Float64(q[2] + o[2]))
+        end
+        _length(ctrl, i) = Float64(norm(ctrl.arrow_dir[][i]))
+        eye = Vec3d(0.12, -0.14, 0.15)
+        function _setup(; constraints = m1 -> Dict(), eye = eye, up = Vec3d(0, 0, 1), kwargs...)
+            fig, ax, h, m1, m2 = _fixture()
+            scene = ax.scene
+            pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+                constraints = constraints(m1), kwargs...)
+            for key in (haskey(kwargs, :select_modifier) ? (kwargs[:select_modifier],) : ())
+                push!(events(scene).keyboardstate, key)
+            end
+            events(scene).mouseposition[] = (100.0, 100.0)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test ctrl.selected[] === m1
+            # close to the gizmo, which stands above the mirror, such that its arrows are long
+            Makie.update_cam!(scene, eye, Vec3d(0, 0, 0.03), up)
+            return ctrl, scene, m1
+        end
+
+        @testset "the object follows the cursor along each arrow" begin
+            for (i, sym) in enumerate(GUI._AXES_SYMS)
+                ctrl, scene, m1 = _setup()
+                P0 = _at(m1)
+                R0 = Matrix{Float64}(BMO.orientation(m1))
+                axis = only(GUI._axis_vectors(ctrl, m1, (sym,)))
+                l = _length(ctrl, i)
+                a = _arrow_px(ctrl, scene, i, 0.5)
+                # the points of the arrow of the press: the gizmo moves with the object
+                path = [_arrow_px(ctrl, scene, i, f) for f in 0.55:0.05:0.9]
+                events(scene).mouseposition[] = a
+                @test GUI._pick_arrow(ctrl, scene) === sym
+                @test ctrl.arrow_hover === sym
+                _press!(scene, a)
+                @test ctrl.press_kind == :pending_arrow
+                foreach(p -> _move!(scene, p), path)
+                @test ctrl.dragging
+                # by 0.4 of its length along the arrow, and not beside it
+                @test _at(m1) ≈ P0 .+ 0.4 * l .* axis atol = 2e-5
+                @test Matrix{Float64}(BMO.orientation(m1)) == R0
+                # a cursor that rests moves nothing
+                P = _at(m1)
+                foreach(_ -> notify(events(scene).mouseposition), 1:5)
+                @test _at(m1) == P
+                # beside the arrow: only the part of the movement along it
+                _move!(scene, path[end] .+ (0.0, 0.0))
+                _release!(scene)
+                @test !ctrl.dragging && isnothing(ctrl.arrow)
+                @test ctrl.selected[] === m1
+                e = only(ctrl.undo_stack)
+                @test e.obj === m1 && e.P0 ≈ P0 && e.P1 ≈ _at(m1)
+                @test GUI._undo!(ctrl)
+                @test _at(m1) ≈ P0
+                close(ctrl)
+            end
+        end
+
+        @testset "a click on an arrow does nothing, the arrow under the cursor is highlighted" begin
+            ctrl, scene, m1 = _setup()
+            P0 = _at(m1)
+            a = _arrow_px(ctrl, scene, 2, 0.6)
+            @test ctrl.arrow_color[][2].r ≈ 1 && ctrl.arrow_color[][2].g ≈ 0
+            _move!(scene, a)
+            @test ctrl.arrow_hover === :x
+            @test ctrl.arrow_color[][2].g > 0.5 # the red arrow is brighter
+            @test ctrl.arrow_color[][1] == Makie.RGBAf(Makie.to_color(:green))
+            _press!(scene, a)
+            _release!(scene)
+            @test _at(m1) == P0 && isempty(ctrl.undo_stack) && ctrl.selected[] === m1
+            # off the arrows: no highlight
+            _move!(scene, a .+ (40.0, 40.0))
+            @test isnothing(ctrl.arrow_hover)
+            @test ctrl.arrow_color[][2] == Makie.RGBAf(Makie.to_color(:red))
+            # where the three arrows meet, none is grabbed: a quarter of the arrow, at least 20 px
+            _move!(scene, _arrow_px(ctrl, scene, 2, 0.0))
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            o, tip = _arrow_px(ctrl, scene, 2, 0.0), _arrow_px(ctrl, scene, 2, 1.0)
+            along = (tip .- o) ./ hypot((tip .- o)...)
+            _move!(scene, o .+ (GUI._ARROW_PICK_FREE - GUI._RING_PICK_RADIUS - 1) .* along)
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            _move!(scene, _arrow_px(ctrl, scene, 2, 0.1))
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            _move!(scene, _arrow_px(ctrl, scene, 2, 0.3))
+            @test GUI._pick_arrow(ctrl, scene) === :x
+            # the rotate mode has no arrows to grab, the move mode no rings
+            @test isnothing(GUI._pick_ring(ctrl, scene))
+            _move!(scene, a)
+            ctrl.mode[] = :rotate
+            GUI._update_selection_box!(ctrl)
+            @test isnothing(GUI._pick_arrow(ctrl, scene)) && isnothing(ctrl.arrow_hover)
+            close(ctrl)
+        end
+
+        @testset "an arrow that points at the camera is not grabbed" begin
+            # from above: the blue arrow is a point on the screen
+            ctrl, scene, m1 = _setup(eye = Vec3d(0, 0, 0.4), up = Vec3d(0, 1, 0))
+            P0 = _at(m1)
+            for f in (0.3, 0.6, 1.0)
+                _move!(scene, _arrow_px(ctrl, scene, 3, f))
+                @test isnothing(GUI._pick_arrow(ctrl, scene))
+            end
+            # the other two are grabbed, and move the mirror on the table
+            a, b = _arrow_px(ctrl, scene, 2, 0.5), _arrow_px(ctrl, scene, 2, 0.9)
+            l = _length(ctrl, 2)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1) ≈ P0 .+ [0.4 * l, 0, 0] atol = 2e-5
+            # a line that is seen end-on tells no coordinate
+            @test isnothing(GUI._arrow_coordinate(scene, ctrl.gizmo_origin, [0.0, 0, 1]))
+            @test GUI._arrow_coordinate(scene, ctrl.gizmo_origin, [1.0, 0, 0]) isa Float64
+            close(ctrl)
+        end
+
+        @testset "locked arrows can not be dragged" begin
+            # only the red arrow is unlocked: the green and the blue one are faded
+            ctrl, scene, m1 = _setup(constraints = m -> Dict(m => (; move = (:x,))))
+            P0 = _at(m1)
+            @test ctrl.arrow_color[][1].alpha ≈ GUI._GIZMO_FADE_ALPHA
+            @test ctrl.arrow_color[][3].alpha ≈ GUI._GIZMO_FADE_ALPHA
+            for i in (1, 3)
+                _move!(scene, _arrow_px(ctrl, scene, i, 0.8))
+                @test isnothing(GUI._pick_arrow(ctrl, scene)) && isnothing(ctrl.arrow_hover)
+            end
+            a, b = _arrow_px(ctrl, scene, 2, 0.5), _arrow_px(ctrl, scene, 2, 0.8)
+            l = _length(ctrl, 2)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1) ≈ P0 .+ [0.3 * l, 0, 0] atol = 2e-5
+            close(ctrl)
+        end
+
+        @testset "off the arrows the drag moves in the plane of the view" begin
+            ctrl, scene, m1 = _setup()
+            P0 = _at(m1)
+            p = Makie.project(scene, :data, :pixel, Point3(P0))
+            o = scene.viewport[].origin
+            at = (Float64(p[1] + o[1]), Float64(p[2] + o[2]))
+            _move!(scene, at)
+            @test isnothing(GUI._pick_arrow(ctrl, scene))
+            _press!(scene, at)
+            @test ctrl.press_kind == :pending_drag && isnothing(ctrl.arrow)
+            _move!(scene, at .+ (30.0, 12.0))
+            _release!(scene)
+            Δ = _at(m1) .- P0
+            @test norm(Δ) > 1e-3
+            @test abs(dot(Δ, GUI._view_direction(scene))) < 1e-6
+            close(ctrl)
+        end
+
+        @testset "select_modifier and the spectator mode" begin
+            ctrl, scene, m1 = _setup(select_modifier = Keyboard.left_shift)
+            P0 = _at(m1)
+            a, b = _arrow_px(ctrl, scene, 2, 0.5), _arrow_px(ctrl, scene, 2, 0.8)
+            # without the modifier the press goes to the camera and nothing is highlighted
+            delete!(events(scene).keyboardstate, Keyboard.left_shift)
+            _move!(scene, a)
+            @test isnothing(ctrl.arrow_hover)
+            _press!(scene, a)
+            @test ctrl.press_kind == :none
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1) == P0
+            # with it, the arrow is dragged
+            push!(events(scene).keyboardstate, Keyboard.left_shift)
+            _press!(scene, a)
+            _move!(scene, b)
+            _release!(scene)
+            @test _at(m1)[1] > P0[1] + 1e-3
+            close(ctrl)
+
+            # the spectator mode ends a drag of an arrow, and has no arrows
+            ctrl, scene, m1 = _setup()
+            _press!(scene, _arrow_px(ctrl, scene, 2, 0.5))
+            @test !isnothing(ctrl.arrow)
+            GUI._set_spectator!(ctrl, true)
+            @test isnothing(ctrl.arrow) && isnothing(GUI._pick_arrow(ctrl, scene))
+            close(ctrl)
+        end
+    end
+
+    @testset "drag in the plane of the view" begin
+        # Selects m1 at the center of the view (the camera looks at it) and drags it by `d` px.
+        # Returns its displacement, the direction of the view and the distance [px] between the
+        # cursor and the grabbed point after the drag. `move` are the axes it may move along
+        function dragged(eye, up; ortho = false, d = (40.0, 25.0), move = nothing, tilt = 0.0, kwargs...)
+            fig, ax, h, m1, m2 = _fixture()
+            # the local x-axis along -z for a quarter turn, see `_control_axes`
+            if tilt != 0
+                BMO.yrotate3d!(m1, tilt)
+                GUI.update_render!(h)
+            end
+            scene = ax.scene
+            cam = Makie.cameracontrols(scene)
+            ortho && (cam.settings.projectiontype[] = Makie.Orthographic)
+            Makie.update_cam!(scene, Vec3d(eye), Vec3d(0, 0, 0), Vec3d(up))
+            vp = scene.viewport[]
+            c = (vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2)
+            constraints = isnothing(move) ? Dict() : Dict(m1 => (; move))
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, constraints, kwargs...)
+            ev = events(scene)
+            ev.mouseposition[] = c
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test ctrl.selected[] === m1
+            P0 = collect(Float64.(BMO.position(m1)))
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            grabbed = P0 .- ctrl.grab_offset
+            ev.mouseposition[] = c .+ d
+            n = GUI._view_direction(scene)
+            Δ = collect(Float64.(BMO.position(m1))) .- P0
+            px = Makie.project(scene, :data, :pixel, Point3d((grabbed .+ Δ)...))
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            miss = hypot(px[1] - (c[1] + d[1] - vp.origin[1]), px[2] - (c[2] + d[2] - vp.origin[2]))
+            close(ctrl)
+            return Δ, n, miss
+        end
+
+        @testset "$name, ortho = $ortho" for (name, eye, up) in (
+                    ("oblique", [0.3, -0.4, 0.25], [0, 0, 1]),
+                    ("front", [0.0, -0.5, 0.0], [0, 0, 1]),
+                    ("side", [-0.5, 0.0, 0.0], [0, 0, 1]),
+                    ("top", [0.0, 0.0, 0.5], [0, 1, 0])),
+                ortho in (false, true)
+            Δ, n, miss = dragged(eye, up; ortho)
+            @test n ≈ -normalize(Float64.(eye))
+            # it moved, within the plane of the view, and the grabbed point is under the cursor
+            @test norm(Δ) > 1e-4
+            @test abs(dot(Δ, n)) < 1e-9
+            @test miss < 0.5
+        end
+
+        # from the front, a drag to the right and upwards changes x and z, not y
+        Δ, n, _ = dragged([0.0, -0.5, 0.0], [0, 0, 1]; ortho = true)
+        @test Δ[1] > 1e-4 && Δ[3] > 1e-4 && abs(Δ[2]) < 1e-12
+        # from above, with y upwards on the screen, x and y, not z
+        Δ, n, _ = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true)
+        @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
+
+        # ... also if a local axis of the object is parallel to the rotation axis, e.g. the local
+        # x-axis of a beam group along +y: it still moves sideways
+        Δ, n, miss = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true, tilt = π / 2)
+        @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
+        @test miss < 0.5
+
+        # a `plane_normal` keeps the plane, whatever the view: here the height
+        Δ, n, miss = dragged([0.3, -0.4, 0.25], [0, 0, 1]; plane_normal = [0, 0, 1])
+        @test norm(Δ) > 1e-4 && abs(Δ[3]) < 1e-12 && abs(dot(Δ, n)) > 1e-5
+        @test miss < 0.5
+        # parallel to that plane, i.e. from the front, nothing moves
+        Δ, _, _ = dragged([0.0, -0.5, 0.0], [0, 0, 1]; ortho = true, plane_normal = [0, 0, 1])
+        @test norm(Δ) < 1e-12
+
+        # locked axes stay locked: only along the local x-axis of the mirror, the world x-axis
+        Δ, _, _ = dragged([0.3, -0.4, 0.25], [0, 0, 1])
+        @test norm(cross(Δ, [1.0, 0, 0])) > 1e-5
+        Δ, _, _ = dragged([0.3, -0.4, 0.25], [0, 0, 1]; move = (:x,))
+        @test abs(Δ[1]) > 1e-4 && norm(cross(Δ, [1.0, 0, 0])) < 1e-12
+        Δ, _, _ = dragged([0.3, -0.4, 0.25], [0, 0, 1]; move = ())
+        @test norm(Δ) < 1e-12
     end
 
     @testset "screen-space picking of sources" begin

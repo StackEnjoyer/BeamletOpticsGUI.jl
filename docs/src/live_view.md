@@ -71,6 +71,10 @@ receiver path of a lidar, which are solved with different sources:
 gui = live_view(system_tx => beam_tx, system_rx => source_rx)
 ```
 
+A system can also be shown without a source, e.g. an empty table `live_view(System())`: its sources
+are added in the window, from the group "Sources" of the catalog, or from code, see
+[Adding and removing components](@ref components_page).
+
 ## Movable sources in the live view
 
 Each source, i.e. the beam or beam group of each `system => beam` pair, is shown with an orange
@@ -120,7 +124,7 @@ component, its normal is the green axis. Moving a plane does not solve the syste
 | Input      | Action                                                  |
 |:-----------|:--------------------------------------------------------|
 | `p`        | Add a clip plane and select it                          |
-| `Delete`   | Remove the selected clip plane                          |
+| `Delete`   | Remove the selected clip plane (or the selected component, see [Adding and removing components](@ref components_page)) |
 | `c`        | Switch clipping on or off (all planes)                  |
 | `Shift+c`  | Flip the selected clip plane, i.e. show the other side  |
 
@@ -140,7 +144,15 @@ its visible part.
 The results of a detector are on its card. Every card has pages, chosen by a page bar below its head: "Pose" (the rows of
 [`card_rows`](@ref); on the card of the selection also the keyboard step and the Move/Rotate mode)
 and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
-has a third page, "Results", between them, which shows the detector view. A card with a single
+has a third page, "Results", between them, which shows the detector view. The card of a source (a
+beam, a beam group or a Gaussian beamlet) has the page "Color": a menu sets the color in which it is
+drawn ("wavelength" for the color of its wavelength, in which every source starts, "layout" for the
+color of the layout, or a fixed color), a box takes any color as a hex value such as `#ff8000` or
+by its name, a slider sets the opacity, e.g. to see the components through the envelope of a
+Gaussian beamlet, and another one the line width of its rays. They only change the display: nothing
+is traced again, and they are not part of [`export_changes`](@ref). In a script,
+`beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5, linewidth = 2))` sets them from the
+start. A card with a single
 page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
 detector and on "Pose" for every other object; a pinned card keeps its page.
 
@@ -191,8 +203,9 @@ hides the cards and with them the views.
 
 The floating card with an expanded view is resizable: a grip at its bottom right corner changes
 its size from 160 px up to the size of the 3D view. In the sidebar of the app layout, the view
-takes the width of the sidebar and has no grip; pinned cards there collapse or shrink their views
-when the sidebar is full, and the float button moves a pinned card with its view into the 3D view.
+takes the width of the sidebar, is as high as wide and has no grip; the sidebar scrolls with the
+mouse wheel if its cards are higher than the window, and the float button moves a pinned card with
+its view into the 3D view.
 
 By default (`detectors = :auto`, or `[]`), every `Detector` of every system, deduplicated by
 identity, has its page "Results", and no card is pinned at start. A vector pins the cards of
@@ -272,7 +285,7 @@ the layout decides where the parts go:
 | function | `layout = :compact` | `layout = :app` |
 |:--|:--|:--|
 | [`add_panel!`](@ref) | a column right of the 3D view, created by the first panel | a tab of the analysis dock, which stays collapsed until the first panel exists |
-| [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" |
+| [`add_controls!`](@ref) | an entry of the tool rail that opens the controls in a popover | a section of the left sidebar, below "Parameters" and "Components" |
 | [`add_tool!`](@ref) | an entry (icon and name) of the tool rail | an icon button (or toggle) at the end of the toolbar |
 
 `add_panel!(f, gui, title)` calls `f(layout)` with the `GridLayout` of the new panel, into which it
@@ -430,7 +443,7 @@ the menus, like in the object tree of the app layout:
   | detectors | `signal`: the power or the number of rays of its detector view while a view of it is shown, otherwise the number of hits; the switch of the kinds and the toggle "log" are in the view (see [Detector view](@ref)) |
   | ray sources | `λ` and the diameter or NA; sources whose rays can be regenerated (`CollimatedSource`, `PointSource` and their uniform variants, see `set_num_rays!`) add the slider "rays" for their number of rays, which solves again |
   | Gaussian beamlets | `λ`, the waist `w0` and the Rayleigh range `zR` |
-  | beams, beam groups, sources, beamlets | `beam`: the toggle "on" switches the beam off and on; a beam that is off is neither solved nor drawn and its rays are removed from the detectors and measurements, only its source marker stays (with `auto_trace = false` the switch marks the beams as outdated). Gaussian beamlets and their groups add the toggle "beams", which draws the generating beams (chief, divergence, waist) like `render!` with `show_beams = true`. Polarized beams (rays of type `PolarizedRay`, astigmatic Gaussian beamlets) add the toggle "polarization", which draws the polarization along the beam, and the sliders `pol λ` and `pol amp` for the wavelength and the amplitude of that curve. Of a beam group, both are drawn for its central beam; they only change the display. See [`beam_card_rows`](@ref) |
+  | beams, beam groups, sources, beamlets | `beam`: the toggle "on" switches the beam off and on; a beam that is off is neither solved nor drawn and its rays are removed from the detectors and measurements, only its source marker stays (with `auto_trace = false` the switch marks the beams as outdated). Gaussian beamlets and their groups add the toggle "beams", which draws the generating beams (chief, divergence, waist) like `render!` with `show_beams = true`. Polarized beams (rays of type `PolarizedRay`, astigmatic Gaussian beamlets) add the toggle "polarization", which draws the polarization along the beam, and the sliders `pol λ` and `pol amp` for the wavelength and the amplitude of that curve. Of a beam group, both are drawn for its central beam; they only change the display. The box `length` sets the length [mm] with which the final rays, i.e. those that hit nothing, are drawn (`flen`). See [`beam_card_rows`](@ref) |
 
 The rows and the buttons in the head are declared per type by multiple dispatch, see
 [`card_rows`](@ref) and [`card_actions`](@ref): each row is a [`CardRow`](@ref) of texts and
@@ -477,10 +490,10 @@ actions, and below it the pinned cards, one below the other, each with its own h
 actions, pin and chevron) and the same pages as a floating card; its state, including its page and
 its view, moves with the card when it floats or is docked. The pin of the selection pins
 a card, the pin of a pinned card unpins
-it. The sidebar does not scroll: if the cards do not fit, the older pinned cards collapse to their
-heads (the one pinned or expanded last stays open) and the property list of the selection, then
-those of the pinned cards, and the detector views are
-shortened or collapsed; a collapsed card is only expanded again by its chevron. The float button in the head of
+it. Both sidebars scroll with the mouse wheel if their content is higher than the window, with a
+scroll bar at their right edge: the cards keep their full size, the chevron of a pinned card
+collapses it to its head. Over the object tree, the wheel scrolls its rows first, and over a
+detector view it zooms the view. The float button in the head of
 a pinned card moves it out of the sidebar into the 3D view, where it floats next to its component
 as in the compact layout; the dock button in its head moves it back. Only the docked cards take
 room in the sidebar. The floating cards and the docked cards are built by the same code from the
@@ -534,11 +547,38 @@ gui = live_view(system, beam;
     views = ["top" => ([0.0, 0.05, 0.5], [0.0, 0.05, 0.0], [0.0, 1.0, 0.0])])
 ```
 
+## A system in a window of its own
+
+In a view of several systems, one of them can be opened in a second window with its components
+and its sources: click the system in the object tree (or choose it in the component menu) and
+press "new window" in the head of its card, or call [`open_system`](@ref).
+
+```julia
+gui = live_view(interferometer => laser, telescope => star; layout = :app)
+window = open_system(gui, telescope)
+```
+
+The new window is a live view of the same objects, not of copies, and both windows are linked: a
+component or source that is moved, added, removed or edited in one of them changes in the other
+one as well. Only the window in which something changed solves the systems, the other one shows
+the result. The switch of the auto tracing is shared: switched in one window, it is switched in
+the other one as well. The selection, the camera, colors, hidden objects, clip planes and the undo
+history are kept per window. Closing one of the windows ends the link.
+
+## Adding and removing components
+
+Components can be added to a `System` of the view and removed again at runtime, from a catalog in
+the window or from code with [`add_component!`](@ref) and [`remove_component!`](@ref). See
+[Adding and removing components](@ref components_page) and the section of the same name in the docstring of
+[`live_view`](@ref).
+
 ## Exporting the changes
 
 The "Export" button of the tool rail (or the toolbar) prints the changed poses as Julia code and copies it
 to the clipboard, such that an alignment found interactively can be pasted into the script that
-builds the system. [`export_changes`](@ref) returns the same code:
+builds the system. The tool "Script" next to it prints the whole setup as a script, see
+[`export_script`](@ref) and [Adding and removing components](@ref components_page).
+[`export_changes`](@ref) returns the same code:
 
 ```julia
 gui = live_view(system, beam; labels = Dict(m1 => "m1", lens => "lens"))
@@ -566,7 +606,16 @@ The 3D view uses the controls of [`kinematic_controls!`](@ref), see
 [Kinematic controls](@ref). In addition, the key `t` solves the systems immediately, see
 [Manual tracing](@ref), `p`, `Delete`, `c` and `Shift+c` control the clip planes, see
 [Clip planes](@ref), `1` shows or hides the source markers, see
-[Movable sources in the live view](@ref), and `g` zooms to the selection, see [Camera tools](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
+[Movable sources in the live view](@ref), `g` zooms to the selection, see [Camera tools](@ref), and
+`Insert` opens the catalog of the components at the mouse, see [Adding and removing components](@ref components_page). `Tab` switches the snapping onto beams: a component that is dragged or placed with the mouse
+then snaps onto the central beam of a source, and in the rotate mode
+the angle of its optical axis to the beam snaps to the multiples of 45°. Each `Tab` goes to the
+next of three states: off, only the position snaps, the position and the rotation snap, and off
+again; `Shift`+`Tab` goes the other way round. The chip "Snap" next to the mode at the top left of
+the 3D view names the state, and a click on it does the same as `Tab`. The keyword `snap` of
+[`live_view`](@ref) sets the start, see the section "Snapping onto beams" of its docstring. The toggle
+"Table" among the tools shows an optical table, onto whose holes dragged and placed components
+snap beside the beams while the snapping is switched on, see [Aligning on the table and to the beams](@ref). The keyboard step can be typed into the box `step` of the component card, e.g.
 `250 nm` or `50 µrad`, where the unit selects the move or rotate mode (`pm`, `nm`, `µm`, `mm`,
 `cm` or `m`; `nrad`, `µrad`, `mrad`, `rad` or `deg`), see
 [Component card and component menu](@ref). The step is shown in the unit of its size, e.g. `5 mm`,

@@ -82,6 +82,99 @@ function _remove_overlay!(gui::LiveView, store::IdDict, beam)
     return nothing
 end
 
+#=
+Length of the final rays
+=#
+
+"""
+    _live_render_beam!(ax, layout, beam, kwargs) -> AbstractBeamRenderHandle
+
+Renders the `beam` of a pair of a live view into `ax`: in the style of the `layout`, with the
+`kwargs` of `live_render!` of the beam (see `_BeamState`) and without clip planes, which
+`_apply_clip_planes!` sets explicitly, see `clip_beams`.
+"""
+_live_render_beam!(ax, layout, beam, kwargs::NamedTuple) =
+    live_render!(ax, beam; _beam_style(layout, beam)..., kwargs..., clip_planes = Plane3f[])
+
+"""
+    _flen(gui, beam) -> Union{Float64, Nothing}
+
+The length [m] with which a final ray of the `beam` of the `gui`, i.e. one without intersection,
+is drawn (`flen` of `live_render!`); `nothing` for a beam that is not part of the pairs.
+"""
+function _flen(gui::LiveView, beam)
+    i = findfirst(p -> p.second === beam, gui.pairs)
+    return isnothing(i) ? nothing : Float64(render_settings(gui.beam_handles[i]).flen)
+end
+
+"""
+    _set_flen!(gui, beam, flen)
+
+Draws the final rays of the `beam` (a beam or beam group of the pairs) of the `gui` with the length
+`flen` [m]. BeamletOptics fixes the length when a beam is rendered, hence the beam is rendered
+again: its handles in `gui.beam_handles` are replaced, with the kwargs they were rendered with, and
+so are its overlays that are shown (see `_add_overlay!`). The new plots are hidden, dimmed and
+clipped like the old ones. Display only: nothing is solved, except that a solve that runs in the
+background, which would update the replaced handles, is cancelled and started again. Throws an
+`ArgumentError` unless `flen` is positive and finite. Nothing happens if the length does not change.
+"""
+function _set_flen!(gui::LiveView, beam, flen::Real)
+    (isfinite(flen) && flen > 0) ||
+        throw(ArgumentError("the length of the final rays must be positive and finite, got $flen"))
+    old = _flen(gui, beam)
+    (isnothing(old) || old == flen) && return nothing
+    running = _running(gui)
+    _change!(gui.controls, beam) do
+        new = (; flen = Float64(flen))
+        gui.beams.kwargs[beam] = merge(get(gui.beams.kwargs, beam, (;)), new)
+        gui.beams.overlay_kwargs[beam] = merge(get(gui.beams.overlay_kwargs, beam, (;)), new)
+        visible = _beam_on(gui, beam)
+        for (i, p) in enumerate(gui.pairs)
+            p.second === beam || continue
+            h = gui.beam_handles[i]
+            foreach(plot -> delete!(gui.trace.beam_alphas, plot), _beam_plots(h))
+            remove_render!(h)
+            h = _live_render_beam!(gui.ax, gui.layout, beam, gui.beams.kwargs[beam])
+            foreach(plot -> plot.visible[] = visible, _beam_plots(h))
+            gui.beam_handles[i] = h
+        end
+        for (store, set!) in ((gui.beams.pol, _set_polarization!), (gui.beams.gen, _set_generating_beams!))
+            haskey(store, beam) || continue
+            set!(gui, beam, false)
+            set!(gui, beam, true)
+        end
+        # New plots of outdated beams are dimmed like them
+        gui.trace.stale && _dim_beams!(gui)
+        _apply_clip_planes!(gui)
+    end
+    running && gui.controls.on_change(beam)
+    return nothing
+end
+
+"""The length of the final rays of the `beam` of the `gui` as shown in its box [mm], see `_flen`."""
+function _flen_string(gui::LiveView, beam)
+    flen = _flen(gui, beam)
+    isnothing(flen) && return ""
+    v = round(1e3 * flen; sigdigits = 12)
+    return isinteger(v) && abs(v) < 1e15 ? string(Int(v)) : string(v)
+end
+
+"""
+    _apply_flen_input!(gui, beam, s)
+
+Applies the input `s` of the box "length" of the card of the `beam` [mm], see `_set_flen!`. An
+input that is no positive number only shows a message in the status line.
+"""
+function _apply_flen_input!(gui::LiveView, beam, s)
+    x = isnothing(s) ? nothing : tryparse(Float64, strip(s))
+    if isnothing(x) || !isfinite(x) || x <= 0
+        gui.status.text[] = "invalid input \"$(something(s, ""))\" for the length, enter a positive number [mm]"
+        return nothing
+    end
+    _set_flen!(gui, beam, 1e-3 * x)
+    return nothing
+end
+
 """
     _set_beam_off!(gui, beam)
 

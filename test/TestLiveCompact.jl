@@ -179,7 +179,9 @@ const GUI = BeamletOpticsGUI
 
     @testset "own tools, controls and sliders in the rail" begin
         n = Ref(0)
-        gui, _, _ = _fixture(; sliders = ["gap" => (0:0.1:1, v -> (n[] += 1))])
+        # without the catalog, whose toggle "Components" is a tool of the rail as well
+        gui, _, _ = _fixture(; sliders = ["gap" => (0:0.1:1, v -> (n[] += 1))],
+            catalog = CatalogEntry[])
         o = gui.layout.overlay
         tool = add_tool!(g -> nothing, gui, "Tool"; icon = :measure)
         toggle = add_tool!((g, v) -> nothing, gui, "Switch"; toggle = true)
@@ -243,7 +245,11 @@ const GUI = BeamletOpticsGUI
             # the toast takes no clicks and is no obstacle of the cards
             gui.status.text[] = "shown"
             @test !(GUI._overlay_rect(o.toast) in GUI._overlay_rects(o))
+            # a closed view leaves no timer behind
+            @test o.toast_deadline.timer isa Timer
             close(gui)
+            @test isnothing(o.toast_deadline.timer) && isnothing(o.camera_deadline.timer)
+            @test !isfinite(o.toast_deadline.at)
         finally
             GUI._TOAST_SECONDS[] = old
         end
@@ -269,11 +275,11 @@ const GUI = BeamletOpticsGUI
         GUI._park!(help.chips.outer)
         _tick!(gui)
         @test !_parked(help.chips)
-        # a press on the help card closes the open tool rail
+        # a press on the help card reaches nothing below it: the open tool rail stays open
         _key!(gui, Keyboard.h)
         o.more_button.active[] = true
         _click!(gui, _center(GUI._overlay_rect(help.card)))
-        @test !GUI._rail_open(o) && ctrl.help_shown
+        @test GUI._rail_open(o) && ctrl.help_shown
         close(gui)
     end
 

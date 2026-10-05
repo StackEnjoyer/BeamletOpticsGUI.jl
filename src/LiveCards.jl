@@ -22,8 +22,19 @@ function _typing(gui::LiveView)
     any(tb -> tb.focused[], _layout_boxes(gui)) && return true
     # the widgets of `add_controls!` and `add_panel!`, see `_register_widgets!`
     _custom_typing(gui.custom) && return true
+    # the search of an open menu of a card, e.g. of the colors of a beam
+    _card_menu_open(gui) && return true
     return _menu_open(gui)
 end
+
+"""Whether a menu of the card `c` is open, see `_open_menu`."""
+_has_open_menu(c::_AbstractCard) = any(b -> !isnothing(_open_menu(b)), c.blocks)
+
+"""
+Whether a menu of a card of the `gui` is open: its options may reach beyond the card, hence presses
+are left to it and the keys to its search, see `_connect_cards!` and `_typing`.
+"""
+_card_menu_open(gui::LiveView) = any(_has_open_menu, gui.cards.all)
 
 """
 Returns the textboxes of the `gui` outside of the cards, e.g. of the inspector of the app layout,
@@ -162,6 +173,7 @@ the pinned cards are shown again where they were. Called every frame, which move
 and the objects.
 """
 function _update_cards!(gui::LiveView)
+    _settle_cards!(gui)
     menu = _menu_open(gui)
     sel = _shown_object(gui)
     obstacles = _obstacles(gui)
@@ -184,10 +196,10 @@ end
     _obstacles(gui) -> Vector{Rect2f}
 
 The screen rectangles [figure px] that the floating cards of the `gui` keep off, see `_avoid`: the
-view cube, if any, and the parts of the layout over the 3D view that are shown, see
-`_layout_obstacles`.
+view cube, if any, the parts of the layout over the 3D view that are shown, see
+`_layout_obstacles`, and the window of the catalog while it is shown, see `_CatalogWindow`.
 """
-_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui)]
+_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui); _catalog_rects(gui)]
 
 """
     _layout_obstacles(gui) -> Vector{Rect2f}
@@ -229,6 +241,8 @@ _update_card!(::LiveView, c::_ComponentCard, ::Nothing, ::Vector{Rect2f}) = _hid
 function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{Rect2f})
     pose = _card_pose(obj)
     if c.pose === nothing || c.pose[1] !== obj
+        # The rows of the card are those of its page, see `_declarations`
+        _choose_page!(gui, c, obj)
         _build_content!(gui, c, obj)
         _build_pages!(gui, c, obj)
     end
@@ -279,10 +293,19 @@ before, e.g. a card that was docked on this page, and the view of an object with
 `_build_view!`.
 """
 function _build_pages!(gui::LiveView, c::_ComponentCard, obj)
-    pages = _card_pages(obj)
-    (c.pinned && c.page in pages) || (c.page = _default_page(obj))
+    pages = _card_pages(gui, obj)
+    _choose_page!(gui, c, obj)
     _show_bar!(gui, c, pages)
     _build_view!(gui, c, obj)
+    return nothing
+end
+
+"""
+The page of the floating card `c` for its new object `obj`: its default page (see `_default_page`),
+unless the card is pinned and has the page that it showed before.
+"""
+function _choose_page!(gui::LiveView, c::_ComponentCard, obj)
+    (c.pinned && c.page in _card_pages(gui, obj)) || (c.page = _default_page(obj))
     return nothing
 end
 
@@ -325,6 +348,12 @@ function _set_page!(gui::LiveView, c::_ComponentCard, page::Symbol)
     c.page = page
     isnothing(c.bar) || _update!(c.bar.selected, page)
     _defocus_card!(c)
+    # The rows of the new page, see `_declarations`
+    obj = _card_object(gui, c)
+    if !isnothing(obj) && !isnothing(c.pose) && c.pose[1] === obj
+        _build_content!(gui, c, obj)
+        _refresh_card!(gui, c; force = true)
+    end
     _refresh_selection_part!(gui, c, _card_object(gui, c))
     _update_cards!(gui)
     return nothing
@@ -431,7 +460,7 @@ host of the declarations, see `_AbstractCard`, e.g. the floating card, whose new
 before the mouse shield of the cards (see `_on_content_built!`), or the docked card of the app.
 """
 function _build_content!(gui::LiveView, c::_AbstractCard, obj)
-    actions, rows = _declarations(c, obj)
+    actions, rows = _declarations(gui, c, obj)
     key = (_layout_key(actions), _layout_key(rows))
     declared = CardWidget[_declared_widgets(actions)..., _declared_widgets(rows)...]
     if key == c.content_key
@@ -442,25 +471,68 @@ function _build_content!(gui::LiveView, c::_AbstractCard, obj)
     for (j, w) in enumerate(actions)
         _add_cell!(gui, c, c.actions[1, j], w)
     end
+    grids = GridLayout[]
     for (i, row) in enumerate(rows)
         layout = GridLayout(c.rows[i, 1]; _row_attributes(c)...)
         for (j, cell) in enumerate(row.cells)
             _add_cell!(gui, c, layout[1, j], cell)
         end
+        length(row.cells) > 1 && push!(grids, layout)
     end
     c.content_key = key
+    isempty(grids) || push!(gui.cards.settle, (time(), grids))
     _on_content_built!(gui, c)
     return nothing
 end
 
 """
-    _declarations(c, obj) -> (actions, rows)
+    _settle_cards!(gui)
+
+Moves the widgets of the rows of cards that were just built (`gui.cards.settle`, with the clock
+time of the build) by a pixel, at the first frame with a later clock time. A workaround for
+Makie 0.24, see `_settle_catalog_form!`: a `Textbox` that is created and laid out at the same clock
+time draws its text with the camera of its default size, i.e. misplaced, until its viewport changes
+again, e.g. the boxes of a page of a card that is built when the page is chosen. Called every
+frame, see `_update_cards!`.
+"""
+function _settle_cards!(gui::LiveView)
+    settle = gui.cards.settle
+    isempty(settle) && return nothing
+    now = time()
+    for (t0, grids) in settle
+        t0 == now && continue
+        for g in grids
+            # a row that was deleted meanwhile has no columns left
+            size(g)[2] > 1 && Makie.colgap!(g, 1, g.addedcolgaps[1].x + 1)
+        end
+    end
+    filter!(((t0, _),) -> t0 == now, settle)
+    return nothing
+end
+
+"""
+    _declarations(gui, c, obj) -> (actions, rows)
 
 The declarations of the widgets of `obj` on the card `c`: [`card_actions`](@ref) with the button
-"parts" of an object with parts (see `_head_actions`) and [`card_rows`](@ref), which a host may
-extend, e.g. the docked card of the app layout.
+"parts" of an object with parts (see `_head_actions`) and [`card_rows`](@ref) with the row of buttons
+of a component or a source (see `_card_rows`), which a host may extend, e.g. the docked card of
+the app layout.
 """
-_declarations(::_AbstractCard, obj) = (_head_actions(obj), card_rows(obj))
+_declarations(gui::LiveView, c::_AbstractCard, obj) =
+    (_head_actions(obj), _page_rows(gui, obj, c.page))
+
+"""
+    _card_rows(obj)
+
+The rows of the card of `obj`: those of [`card_rows`](@ref) and, below them, a row of buttons for
+a component, i.e. an `AbstractObject` ("onto beam", "face beam" and "remove", see
+`_component_row`), and for a source, i.e. a beam or a beam group ("aim" and "remove", see
+`_source_row`). They are a row and not actions in the head, whose width the name of the object
+needs in the inspector of the app layout.
+"""
+_card_rows(obj) = card_rows(obj)
+_card_rows(obj::BMO.AbstractObject) = (card_rows(obj)..., _component_row())
+_card_rows(obj::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (card_rows(obj)..., _source_row())
 
 """
     _head_actions(obj)
@@ -870,7 +942,7 @@ function _inspector_rows(gui::LiveView, ::Nothing)
     rows = Tuple{String, String}[
         ("Systems", string(length(gui.system_handles))), ("Objects", string(objects)),
         ("Sources", string(length(_sources(gui)))),
-        ("Detectors", string(length(_find_detectors(first.(gui.pairs))))),
+        ("Detectors", string(length(_find_detectors(_systems(gui))))),
         ("Clip planes", string(length(gui.clip.planes))),
         ("Last trace", gui.trace.solve_time > 0 ? _ms_string(gui.trace.solve_time) : "–")]
     return rows
@@ -936,7 +1008,8 @@ function _shield_cards!(gui::LiveView)
     listeners = gui.controls.listeners
     foreach(off, gui.cards.shield)
     filter!(l -> !any(s -> s === l, gui.cards.shield), listeners)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) || _over_layout(gui)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
+                 _over_catalog(gui) || _over_layout(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
         on(_ -> Consume(over()), ev.scroll; priority = 1)]
     append!(listeners, gui.cards.shield)
@@ -964,7 +1037,8 @@ elsewhere ends the input into the textboxes of the cards, also if the controls c
 function _connect_cards!(gui::LiveView)
     ctrl = gui.controls
     ev = events(gui.ax.scene)
-    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui)
+    over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
+                 _over_catalog(gui) || _card_menu_open(gui)
     ctrl.ignore_mouse = () -> over() || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))

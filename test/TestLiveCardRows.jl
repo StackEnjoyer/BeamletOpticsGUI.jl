@@ -1,6 +1,7 @@
 module TestLiveCardRows
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics: render_plots, render_settings
 using Makie
 using Test
 
@@ -192,24 +193,113 @@ const GUI = BeamletOpticsGUI
         pol = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6, [1.0, 0, 0])
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         agb = AstigmaticGaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 633e-9, 1e-3)
-        # the pose, the λ row (sources, beamlets), the slider (sources), the row of the toggles
-        # and, of polarized beams, the two sliders of the polarization curve
-        @test length(card_rows(b)) == length(pose_card_rows(b)) + 1
-        @test length(card_rows(pol)) == length(pose_card_rows(pol)) + 3
-        @test length(card_rows(g)) == length(pose_card_rows(g)) + 2
-        @test length(card_rows(src)) == length(pose_card_rows(src)) + 3
-        @test length(beam_card_rows(b)) == 1
-        @test length(beam_card_rows(pol)) == 3
-        @test length(beam_card_rows(agb)) == 3
+        # the pose, the λ row (sources, beamlets), the slider (sources), the row of the toggles,
+        # of polarized beams the two sliders of the polarization curve, and the length row
+        @test length(card_rows(b)) == length(pose_card_rows(b)) + 2
+        @test length(card_rows(pol)) == length(pose_card_rows(pol)) + 4
+        @test length(card_rows(g)) == length(pose_card_rows(g)) + 3
+        @test length(card_rows(src)) == length(pose_card_rows(src)) + 4
+        @test length(beam_card_rows(b)) == 2
+        @test length(beam_card_rows(pol)) == 4
+        @test length(beam_card_rows(agb)) == 4
         # the label, the toggle of the beam and its label; with the toggles "beams" (beamlets) and
         # "polarization" (polarized beams) and their labels
         _names(row) = [c.name for c in row.cells if c isa CardWidget]
-        @test length(only(beam_card_rows(b)).cells) == 3
-        @test _names(only(beam_card_rows(g))) == [:beam_on, :show_beams]
+        @test length(first(beam_card_rows(b)).cells) == 3
+        @test _names(first(beam_card_rows(g))) == [:beam_on, :show_beams]
         @test _names(first(beam_card_rows(pol))) == [:beam_on, :polarization]
         @test _names(first(beam_card_rows(agb))) == [:beam_on, :show_beams, :polarization]
         @test _names(beam_card_rows(pol)[2]) == [nothing, :pol_wavelength, :pol_wavelength_text]
-        @test _names(beam_card_rows(pol)[3]) == [nothing, :pol_amplitude, :pol_amplitude_text]
+       @test _names(beam_card_rows(pol)[3]) == [nothing, :pol_amplitude, :pol_amplitude_text]
+        # the last row: the length of the final rays
+        for beam in (b, g, pol, src, agb)
+            @test _names(last(beam_card_rows(beam))) == [nothing, :flen]
+        end
+    end
+
+    @testset "length of the final rays ($layout)" for layout in (:compact, :app)
+        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
+        _card(gui) = gui.cards.selection
+        _w(gui, name) = GUI._card_widget(_card(gui), name)
+        # a mirror beside the beams, which all end in free space
+        m = RoundPlanoMirror(25e-3, 5e-3)
+        translate3d!(m, [0.2, 0.1, 0])
+        sys = System([m])
+        b = Beam([0.0, 0, 0], [0.0, 1, 0])
+        pol = Beam([0.0, 0, 10e-3], [0.0, 1, 0], 1e-6, [1.0, 0, 0])
+        src = CollimatedSource([0.0, 0, 20e-3], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
+        g = GaussianBeamlet([0.0, 0, 30e-3], [0.0, 1, 0], 1e-6, 0.5e-3)
+        gui = _live_view(sys => b, sys => pol, sys => src, sys => g; layout, preview = false,
+            beam_kwargs = Dict(src => (; render_every = 3, flen = 0.4)))
+        h(beam) = gui.beam_handles[findfirst(p -> p.second === beam, gui.pairs)]
+        in_scene(plot) = any(q -> q === plot, gui.ax.scene.plots)
+        # the lengths as rendered: the defaults of BeamletOptics and the `beam_kwargs`
+        @test GUI._flen(gui, b) == 1.0 && GUI._flen(gui, g) == 0.1 && GUI._flen(gui, src) == 0.4
+        @test isnothing(GUI._flen(gui, Beam([0.0, 0, 0], [0.0, 1, 0])))
+
+        # the box of the card shows the length in mm and sets it
+        _select!(gui, b)
+        box = _w(gui, :flen)
+        @test box isa Textbox && box.displayed_string[] == "1000"
+        old = h(b)
+        old_plots = copy(render_plots(old))
+        @test !isempty(old_plots) && all(in_scene, old_plots)
+        n_rays = length(BMO.rays(b))
+        box.stored_string[] = "250"
+        @test GUI._flen(gui, b) == 0.25
+        @test h(b) !== old && !any(in_scene, old_plots)
+        @test all(in_scene, render_plots(h(b)))
+        @test only(GUI._beam_segments(h(b))).b ≈ [0, 0.25, 0]
+        @test _w(gui, :flen).displayed_string[] == "250"
+        # display only: nothing is solved, the other beams keep their length
+        @test length(BMO.rays(b)) == n_rays && !gui.trace.stale
+        @test GUI._flen(gui, pol) == 1.0 && GUI._flen(gui, src) == 0.4
+        # the same length again changes nothing
+        kept = h(b)
+        GUI._set_flen!(gui, b, 0.25)
+        @test h(b) === kept
+        # an input that is no positive number only shows a message
+        for s in ("abc", "0", "-5")
+            gui.status.text[] = ""
+            _w(gui, :flen).stored_string[] = s
+            @test GUI._flen(gui, b) == 0.25 && h(b) === kept
+            @test occursin("invalid input \"$s\" for the length", gui.status.text[])
+        end
+        @test_throws ArgumentError GUI._set_flen!(gui, b, 0)
+        @test_throws ArgumentError GUI._set_flen!(gui, b, Inf)
+        @test h(b) === kept
+
+        # the overlay of the polarization is drawn again with the new length
+        GUI._set_polarization!(gui, pol, true)
+        overlay = gui.beams.pol[pol]
+        GUI._set_flen!(gui, pol, 0.3)
+        @test gui.beams.pol[pol] !== overlay && isempty(render_plots(overlay))
+        @test render_settings(gui.beams.pol[pol]).flen == 0.3
+        @test GUI._flen(gui, pol) == 0.3
+        # a beam that is off stays hidden, and is shown with the new length when switched on
+        GUI._set_beam_on!(gui, b, false)
+        GUI._set_flen!(gui, b, 0.5)
+        @test all(p -> !p.visible[], render_plots(h(b)))
+        GUI._set_beam_on!(gui, b, true)
+        @test all(p -> p.visible[], render_plots(h(b)))
+        @test only(GUI._beam_segments(h(b))).b ≈ [0, 0.5, 0]
+        # new plots of outdated beams are dimmed like them, and restored with them
+        GUI._mark_stale!(gui, nothing)
+        GUI._set_flen!(gui, b, 0.6)
+        dimmed = filter(p -> haskey(p, :alpha), render_plots(h(b)))
+        @test !isempty(dimmed) && all(p -> p.alpha[] == GUI._STALE_ALPHA, dimmed)
+        GUI._restore_beams!(gui)
+        @test all(p -> p.alpha[] != GUI._STALE_ALPHA, dimmed)
+        # a source keeps its other kwargs, e.g. `render_every`; a Gaussian beamlet
+        GUI._set_flen!(gui, src, 0.2)
+        @test render_settings(h(src)).render_every == 3 && GUI._flen(gui, src) == 0.2
+        _select!(gui, src)
+        @test _w(gui, :flen).displayed_string[] == "200"
+        _select!(gui, g)
+        @test _w(gui, :flen).displayed_string[] == "100"
+        _w(gui, :flen).stored_string[] = "12.5"
+        @test GUI._flen(gui, g) == 0.0125
+        close(gui)
     end
 
     @testset "refresh of 1000 rays" begin

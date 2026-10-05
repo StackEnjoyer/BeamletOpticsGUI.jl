@@ -22,7 +22,8 @@ mode, which is switched with `m`:
 | Input                                   | Move mode                     | Rotate mode                   |
 |:----------------------------------------|:------------------------------|:------------------------------|
 | Left-click on a component               | Select it                     | Select it                     |
-| Left-drag on the selected component     | Move in the horizontal plane  | Rotate around the blue axis   |
+| Left-drag on the selected component     | Move in the plane of the view | Rotate around the blue axis   |
+| Left-drag on an arrow or a ring         | Move along that arrow         | Rotate around that ring       |
 | Left-drag elsewhere                     | Rotate the camera             | Rotate the camera             |
 | `↑` / `↓`                               | Move along the green arrow    | Rotate around the red ring    |
 | `→` / `←`                               | Move along the red arrow      | Rotate around the blue ring   |
@@ -48,9 +49,19 @@ help. Components
 whose kinematic trait is `Static` can not be selected.
 
 The selected component is marked by a box and three axes above it: its local y-axis (green), its
-local x-axis (red) and the vertical rotation axis (blue). In the move mode the axes are shown as
+local x-axis (red) and the vertical rotation axis (blue). If a local axis is parallel to the
+rotation axis, e.g. the local x-axis of a `CollimatedSource` along +y, the axis perpendicular to
+the other two takes its place, such that the component can be moved in all directions. In the move mode the axes are shown as
 arrows, in the rotate mode as rings. The first key of each pair moves the component in the
-direction of the arrow, or rotates it in the direction of the ring. The current mode and step
+direction of the arrow, or rotates it in the direction of the ring. In the rotate mode, a drag on
+a ring (the ring under the cursor is highlighted) rotates the component around that ring, through
+its position: the angle follows the cursor around the ring, or, if the ring is seen edge-on, the
+movement of the cursor along it. This tilts a component out of the plane of the table with the
+mouse. Locked rings, see `constraints` below, can not be dragged. In the move mode, a drag on an
+arrow (highlighted under the cursor in the same way) moves the component along that arrow only,
+e.g. along its optical axis or straight up, without snapping; a drag on the component itself moves
+it in the plane of the view as before. An arrow that points at the camera can not be grabbed, nor
+can a locked one. The current mode and step
 size are shown in the hint line at the top of the 3D view.
 
 Clicking a component inside an `ObjectGroup` selects the outermost group first. Clicking the same
@@ -58,9 +69,17 @@ component again descends one level into the hierarchy (a subgroup, then the indi
 so that the group can still be moved as a whole, or a single part can be moved on its own. `Esc`
 goes back up one level.
 
-A drag grabs the point under the cursor, which stays under the cursor during the drag. Each drag,
+A drag grabs the point under the cursor, which stays under the cursor during the drag: the
+component moves in the plane of the view, i.e. the plane through the grabbed point perpendicular to
+the direction in which the camera looks. Seen from above, it moves on the table; seen from the
+front, it moves sideways and in height, which is easiest in an orthographic view along an axis (see
+the view cube). In an oblique view, a drag changes the height as well; the keyword
+`plane_normal`, e.g. `plane_normal = [0, 0, 1]`, moves the components in a fixed plane instead,
+and the `constraints` below lock axes. Each drag,
 reset and series of steps with the same key (less than 1 s apart) is one entry of the undo history,
-which undoes up to 100 changes.
+which undoes up to 100 changes. In a [`live_view`](@ref), adding, removing and changing a component
+or source are entries of the same history. `Ctrl+Z` and `Ctrl+Y` are the keys with these letters in
+the keyboard layout, e.g. on a German keyboard, where the two are swapped.
 
 The `constraints` lock axes of individual components, e.g. a mirror in a kinematic mount that can
 only be tilted. The axes are named after the gizmo: `:x` (red), `:y` (green) and `:v` (blue, the

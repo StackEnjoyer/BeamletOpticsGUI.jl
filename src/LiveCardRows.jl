@@ -68,6 +68,16 @@ card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text;
 card_actions(obj) = (CardWidget(Button; name = :hide, label = "hide",
     value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
 
+# The button "remove" of a component or a source, in the last row of its card (see `_card_rows`):
+# removes a top-level object of a `System` or a source from the view (see `remove_component!`) and
+# names the reason in the status line for any other object, e.g. an object of a group or an extra
+_remove_button() = CardWidget(Button; name = :remove, label = "remove",
+    on = (gui, o, _) -> _remove_selected!(gui, o))
+
+# Systems: also "new window", which opens the system in a window of its own, see `open_system`
+card_actions(sys::BMO.AbstractSystem) = (invoke(card_actions, Tuple{Any}, sys)...,
+    CardWidget(Button; name = :open, label = "new window", on = (gui, s, _) -> _open_system!(gui, s)))
+
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),
     CardWidget(Button; name = :remove, label = "remove", on = (gui, p, _) -> _remove_clip_plane!(gui, p)))
@@ -156,10 +166,14 @@ _first_ray(g::BMO.GaussianBeamlet) = _first_ray(g.chief)
 _first_ray(g::BMO.AstigmaticGaussianBeamlet) = _first_ray(g.c)
 _first_ray(beam::BMO.Beam) = first(BMO.rays(beam))
 
-"""The wavelength of the first ray hitting `obj`, or of the first beam of the `gui` [m]."""
+"""
+The wavelength of the first ray hitting `obj`, or of the first beam of the `gui` [m]; 1000 nm, the
+default of BeamletOptics, in a view without a source.
+"""
 function _live_wavelength(gui::LiveView, obj)
     rs = _hits(gui, obj)
-    return BMO.wavelength(isempty(rs) ? _first_ray(last(first(gui.pairs))) : first(rs))
+    isempty(rs) || return BMO.wavelength(first(rs))
+    return isempty(gui.pairs) ? 1.0e-6 : BMO.wavelength(_first_ray(last(first(gui.pairs))))
 end
 
 function _index_text(gui::LiveView, l)
@@ -231,12 +245,19 @@ function beam_card_rows(b)
     gen = _has_generating_beams(b) ? (CardWidget(Toggle; name = :show_beams,
         value = (gui, b) -> _generating_beams_on(gui, b),
         on = (gui, b, v) -> _set_generating_beams!(gui, b, v)), "beams") : ()
-    _polarizable(b) || return (CardRow("beam", on, "on", gen...),)
+    _polarizable(b) || return (CardRow("beam", on, "on", gen...), _flen_row())
     pol = CardWidget(Toggle; name = :polarization, value = (gui, b) -> _polarization_on(gui, b),
         on = (gui, b, v) -> _set_polarization!(gui, b, v))
     return (CardRow("beam", on, "on", gen..., pol, "polarization"),
-        _pol_slider_row("pol λ", :pol_wavelength, :λ), _pol_slider_row("pol amp", :pol_amplitude, :amp))
+        _pol_slider_row("pol λ", :pol_wavelength, :λ), _pol_slider_row("pol amp", :pol_amplitude, :amp),
+        _flen_row())
 end
+
+# The length with which the final rays of a beam are drawn [mm], see `_set_flen!`
+_flen_row() = CardRow(CardWidget(Label; text = "length", width = 48, halign = :left),
+    CardWidget(Textbox; name = :flen, placeholder = " ", width = 76,
+        value = (gui, b) -> _flen_string(gui, b), on = (gui, b, s) -> _apply_flen_input!(gui, b, s)),
+    "mm")
 
 # A slider of the polarization curve, see `_pol_view`: over 0…1, mapped logarithmically to the
 # range of the value `key`, which is shown as text next to it
@@ -307,7 +328,8 @@ _part_parent(gui::LiveView, x) = get(gui.objects.parents, x, nothing)
 Maps each part of the top-level objects of the systems and the extras of the `gui` to the object it
 is a part of, recursively (see `_part_children` and `_part_parent`), and names the parts without a
 label and a name by their type and a running index, like `_name_objects!`, e.g. the lenses of a
-doublet. The systems do not change at runtime, hence this runs once per live view.
+doublet. Called when the view is built and after a component was added, see `add_component!`;
+entries, once made, are kept.
 """
 function _map_parts!(gui::LiveView)
     state = gui.objects

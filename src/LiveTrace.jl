@@ -145,6 +145,8 @@ function _apply!(gui::LiveView, r, obj; coarse = false)
     _views_applied!(gui)
     # e.g. values of the last solve on the cards
     _update_inspector!(gui)
+    # The linked views show the beams, which this one traced, see `_follow!`
+    _sync_links!(gui, obj; stale = false, preview = previewed)
     return nothing
 end
 
@@ -163,28 +165,30 @@ function _resolve!(gui::LiveView, obj; coarse = false, preview = false)
     # Beams that are switched off are not traced, see `_set_beam_on!`
     pairs, handles = _on_pairs(gui, gui.pairs, gui.beam_handles)
     sinks = fill(nothing, length(pairs) + length(requests))
-    r = _compute(pairs, handles, requests, sinks; systems = first.(gui.pairs), coarse, preview)
+    r = _compute(pairs, handles, requests, sinks; systems = _systems(gui), coarse, preview)
     _apply!(gui, r, obj; coarse)
     return nothing
 end
 
 """
-    _start_job(gui, apply, obj, pairs, handles[, requests]; coarse = false, preview = false, timing) -> _SolveJob
+    _start_job(gui, apply, obj, pairs, handles[, requests]; systems, coarse = false, preview = false, timing) -> _SolveJob
 
 Starts `_compute` for the `pairs` whose beams are switched on (with the beam render `handles`) and
 the `requests` of detector views (by default those of the shown views, see `_view_requests`) of the
 `gui` in a background task, with a progress sink per source and request, see `_SolveJob`. `apply`
 shows the result, `timing` is the duration field that a cancelled job updates, `:view_time` for a
-job that only computes views, i.e. without `pairs`.
+job that only computes views, i.e. without `pairs`. The detectors of the `systems` are emptied
+first: by default those of the `pairs`; a solve passes all systems of the `gui`, also those
+without a source.
 """
 _start_job(gui::LiveView, apply, obj, pairs, handles; kwargs...) =
     _start_job(gui, apply, obj, pairs, handles, _view_requests(gui); kwargs...)
 
-function _start_job(gui::LiveView, apply, obj, pairs, handles, requests; coarse = false,
-        preview = false, timing::Symbol)
-    isempty(pairs) || _views_solve_started!(gui)
-    # The detectors of all systems are emptied, also of those whose beams are all switched off
-    systems = first.(pairs)
+function _start_job(gui::LiveView, apply, obj, pairs, handles, requests;
+        systems = BMO.AbstractSystem[first.(pairs)...], coarse = false, preview = false,
+        timing::Symbol)
+    # The detectors of the systems are emptied, also of those whose beams are all switched off
+    isempty(systems) || _views_solve_started!(gui)
     # Beams that are switched off are not traced, see `_set_beam_on!`. The task works on its own
     # copies of the lists (filtered here, such that the sinks and anchors match them), the objects
     # are protected by `_change!`
@@ -239,7 +243,12 @@ function _wait(done::Base.Event, timeout::Real)
     return nothing
 end
 
-_running(gui::LiveView) = _running(gui.trace.job)
+"""
+Whether a job of the `gui` runs in the background, or a solve of a view that is linked with it and
+shows one of its systems: it traces the same beams and empties the same detectors, see `_ViewLinks`.
+"""
+_running(gui::LiveView) = _running(gui.trace.job) ||
+    any(v -> v !== gui && _solving(v.trace.job) && _shares_system(v, gui), gui.links.views)
 _running(::Nothing) = false
 _running(::_SolveJob) = true
 
@@ -250,9 +259,14 @@ Cancels the solve of the `gui` that runs in the background, if any: its loops st
 current item, see `BMO.ProgressSink`. Waits for the task, discards its result, marks the beams and
 detector views as outdated and counts the elapsed time as the duration of the solve, such that
 further changes defer the solve until the movement pauses, see `_on_change!`. A deferred solve,
-preview or coarse view is not completed afterwards, the next change or `t` solves again.
+preview or coarse view is not completed afterwards, the next change or `t` solves again. The jobs
+of the views that are linked with the `gui` are cancelled as well, see `_cancel_linked!`.
 """
-_cancel_solve!(gui::LiveView) = _cancel!(gui, gui.trace.job)
+function _cancel_solve!(gui::LiveView)
+    _cancel!(gui, gui.trace.job)
+    _cancel_linked!(gui)
+    return nothing
+end
 _cancel!(::LiveView, ::Nothing) = nothing
 
 function _cancel!(gui::LiveView, job::_SolveJob)
@@ -296,13 +310,15 @@ function _finish!(gui::LiveView, job::_SolveJob)
     end
     if _solves(job)
         _restore_beams!(gui)
-        gui.trace.stale = false
+        _set_fresh!(gui)
     end
     return true
 end
 
 """Whether the `job` solves the systems, i.e. does not only compute detector views."""
 _solves(job::_SolveJob) = job.timing !== :view_time
+_solving(::Nothing) = false
+_solving(job::_SolveJob) = _solves(job)
 
 """Marks the beams and detector views of the `gui` as outdated after the solve failed with `e`."""
 function _fail!(gui::LiveView, e)
@@ -315,8 +331,10 @@ function _fail!(gui::LiveView, e)
     gui.last_error = _log_once(e, gui.last_error, "solving the systems")
     gui.trace.stale || _dim_beams!(gui)
     gui.trace.stale = true
+    _note_stale!(gui, nothing)
     gui.status.text[] = "solving the systems failed, see the log"
     _show_solve_error!(gui, e)
+    _sync_links!(gui, nothing; stale = true)
     return nothing
 end
 
@@ -421,7 +439,10 @@ end
 function _mark_stale!(gui::LiveView, obj; msg = "outdated, press t to trace")
     gui.trace.stale || _dim_beams!(gui)
     gui.trace.stale = true
+    _note_stale!(gui, obj)
     gui.status.text[] = isnothing(obj) ? msg : "$(_pose_string(gui, obj)) — $msg"
+    # The beams of the linked views are outdated as well, see `_follow!`
+    _sync_links!(gui, obj; stale = true)
     return nothing
 end
 
@@ -439,12 +460,14 @@ function _solve!(gui::LiveView, obj; coarse = false, preview = false)
     _cancel_solve!(gui)
     gui.trace.pending = false
     job = _start_job(gui, r -> _apply!(gui, r, obj; coarse), obj, gui.pairs, gui.beam_handles;
-        coarse, preview, timing = preview ? :preview_time : :solve_time)
+        systems = _systems(gui), coarse, preview, timing = preview ? :preview_time : :solve_time)
     done = _run!(gui, job, _TRACING)
-    if _running(gui)
+    if _running(gui.trace.job)
         # Outdated until the solve in the background is shown, see `_finish!`
         gui.trace.stale || _dim_beams!(gui)
         gui.trace.stale = true
+        _note_stale!(gui, obj)
+        _sync_links!(gui, obj; stale = true)
     end
     return done
 end

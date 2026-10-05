@@ -97,16 +97,17 @@ const GUI = BeamletOpticsGUI
     @testset "the keys of the live view are listed" begin
         gui, _ = _fixture()
         sections = GUI._help_sections(gui.controls)
-        @test first.(sections) == ["Select", "Move the selection", "Edit", "View", "Clip planes", "Trace"]
+        @test first.(sections) == ["Select", "Move the selection", "Edit", "View", "Clip planes", "Trace",
+            "Components", "Snap onto beams"]
         # each key of the live view (see `_LIVE_VIEW_KEYS`) is on a key cap; `h` is in the head of
         # the card
         ctrl = GUI._ctrl_cap()
         @test Set(_caps(sections)) == Set(["Esc", "Enter", "G", "M", "↑", "↓", "←", "→", "PgUp", "PgDn", "+",
-            "−", "Shift", "Bksp", ctrl, "Z", "Y", "V", "1", "P", "Del", "C", "T"])
+            "−", "Shift", "Bksp", ctrl, "Z", "Y", "V", "1", "P", "Del", "C", "T", "Ins", "Tab"])
         # no key is listed twice; Esc is the key of the groups, a trace is cancelled by a button
         keys = [(e.keys, e.combo) for (_, entries) in sections for e in entries if !(e.keys[1] isa Pair)]
         @test allunique(keys)
-        @test any(e -> occursin("Cancel in the progress window", e.text), sections[end].second)
+        @test any(e -> occursin("Cancel in the progress window", e.text), sections[end - 2].second)
         @test sections[1].second[1].text == GUI._BROWSE_CLICK_HELP
         close(gui)
     end
@@ -127,6 +128,19 @@ const GUI = BeamletOpticsGUI
         @test minimum(chips)[1] > maximum(pill)[1] && maximum(chips)[2] ≈ maximum(pill)[2]
         @test help.mode_button.label[] == "Move" && help.step_label.text[] == "step 10 nm"
         @test GUI._help_rects(help) == [chips]
+        # the chip of the snapping onto beams: off, each click switches to its next state
+        snap = help.snap_button
+        accent, text = Makie.to_color.((t.accent, t.text))
+        @test ctrl.snap[] == :off && snap.label[] == "Snap off" && snap.labelcolor[] == text
+        snap.clicks[] += 1
+        @test ctrl.snap[] == :position && snap.label[] == "Snap: position"
+        @test snap.labelcolor[] == accent && snap.buttoncolor[] == Makie.to_color(t.accent_soft)
+        snap.clicks[] += 1
+        @test ctrl.snap[] == :pose && snap.label[] == "Snap: position + rotation"
+        @test snap.labelcolor[] == accent
+        snap.clicks[] += 1
+        @test ctrl.snap[] == :off && snap.label[] == "Snap off" && snap.labelcolor[] == text
+        @test snap.buttoncolor[] == Makie.to_color(t.field)
         @test chips in GUI._layout_obstacles(gui) && pill in GUI._layout_obstacles(gui)
 
         # the key h opens the card below the pill, in the 3D view
@@ -193,6 +207,41 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard.h)
         @test !ctrl.help_shown && _parked(help.card)
         @test GUI._help_rects(help) == [GUI._overlay_rect(help.chips)]
+        close(gui)
+    end
+
+    @testset "the help card lies over everything ($layout)" for layout in (:compact, :app)
+        gui, m = _fixture(; layout)
+        help = GUI._help_ui(gui)
+        z(scene) = Makie.translation(scene)[][3]
+        # a scene of its own, over the cards with their tooltips, the selection card, the window
+        # of the catalog and the other parts of the help, within the clip range of the camera
+        hz = z(help.card.outer.parent)
+        @test hz == GUI._HELP_Z < 10000
+        @test all(k -> hz > GUI._card_z(k) + GUI._CARD_TOOLTIP_DZ, 1:100)
+        @test all(c -> hz > z(c.scene), gui.cards.all)
+        @test hz > GUI._BROWSE_Z && hz > GUI._CATALOG_Z && hz > GUI._PROGRESS_Z
+        @test hz > z(GUI._catalog_window(gui).scene) && hz > z(help.pill.outer.parent)
+        # opaque: what it covers does not shine through
+        @test Makie.to_color(help.card.box.color[]).alpha == 1
+
+        # the presses and the scrolling on it reach nothing below it, e.g. the view cube (300)
+        @test GUI._HELP_PRIORITY > 300
+        seen = Ref(0)
+        on(_ -> (seen[] += 1; Consume(false)), ev(gui).mousebutton; priority = 300)
+        on(_ -> (seen[] += 1; Consume(false)), ev(gui).scroll; priority = 300)
+        _key!(gui, Keyboard.h)
+        card = GUI._overlay_rect(help.card)
+        _click!(gui, _center(card))
+        ev(gui).scroll[] = (0.0, 1.0)
+        @test seen[] == 0 && help.shown
+        # its close button still closes it
+        _click!(gui, _center(Rect2f(help.close_button.box.layoutobservables.computedbbox[])))
+        @test !help.shown
+        # closed, the presses at the same place pass
+        _click!(gui, _center(card))
+        ev(gui).scroll[] = (0.0, 1.0)
+        @test seen[] == 3
         close(gui)
     end
 

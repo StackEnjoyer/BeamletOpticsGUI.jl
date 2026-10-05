@@ -17,15 +17,20 @@ function _live_layout(layout::Symbol, theme::Symbol)
     throw(ArgumentError("layout must be :compact or :app, got :$layout"))
 end
 
+# The name of the layout for the `layout` kwarg, e.g. `:app`, the inverse of `_live_layout`
+_layout_name(layout::AbstractLiveLayout) = _slot_error(layout, "name")
+
 _default_size(::AbstractLiveLayout) = (1400, 800)
 _figure(::AbstractLiveLayout, size) = Figure(; size)
 
 # Optional parts of the layout interface, see `AbstractLiveLayout`
 _connect_layout!(::LiveView) = nothing
+_close_layout!(::LiveView) = nothing
 _on_selected!(::LiveView) = nothing
 _on_clipping!(::LiveView) = nothing
 _on_clip_planes_changed!(::LiveView) = nothing
 _on_hidden!(::LiveView) = nothing
+_on_components_changed!(::LiveView) = nothing
 
 _slot_error(gui::LiveView, what) = _slot_error(gui.layout, what)
 function _slot_error(layout::AbstractLiveLayout, what)
@@ -53,7 +58,9 @@ Collapsible parts, see `_LayoutPart`
 Collapsible part of a layout, e.g. a sidebar, the dock, the toolbar or the status bar of the app
 layout or the panels of the compact layout: a background `box` and the `grid` of
 its content, both placed at `pos` of the `parent` layout. `resize(size)` sets the size of its
-column or row in the `parent`, which is `size` while the part is shown, see `_set_shown!`.
+column or row in the `parent`, which is `size` while the part is shown, see `_set_shown!`. A part
+that scrolls, e.g. a sidebar of the app layout, has the box at `pos`, which is the region of its
+scroll `area` (see `_ScrollArea`), whose layout is the `grid`.
 """
 mutable struct _LayoutPart
     parent::GridLayout
@@ -63,7 +70,12 @@ mutable struct _LayoutPart
     box::Box
     grid::GridLayout
     shown::Bool
+    # the scroll area whose layout the `grid` is, `nothing` for a grid at `pos` of the `parent`
+    area::Any
 end
+
+_LayoutPart(parent, pos, resize, size, box, grid, shown) =
+    _LayoutPart(parent, pos, resize, size, box, grid, shown, nothing)
 
 """Appends all blocks in the layout `x` to `out`, including the blocks of nested layouts."""
 function _blocks!(out, gl::GridLayout)
@@ -95,16 +107,19 @@ function _set_shown!(part::_LayoutPart, shown::Bool)
     part.shown == shown && return nothing
     part.shown = shown
     blocks = _blocks!(Any[], part.grid)
+    area = part.area
     if shown
         part.parent[part.pos...] = part.box
-        part.parent[part.pos...] = part.grid
+        isnothing(area) ? (part.parent[part.pos...] = part.grid) : _set_area_shown!(area, true)
         part.resize(part.size)
         Makie.unhide!(part.box)
         foreach(Makie.unhide!, blocks)
     else
         Makie.hide!(part.box)
         foreach(Makie.hide!, blocks)
-        for x in (part.box, part.grid)
+        # the layout of a scroll area is not part of the parent layout
+        isnothing(area) || _set_area_shown!(area, false)
+        for x in (isnothing(area) ? (part.box, part.grid) : (part.box,))
             _GLB.remove_from_gridlayout!(_GLB.gridcontent(x))
             w = GeometryBasics.widths(x.layoutobservables.computedbbox[])
             x.layoutobservables.suggestedbbox[] = Rect2f(_OFFSCREEN, w)
@@ -278,12 +293,12 @@ _clip_plane_color(layout::AbstractLiveLayout) = layout.theme.clip_plane
 _marker_stroke(layout::AbstractLiveLayout) = layout.theme.marker_stroke
 
 """
-Default kwargs of `live_render!` of the source `beam` in the `layout`: the color of the rays of
-sources that are drawn as lines, not the envelopes of Gaussian beamlets, which keep their color.
+Default kwargs of `live_render!` of the source `beam` in the `layout`: the color of its wavelength
+(see `_wavelength_style`) for beams, Gaussian beamlets and beam groups, nothing for anything else
+and for astigmatic beam groups. `layout.theme.rays` is the color of the entry "layout" of the menu
+of colors of the card of a source.
 """
-_beam_style(::AbstractLiveLayout, _) = (;)
-_beam_style(layout::AbstractLiveLayout, ::Union{BMO.AbstractRay, Beam, BMO.AbstractBeamGroup}) =
-    (; color = layout.theme.rays)
+_beam_style(::AbstractLiveLayout, beam) = _wavelength_style(beam)
 _beam_style(::AbstractLiveLayout, ::BMO.AstigmaticBeamGroup) = (;)
 
 """

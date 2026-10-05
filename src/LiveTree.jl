@@ -59,9 +59,9 @@ object and setting the rows again. [`_set_selected!`](@ref) highlights a row.
 
 Each row shows, from left to right: the indentation by depth, an expander (if `expandable`), an
 eye (if `visible !== nothing`), the type marker of its `kind` and the label, which is ellipsized
-to the width of the tree. The mouse wheel scrolls the rows while the mouse is over the tree; the
-scroll events are then consumed, so that a 3D scene behind the tree does not zoom. A thin scroll
-bar shows the position if the rows do not fit.
+to the width of the tree. The mouse wheel scrolls the rows while the mouse is over the tree and the
+rows do not fit; the scroll events are then consumed, so that nothing else scrolls or zooms. A thin
+scroll bar shows the position if the rows do not fit.
 
 The tree is drawn in a child scene with a pixel camera, clipped to the layout cell, with a
 constant number of plots: only the rows in view are passed to the plots, so the cost of drawing
@@ -176,7 +176,8 @@ function _ObjectTree(parent::Makie.GridPosition;
     ev = events(scene)
     # Before the camera and the kinematic controls of a 3D scene (priority 200)
     push!(tree.listeners, on(ev.scroll, priority = 300) do (_, dy)
-        _mouse_in_tree(tree) || return Consume(false)
+        # a tree whose rows fit leaves the wheel to what it is part of, e.g. a sidebar that scrolls
+        (_mouse_in_tree(tree) && _max_offset(tree) > 0) || return Consume(false)
         _scroll!(tree, -dy * _TREE_SCROLL_ROWS * tree.row_height)
         return Consume(true)
     end)
@@ -421,6 +422,8 @@ function _redraw!(tree::_ObjectTree)
         end
         !isnothing(tree.selected) && isequal(row.key, tree.selected) && (selected = y)
     end
+    _tree_placeholder!(expander_pos, expander_shape)
+    _tree_placeholder!(eye_pos, eye_shape, eye_color => tree.icon_color)
     p = tree.plots
     Makie.update!(p.labels; arg1 = label_pos, text = label_text, color = label_color)
     Makie.update!(p.markers; arg1 = marker_pos, marker = _tree_markers(marker_shape), color = marker_color)
@@ -456,6 +459,22 @@ _tree_marker_shape(s) = s
 function _tree_markers(shapes::Vector{Any})
     isempty(shapes) && return Makie.BezierPath[]
     return identity.(map(_tree_marker_shape, shapes))
+end
+
+"""
+    _tree_placeholder!(positions, shapes, colors...)
+
+Adds one marker at no position (`NaN`) to the empty lists of a scatter plot of the tree, e.g. the
+eyes of a view without objects and sources, with the `color` of each list of `colors`. The backend
+rejects an empty vector of markers, and a plot that is shown can not change between a single marker
+and a vector of markers.
+"""
+function _tree_placeholder!(positions, shapes, colors::Pair...)
+    isempty(positions) || return nothing
+    push!(positions, Point2f(NaN))
+    push!(shapes, :circle)
+    foreach(((list, color),) -> push!(list, color), colors)
+    return nothing
 end
 
 # The font of the labels, a symbol names a font of the theme, e.g. `:regular`

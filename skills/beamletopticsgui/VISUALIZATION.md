@@ -24,7 +24,11 @@ with its component, so several components can be edited side by side. Dragging t
 moves it to a fixed place in the view (kept when pinned; double click on the head: back next to
 its component). Every card has pages, chosen by a page bar below its head: "Pose" (the pose
 boxes and the rows of the type) and "Properties"; the card of a `Detector` has "Results" between
-them (details below); a card with a single page (inspected point, measurement) has no bar. A card
+them (details below), the card of a source "Color" (a menu of colors with "wavelength" and
+"layout", a box for a hex value or a color name, sliders for the opacity and the line width;
+display only, the same as `beam_kwargs = Dict(source => (; color, alpha, linewidth))` from a
+script; sources start in the color of their wavelength), a component or source from the catalog
+"Edit" (the form of its entry, "Apply" builds it again in its pose); a card with a single page (inspected point, measurement) has no bar. A card
 opens on "Results" for a detector, else on "Pose"; a pinned card keeps its page. Rows of the
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
 beamsplitters, the polarizer axis, detector `signal` (power or number of rays of its view while a
@@ -34,7 +38,8 @@ solved, not drawn, rays removed from detectors; only the source marker stays), f
 beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true)`), for polarized
 beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength and amplitude of
 the drawn curve, log scale; astigmatic beamlets: amplitude × beam radius). Of a group only the
-central beam; display only. Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
+central beam; display only. The box `length` [mm] sets how long rays that hit nothing are drawn
+(`flen`). Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
 show_polarization = true, show_beams = true, pol_λ = 1e-3, pol_amplitude = 2e-4))`.
 The card of the selected object also has, on its page "Pose", the keyboard step (e.g. `250 nm` or `50 µrad`; shown in the unit of its size, pm to m and nrad to mrad) and a
 "Move"/"Rotate" control (in sync with the key `m`); the page "Properties" lists the properties of
@@ -68,7 +73,7 @@ orthographic); the status line appears as a toast.
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
 moves it into the 3D view next to its component, its dock button moves it back; docked pinned
 cards have the same pages as floating ones (a detector view takes the width of the sidebar, has no
-resize grip and collapses or shrinks when the sidebar is full). The dock below the 3D view only has
+resize grip; both sidebars scroll with the mouse wheel when their content is higher than the window). The dock below the 3D view only has
 tabs of `add_panel!` and stays collapsed until the first one exists. Its 3D view has
 the same help pill, chips and help card at the top left.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the
@@ -137,7 +142,7 @@ end
   away, must not change objects). Controls are for parameters without a scene object; widgets of
   an object belong on its card (`card_rows`). See `WIDGETS.md` for both recipes.
 - Textboxes/menus built in `add_controls!`/`add_panel!` block the 3D keys while focused/open.
-- `key` must be free: all letters, arrows, `1`, `Esc`, `Delete`, `Backspace`, Shift/Ctrl/Alt,
+- `key` must be free: all letters, arrows, `1`, `Esc`, `Tab`, `Insert`, `Delete`, `Backspace`, Shift/Ctrl/Alt,
   `+`/`-` are taken (live view, kinematic controls, Makie `Camera3D`) → `ArgumentError`. Use
   digits `2`-`9` or `f1`-`f12`. `icon` must be an icon name of the app (e.g. `:measure`,
   `:export`, `:chart`, `:object`) or a `Makie.BezierPath`, else `ArgumentError` listing them (also

@@ -67,6 +67,14 @@ end
 """Cancels the scheduled `action` of `d`."""
 _cancel!(d::_Deadline) = (d.at = Inf; nothing)
 
+"""Cancels the scheduled `action` of `d` and stops its timer, e.g. of a view that is closed."""
+function _stop!(d::_Deadline)
+    d.at = Inf
+    isnothing(d.timer) || close(d.timer)
+    d.timer = nothing
+    return nothing
+end
+
 function _arm!(d::_Deadline, delay::Real)
     d.fire = time() + delay
     d.timer = Timer(max(delay, 1.0e-3)) do _
@@ -136,6 +144,8 @@ the shared logic and [`add_tool!`](@ref) use it like them.
 - `color`: the background while neither hovered nor active (transparent by default),
   `cornerradius = 6`, `padding = (8, 12, 5, 5)`, `size`: the width and height, fixed if given
 - `icon_size = 18`, `fontsize = 13`, `icon_color = t.text`, `label_color = t.text`
+- `tile_width`: a tile of this width [px] instead, with the label below the icon, wrapped to the
+  tile, e.g. an entry of the component catalog
 
 # Fields
 
@@ -155,17 +165,19 @@ function _OverlayItem(pos, t::NamedTuple; icon::Union{Symbol, BezierPath},
         label::AbstractString = "", trailing::AbstractString = "", toggle::Bool = false,
         active::Bool = false, color = _TRANSPARENT, cornerradius::Real = 6,
         padding = (8, 12, 5, 5), size = nothing, icon_size::Real = 18, fontsize::Real = 13,
-        icon_color = t.text, label_color = t.text)
+        icon_color = t.text, label_color = t.text, tile_width = nothing)
     clicks, active, hovered = Observable(0), Observable(active), Observable(false)
     c0, ch, ca = _rgba(color), _rgba(t.hover), _rgba(t.accent_soft)
     fi, fl, fa = _rgba(icon_color), _rgba(label_color), _rgba(t.accent)
     background = Observable(c0)
     icon_fg, label_fg = Observable(fi), Observable(fl)
+    tile = !isnothing(tile_width)
     # The background fills the cell of `pos`, e.g. the width of the tool rail, under the icon and
     # the label
-    box = Box(pos; color = background, strokewidth = 0, cornerradius, width = size, height = size)
-    g = GridLayout(pos; alignmode = Outside(padding...), default_colgap = 10,
-        halign = isnothing(size) ? :left : :center)
+    box = Box(pos; color = background, strokewidth = 0, cornerradius,
+        width = tile ? tile_width : size, height = size)
+    g = GridLayout(pos; alignmode = Outside(padding...), default_colgap = 10, default_rowgap = 3,
+        halign = (isnothing(size) && !tile) ? :left : :center, valign = tile ? :top : :center)
     holder = Box(g[1, 1]; width = icon_size, height = icon_size, visible = false)
     center = Makie.lift(r -> Point2f(Makie.origin(r) .+ Makie.widths(r) ./ 2), holder.blockscene,
         holder.layoutobservables.computedbbox)
@@ -173,6 +185,11 @@ function _OverlayItem(pos, t::NamedTuple; icon::Union{Symbol, BezierPath},
         color = icon_fg, markerspace = :pixel, inspectable = false)
     text = if isempty(label)
         Observable(String(label))
+    elseif tile
+        # below the icon, wrapped to the width of the tile
+        Label(g[2, 1], label; _card_style(t, Label)..., fontsize, color = label_fg,
+            halign = :center, justification = :center, word_wrap = true,
+            width = tile_width - padding[1] - padding[2]).text
     else
         Label(g[1, 2], label; _card_style(t, Label)..., fontsize, color = label_fg,
             halign = :left).text
@@ -617,6 +634,10 @@ end
 Hooks of the compact layout, see `AbstractLiveLayout`
 =#
 
+# A closed view leaves no timer behind, e.g. the one that hides the toast
+_close_layout!(gui::CompactView) =
+    (foreach(_stop!, (gui.layout.overlay.toast_deadline, gui.layout.overlay.camera_deadline)); nothing)
+
 _layout_obstacles(gui::CompactView) =
     [_overlay_rects(gui.layout.overlay); _help_rects(gui.layout.help)]
 function _over_layout(gui::CompactView)
@@ -644,7 +665,8 @@ end
 
 Connects the overlay of the compact layout of the `gui` (see `_CompactOverlay`), except its help
 pill (see `_connect_help!`): "⋯" toggles the tool rail, which a press outside of it (unless a menu
-is open) and the key `Esc` close, like its popovers; the camera popover follows the mouse, the
+is open or the press is on the help card, which takes it) and the key `Esc` close, like its
+popovers; the camera popover follows the mouse, the
 parts follow the size of the window and their content.
 """
 function _connect_overlay!(gui::CompactView)

@@ -78,40 +78,177 @@ function _initial_copy(ctrl::KinematicController, group)
 end
 
 """
+    _export_system_names(gui, used) -> IdDict
+
+Returns the variable names of the systems of the `gui` in the code of `export_changes`: the label
+of a system if it is a valid variable name that is not among the `used` names (of the objects),
+otherwise `system`, or `system1`, `system2`, … by the position of the system if the view shows
+several systems.
+"""
+function _export_system_names(gui::LiveView, used)
+    names = IdDict{Any, String}()
+    used = Set{String}(used)
+    several = length(gui.system_handles) > 1
+    for (i, h) in enumerate(gui.system_handles)
+        sys = rendered(h)
+        label = get(gui.labels, sys, "")
+        name = _is_variable_name(label) && !(label in used) ? label : several ? "system$i" : "system"
+        while name in used
+            name *= "_"
+        end
+        push!(used, name)
+        names[sys] = name
+    end
+    return names
+end
+
+"""
+    _export_pose_lines!(lines, gui, names, top; base = nothing, heading = true) -> n
+
+Appends the changes of the poses of the top-level object `top` of the `gui` and of the objects of
+its group to the `lines` of `export_changes` and returns the number `n` of changed objects. Since
+moving a group moves its objects as well, the changes of a group and its objects are replayed on an
+`_initial_copy` of the group, such that the change of each object of the group is relative to its
+pose after the preceding lines.
+
+The changes are relative to the initial poses of the controls, or, with `base`, to the pose `base`
+of `top` (and the poses of the objects of its group in that pose of the group), e.g. the pose of an
+added component as constructed. Without `heading`, the change of `top` itself gets no comment and
+is not counted, see `_export_code`.
+"""
+function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, heading::Bool = true)
+    ctrl = gui.controls
+    objs = _descendants(top)
+    copies = top isa BMO.AbstractObjectGroup ? _descendants(_initial_copy(ctrl, top)) : nothing
+    # The objects of a group follow the group back to the pose `base`
+    isnothing(base) || isnothing(copies) || _set_pose_exact!(copies[1], base...)
+    n = 0
+    for (i, obj) in enumerate(objs)
+        own = i == 1 && !isnothing(base)
+        (own || haskey(ctrl.init_poses, obj)) || continue
+        P, R = _pose(obj)
+        P0, R0 = !isnothing(copies) ? _pose(copies[i]) : own ? base : ctrl.init_poses[obj]
+        (norm(P - P0) > 1e-15 || norm(R - R0) > 1e-15) || continue
+        axis, angle = _rotation_axis_angle(R * R0')
+        name = names[obj]
+        if heading || i > 1
+            type = string(nameof(typeof(obj)))
+            label = get(gui.labels, obj, nothing)
+            push!(lines, "", isnothing(label) ? "# $type" : "# $label ($type)")
+            n += 1
+        end
+        angle > 0 && push!(lines, "rotate3d!($name, $(_vector_code(axis)), $(repr(angle)))")
+        push!(lines, "translate_to3d!($name, $(_vector_code(P)))")
+        isnothing(copies) || _set_pose_exact!(copies[i], P, R)
+    end
+    return n
+end
+
+"""
+    _export_removed_lines!(lines, gui, systems, used, obj)
+
+Appends the lines of `export_changes` for `obj`, which the `gui` started with and which was removed
+at runtime: a component is a `delete!` from its system (named by `systems`, see
+`_export_system_names`), or a comment if its label is no variable name or one of the `used` names;
+a source is a comment, since the script that traces it is not known.
+"""
+function _export_removed_lines!(lines, gui::LiveView, systems, used, obj)
+    type = string(nameof(typeof(obj)))
+    label = _label(gui, obj)
+    system = systems[gui.components.system[obj]]
+    push!(lines, "", "# $label ($type), removed")
+    named = haskey(gui.labels, obj) && _is_variable_name(label) && !(label in used)
+    push!(lines, named ? "delete!($system, $label)" :
+        "# delete!($system, …) with the variable of $label")
+    return nothing
+end
+
+function _export_removed_lines!(lines, gui::LiveView, systems, used,
+        src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})
+    type = string(nameof(typeof(src)))
+    label = _label(gui, src)
+    traced = join((systems[sys] for sys in gui.components.source_systems[src]), ", ")
+    push!(lines, "", "# $label ($type), removed", "# do not trace $label through $traced any more")
+    return nothing
+end
+
+"""
+    _export_added_lines!(lines, gui, names, system, obj, base) -> n
+
+Appends the lines of `export_changes` that follow the constructor of `obj`, which was added to the
+`gui` at runtime, and returns the number `n` of changed objects of its group: a component is pushed
+to its `system` (the name of its variable) and moved from its pose `base` as constructed to its
+current pose, see `_export_pose_lines!`; a source is moved and then traced through the `system`.
+"""
+function _export_added_lines!(lines, gui::LiveView, names, system, obj, base)
+    push!(lines, "push!($system, $(names[obj]))")
+    return _export_pose_lines!(lines, gui, names, obj; base, heading = false)
+end
+
+function _export_added_lines!(lines, gui::LiveView, names, system,
+        src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}, base)
+    n = _export_pose_lines!(lines, gui, names, src; base, heading = false)
+    push!(lines, "solve_system!($system, $(names[src]))")
+    return n
+end
+
+"""
     _export_code(gui) -> (code, n)
 
-Returns the Julia code of `export_changes` and the number `n` of changed objects. The objects are
-listed in the order of the component menu. Since moving a group moves its objects as well, the
-changes of a group and its objects are replayed on an `_initial_copy` of the group, such that the
-change of each object of the group is relative to its pose after the preceding lines.
+Returns the Julia code of `export_changes` and the number `n` of changes: the components that were
+removed from and added to the systems at runtime (see `remove_component!` and `add_component!`),
+each in the order of the calls, then the changed poses of the other objects in the order of the
+component menu, see `_export_pose_lines!`.
+
+A removed component is a `delete!` from its system (see `_export_system_names`), or a comment if
+its label is no variable name. An added component is its constructor call (the `code` of its
+`origin`, see `_ComponentState`; without one, a comment that it is to be constructed there), a
+`push!` to its system and its change of pose since it was constructed (without `origin`: since it
+was added); together they count as one change. Sources are added and removed like components: a
+removed source is a comment, an added one its constructor call, its change of pose and the
+`solve_system!` that traces it, see `_export_removed_lines!` and `_export_added_lines!`.
 """
 function _export_code(gui::LiveView)
     ctrl = gui.controls
+    comp = gui.components
     entries = _menu_entries(ctrl)
     names = _export_names(gui, first.(entries))
+    used = Set{String}(values(names))
+    # Added components that the menu does not list, i.e. static ones
+    for (k, obj) in enumerate(comp.added)
+        haskey(names, obj) && continue
+        label = get(gui.labels, obj, "")
+        name = _is_variable_name(label) && !(label in used) ? label : "added$k"
+        while name in used
+            name *= "_"
+        end
+        push!(used, name)
+        names[obj] = name
+    end
+    systems = _export_system_names(gui, used)
     lines = String[
         "# Changed poses of the live view, apply to the objects in their initial poses.",
         "# Each rotation is about the position of the object, groups are moved before their objects."]
     n = 0
+    for obj in comp.removed
+        _export_removed_lines!(lines, gui, systems, used, obj)
+        n += 1
+    end
+    added = Base.IdSet{Any}(comp.added)
+    for obj in comp.added
+        type = string(nameof(typeof(obj)))
+        label = get(gui.labels, obj, nothing)
+        name = names[obj]
+        origin = get(comp.origin, obj, nothing)
+        push!(lines, "", (isnothing(label) ? "# $type" : "# $label ($type)") * ", added")
+        push!(lines, isnothing(origin) ? "# construct `$name` here, in its pose when it was added" :
+            "$name = $(origin.code)")
+        base = isnothing(origin) ? nothing : origin.pose0
+        n += 1 + _export_added_lines!(lines, gui, names, systems[comp.system[obj]], obj, base)
+    end
     for top in ctrl.movable
-        top isa LiveClipPlane && continue
-        objs = _descendants(top)
-        copies = top isa BMO.AbstractObjectGroup ? _descendants(_initial_copy(ctrl, top)) : nothing
-        for (i, obj) in enumerate(objs)
-            haskey(ctrl.init_poses, obj) || continue
-            P, R = _pose(obj)
-            P0, R0 = isnothing(copies) ? ctrl.init_poses[obj] : _pose(copies[i])
-            (norm(P - P0) > 1e-15 || norm(R - R0) > 1e-15) || continue
-            axis, angle = _rotation_axis_angle(R * R0')
-            name = names[obj]
-            type = string(nameof(typeof(obj)))
-            label = get(gui.labels, obj, nothing)
-            push!(lines, "", isnothing(label) ? "# $type" : "# $label ($type)")
-            angle > 0 && push!(lines, "rotate3d!($name, $(_vector_code(axis)), $(repr(angle)))")
-            push!(lines, "translate_to3d!($name, $(_vector_code(P)))")
-            isnothing(copies) || _set_pose_exact!(copies[i], P, R)
-            n += 1
-        end
+        (top isa LiveClipPlane || top in added) && continue
+        n += _export_pose_lines!(lines, gui, names, top)
     end
     n == 0 && push!(lines, "", "# no changes")
     return join(lines, "\n") * "\n", n
@@ -143,6 +280,17 @@ created the system, the code reproduces the current poses. The objects of a grou
 the group, their changes are relative to the pose after moving the group. Clip planes are not
 exported.
 
+Components that were removed and added at runtime (see [`remove_component!`](@ref) and
+[`add_component!`](@ref)) come first. A removed component is a `delete!(system, name)`, or a comment
+if its label is no valid variable name. An added component is its constructor call (for a component
+of the catalog, see [`component_catalog`](@ref); otherwise a comment marks where to construct it),
+a `push!(system, name)` and the `rotate3d!` and `translate_to3d!` from its pose as constructed
+(otherwise: from its pose when it was added) to its current pose. The system is named after its
+label if that is a valid variable name, otherwise `system`, or `system1`, `system2`, … if the view
+shows several systems. An added source is its constructor call, its `rotate3d!` and
+`translate_to3d!` and the `solve_system!(system, name)` that traces it; a removed source that the
+view started with is a comment, since the script that traces it is not known.
+
 The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
 otherwise `obj1`, `obj2`, … by the position of the object in the component menu. A comment above
 each change names the label and the type of the object.
@@ -166,6 +314,239 @@ function _export!(gui::LiveView)
     print(stdout, code)
     copied = gui.export_clipboard && _copy_to_clipboard(code)
     gui.status.text[] = "exported $n change$(n == 1 ? "" : "s")" * (copied ? " (copied)" : "")
+    return nothing
+end
+
+#=
+Export of the whole setup as a script
+=#
+
+# The comment line that starts the section of the script of `export_script` that opens the view
+const _SCRIPT_VIEW_HEADING = "# Live view"
+
+"""
+    _export_script_names(gui, tops) -> IdDict
+
+Returns the variable names of the top-level objects and sources `tops` of the `gui` and of the
+objects of their groups in the code of `export_script`, see `_export_names`: `obj1`, `obj2`, … count
+the `tops` first, then the objects of their groups. The objects of a group whose constructor is
+known (see the `origin` of `_ComponentState`) are no variables of the script; they are named by
+their place in the group, e.g. `BeamletOptics.shape(pair)[1]`.
+"""
+function _export_script_names(gui::LiveView, tops)
+    seen = Base.IdSet{Any}(tops)
+    all = Any[tops...]
+    for top in tops, obj in _descendants(top)
+        obj in seen && continue
+        push!(seen, obj)
+        push!(all, obj)
+    end
+    names = _export_names(gui, all)
+    function name_children!(obj)
+        for (i, c) in enumerate(_children(obj))
+            names[c] = "BeamletOptics.shape($(names[obj]))[$i]"
+            name_children!(c)
+        end
+        return nothing
+    end
+    for top in tops
+        isnothing(get(gui.components.origin, top, nothing)) || name_children!(top)
+    end
+    return names
+end
+
+"""Turns the `line` of code into a comment; empty lines and comments are kept."""
+_commented(line::AbstractString) = isempty(line) || startswith(line, "#") ? String(line) : "# " * line
+
+"""
+    _export_construct_lines!(lines, gui, names, obj) -> Bool
+
+Appends the lines of `export_script` that construct the top-level object or source `obj` of the
+`gui` in its current pose, and returns whether the script defines its variable.
+
+With an `origin` (see `_ComponentState`) these are its constructor call and the change of its pose
+since it was constructed, see `_export_pose_lines!`. Without one, the constructor is not known: a
+comment with its type and position marks where to construct it, and the change of its pose since
+the view got it is commented out.
+"""
+function _export_construct_lines!(lines, gui::LiveView, names, obj)
+    type = string(nameof(typeof(obj)))
+    label = get(gui.labels, obj, nothing)
+    name = names[obj]
+    origin = get(gui.components.origin, obj, nothing)
+    push!(lines, "")
+    if isnothing(origin)
+        push!(lines, "# $name = … ($type) at $(_vector_code(_pose(obj)[1])), construct it here")
+        pose = String[]
+        _export_pose_lines!(pose, gui, names, obj; heading = false)
+        append!(lines, (_commented(line) for line in pose))
+        return false
+    end
+    push!(lines, isnothing(label) ? "# $type" : "# $label ($type)")
+    push!(lines, "$name = $(origin.code)")
+    _export_pose_lines!(lines, gui, names, obj; base = origin.pose0, heading = false)
+    return true
+end
+
+"""
+    _export_view_lines!(lines, args, labels)
+
+Appends the call of `live_view` to the `lines` of `export_script`. `args` and `labels` are pairs
+`code => active` of its arguments and of the entries of its `labels`; those that are not active,
+since the script does not define their variables, are commented out. Without an active argument the
+whole call is commented out.
+"""
+function _export_view_lines!(lines, args, labels)
+    call = String["gui = live_view("]
+    last_active = findlast(last, args)
+    for (i, (code, active)) in enumerate(args)
+        tail = i != last_active ? "," : isempty(labels) ? "" : ";"
+        push!(call, active ? "    $code$tail" : "    # $code,")
+    end
+    if !isempty(labels)
+        push!(call, "    labels = Dict(")
+        append!(call, (active ? "        $code," : "        # $code," for (code, active) in labels))
+        push!(call, "    )")
+    end
+    push!(call, ")")
+    append!(lines, isnothing(last_active) ? (_commented(line) for line in call) : call)
+    return nothing
+end
+
+"""
+    _export_script_code(gui) -> String
+
+Returns the Julia code of `export_script`: the objects of each system of the `gui` (see
+`_export_construct_lines!`) and the system, the sources, a `solve_system!` per pair of the view,
+and, after the line `_SCRIPT_VIEW_HEADING`, the call of `live_view`, see `_export_view_lines!`.
+
+The lines that use a variable which the script does not define are commented out: an object without
+a known constructor is added to its `System` by a `push!` in a comment, a system of another type
+with such an object is a comment as a whole, and so are the `solve_system!`, the arguments and the
+labels of `live_view` with it.
+"""
+function _export_script_code(gui::LiveView)
+    systems = _systems(gui)
+    sources = _sources(gui)
+    tops = unique(objectid, Any[(obj for sys in systems for obj in sys.objects)..., sources...])
+    names = _export_script_names(gui, tops)
+    system_names = _export_system_names(gui, Set{String}(values(names)))
+    defined = Base.IdSet{Any}()
+    done = Base.IdSet{Any}()
+    lines = String[
+        "# Script of the live view: its systems, its sources and the view itself.",
+        "# An object without a known constructor is a comment: construct it there, in its pose when",
+        "# the view got it, and uncomment the lines that use it.",
+        "using BeamletOptics"]
+    for sys in systems
+        name = system_names[sys]
+        members, pending = String[], String[]
+        for obj in sys.objects
+            if !(obj in done)
+                push!(done, obj)
+                _export_construct_lines!(lines, gui, names, obj) && push!(defined, obj)
+            end
+            push!(obj in defined ? members : pending, names[obj])
+        end
+        type = string(nameof(typeof(sys)))
+        push!(lines, "")
+        if sys isa BMO.System
+            push!(lines, isempty(members) ? "$name = $type()" : "$name = $type([$(join(members, ", "))])")
+            append!(lines, ("# push!($name, $m)" for m in pending))
+            push!(defined, sys)
+        elseif isempty(pending) && !isempty(members)
+            push!(lines, "$name = $type([$(join(members, ", "))])")
+            push!(defined, sys)
+        else
+            # objects can not be added to it afterwards
+            push!(lines, "# $name = $type([$(join((names[obj] for obj in sys.objects), ", "))])")
+        end
+    end
+    for src in sources
+        _export_construct_lines!(lines, gui, names, src) && push!(defined, src)
+    end
+    isempty(gui.pairs) || push!(lines, "")
+    for (sys, src) in gui.pairs
+        line = "solve_system!($(system_names[sys]), $(names[src]))"
+        push!(lines, sys in defined && src in defined ? line : _commented(line))
+    end
+
+    push!(lines, "", _SCRIPT_VIEW_HEADING, "using GLMakie, BeamletOpticsGUI")
+    args = Pair{String, Bool}[]
+    for sys in systems
+        name = system_names[sys]
+        mine = Any[p.second for p in gui.pairs if p.first === sys]
+        for src in mine
+            push!(args, "$name => $(names[src])" => sys in defined && src in defined)
+        end
+        # A system without a source, or whose sources the script does not define, is shown alone
+        any(src -> src in defined, mine) || push!(args, name => sys in defined)
+    end
+    labels = Pair{String, Bool}[]
+    for sys in systems
+        haskey(gui.labels, sys) &&
+            push!(labels, "$(system_names[sys]) => $(repr(gui.labels[sys]))" => sys in defined)
+    end
+    for top in tops, obj in _descendants(top)
+        haskey(gui.labels, obj) &&
+            push!(labels, "$(names[obj]) => $(repr(gui.labels[obj]))" => top in defined)
+    end
+    unique!(first, labels)
+    _export_view_lines!(lines, args, labels)
+    return join(lines, "\n") * "\n"
+end
+
+"""
+    export_script(gui::LiveView; io = stdout, clipboard = false) -> String
+
+Returns the setup of the `gui` as a complete Julia script, which is printed to `io` and copied to
+the clipboard if `clipboard` is `true` and a clipboard is available. The "Script" button of the
+`gui` prints the script and copies it to the clipboard. Unlike [`export_changes`](@ref), which
+lists the changes to apply in the script that created the view, the script stands on its own.
+
+The script consists of, in this order:
+
+1. `using BeamletOptics`
+2. per system its top-level objects, then the system itself, e.g. `system = System([lens, m1])`
+3. the sources
+4. a `solve_system!(system, source)` per pair of the view
+5. after the comment line `# Live view`: `using GLMakie, BeamletOpticsGUI` and the call
+   `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
+   `labels`. The lines above it run without a window.
+
+An object or source of the catalog (see [`component_catalog`](@ref)) is its constructor call
+followed by the `rotate3d!` about its position and the `translate_to3d!` from its pose as
+constructed to its current pose, with the full precision of `Float64`. The constructor of any other object, e.g. of one that the view started
+with, is not known: a comment with its variable, type and position [m] marks where to construct it,
+in its pose when the view got it, and the lines that use its variable are commented out (the change
+of its pose since then, its `push!` to its system, its `solve_system!`, its entries in `live_view`).
+A `StaticSystem` with such an object is a comment as a whole.
+
+The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
+otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
+several. Components that were removed are not part of the script. Neither are the looks (colors,
+opacity, hidden objects), the clip planes, the extras and the other keyword arguments of
+`live_view`.
+
+```julia
+gui = live_view(System())
+# add components and sources from the catalog, move them, then
+code = export_script(gui)
+```
+"""
+function export_script(gui::LiveView; io::IO = stdout, clipboard::Bool = false)
+    code = _export_script_code(gui)
+    print(io, code)
+    clipboard && _copy_to_clipboard(code)
+    return code
+end
+
+"""Prints the script of the `gui` to `stdout` and copies it to the clipboard, see `export_script`."""
+function _export_script!(gui::LiveView)
+    code = _export_script_code(gui)
+    print(stdout, code)
+    copied = gui.export_clipboard && _copy_to_clipboard(code)
+    gui.status.text[] = "script exported" * (copied ? " (copied)" : "")
     return nothing
 end
 
