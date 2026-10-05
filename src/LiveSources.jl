@@ -78,7 +78,7 @@ end
 # `origin` is `nothing` or `(; code, pose0)`, as for a component: the constructor call of `src` as
 # Julia code and its pose as constructed, e.g. of a source of the catalog, see `_ComponentState`
 function add_component!(gui::LiveView, src::_Source; system = nothing, select::Bool = true,
-        label = nothing, beam_kwargs = (;), origin = nothing)
+        label = nothing, beam_kwargs = (;), code = nothing, origin = _code_origin(src, code))
     ctrl = gui.controls
     sys = _source_system(gui, system)
     any(p -> p.second === src, gui.pairs) && throw(ArgumentError(

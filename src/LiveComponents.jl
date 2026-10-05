@@ -69,9 +69,10 @@ end
 _forget_detector!(::LiveView, _) = nothing
 
 # `origin` is `nothing` or `(; code, pose0)`: the constructor call of `obj` as Julia code and its
-# pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`
+# pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`.
+# The public keyword `code` gives one with the pose of `obj` when it is added, see `_code_origin`
 function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing,
-        select::Bool = true, label = nothing, origin = nothing)
+        select::Bool = true, label = nothing, code = nothing, origin = _code_origin(obj, code))
     ctrl = gui.controls
     sys = _add_system(gui, system)
     for leaf in _leaves(obj)
@@ -96,6 +97,16 @@ function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing
     _record_added!(gui, obj)
     return obj
 end
+
+"""
+    _code_origin(x, code) -> Union{NamedTuple, Nothing}
+
+The `origin` of the component or source `x` for the keyword `code` of [`add_component!`](@ref):
+`code`, the constructor call of `x`, with the pose of `x` now, in which `code` constructs it; `nothing`
+without `code`.
+"""
+_code_origin(x, code::AbstractString) = (; code = String(code), pose0 = _pose(x))
+_code_origin(x, ::Nothing) = nothing
 
 """
     _attach!(gui, obj, sys; label = nothing, origin = nothing)

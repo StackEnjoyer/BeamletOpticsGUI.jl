@@ -70,6 +70,10 @@ gives it a marker, `remove_component!(gui, source)` removes it, also the last on
 drawn in the color of its wavelength (dark red for infrared), unless its `beam_kwargs` set a `color`
 (`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`). A view may start
 without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
+`add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)")` gives the constructor call of an
+object built in code (also of a source): add it in the pose in which `code` constructs it and move
+it afterwards (inside `retrace!(gui) do ... end`); `export_script` then writes the call and the
+moves, as for a part of the catalog.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
 the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in

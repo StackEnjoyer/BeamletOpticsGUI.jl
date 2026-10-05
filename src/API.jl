@@ -373,7 +373,7 @@ unless it is called with `force = true`, which the card does after an input was 
 function card_show! end
 
 """
-    add_component!(gui, obj; system = nothing, select = true, label = nothing) -> obj
+    add_component!(gui, obj; system = nothing, select = true, label = nothing, code = nothing) -> obj
 
 Adds the object `obj` (an `AbstractObject` or an object group) to a system of the
 [`live_view`](@ref) window `gui` at runtime: `obj` is pushed to the system, rendered and registered
@@ -388,11 +388,19 @@ throws an `ArgumentError`, like a `system` that is not shown in the `gui` and an
 `gui` shows already. `select = true` selects `obj` afterwards (or shows its card if it is not
 movable), `label` names it like an entry of the `labels` kwarg of `live_view`.
 
+`code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, 1.5)"`,
+which constructs `obj` in the pose that it has when it is added. [`export_script`](@ref) then writes
+this call followed by the change of the pose of `obj` since it was added, like for a component of
+the catalog; without `code` the constructor is not known and the script marks where to construct
+`obj`. Give `code` for an object built from code, e.g. by a tool or an agent, before you move it,
+and move it afterwards (e.g. in [`retrace!`](@ref)); the page "Edit" and copying stay for the
+components of the catalog, whose parameters are known.
+
 The components of the catalog are added this way once they are placed, see
 [`component_catalog`](@ref). [`remove_component!`](@ref) removes a component again,
 [`export_changes`](@ref) lists the added and removed components.
 
-    add_component!(gui, source; system = nothing, select = true, label = nothing, beam_kwargs = (;)) -> source
+    add_component!(gui, source; system = nothing, select = true, label = nothing, beam_kwargs = (;), code = nothing) -> source
 
 Adds the `source` (a beam or a beam group, e.g. a `Beam`, a `GaussianBeamlet` or a
 `CollimatedSource`) to the `gui`: it is traced through the `system` with every solve, rendered with
@@ -404,7 +412,8 @@ which it is selected and moved like the sources the view started with, also in a
 `movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
 source does not change; by default the system that gets a component, otherwise the first system of
 the view. It throws an `ArgumentError` for a `source` that the `gui` shows already. A view may start
-without a source, see `live_view(system)`.
+without a source, see `live_view(system)`. `code` is the constructor call of the `source` in its
+current pose, as for a component.
 
 ```julia
 gui = live_view(System())
