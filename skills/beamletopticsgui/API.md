@@ -23,7 +23,7 @@ Look up the docstring of any name before use, e.g.
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `open_system`, `export_changes`, `export_script`, `retrace!` |
-| Scripting | `select!`, `spectator!`, `wait_solve`, `presentation!` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
+| Scripting | `select!`, `spectator!`, `wait_solve` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
 | Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
@@ -112,11 +112,13 @@ spectator!(gui, true)                           # like the key v
 wait_solve(gui)                                 # solve in the background shown, deferred solves done
 ```
 
-Screenshots and videos: `presentation!(gui; background = :black, cards = false, view_cube = false)` hides
-all chrome but the 3D view (no cropping of status line, help or "⋯" needed; `presentation!(gui, false)`
-restores it, the key `v` leaves it). `Makie.record(gui, "x.mp4", iter; framerate, px_per_unit) do i ... end`
-(method for a live view) runs `f(i)`, waits for the solve and writes a frame offscreen, in the presentation
-mode unless `presentation = false`; do not record while the window is open.
+Screenshots and videos: `spectator!(gui; help = false, background = :black, cards = false, view_cube = false)`
+hides all chrome but the 3D view (no cropping of status line, help or "⋯" needed; `spectator!(gui, false)`
+restores it with the selection from before, the key `v` leaves it; `help = true`, the default, keeps the
+help pill, as the key `v` does, `Shift+V` in the window is `help = false`).
+`Makie.record(gui, "x.mp4", iter; framerate, px_per_unit) do i ... end` (method for a live view) runs
+`f(i)`, waits for the solve and writes a frame offscreen, in the spectator mode without help unless
+`spectator = false`; do not record while the window is open.
 
 Call `wait_solve(gui)` before reading detectors or saving an image. Never use `BeamletOpticsGUI._x`
 internals or `gui.controls.on_change` for this.

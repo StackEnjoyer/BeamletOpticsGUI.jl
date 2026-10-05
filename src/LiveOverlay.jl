@@ -314,7 +314,7 @@ mutable struct _CompactOverlay
     views_menu::Union{Nothing, Menu}
     reshield::Function
     hidden::Bool
-    # also the help pill is moved away, in the presentation mode, see `presentation!`
+    # also the help pill is moved away, in the spectator mode without help, see `spectator!`
     pill_hidden::Bool
 end
 
@@ -657,7 +657,7 @@ window, see `_panel_part!`.
 function _set_spectator_ui!(gui::CompactView, on::Bool)
     layout = gui.layout
     layout.overlay.hidden = on
-    layout.overlay.pill_hidden = on && gui.presentation.on
+    layout.overlay.pill_hidden = on && !gui.controls.spectator_help
     isnothing(layout.panel_part) || _set_shown!(layout.panel_part, !on)
     _arrange_overlay!(layout.overlay)
     return nothing

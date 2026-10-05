@@ -238,16 +238,18 @@ Base.@kwdef mutable struct _TraceState
 end
 
 """
-    _PresentationState
+    _SpectatorState
 
-The presentation mode of a `LiveView`, see [`presentation!`](@ref): whether it is `on`, which parts
-of the chrome it keeps (`cards`, `view_cube`) and what it replaced, to restore it: `saved` holds the
-spectator mode, the selection and the background colors of the 3D view and the figure from before.
+What the spectator mode of a `LiveView` keeps and replaces besides what the controls do (see
+`_set_spectator!`), as set by [`spectator!`](@ref): the parts of the window that stay (`cards`,
+`view_cube`), the color `background` of the 3D view and the window in the mode (`nothing`: as they
+are), and in `saved` the two background colors from before, to restore them. All of it is reset
+when the mode is left, see `_on_spectator!`.
 """
-Base.@kwdef mutable struct _PresentationState
-    on::Bool = false
+Base.@kwdef mutable struct _SpectatorState
     cards::Bool = false
     view_cube::Bool = false
+    background::Any = nothing
     saved::Union{Nothing, NamedTuple} = nothing
 end
 
@@ -535,7 +537,7 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     beams::_BeamState = _BeamState()
     detectors::_DetectorStates = _DetectorStates()
     components::_ComponentState
-    presentation::_PresentationState = _PresentationState()
+    spectator::_SpectatorState = _SpectatorState()
     background_card::Any = nothing
     links::_ViewLinks = _ViewLinks()
     widgets::_LayoutWidgets

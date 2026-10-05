@@ -51,7 +51,8 @@ overlay (see `_overlay_scene`) in the colors of the `theme` tokens:
   [`add_tool!`](@ref) with a key), otherwise only the `texts` are updated, e.g. the step.
 
 While `hidden`, all parts are moved away (see `_park!`), e.g. while a menu is open that they
-would cover; likewise while `presenting`, i.e. in the presentation mode, see [`presentation!`](@ref). See `_update_help_ui!` and `_arrange_help!`.
+would cover; likewise while `muted`, i.e. in the spectator mode without help, see
+[`spectator!`](@ref). See `_update_help_ui!` and `_arrange_help!`.
 """
 mutable struct _HelpUI
     const scene::Scene
@@ -74,7 +75,7 @@ mutable struct _HelpUI
     keys::Any
     shown::Bool
     hidden::Bool
-    presenting::Bool
+    muted::Bool
 end
 
 _HelpUI(scene::Scene, t::NamedTuple, ax::LScene) = _HelpUI(scene, t, ax, _help_pill(scene, t)...)
@@ -265,7 +266,7 @@ while it is shown; the others, or all while the help is `hidden`, are moved away
 """
 function _arrange_help!(help::_HelpUI, spectator::Bool)
     parts = (help.pill, help.chips, help.spectator, help.card)
-    (help.hidden || help.presenting) && return foreach(p -> _park!(p.outer), parts)
+    (help.hidden || help.muted) && return foreach(p -> _park!(p.outer), parts)
     vp = Rect2f(Makie.viewport(help.ax.scene)[])
     _place_pill!(help.pill, vp)
     size = _card_size(help.pill.outer)
