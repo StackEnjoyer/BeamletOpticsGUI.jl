@@ -70,12 +70,12 @@ const GUI = BeamletOpticsGUI
         @test GUI._angle_about(z, y, [1.0, 0, 0]) ≈ -π / 2
         @test GUI._angle_about(z, y, [0.0, 1, 5]) ≈ 0 atol = 1e-12
         @test isnothing(GUI._angle_about(z, z, y)) && isnothing(GUI._angle_about(z, y, z))
-        # within 3° of a multiple of 45° to the beam: the angle that reaches it
+        # within 5° of a multiple of 45° to the beam: the angle that reaches it
         step, tol = GUI._SNAP_ANGLE_STEP, GUI._SNAP_ANGLE_TOLERANCE
-        @test step ≈ π / 4 && tol ≈ deg2rad(3)
+        @test step ≈ π / 4 && tol ≈ deg2rad(5)
         @test GUI._snap_angle(deg2rad(2), 0.0) == 0.0
-        @test GUI._snap_angle(deg2rad(-2.9), 0.0) == 0.0
-        @test GUI._snap_angle(deg2rad(3.5), 0.0) == deg2rad(3.5)
+        @test GUI._snap_angle(deg2rad(-4.9), 0.0) == 0.0
+        @test GUI._snap_angle(deg2rad(5.5), 0.0) == deg2rad(5.5)
         @test GUI._snap_angle(deg2rad(44), 0.0) ≈ π / 4
         @test GUI._snap_angle(deg2rad(-91), 0.0) ≈ -π / 2
         # relative to the angle at the start of the drag

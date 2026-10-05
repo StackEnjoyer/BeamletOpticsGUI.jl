@@ -1184,8 +1184,11 @@ _points(h) = only(render_plots(h))[1][]
         close(gui_ref[])
     end
 
+    # The key that types the letter of `key` in the keyboard layout of this machine: the shortcuts by
+    # letter follow the layout, see `_layout_key`
+    _typed(key) = first(k for k in Keyboard.Button.(Int(Keyboard.a):Int(Keyboard.z)) if GUI._layout_key(k) == key)
     _ctrl_z!(gui) = (push!(events(gui.ax.scene).keyboardstate, Keyboard.left_control);
-                     _key!(gui, Keyboard.z);
+                     _key!(gui, _typed(Keyboard.z));
                      delete!(events(gui.ax.scene).keyboardstate, Keyboard.left_control))
 
     # Angle between the rotation matrices R1 and R2
@@ -1661,7 +1664,8 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.layout isa GUI.CompactLayout
         @test gui.fig.scene.backgroundcolor[] == t.background
         @test gui.ax.scene.backgroundcolor[] == t.view
-        @test _rgb(only(render_plots(gui.beam_handles[1])).color[]) == _rgb(:blue)
+        # the rays in the color of their wavelength, here 1000 nm, in both themes
+        @test _rgb(only(render_plots(gui.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
         plane = only(gui.clip.planes)
         @test _plane_color(gui, plane) == _rgb(:purple)
         @test all(==(_rgb(:black)), _strokes(gui, plane, beam))
@@ -1695,7 +1699,7 @@ _points(h) = only(render_plots(h))[1][]
         @test _rgb(o.rail.box.strokecolor[]) == _rgb(t.border)
         @test _rgb(dark.widgets.auto_trace_toggle.box.color[]) == _rgb(t.accent_soft)
         @test Makie.Colors.alpha(Makie.to_color(dark.widgets.measure_toggle.box.color[])) == 0
-        @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
+        @test _rgb(only(render_plots(dark.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
         @test all(==(_rgb(t.marker_stroke)), _strokes(dark, only(dark.clip.planes), beam))
         @test _detector_color(dark, pd) == t.materials[:detector]

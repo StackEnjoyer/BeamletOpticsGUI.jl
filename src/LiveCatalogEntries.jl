@@ -44,6 +44,9 @@ end
 _catalog_icon(entries, entry::CatalogEntry) =
     something(entry.icon, _catalog_group_icon(entries, entry.group))
 
+# The laser lines [nm] that the wavelength of a source offers as presets
+const _LASER_LINES = (405, 450, 488, 532, 589, 632.8, 780, 850, 1064, 1310, 1550)
+
 # A length in [m], shown in mm
 _length_param(name, default; kwargs...) = CatalogParam(name, default; unit = "mm", scale = 1e-3, kwargs...)
 
@@ -58,7 +61,7 @@ follow BeamletOptics: positive if the center of the surface lies behind it (towa
 `R1 > 0` and `R2 < 0` for a biconvex lens, `Inf` for a plane surface of a `SphericalLens`.
 
 The sources (entries with `source = true`) are constructed at the origin along +y with a wavelength
-of 632.8 nm; the half angle of the point sources is entered in degrees, the numbers of rings and
+of 632.8 nm, which offers the laser lines `_LASER_LINES` as its presets; the half angle of the point sources is entered in degrees, the numbers of rings and
 rays are whole numbers.
 """
 function _builtin_catalog()
@@ -77,7 +80,9 @@ function _builtin_catalog()
         return nothing
     end
     # the parameters of the sources: a helium-neon laser, the numbers of rings and rays of BeamletOptics
-    wavelength = CatalogParam("wavelength", 632.8e-9; unit = "nm", scale = 1e-9)
+    wavelength = CatalogParam("wavelength", 632.8e-9; unit = "nm", scale = 1e-9,
+        presets = ["$(_catalog_number_string(nm)) nm" => round(nm * 1e-9; sigdigits = 15)
+                   for nm in _LASER_LINES])
     power = CatalogParam("power", 1e-3; unit = "mW", scale = 1e-3, keyword = :P0)
     half_angle = CatalogParam("half angle", deg2rad(5); unit = "°", scale = π / 180)
     rings = CatalogParam("rings", 10; keyword = :num_rings, integer = true)

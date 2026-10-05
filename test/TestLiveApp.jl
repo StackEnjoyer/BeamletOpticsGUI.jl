@@ -96,7 +96,8 @@ const GUI = BeamletOpticsGUI
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         dark = _live_app(System([m, pd]), beam; theme = :dark,
             clip_planes = [[0, 0.05, 0] => [0, 1, 0]], detectors = [pd => (:intensity, (; profiles = true))])
-        @test only(render_plots(dark.beam_handles[1])).color[] == t.rays
+        # the rays in the color of their wavelength, here 1000 nm, in both themes
+        @test _rgb(only(render_plots(dark.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
         @test _detector_color(dark, pd) == t.materials[:detector]
         # the mirror keeps the color of the look
         @test _rgb(first(_plots(dark, m)).color[]) == BMO.look_colors()[:reflective]
@@ -122,7 +123,7 @@ const GUI = BeamletOpticsGUI
         m, pd = _fixture()
         light = _live_app(System([m, pd]), beam)
         @test _detector_color(light, pd) == BMO.look_colors()[:detector]
-        @test _rgb(only(render_plots(light.beam_handles[1])).color[]) == _rgb(:blue)
+        @test _rgb(only(render_plots(light.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
         # the cards in the light colors, with a border
         @test light.cards.selection.background.color[] == GUI._app_theme(:light).sidebar
         close(light)
@@ -549,16 +550,16 @@ const GUI = BeamletOpticsGUI
 
     @testset "slots" begin
         m, pd = _fixture()
-        # without the catalog, whose toggle is in a group of its own, the one of the own tools
+        # without the catalog; the tool "Script" is in the group of the own tools
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [],
             catalog = CatalogEntry[])
         # a new toolbar group after the built-in ones
         b = Button(GUI._add_toolbar_entry!(gui, :custom); label = "Mine")
-        @test first.(gui.layout.groups[(end - 1):end]) == [:panels, :custom]
+        @test first.(gui.layout.groups[(end - 2):end]) == [:panels, :user, :custom]
         @test b in contents(gui.layout.groups[end].second)
         # the groups and separators alternate in the columns of the toolbar
         cols(x) = Makie.GridLayoutBase.gridcontent(x).span.cols
-        @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11]
+        @test [cols(g.second) for g in gui.layout.groups] == [1:1, 3:3, 5:5, 7:7, 9:9, 11:11, 13:13]
         # a sidebar section below the built-in ones
         g = GUI._add_sidebar_section!(gui, :right, "Extra")
         @test g isa GridLayout

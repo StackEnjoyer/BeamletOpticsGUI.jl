@@ -145,8 +145,11 @@ const GUI = BeamletOpticsGUI
         @test !_in_scene(gui, plots)
         @test !_in(m, gui.controls.movable)
         @test !haskey(gui.controls.init_poses, m)
-        @test all(e -> e.obj !== m, gui.controls.undo_stack)
-        @test all(e -> e.obj !== m, gui.controls.redo_stack)
+        # the removal is an action of the undo history, after the gestures of the mirror, which
+        # stay: undo brings the mirror back, see `TestLiveHistory.jl`
+        @test last(gui.controls.undo_stack) isa GUI._ActionEntry
+        @test last(gui.controls.undo_stack).obj === m
+        @test isempty(gui.controls.redo_stack)
         @test isnothing(gui.controls.last_key_step)
         @test !(m in gui.objects.hidden) && !haskey(gui.objects.opacity, m)
         @test !GUI._is_pinned(gui, m)
@@ -329,7 +332,7 @@ const GUI = BeamletOpticsGUI
         # "remove" of the card: a row below the rows of `card_rows`, not an action in the head
         @test [w.name for w in card_actions(m2)] == [:hide]
         @test length(GUI._card_rows(m2)) == length(card_rows(m2)) + 1
-        @test only(last(GUI._card_rows(m2)).cells).name === :remove
+        @test last(last(GUI._card_rows(m2)).cells).name === :remove
         gui.controls.selected[] = m2
         GUI._update_selection_box!(gui.controls)
         GUI._update_cards!(gui)

@@ -119,6 +119,44 @@ function _set_beam_opacity!(gui::LiveView, beam, opacity::Real)
     return nothing
 end
 
+# The plots of the `beam` of the `gui` with a line width: those of its render handles
+function _linewidth_plots(gui::LiveView, beam)
+    return Any[plot for (p, h) in zip(gui.pairs, gui.beam_handles) if p.second === beam
+               for plot in _beam_plots(h) if haskey(plot, :linewidth)]
+end
+
+"""
+    _beam_linewidth(gui, beam) -> Float64
+
+The line width in which the `beam` of the `gui` is drawn: the one set on its card or by its
+`beam_kwargs` (`linewidth`), otherwise the one of its plots; 1.0 for a beam without a plot with a
+line width, e.g. the envelope of a Gaussian beamlet.
+"""
+function _beam_linewidth(gui::LiveView, beam)
+    kw = get(gui.beams.kwargs, beam, (;))
+    haskey(kw, :linewidth) && return Float64(kw.linewidth)
+    plots = _linewidth_plots(gui, beam)
+    isempty(plots) && return 1.0
+    return Float64(first(plots).linewidth[])
+end
+
+"""
+    _set_beam_linewidth!(gui, beam, width)
+
+Draws the `beam` of the `gui` with the line `width`: the `linewidth` of its plots that have this
+attribute and of its kwargs, with which it is rendered again. Display only: nothing is solved.
+"""
+function _set_beam_linewidth!(gui::LiveView, beam, width::Real)
+    w = Float64(width)
+    new = (; linewidth = w)
+    gui.beams.kwargs[beam] = merge(get(gui.beams.kwargs, beam, (;)), new)
+    gui.beams.overlay_kwargs[beam] = merge(get(gui.beams.overlay_kwargs, beam, (;)), new)
+    for plot in _linewidth_plots(gui, beam)
+        plot.linewidth[] ≈ w || (plot.linewidth[] = w)
+    end
+    return nothing
+end
+
 #=
 The page "Color" of the card of a source
 =#
@@ -194,7 +232,7 @@ _beam_opacity_percent(gui::LiveView, beam) = round(Int, 100 * _beam_opacity(gui,
 
 The rows of the page "Color" of the card of a beam or a beam group: the menu of colors (the color of
 its wavelength, of the layout, fixed colors, see `_color_options`), the box of the color as a hex
-value and the slider of the opacity.
+value, the slider of the opacity and the slider of the line width.
 """
 function _color_rows(_)
     label(text) = CardWidget(Label; text, width = 48, halign = :left)
@@ -207,5 +245,10 @@ function _color_rows(_)
             CardWidget(Slider; name = :beam_opacity, range = 0:100, width = 110,
                 value = _beam_opacity_percent, on = (gui, b, v) -> _set_beam_opacity!(gui, b, v / 100)),
             CardWidget(Label; name = :beam_opacity_value, width = 40, halign = :right,
-                value = (gui, b) -> "$(_beam_opacity_percent(gui, b)) %")))
+                value = (gui, b) -> "$(_beam_opacity_percent(gui, b)) %")),
+        CardRow(label("width"),
+            CardWidget(Slider; name = :beam_linewidth, range = 0.5:0.5:6, width = 110,
+                value = _beam_linewidth, on = (gui, b, v) -> _set_beam_linewidth!(gui, b, v)),
+            CardWidget(Label; name = :beam_linewidth_value, width = 40, halign = :right,
+                value = (gui, b) -> string(round(_beam_linewidth(gui, b); digits = 1)))))
 end

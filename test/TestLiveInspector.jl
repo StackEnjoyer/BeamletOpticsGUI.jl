@@ -282,8 +282,8 @@ const GUI = BeamletOpticsGUI
         # the pages and the rows of `card_rows`, with the row "remove" of a component, are those of
         # the floating cards
         @test insp.card.pages == GUI._card_pages(o.m)
-        key(c) = map(GUI._layout_key, GUI._declarations(c, o.pd))
-        @test length(GUI._declarations(insp.card, o.pd)[2]) == length(card_rows(o.pd)) + 1
+        key(c) = map(GUI._layout_key, GUI._declarations(gui, c, o.pd))
+        @test length(GUI._declarations(gui, insp.card, o.pd)[2]) == length(card_rows(o.pd)) + 1
         @test key(insp.card) == key(gui.cards.selection)
         close(gui)
     end
@@ -308,12 +308,11 @@ const GUI = BeamletOpticsGUI
         @test _visible(view.ax) && view.switch.keys == [:spot, :psf]
         # as wide as the sidebar, its axis as high as wide; below the page bar
         w = Makie.widths(_rect(insp.grid))[1]
-        @test view.ax.width[] == w && view.ax.height[] == w && card.view_height == w
+        @test view.ax.width[] == w && view.ax.height[] == w
         @test GUI._view_size(view)[1] ≈ w
         @test minimum(_rect(view.ax))[1] >= minimum(_rect(gui.layout.right.box))[1]
         @test maximum(_rect(view.ax))[1] <= maximum(_rect(gui.layout.right.box))[1]
         @test maximum(_rect(view.full))[2] < minimum(_rect(card.bar.grid))[2]
-        @test !GUI._overflows(gui)
         # a solve computes the shown view
         r = state.result
         GUI._resolve!(gui, nothing)
@@ -452,8 +451,7 @@ const GUI = BeamletOpticsGUI
         @test c2.obj === o.pd && c2.page == :results && c2.view isa GUI._DetectorView
         @test GUI._card_widget(c2, :signal) isa Label
         @test maximum(_rect(c2.parent))[2] <= minimum(_rect(c.parent))[2]
-        # the first card may have collapsed to make room, see `_fit_pinned!`; expanded again
-        c.collapsed && notify(c.head.collapse.clicks)
+        # the sidebar scrolls: no card collapses to make room
         @test !c.collapsed
         # the widgets of a pinned card act on its object, not on the selection
         ctrl.selected[] = o.l1
@@ -485,31 +483,41 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "pinned cards fit into the sidebar" begin
+    @testset "the sidebar scrolls with the pinned cards" begin
         gui, o = _fixture()
         insp, ctrl = gui.layout.inspector, gui.controls
+        area = gui.layout.right.area
         ctrl.selected[] = o.m
-        # more pinned cards than fit: the older ones collapse, the newest stays expanded
+        @test GUI._max_offset(area) == 0 && area.offset[] == 0
+        # more pinned cards than fit: all stay expanded, the sidebar scrolls
         for obj in (o.m, o.pd, o.bs, o.pd2, o.l1)
             GUI._toggle_pin!(gui, obj)
-            # the older cards collapse, then the property list is shortened; only beyond that
-            # room, the sidebar overflows
-            @test !GUI._overflows(gui) ||
-                  (all(c -> c.collapsed, insp.pinned[1:(end - 1)]) && isempty(insp.list.rows))
-            @test length(insp.list.rows) <= length(GUI._inspector_rows(gui, ctrl.selected[]))
-            @test !insp.pinned[end].collapsed
+            @test !any(c -> c.collapsed, insp.pinned)
         end
-        @test count(c -> c.collapsed, insp.pinned) >= 1
-        # an expanded card stays expanded, others collapse instead
-        c = first(insp.pinned)
-        @test c.collapsed
-        notify(c.head.collapse.clicks)
-        @test !c.collapsed && GUI._card_widget(c, :x) isa Textbox
-        @test !GUI._overflows(gui) || all(d -> d.collapsed, filter(d -> d !== c, insp.pinned))
-        # a collapsed card is not expanded automatically, e.g. after a solve
-        collapsed = [d.collapsed for d in insp.pinned]
+        top, bottom = maximum(area.region[])[2], minimum(area.region[])[2]
+        @test GUI._max_offset(area) > 0 && area.height[] > top - bottom
+        # the card of the selection at the top of the sidebar, the last card below the window
+        @test bottom < minimum(_rect(insp.name))[2] && maximum(_rect(insp.name))[2] < top
+        @test minimum(_rect(last(insp.pinned).parent))[2] < bottom
+        # scrolled to the end: the last card is in the sidebar, the selection above it
+        GUI._set_offset!(area, area.height[])
+        @test area.offset[] == GUI._max_offset(area)
+        @test minimum(_rect(last(insp.pinned).parent))[2] >= bottom
+        @test minimum(_rect(insp.name))[2] > top
+        # a click at the place of the pin of the inspector, which the toolbar covers now, is none
+        # on the pin
+        @test insp.pin.active[]
+        _click!(gui, _center(_rect(insp.pin.box)))
+        @test insp.pin.active[] && GUI._is_pinned(gui, o.m)
+        # a collapsed card needs less height; a refresh keeps the cards as they are
+        h = area.height[]
+        notify(first(insp.pinned).head.collapse.clicks)
+        @test first(insp.pinned).collapsed && area.height[] < h
         GUI._update_inspector!(gui; force = true)
-        @test [d.collapsed for d in insp.pinned] == collapsed
+        @test [c.collapsed for c in insp.pinned] == [true, false, false, false, false]
+        # unpinned: the offset stays within its limits
+        foreach(obj -> GUI._toggle_pin!(gui, obj), (o.m, o.pd, o.bs, o.pd2, o.l1))
+        @test isempty(insp.pinned) && GUI._max_offset(area) == 0 && area.offset[] == 0
         close(gui)
     end
 
@@ -533,7 +541,6 @@ const GUI = BeamletOpticsGUI
         @test _height(c.list.box) == length(c.list.rows) * GUI._PROPERTY_ROW
         @test maximum(_rect(c.list.box))[2] <= minimum(_rect(c.bar.grid))[2]
         @test !_visible(GUI._card_widget(c, :x))
-        @test !GUI._overflows(gui)
         # the page of the inspector is its own
         @test insp.card.page == :pose && isempty(_rows(gui))
         # they stay those of its object when another one is selected
@@ -577,9 +584,9 @@ const GUI = BeamletOpticsGUI
             _page!(last(insp.pinned), :properties)
         end
         @test length(insp.pinned) == 3 && last(insp.pinned).page == :properties && !last(insp.pinned).collapsed
-        @test GUI._overflow(gui) <= 0.5
+        @test !any(c -> c.collapsed, insp.pinned)
         GUI._update_inspector!(gui; force = true)
-        @test GUI._overflow(gui) <= 0.5
+        @test !any(c -> c.collapsed, insp.pinned)
         # the card of an item without properties, e.g. a measurement, has a single page: no page bar
         gui.widgets.measure_toggle.active[] = true
         GUI._add_measure_point!(gui, BMO.position(o.m), o.m)
@@ -613,22 +620,23 @@ const GUI = BeamletOpticsGUI
         @test GUI._layout_views(gui) == [(o.pd, insp.card.view), (o.pd, view)]
         @test state.result === r && view.result === r && insp.card.view.result === r
         @test maximum(_rect(view.full))[2] < minimum(_rect(d.bar.grid))[2]
-        # the views get lower while the sidebar has no room for both
-        @test GUI._overflow(gui) <= 0.5
-        @test insp.card.view_height < w && insp.card.view_height >= GUI._DOCKED_VIEW_MIN
-        @test insp.card.view.ax.height[] == insp.card.view_height && insp.card.view.ax.width[] == w
+        # both views are as high as wide: the sidebar scrolls instead of shrinking them
+        area = gui.layout.right.area
+        @test insp.card.view.ax.height[] == w && insp.card.view.ax.width[] == w
+        @test view.ax.height[] == w && GUI._max_offset(area) > 0
         GUI._update_inspector!(gui; force = true)
-        @test GUI._overflow(gui) <= 0.5
-        # and grow back once it has: the thumbnail of the pinned card needs less
+        @test insp.card.view.ax.height[] == w
+        # the thumbnail of the pinned card needs less
+        scroll = GUI._max_offset(area)
         notify(view.collapse_button.clicks)
         @test !view.expanded && !d.view_expanded && GUI._layout_views(gui)[2] == (o.pd, view)
-        @test insp.card.view_height == w && insp.card.view.ax.height[] == w
+        small = GUI._max_offset(area)
+        @test small < scroll
         notify(view.expand_button.clicks)
-        @test view.expanded && d.view_expanded && insp.keep === d
-        @test insp.card.view_height < w && GUI._overflow(gui) <= 0.5
+        @test view.expanded && d.view_expanded && GUI._max_offset(area) > small
         # the view of the selection is hidden with its page
         ctrl.selected[] = o.m
-        @test GUI._layout_views(gui) == [(o.pd, view)] && d.view_height == w
+        @test GUI._layout_views(gui) == [(o.pd, view)] && view.ax.height[] == w
         # a solve computes the view of the pinned card
         GUI._resolve!(gui, nothing)
         @test state.result !== r && !state.stale && view.result === state.result
@@ -662,16 +670,16 @@ const GUI = BeamletOpticsGUI
         d = last(insp.pinned)
         @test d.obj === o.pd && d.page == :results && d.view isa GUI._DetectorView
         @test GUI._layout_views(gui) == [(o.pd, d.view)] && d.view.result === state.result
-        # older cards collapse for an expanded view, like for a card that is expanded
+        # more cards: none collapses, the sidebar scrolls
         for obj in (o.m, o.bs, o.pd2, o.l1)
             GUI._toggle_pin!(gui, obj)
         end
-        @test GUI._overflow(gui) <= 0.5 && !last(insp.pinned).collapsed
-        @test count(c -> c.collapsed, insp.pinned) >= 1
+        @test !any(c -> c.collapsed, insp.pinned) && GUI._max_offset(gui.layout.right.area) > 0
         # unpinned
         view = d.view
         GUI._toggle_pin!(gui, o.pd)
-        @test isnothing(d.view) && view.ax.parent === nothing && isempty(GUI._layout_views(gui))
+        @test isnothing(d.view) && view.ax.parent === nothing
+        @test !any(v -> first(v) === o.pd, GUI._layout_views(gui))
         close(gui)
     end
 
@@ -819,18 +827,16 @@ const GUI = BeamletOpticsGUI
         c = only(GUI._floating_cards(gui, o.m))
         for obj in (o.pd, o.bs, o.pd2, o.l1)
             GUI._toggle_pin!(gui, obj)
-            @test !GUI._overflows(gui) ||
-                  (all(d -> d.collapsed, insp.pinned[1:(end - 1)]) && isempty(insp.list.rows))
-            @test !insp.pinned[end].collapsed
+            @test !any(d -> d.collapsed, insp.pinned)
         end
-        # the floating card is neither in the stack nor collapsed by the fitting
+        # the floating card is not in the stack of the sidebar
         @test all(d -> d.obj !== o.m, insp.pinned) && length(insp.pinned) == 4
         @test !c.collapsed && c.pinned
-        # floating the docked cards makes room: no docked card is collapsed for them
+        # floating the docked cards makes room: the sidebar does not scroll anymore
         for obj in (o.pd, o.bs, o.pd2)
             GUI._float!(gui, obj)
         end
-        @test only(insp.pinned).obj === o.l1 && !GUI._overflows(gui)
+        @test only(insp.pinned).obj === o.l1 && GUI._max_offset(gui.layout.right.area) == 0
         @test count(c -> c.pinned, gui.cards.all) == 4
         _tick!(gui)
         # the floating cards cover neither each other nor the view cube

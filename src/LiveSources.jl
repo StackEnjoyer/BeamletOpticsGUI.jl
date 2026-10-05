@@ -61,8 +61,8 @@ _wavelength_style(_) = (;)
 
 The kwargs of a source that is added to the live view from its `beam_kwargs`, which are those of
 the `beam_kwargs` of `live_view`: by default it is drawn in the color of its wavelength (see
-`_wavelength_color`), unlike the sources of the start, which have the color of the layout, and a
-beam group with `render_every = 5`. Throws an `ArgumentError` for `show_polarization = true` of a
+`_wavelength_color`), like the sources of the start (see `_beam_style`), and a beam group with
+`render_every = 5`. Throws an `ArgumentError` for `show_polarization = true` of a
 source without polarized rays and for `show_beams = true` of one that is no Gaussian beamlet.
 """
 function _source_kwargs(src, beam_kwargs)
@@ -80,10 +80,41 @@ end
 function add_component!(gui::LiveView, src::_Source; system = nothing, select::Bool = true,
         label = nothing, beam_kwargs = (;), origin = nothing)
     ctrl = gui.controls
-    comp = gui.components
     sys = _source_system(gui, system)
     any(p -> p.second === src, gui.pairs) && throw(ArgumentError(
         "the $(nameof(typeof(src))) is already a source of the live view"))
+    kw = _attach!(gui, src, sys; label, origin, beam_kwargs)
+    # The linked views show it before the solve, see `_sync_structure!`
+    _sync_structure!(gui)
+    if select
+        # A source is selected by its marker, hence not while the markers are hidden
+        if !_is_movable(ctrl, src)
+            _inspect!(gui, src)
+        elseif _sources_shown(gui)
+            _select!(gui, src)
+        end
+    end
+    _on_change!(gui, src)
+    # After the solve, like the overlays of the sources of the start, see `_init_overlays!`
+    get(kw, :show_polarization, false) === true && _set_polarization!(gui, src, true)
+    get(kw, :show_beams, false) === true && _set_generating_beams!(gui, src, true)
+    _record_added!(gui, src)
+    return src
+end
+
+"""
+    _attach!(gui, src, sys; label = nothing, origin = nothing, beam_kwargs = (;)) -> NamedTuple
+
+Shows the source `src` in the `gui`, traced through its system `sys`: the part of
+[`add_component!`](@ref) before the solve, i.e. its plots, its marker, its name and what the `gui`
+records of it. Also for a view that follows a linked one, in which `src` was added, see
+`_follow_structure!`. Returns the kwargs of the source, see `_source_kwargs`, which throws for
+kwargs that the source does not take, before the view changes.
+"""
+function _attach!(gui::LiveView, src::_Source, sys::BMO.AbstractSystem; label = nothing,
+        origin = nothing, beam_kwargs = (;))
+    ctrl = gui.controls
+    comp = gui.components
     kw = _source_kwargs(src, beam_kwargs)
     # The polarization and the generating beams are drawn by overlays, see `_BeamState`
     beam_kw = Base.structdiff(kw, NamedTuple{(:show_polarization, :show_beams)})
@@ -117,33 +148,93 @@ function add_component!(gui::LiveView, src::_Source; system = nothing, select::B
         deleteat!(comp.removed, i)
         delete!(comp.source_systems, src)
     else
-        push!(comp.added, src)
+        any(o -> o === src, comp.added) || push!(comp.added, src)
         comp.system[src] = sys
         comp.origin[src] = origin
     end
+    _table_include!(gui, src)
     _on_components_changed!(gui)
     _update_info!(gui)
-    if select
-        # A source is selected by its marker, hence not while the markers are hidden
-        if !_is_movable(ctrl, src)
-            _inspect!(gui, src)
-        elseif _sources_shown(gui)
-            _select!(gui, src)
+    return kw
+end
+
+#=
+Sources in the undo history, see `_record_added!` and `_record_removed!`
+=#
+
+# Of a source: also the systems it is traced through, the kwargs with which it is drawn (e.g. its
+# color), whether it is switched on and its overlays
+function _snapshot(gui::LiveView, src::_Source)
+    ctrl = gui.controls
+    beams = gui.beams
+    kwargs = merge(get(beams.overlay_kwargs, src, (;)), get(beams.kwargs, src, (;)),
+        (; show_polarization = haskey(beams.pol, src), show_beams = haskey(beams.gen, src)))
+    names = haskey(gui.objects.names, src) ? Pair{Any, String}[src => gui.objects.names[src]] :
+            Pair{Any, String}[]
+    init_poses = haskey(ctrl.init_poses, src) ? Pair{Any, Any}[src => ctrl.init_poses[src]] :
+                 Pair{Any, Any}[]
+    return (; systems = Any[p.first for p in gui.pairs if p.second === src],
+        label = get(gui.labels, src, nothing), origin = get(gui.components.origin, src, nothing),
+        names, init_poses, kwargs, on = _beam_on(gui, src),
+        # a source that the view started with
+        start = !any(o -> o === src, gui.components.added))
+end
+
+function _restore!(gui::LiveView, src::_Source, snap)
+    comp = gui.components
+    _unrecorded(gui) do
+        add_component!(gui, src; system = first(snap.systems), label = snap.label,
+            origin = snap.origin, beam_kwargs = snap.kwargs)
+        # A source of the start that was traced through several systems
+        for sys in snap.systems[2:end]
+            _change!(gui.controls, src) do
+                push!(gui.pairs, sys => src)
+                push!(gui.beam_handles, _live_render_beam!(gui.ax, gui.layout, src, gui.beams.kwargs[src]))
+            end
         end
     end
-    _on_change!(gui, src)
-    # After the solve, like the overlays of the sources of the start, see `_init_overlays!`
-    get(kw, :show_polarization, false) === true && _set_polarization!(gui, src, true)
-    get(kw, :show_beams, false) === true && _set_generating_beams!(gui, src, true)
-    return src
+    if snap.start && length(snap.systems) > 1
+        # no change for `export_changes`, like a source of the start with a single system
+        filter!(o -> o !== src, comp.removed)
+        filter!(o -> o !== src, comp.added)
+        delete!(comp.source_systems, src)
+        delete!(comp.system, src)
+        delete!(comp.origin, src)
+        gui.trace.stale && _dim_beams!(gui)
+        _apply_clip_planes!(gui)
+        _on_change!(gui, src)
+    end
+    snap.on || _set_beam_on!(gui, src, false)
+    _restore_names!(gui, snap)
+    return nothing
 end
 
 function remove_component!(gui::LiveView, src::_Source)
     reason = _removal_reason(gui, src)
     isnothing(reason) || throw(ArgumentError(reason))
+    name = _label(gui, src)
+    snap = _snapshot(gui, src)
+    _detach!(gui, src)
+    # The linked views let go of it before the solve, see `_sync_structure!`
+    _sync_structure!(gui)
+    gui.status.text[] = "$name removed"
+    # The detectors lose the hits of the source with the next solve
+    _on_change!(gui, nothing)
+    isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
+    _record_removed!(gui, src, snap)
+    return src
+end
+
+"""
+    _detach!(gui, src)
+
+Lets go of the source `src` in the `gui`: the part of [`remove_component!`](@ref) before the solve,
+i.e. its pairs, its plots, its marker, its name and what the `gui` records of it. Also for a view
+that follows a linked one, in which `src` was removed, see `_follow_structure!`.
+"""
+function _detach!(gui::LiveView, src::_Source)
     ctrl = gui.controls
     comp = gui.components
-    name = _label(gui, src)
     # A source can be traced through several systems
     idx = findall(p -> p.second === src, gui.pairs)
     systems = Any[gui.pairs[i].first for i in idx]
@@ -184,9 +275,5 @@ function remove_component!(gui::LiveView, src::_Source)
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
     _update_info!(gui)
-    gui.status.text[] = "$name removed"
-    # The detectors lose the hits of the source with the next solve
-    _on_change!(gui, nothing)
-    isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
-    return src
+    return nothing
 end
