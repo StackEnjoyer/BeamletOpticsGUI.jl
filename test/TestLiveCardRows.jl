@@ -247,8 +247,9 @@ const GUI = BeamletOpticsGUI
         n_rays = length(BMO.rays(b))
         box.stored_string[] = "250"
         @test GUI._flen(gui, b) == 0.25
-        @test h(b) !== old && !any(in_scene, old_plots)
-        @test all(in_scene, render_plots(h(b)))
+        # the handle and its plots stay
+        @test h(b) === old && length(render_plots(old)) == length(old_plots)
+        @test all(p === q for (p, q) in zip(render_plots(old), old_plots)) && all(in_scene, old_plots)
         @test only(GUI._beam_segments(h(b))).b ≈ [0, 0.25, 0]
         @test _w(gui, :flen).displayed_string[] == "250"
         # display only: nothing is solved, the other beams keep their length
@@ -269,13 +270,21 @@ const GUI = BeamletOpticsGUI
         @test_throws ArgumentError GUI._set_flen!(gui, b, Inf)
         @test h(b) === kept
 
-        # the overlay of the polarization is drawn again with the new length
+        # the overlays follow the new length: the polarization, the generating beams
         GUI._set_polarization!(gui, pol, true)
         overlay = gui.beams.pol[pol]
+        shown = [p.visible[] for p in render_plots(overlay)]
         GUI._set_flen!(gui, pol, 0.3)
-        @test gui.beams.pol[pol] !== overlay && isempty(render_plots(overlay))
-        @test render_settings(gui.beams.pol[pol]).flen == 0.3
+        @test gui.beams.pol[pol] === overlay && all(in_scene, render_plots(overlay))
+        @test [p.visible[] for p in render_plots(overlay)] == shown
+        @test render_settings(overlay).flen == 0.3
         @test GUI._flen(gui, pol) == 0.3
+        GUI._set_generating_beams!(gui, g, true)
+        overlay = gui.beams.gen[g]
+        GUI._set_flen!(gui, g, 0.05)
+        @test gui.beams.gen[g] === overlay && render_settings(overlay).flen == 0.05
+        GUI._set_flen!(gui, g, 0.1)
+        GUI._set_generating_beams!(gui, g, false)
         # a beam that is off stays hidden, and is shown with the new length when switched on
         GUI._set_beam_on!(gui, b, false)
         GUI._set_flen!(gui, b, 0.5)
@@ -283,11 +292,13 @@ const GUI = BeamletOpticsGUI
         GUI._set_beam_on!(gui, b, true)
         @test all(p -> p.visible[], render_plots(h(b)))
         @test only(GUI._beam_segments(h(b))).b ≈ [0, 0.5, 0]
-        # new plots of outdated beams are dimmed like them, and restored with them
+        # the plots of outdated beams stay dimmed and clipped, and are restored with them
         GUI._mark_stale!(gui, nothing)
+        clip = [copy(p.clip_planes[]) for p in render_plots(h(b))]
         GUI._set_flen!(gui, b, 0.6)
         dimmed = filter(p -> haskey(p, :alpha), render_plots(h(b)))
         @test !isempty(dimmed) && all(p -> p.alpha[] == GUI._STALE_ALPHA, dimmed)
+        @test [p.clip_planes[] for p in render_plots(h(b))] == clip
         GUI._restore_beams!(gui)
         @test all(p -> p.alpha[] != GUI._STALE_ALPHA, dimmed)
         # a source keeps its other kwargs, e.g. `render_every`; a Gaussian beamlet
