@@ -40,6 +40,8 @@ end
 """`LiveView` with the compact layout, i.e. `live_view(...; layout = :compact)`."""
 const CompactView = LiveView{CompactLayout}
 
+_layout_name(::CompactLayout) = :compact
+
 # The colors of the theme; the 3D view fills the window, hence no padding around the figure
 _figure(layout::CompactLayout, size) = Figure(; size, backgroundcolor = layout.theme.background,
     figure_padding = 0, _makie_theme(layout.theme)...)

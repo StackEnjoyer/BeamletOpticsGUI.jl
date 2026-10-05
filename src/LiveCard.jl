@@ -556,7 +556,7 @@ function _lower_parts(c::_ComponentCard)
         isempty(c.rows.content) || push!(parts, c.rows)
         # step and mode on the card that stands for the selection, see `_update_card!`
         c.step_shown && push!(parts, c.step)
-    elseif c.page === :color
+    elseif _shows_rows(c.page)
         isempty(c.rows.content) || push!(parts, c.rows)
     elseif c.page === :properties
         push!(parts, c.properties)

@@ -1,5 +1,6 @@
 #=
-Snapping of the components of the live view onto its beams while they are dragged with the mouse,
+Snapping of the components of the live view onto its beams while they are dragged with the mouse
+(a component that is being placed follows the same switch, see `_placement_pose`),
 see `_set_snap!` of the controls: the beams that a component snaps onto (`_snap_beam`), the key
 and the help
 =#
@@ -10,10 +11,11 @@ const _SNAP_KEY = Keyboard.tab
 
 # The keys of the snapping, in the help of the controls, see `_help_sections`
 const _SNAP_HELP = _HelpSection["Snap onto beams" => [
-    _HelpEntry(["Tab"], "snap dragged components: off, position, position + rotation"),
+    _HelpEntry(["Tab"], "snap dragged and placed components (beams, table): off, position, position + rotation"),
     _HelpEntry(["Shift", "Tab"], "the same backwards"; combo = true),
     _HelpEntry([:mouse => "drag"], "move mode: onto the central beam of a source"),
-    _HelpEntry([:mouse => "drag"], "rotate mode: in steps of 45° to the beam")]]
+    _HelpEntry([:mouse => "drag"], "rotate mode: in steps of 45° to the beam"),
+    _HelpEntry([:mouse => "drag"], "with the table shown: onto its holes beside the beams")]]
 
 """
     _SnapLine

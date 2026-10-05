@@ -317,3 +317,236 @@ function _export!(gui::LiveView)
     return nothing
 end
 
+#=
+Export of the whole setup as a script
+=#
+
+# The comment line that starts the section of the script of `export_script` that opens the view
+const _SCRIPT_VIEW_HEADING = "# Live view"
+
+"""
+    _export_script_names(gui, tops) -> IdDict
+
+Returns the variable names of the top-level objects and sources `tops` of the `gui` and of the
+objects of their groups in the code of `export_script`, see `_export_names`: `obj1`, `obj2`, … count
+the `tops` first, then the objects of their groups. The objects of a group whose constructor is
+known (see the `origin` of `_ComponentState`) are no variables of the script; they are named by
+their place in the group, e.g. `BeamletOptics.shape(pair)[1]`.
+"""
+function _export_script_names(gui::LiveView, tops)
+    seen = Base.IdSet{Any}(tops)
+    all = Any[tops...]
+    for top in tops, obj in _descendants(top)
+        obj in seen && continue
+        push!(seen, obj)
+        push!(all, obj)
+    end
+    names = _export_names(gui, all)
+    function name_children!(obj)
+        for (i, c) in enumerate(_children(obj))
+            names[c] = "BeamletOptics.shape($(names[obj]))[$i]"
+            name_children!(c)
+        end
+        return nothing
+    end
+    for top in tops
+        isnothing(get(gui.components.origin, top, nothing)) || name_children!(top)
+    end
+    return names
+end
+
+"""Turns the `line` of code into a comment; empty lines and comments are kept."""
+_commented(line::AbstractString) = isempty(line) || startswith(line, "#") ? String(line) : "# " * line
+
+"""
+    _export_construct_lines!(lines, gui, names, obj) -> Bool
+
+Appends the lines of `export_script` that construct the top-level object or source `obj` of the
+`gui` in its current pose, and returns whether the script defines its variable.
+
+With an `origin` (see `_ComponentState`) these are its constructor call and the change of its pose
+since it was constructed, see `_export_pose_lines!`. Without one, the constructor is not known: a
+comment with its type and position marks where to construct it, and the change of its pose since
+the view got it is commented out.
+"""
+function _export_construct_lines!(lines, gui::LiveView, names, obj)
+    type = string(nameof(typeof(obj)))
+    label = get(gui.labels, obj, nothing)
+    name = names[obj]
+    origin = get(gui.components.origin, obj, nothing)
+    push!(lines, "")
+    if isnothing(origin)
+        push!(lines, "# $name = … ($type) at $(_vector_code(_pose(obj)[1])), construct it here")
+        pose = String[]
+        _export_pose_lines!(pose, gui, names, obj; heading = false)
+        append!(lines, (_commented(line) for line in pose))
+        return false
+    end
+    push!(lines, isnothing(label) ? "# $type" : "# $label ($type)")
+    push!(lines, "$name = $(origin.code)")
+    _export_pose_lines!(lines, gui, names, obj; base = origin.pose0, heading = false)
+    return true
+end
+
+"""
+    _export_view_lines!(lines, args, labels)
+
+Appends the call of `live_view` to the `lines` of `export_script`. `args` and `labels` are pairs
+`code => active` of its arguments and of the entries of its `labels`; those that are not active,
+since the script does not define their variables, are commented out. Without an active argument the
+whole call is commented out.
+"""
+function _export_view_lines!(lines, args, labels)
+    call = String["gui = live_view("]
+    last_active = findlast(last, args)
+    for (i, (code, active)) in enumerate(args)
+        tail = i != last_active ? "," : isempty(labels) ? "" : ";"
+        push!(call, active ? "    $code$tail" : "    # $code,")
+    end
+    if !isempty(labels)
+        push!(call, "    labels = Dict(")
+        append!(call, (active ? "        $code," : "        # $code," for (code, active) in labels))
+        push!(call, "    )")
+    end
+    push!(call, ")")
+    append!(lines, isnothing(last_active) ? (_commented(line) for line in call) : call)
+    return nothing
+end
+
+"""
+    _export_script_code(gui) -> String
+
+Returns the Julia code of `export_script`: the objects of each system of the `gui` (see
+`_export_construct_lines!`) and the system, the sources, a `solve_system!` per pair of the view,
+and, after the line `_SCRIPT_VIEW_HEADING`, the call of `live_view`, see `_export_view_lines!`.
+
+The lines that use a variable which the script does not define are commented out: an object without
+a known constructor is added to its `System` by a `push!` in a comment, a system of another type
+with such an object is a comment as a whole, and so are the `solve_system!`, the arguments and the
+labels of `live_view` with it.
+"""
+function _export_script_code(gui::LiveView)
+    systems = _systems(gui)
+    sources = _sources(gui)
+    tops = unique(objectid, Any[(obj for sys in systems for obj in sys.objects)..., sources...])
+    names = _export_script_names(gui, tops)
+    system_names = _export_system_names(gui, Set{String}(values(names)))
+    defined = Base.IdSet{Any}()
+    done = Base.IdSet{Any}()
+    lines = String[
+        "# Script of the live view: its systems, its sources and the view itself.",
+        "# An object without a known constructor is a comment: construct it there, in its pose when",
+        "# the view got it, and uncomment the lines that use it.",
+        "using BeamletOptics"]
+    for sys in systems
+        name = system_names[sys]
+        members, pending = String[], String[]
+        for obj in sys.objects
+            if !(obj in done)
+                push!(done, obj)
+                _export_construct_lines!(lines, gui, names, obj) && push!(defined, obj)
+            end
+            push!(obj in defined ? members : pending, names[obj])
+        end
+        type = string(nameof(typeof(sys)))
+        push!(lines, "")
+        if sys isa BMO.System
+            push!(lines, isempty(members) ? "$name = $type()" : "$name = $type([$(join(members, ", "))])")
+            append!(lines, ("# push!($name, $m)" for m in pending))
+            push!(defined, sys)
+        elseif isempty(pending) && !isempty(members)
+            push!(lines, "$name = $type([$(join(members, ", "))])")
+            push!(defined, sys)
+        else
+            # objects can not be added to it afterwards
+            push!(lines, "# $name = $type([$(join((names[obj] for obj in sys.objects), ", "))])")
+        end
+    end
+    for src in sources
+        _export_construct_lines!(lines, gui, names, src) && push!(defined, src)
+    end
+    isempty(gui.pairs) || push!(lines, "")
+    for (sys, src) in gui.pairs
+        line = "solve_system!($(system_names[sys]), $(names[src]))"
+        push!(lines, sys in defined && src in defined ? line : _commented(line))
+    end
+
+    push!(lines, "", _SCRIPT_VIEW_HEADING, "using GLMakie, BeamletOpticsGUI")
+    args = Pair{String, Bool}[]
+    for sys in systems
+        name = system_names[sys]
+        mine = Any[p.second for p in gui.pairs if p.first === sys]
+        for src in mine
+            push!(args, "$name => $(names[src])" => sys in defined && src in defined)
+        end
+        # A system without a source, or whose sources the script does not define, is shown alone
+        any(src -> src in defined, mine) || push!(args, name => sys in defined)
+    end
+    labels = Pair{String, Bool}[]
+    for sys in systems
+        haskey(gui.labels, sys) &&
+            push!(labels, "$(system_names[sys]) => $(repr(gui.labels[sys]))" => sys in defined)
+    end
+    for top in tops, obj in _descendants(top)
+        haskey(gui.labels, obj) &&
+            push!(labels, "$(names[obj]) => $(repr(gui.labels[obj]))" => top in defined)
+    end
+    unique!(first, labels)
+    _export_view_lines!(lines, args, labels)
+    return join(lines, "\n") * "\n"
+end
+
+"""
+    export_script(gui::LiveView; io = stdout, clipboard = false) -> String
+
+Returns the setup of the `gui` as a complete Julia script, which is printed to `io` and copied to
+the clipboard if `clipboard` is `true` and a clipboard is available. The "Script" button of the
+`gui` prints the script and copies it to the clipboard. Unlike [`export_changes`](@ref), which
+lists the changes to apply in the script that created the view, the script stands on its own.
+
+The script consists of, in this order:
+
+1. `using BeamletOptics`
+2. per system its top-level objects, then the system itself, e.g. `system = System([lens, m1])`
+3. the sources
+4. a `solve_system!(system, source)` per pair of the view
+5. after the comment line `# Live view`: `using GLMakie, BeamletOpticsGUI` and the call
+   `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
+   `labels`. The lines above it run without a window.
+
+An object or source of the catalog (see [`component_catalog`](@ref)) is its constructor call
+followed by the `rotate3d!` about its position and the `translate_to3d!` from its pose as
+constructed to its current pose, with the full precision of `Float64`. The constructor of any other object, e.g. of one that the view started
+with, is not known: a comment with its variable, type and position [m] marks where to construct it,
+in its pose when the view got it, and the lines that use its variable are commented out (the change
+of its pose since then, its `push!` to its system, its `solve_system!`, its entries in `live_view`).
+A `StaticSystem` with such an object is a comment as a whole.
+
+The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
+otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
+several. Components that were removed are not part of the script. Neither are the looks (colors,
+opacity, hidden objects), the clip planes, the extras and the other keyword arguments of
+`live_view`.
+
+```julia
+gui = live_view(System())
+# add components and sources from the catalog, move them, then
+code = export_script(gui)
+```
+"""
+function export_script(gui::LiveView; io::IO = stdout, clipboard::Bool = false)
+    code = _export_script_code(gui)
+    print(io, code)
+    clipboard && _copy_to_clipboard(code)
+    return code
+end
+
+"""Prints the script of the `gui` to `stdout` and copies it to the clipboard, see `export_script`."""
+function _export_script!(gui::LiveView)
+    code = _export_script_code(gui)
+    print(stdout, code)
+    copied = gui.export_clipboard && _copy_to_clipboard(code)
+    gui.status.text[] = "script exported" * (copied ? " (copied)" : "")
+    return nothing
+end
+

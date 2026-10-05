@@ -13,7 +13,8 @@ const _GLB = Makie.GridLayoutBase
 Layout of `live_view(...; layout = :app)`, an application window around the 3D view:
 
 - a toolbar at the top, an ordered list of groups of entries, see `_add_toolbar_entry!`
-- the left sidebar, a stack of titled sections ("OBJECTS" with the object tree, see `_tree_rows`,
+- the left sidebar, a stack of titled sections that scrolls if it is higher than the window (see
+  `_sidebar_part`; "OBJECTS" with the object tree, see `_tree_rows`,
   "PARAMETERS" with the sliders, "COMPONENTS" with the docked catalog, see
   `_catalog_dock_slot!`), and the right sidebar ("PROPERTIES": the inspector with the card
   of the selected object and the pinned cards, each with its pages, e.g. the page "Results" with
@@ -71,6 +72,8 @@ end
 """`LiveView` with the app layout, i.e. `live_view(...; layout = :app)`."""
 const AppView = LiveView{AppLayout}
 
+_layout_name(::AppLayout) = :app
+
 _default_size(::AppLayout) = (1600, 950)
 
 _figure(layout::AppLayout, size) =
@@ -109,13 +112,18 @@ _add_toolbar_entry!(gui::AppView, group::Symbol) = _add_toolbar_entry!(gui.layou
     _add_sidebar_section!(layout::AppLayout, side::Symbol, title; grow = false) -> GridLayout
 
 Appends a section with the `title` to the left (`side = :left`) or right (`:right`) sidebar and
-returns the layout of its content. A section with `grow` takes the free height of the sidebar.
+returns the layout of its content. A section with `grow` takes the free height of the sidebar, at
+least `_SIDEBAR_GROW_MIN`. The sidebar scrolls if its sections are higher than the window.
 """
 function _add_sidebar_section!(layout::AppLayout, side::Symbol, title::AbstractString;
         grow::Bool = false)
     haskey(layout.sections, side) || throw(ArgumentError("side must be :left or :right, got :$side"))
     part = getfield(layout, side)
     stack = part.grid
+    # No row is elastic while the rows are rearranged, see `_set_elastic!`
+    area = part.area
+    elastic, elastic_min = area.elastic, area.min_elastic
+    _set_elastic!(area, 0)
     sections = layout.sections[side]
     n = length(sections)
     t = layout.theme
@@ -126,9 +134,19 @@ function _add_sidebar_section!(layout::AppLayout, side::Symbol, title::AbstractS
     # The filler moves below the new section, the rows keep their sizes
     stack[2n + 3, 1] = layout.fillers[side]
     rowsize!(stack, 2n + 1, Auto())
-    grow && (layout.growing[side] = true)
-    rowsize!(stack, 2n + 2, grow ? Auto(false) : Auto())
-    rowsize!(stack, 2n + 3, layout.growing[side] ? Fixed(0) : Auto(false))
+    rowsize!(stack, 2n + 2, Auto())
+    # The free height of the sidebar goes to the section that grows, at least `_SIDEBAR_GROW_MIN`,
+    # otherwise to the filler; the sidebar scrolls if its sections are higher, see `_ScrollArea`
+    if grow
+        layout.growing[side] = true
+        rowsize!(stack, 2n + 3, Fixed(0))
+        _set_elastic!(area, 2n + 2, _SIDEBAR_GROW_MIN)
+    elseif layout.growing[side]
+        rowsize!(stack, 2n + 3, Fixed(0))
+        _set_elastic!(area, elastic, elastic_min)
+    else
+        _set_elastic!(area, 2n + 3)
+    end
     return content
 end
 _add_sidebar_section!(gui::AppView, side::Symbol, title::AbstractString; kwargs...) =
@@ -177,6 +195,26 @@ function _app_part(parent::GridLayout, pos, resize, size, color; padding = _SIDE
     grid = GridLayout(parent[pos...]; alignmode = Outside(padding), default_rowgap = 8)
     resize(size)
     return _LayoutPart(parent, Tuple(pos), resize, size, box, grid, true)
+end
+
+# Smallest height of the section of a sidebar that takes its free height, e.g. the object tree [px]
+const _SIDEBAR_GROW_MIN = 160
+
+"""
+    _sidebar_part(figscene, parent, pos, resize, size, color) -> _LayoutPart
+
+A sidebar at `pos` of the `parent`: a collapsible part like `_app_part` whose sections scroll with
+the mouse wheel if they are higher than the window, see `_ScrollArea`. Its background box holds its
+place in the layout and lies behind its sections; the parts above and below it (the toolbar, the
+dock and the status bar) cover what is scrolled out.
+"""
+function _sidebar_part(figscene, parent::GridLayout, pos, resize, size, color)
+    box = Box(parent[pos...]; color, cornerradius = 0)
+    translate!(box.blockscene, 0, 0, _SCROLL_BACKGROUND_Z)
+    region = lift(Rect2f, box.blockscene, box.layoutobservables.computedbbox)
+    area = _ScrollArea(figscene, region; padding = _SIDEBAR_PADDING, default_rowgap = 8)
+    resize(size)
+    return _LayoutPart(parent, Tuple(pos), resize, size, box, area.layout, true, area)
 end
 
 # Size of the icon buttons of the toolbar and of the icons on them [px]
@@ -269,14 +307,16 @@ function _build_layout(layout::AppLayout, fig, spec)
     studio_lighting!(ax; preset = spec.lighting)
     cube = spec.view_cube ? view_cube!(ax) : nothing
     # Sidebars and dock
-    layout.left = _app_part(main, (1, 1), s -> colsize!(main, 1, s), Fixed(240), t.sidebar)
-    layout.right = _app_part(main, (1, 3), s -> colsize!(main, 3, s), Fixed(300), t.sidebar)
+    layout.left = _sidebar_part(fig.scene, main, (1, 1), s -> colsize!(main, 1, s), Fixed(240), t.sidebar)
+    layout.right = _sidebar_part(fig.scene, main, (1, 3), s -> colsize!(main, 3, s), Fixed(300), t.sidebar)
     layout.dock = _app_part(root, (3, 1), s -> rowsize!(root, 3, s),
         Relative(0.36), t.sidebar; padding = 8)
     layout.sections = Dict(:left => Pair{String, GridLayout}[], :right => Pair{String, GridLayout}[])
     layout.fillers = Dict(s => Label(getfield(layout, s).grid[1, 1], ""; tellwidth = false,
         tellheight = false) for s in (:left, :right))
     layout.growing = Dict(:left => false, :right => false)
+    # The fillers take the free height of the sidebars until a section does
+    foreach(s -> _set_elastic!(getfield(layout, s).area, 1), (:left, :right))
     rowsize!(root, 2, Auto(false))
     # Toolbar
     bar_box = Box(root[1, 1]; color = t.background, cornerradius = 0)
@@ -350,7 +390,13 @@ end
 
 _on_clip_planes_changed!(gui::AppView) = _update_tree!(gui)
 _on_hidden!(gui::AppView) = _update_tree!(gui)
-_on_components_changed!(gui::AppView) = _update_tree!(gui)
+# Also the name in the head of the inspector: a component that takes the place of another one gets
+# its name after it was selected, see `_replace!`
+function _on_components_changed!(gui::AppView)
+    _update_tree!(gui)
+    gui.layout.right.shown && _show_header!(gui, gui.layout.inspector.shown)
+    return nothing
+end
 _show_hint(::AppView) = "click its eye in the object tree to show it again"
 
 function _on_clipping!(gui::AppView)
@@ -368,6 +414,8 @@ function _connect_layout!(gui::AppView)
     layout = gui.layout
     ctrl = gui.controls
     listeners = ctrl.listeners
+    # The listeners of the sidebars that scroll end with those of the controls, see `_ScrollArea`
+    foreach(side -> append!(listeners, getfield(layout, side).area.listeners), (:left, :right))
     push!(listeners, on(v -> v == gui.clip.enabled || _set_clipping!(gui, v), layout.clip_toggle.active))
     push!(listeners, on(_ -> _zoom_to_selection!(gui), layout.fit_button.clicks))
     # The help follows the 3D view, e.g. when a sidebar is collapsed, and makes room for the

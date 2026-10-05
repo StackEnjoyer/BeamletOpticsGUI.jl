@@ -12,6 +12,7 @@ using GLMakie, BeamletOptics, BeamletOpticsGUI
 gui = live_view(system, beam; layout = :compact, labels = Dict(m1 => "Mirror 1"))
 display(gui)                # opens the window; `wait(display(gui))` in a script
 code = export_changes(gui)  # the changed poses as Julia code
+script = export_script(gui) # the whole setup as a script (constructors of catalog parts)
 ```
 
 Look up the docstring of any name before use, e.g.
@@ -21,7 +22,7 @@ Look up the docstring of any name before use, e.g.
 
 | Category | Names |
 |----------|-------|
-| Window | `live_view`, `export_changes`, `retrace!` |
+| Window | `live_view`, `open_system`, `export_changes`, `export_script`, `retrace!` |
 | Scripting | `select!`, `spectator!`, `wait_solve`, `presentation!` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
 | Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
@@ -48,16 +49,26 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
 | `catalog = component_catalog()` | the entries of the component catalog (`CatalogEntry`s); `CatalogEntry[]` shows no catalog |
-| `snap = false` | components snap onto the central beams while dragged with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: `Tab` or the chip "Snap" cycles off, position, position and rotation; `Shift`+`Tab` backwards |
+| `snap = false` | components snap onto the central beams, and onto the holes of a shown table, while dragged or placed with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: `Tab` or the chip "Snap" cycles off, position, position and rotation; `Shift`+`Tab` backwards |
+| `table = false` | optical table below the setup, also the toggle "Table" among the tools: `true`, or `(; pitch = 25e-3, height = nothing, snap = true, shown = true)` [m]; while shown and `snap` is on, dragged and placed components and sources snap onto its holes beside the beams, rotations in steps of 45° to its rows |
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
+
+`open_system(gui, system; display = true, kwargs...)` opens a system of the view with its components
+and sources in a second window and returns its `LiveView` (in the window: the button "new window" on
+the card of the system). Both windows show the same objects and are linked: moving, adding, removing
+and editing in one of them shows in the other one, only the window that changed solves. `kwargs`
+are those of `live_view` and override what the new window takes over (layout, theme, catalog, names,
+beam colors, snap, table, settings of the controls); the switch of the auto tracing is shared by the
+linked windows, the selection, camera, colors, hidden objects, clip planes and the undo history are
+per window. Closing a window ends the link.
 
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
 `translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and
-gives it a marker, `remove_component!(gui, source)` removes it, also the last one. An added source is
-drawn in the color of its wavelength (dark red for infrared), unless `beam_kwargs = (; color = ...)`
-sets one; the sources of the start keep the color of the layout or of the `beam_kwargs` of `live_view`. A view may start
+gives it a marker, `remove_component!(gui, source)` removes it, also the last one. Every source is
+drawn in the color of its wavelength (dark red for infrared), unless its `beam_kwargs` set a `color`
+(`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`). A view may start
 without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
@@ -72,12 +83,19 @@ component (all components of BeamletOptics with a constructor of numbers and gla
 the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,
 N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. "Place"
 attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
-selected component or source. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
+selected component or source. It moves in the plane of the table (perpendicular to `rotation_axis`,
+at the height of the source of its system) and snaps onto beams while `snap` is on; the first component or source of
+an empty view is placed at the origin. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
 refractive index as `λ -> n`; an added source is its constructor at the origin along +y, its
 `rotate3d!`/`translate_to3d!` and `solve_system!(system, name)`, a removed source of the start a comment.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
-keyboard controls to a live-rendered system on its own, without `live_view`.
+keyboard controls to a live-rendered system on its own, without `live_view`. In the rotate mode a
+mouse drag on a ring of the gizmo (highlighted under the cursor) rotates the selected component around
+that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) can not be dragged, a
+drag elsewhere on the selection rotates around `rotation_axis` as before. In the move mode a drag on
+an arrow of the gizmo moves the component along that arrow only, a drag elsewhere on the selection
+in the plane of the view.
 
 ## Scripting a window
 
