@@ -30,51 +30,74 @@ _color_options() = String[_COLOR_WAVELENGTH, _COLOR_LAYOUT, first.(_COLOR_PRESET
 _has_page(::_Source, ::Val{:color}) = true
 _page_rows(src::_Source, ::Val{:color}) = _color_rows(src)
 
+# The render handles of the `beam` of the `gui`: a beam can be part of several pairs
+_color_handles(gui::LiveView, beam) =
+    (h for (p, h) in zip(gui.pairs, gui.beam_handles) if p.second === beam && h isa AbstractBeamRenderHandle)
+
 """
     _color_plots(gui, beam) -> Vector
 
-The plots of the `beam` of the `gui` that are drawn in its color: those of its render handles (a
-beam can be part of several pairs) with a single color, i.e. its rays or its envelope, not those
-of its overlays, whose colors tell their curves apart.
+The plots of the `beam` of the `gui` that are drawn in its color: those of its render handles (see
+`_color_handles`) that hold one color per vertex, i.e. its rays or its envelope, which the handle
+colors by its `color` setting, see `BeamletOptics.render_settings!`. Change the color via
+`_set_beam_color!`, not via these plots: the handle overwrites their colors with the next update.
 """
 function _color_plots(gui::LiveView, beam)
     plots = Any[]
-    for (p, h) in zip(gui.pairs, gui.beam_handles)
-        p.second === beam || continue
-        for plot in _beam_plots(h)
-            (haskey(plot, :color) && !(plot.color[] isa AbstractArray)) && push!(plots, plot)
-        end
+    for h in _color_handles(gui, beam), plot in _beam_plots(h)
+        (haskey(plot, :color) && plot.color[] isa AbstractVector) && push!(plots, plot)
     end
     return plots
 end
+
+# The `color` setting of a render handle of the `beam` as a color: a single color as it was given
+# (e.g. `:blue` or `(:red, 0.3)`), or `:wavelength`, i.e. the color of the wavelength of the beam
+_setting_color(gui::LiveView, beam, c) = RGBf(Makie.to_color(c))
+_setting_color(gui::LiveView, beam, c::Tuple{Any, Real}) = _setting_color(gui, beam, first(c))
+_setting_color(gui::LiveView, beam, c::Symbol) = c === :wavelength ?
+    RGBf(get(_wavelength_style(beam), :color, gui.layout.theme.rays)) : RGBf(Makie.to_color(c))
 
 """
     _beam_color(gui, beam) -> RGBf
 
 The color in which the `beam` of the `gui` is drawn: the one set on its card or by its
-`beam_kwargs`, otherwise the color of its plots, i.e. of the layout or of BeamletOptics.
+`beam_kwargs`, otherwise the `color` setting of its render handle (see
+`BeamletOptics.render_settings`), i.e. the color of the layout or of BeamletOptics.
 """
 function _beam_color(gui::LiveView, beam)
     kw = get(gui.beams.kwargs, beam, (;))
     haskey(kw, :color) && return RGBf(Makie.to_color(kw.color))
-    plots = _color_plots(gui, beam)
-    return isempty(plots) ? RGBf(gui.layout.theme.rays) : RGBf(Makie.to_color(first(plots).color[]))
+    for h in _color_handles(gui, beam)
+        settings = render_settings(h)
+        haskey(settings, :color) && return _setting_color(gui, beam, settings.color)
+    end
+    return RGBf(gui.layout.theme.rays)
 end
 
 """
     _set_beam_color!(gui, beam, color)
 
 Draws the `beam` (a beam or beam group of the pairs) of the `gui` in the `color`, anything that
-`Makie.to_color` takes: the color of its plots (see `_color_plots`) and of its kwargs, with which
-it is rendered again, e.g. for another length of its final rays, see `_set_flen!`. Display only:
+`Makie.to_color` takes: the `color` setting of its render handles (see
+`BeamletOptics.render_settings!`), which color its plots (see `_color_plots`), and the color of its
+kwargs, with which it is rendered again, e.g. after it was switched off and on. Display only:
 nothing is solved, and beams that are dimmed as outdated stay dimmed.
+
+A beam whose `beam_kwargs` gave one color per vertex keeps it: BeamletOptics passes such colors on
+to Makie and can not change them, then only a message is shown in the status line.
 """
 function _set_beam_color!(gui::LiveView, beam, color)
     c = RGBf(Makie.to_color(color))
+    try
+        foreach(h -> render_settings!(h; color = c), collect(_color_handles(gui, beam)))
+    catch e
+        e isa ArgumentError || rethrow()
+        gui.status.text[] = "the color of this beam is given per vertex and can not be changed"
+        return nothing
+    end
     new = (; color = c)
     gui.beams.kwargs[beam] = merge(get(gui.beams.kwargs, beam, (;)), new)
     gui.beams.overlay_kwargs[beam] = merge(get(gui.beams.overlay_kwargs, beam, (;)), new)
-    foreach(plot -> Makie.update!(plot; color = c), _color_plots(gui, beam))
     return nothing
 end
 

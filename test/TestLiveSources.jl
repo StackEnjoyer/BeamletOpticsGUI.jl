@@ -194,8 +194,8 @@ const GUI = BeamletOpticsGUI
         # added sources and the sources of the start have the color of their wavelength
         first_beam = _beam(0.2)
         gui = _live_view(System([_mirror()]) => first_beam)
-        _colors(src) = [Makie.to_color(p.color[]) for p in
-                        GUI._beam_plots(gui.beam_handles[findfirst(p -> p.second === src, gui.pairs)])]
+        # the plots of a beam hold one color per vertex
+        _colors(src) = [Makie.to_color(c) for p in GUI._color_plots(gui, src) for c in p.color[]]
         _is(c, ref) = Makie.RGBf(c) ≈ Makie.RGBf(ref)
         @test all(c -> _is(c, color(632.8e-9)), _colors(first_beam))
         @test GUI._color_preset(gui, first_beam) == "wavelength"

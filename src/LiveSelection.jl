@@ -307,6 +307,8 @@ function _set_hidden!(gui::LiveView, obj, hide::Bool)
         end
         hide || _restore_opacity!(gui, leaf, get(gui.objects.opacity, leaf, nothing))
     end
+    # The bounding spheres of the debug mode are hidden with their objects, see `_Debug`
+    _show_debug!(gui)
     return nothing
 end
 

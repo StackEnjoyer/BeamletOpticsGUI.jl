@@ -565,6 +565,20 @@ the result. The switch of the auto tracing is shared: switched in one window, it
 the other one as well. The selection, the camera, colors, hidden objects, clip planes and the undo
 history are kept per window. Closing one of the windows ends the link.
 
+## Debug mode
+
+The toggle "Debug" among the tools, or the keyword `debug`, shows the bounding sphere of each
+shape of the traced components: the sphere with which the solver of BeamletOptics skips a shape
+that a ray can not hit (`BeamletOptics.bounding_sphere`). The mode has no key.
+
+```julia
+gui = live_view(system, beam; debug = true)
+```
+
+The spheres follow their components, an object of several shapes (e.g. a doublet) has one per
+shape, and a shape without a bounding sphere (e.g. a mesh) has none. See the section "Debug mode"
+in the docstring of [`live_view`](@ref).
+
 ## Adding and removing components
 
 Components can be added to a `System` of the view and removed again at runtime, from a catalog in

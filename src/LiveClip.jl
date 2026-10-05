@@ -152,6 +152,7 @@ function _flip_clip_plane!(gui::LiveView, plane::LiveClipPlane)
     ctrl.last_key_step = nothing
     _push_history!(ctrl, plane, P0, R0, P1, R1)
     update_render!(ctrl.h)
+    _update_debug!(gui)
     _update_selection_box!(ctrl)
     _on_clip_change!(gui, plane)
     return nothing

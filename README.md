@@ -39,7 +39,7 @@ using Pkg
 Pkg.add("BeamletOpticsGUI")
 ```
 
-It needs BeamletOptics 0.13 (0.13.12 or newer) and a Makie backend, preferably GLMakie.
+It needs BeamletOptics 0.14 and a Makie backend, preferably GLMakie.
 
 ## Features
 

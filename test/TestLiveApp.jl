@@ -96,8 +96,8 @@ const GUI = BeamletOpticsGUI
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         dark = _live_app(System([m, pd]), beam; theme = :dark,
             clip_planes = [[0, 0.05, 0] => [0, 1, 0]], detectors = [pd => (:intensity, (; profiles = true))])
-        # the rays in the color of their wavelength, here 1000 nm, in both themes
-        @test _rgb(only(render_plots(dark.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
+        # the rays in the color of their wavelength, here 1000 nm, in both themes (one color per vertex)
+        @test only(unique(_rgb.(only(render_plots(dark.beam_handles[1])).color[]))) == _rgb(GUI._wavelength_color(1.0e-6))
         @test _detector_color(dark, pd) == t.materials[:detector]
         # the mirror keeps the color of the look
         @test _rgb(first(_plots(dark, m)).color[]) == BMO.look_colors()[:reflective]
@@ -123,7 +123,7 @@ const GUI = BeamletOpticsGUI
         m, pd = _fixture()
         light = _live_app(System([m, pd]), beam)
         @test _detector_color(light, pd) == BMO.look_colors()[:detector]
-        @test _rgb(only(render_plots(light.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
+        @test only(unique(_rgb.(only(render_plots(light.beam_handles[1])).color[]))) == _rgb(GUI._wavelength_color(1.0e-6))
         # the cards in the light colors, with a border
         @test light.cards.selection.background.color[] == GUI._app_theme(:light).sidebar
         close(light)

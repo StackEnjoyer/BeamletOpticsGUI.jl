@@ -364,8 +364,8 @@ shown object is `target_shown`, see `_catalog_target`; the
 `origin` of an added component, `(; code, pose0)`: its constructor call as Julia code and
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
-likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
-`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
+likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the `debug` mode;
+the `window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -387,6 +387,8 @@ Base.@kwdef mutable struct _ComponentState
     aim::Any = nothing
     # the optical table of the view (a `_Table`), see `_set_table!`
     table::Any = nothing
+    # the debug mode of the view (a `_Debug`), see `_set_debug!`
+    debug::Any = nothing
     window::Any = nothing
 end
 
@@ -1079,6 +1081,17 @@ holes snaps to the multiples of 45° within 5°, unless a beam through the compo
 table grows with the setup while it is shown and never shrinks. The keyboard steps and the clip
 planes do not snap. It is an overlay: nothing of it is traced, clipped or exported.
 
+# Debug mode
+
+The toggle "Debug" among the tools (or the `debug` kwarg) switches the debug mode, which has no
+key. It shows the bounding sphere of each shape of the traced components as three magenta circles:
+the sphere with which the solver of BeamletOptics skips a shape that a ray can not hit, see
+`BeamletOptics.bounding_sphere`. An object of several shapes, e.g. a doublet or a cube
+beamsplitter, has one sphere per shape; a shape without a bounding sphere, e.g. a mesh, has none,
+and neither do the sources and the extras. The spheres follow their components, are hidden with
+them and in the spectator mode, and are an overlay: they are neither selected nor clipped, and
+nothing of them is traced or exported.
+
 # Aligning and aiming
 
 The last row of the card of a component has two buttons that align it to the nearest beam, i.e. to
@@ -1179,6 +1192,7 @@ them changes in the other one as well, and only the window in which something ch
   lowest point of the components), `snap = true` (whether components snap onto its holes while the
   snapping is switched on, see `snap`; `false` for a table that is only shown) and
   `shown = true`
+- `debug = false`: starts with the debug mode switched on, see "Debug mode"
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -1213,6 +1227,7 @@ function live_view(
         catalog = component_catalog(),
         snap::Union{Bool, Symbol} = false,
         table = false,
+        debug::Bool = false,
         kwargs...
     )
     isempty(args) &&
@@ -1292,6 +1307,8 @@ function live_view(
     # Moving a clip plane or an extra does not solve the systems, see `_on_moved!`
     change = function (obj)
         gui = gui_ref[]
+        # The bounding spheres of the debug mode follow, see `_Debug`
+        _update_debug!(gui)
         _on_moved!(gui, obj)
         # The table grows with the setup, see `_Table`
         _table_include!(gui, obj)
@@ -1363,6 +1380,8 @@ function live_view(
     _set_snap!(controls, snap)
     # The optical table, onto whose holes they snap beside the beams, see the `table` kwarg
     _build_table!(gui, table_spec)
+    # The bounding spheres of the shapes, see the `debug` kwarg
+    _build_debug!(gui, debug)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,

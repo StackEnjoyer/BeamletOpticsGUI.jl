@@ -133,6 +133,8 @@ function _attach!(gui::LiveView, obj::BMO.AbstractObject, sys::BMO.System; label
         delete!(comp.system, obj)
     end
     _table_include!(gui, obj)
+    # Its bounding spheres, while the debug mode is on, see `_Debug`
+    _debug_attach!(gui, obj)
     _on_components_changed!(gui)
     return nothing
 end
@@ -305,8 +307,9 @@ end
 
 Lets go of the top-level object `top` of the `gui` and its `parts` (which include `top`) before
 they are removed from the view: ends browsing, their inspection, their drag and their selection,
-unpins their cards, clears a measurement with one of them, and forgets that they are movable, their
-hidden state, opacity, parents, constraints, initial poses and names.
+unpins their cards, clears a measurement with one of them, removes their bounding spheres of the
+debug mode, and forgets that they are movable, their hidden state, opacity, parents, constraints,
+initial poses and names.
 With `keep_name`, `top` keeps its name and label, e.g. for the code of `export_changes`.
 """
 function _release!(gui::LiveView, top, parts; keep_name::Bool = false)
@@ -325,6 +328,8 @@ function _release!(gui::LiveView, top, parts; keep_name::Bool = false)
     end
     foreach(p -> _unpin!(gui, p), parts)
     any(m -> m.obj in parts, gui.measure.points) && _clear_measurement!(gui)
+    # Their bounding spheres of the debug mode, see `_Debug`
+    _debug_release!(gui, top)
     filter!(o -> o !== top, ctrl.movable)
     for p in parts
         delete!(gui.objects.hidden, p)

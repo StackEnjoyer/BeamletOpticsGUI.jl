@@ -72,7 +72,8 @@ _table_kwarg(t) = (; t.shown, t.pitch, t.height, t.snap)
 The kwargs of `live_view` with which [`open_system`](@ref) opens the `system` of the `gui` with its
 `sources`: what the new window takes over, i.e. the layout, the theme, the catalog, the labels, how
 the system and the beams are drawn, the beams that are switched off, the tracing, the snapping, the
-table and the settings of the controls, e.g. the steps of the keys and the constraints.
+table, the debug mode and the settings of the controls, e.g. the steps of the keys and the
+constraints.
 """
 function _open_kwargs(gui::LiveView, system, sources)
     ctrl = gui.controls
@@ -90,6 +91,7 @@ function _open_kwargs(gui::LiveView, system, sources)
         orthographic = gui.widgets.orthographic_toggle.active[],
         view_cube = !isnothing(gui.widgets.view_cube), snap = ctrl.snap[],
         table = _table_kwarg(gui.components.table),
+        debug = _debug_kwarg(gui.components.debug),
         # the controls
         ctrl.rotation_axis, ctrl.plane_normal, ctrl.rotate_speed, ctrl.fine_step, ctrl.fine_angle,
         ctrl.throttle, ctrl.select_modifier, ctrl.drag_threshold, ctrl.constraints,
@@ -340,6 +342,7 @@ function _follow!(gui::LiveView, from::LiveView, obj; stale::Bool, preview::Bool
     any(view -> _running(view.trace.job), gui.links.views) || _follow_structure!(gui, from, systems)
     _follow_switches!(gui, from, systems)
     update_render!(gui.controls.h)
+    _update_debug!(gui)
     _update_selection_box!(gui.controls)
     _shows(gui, obj) && _table_include!(gui, obj)
     if stale

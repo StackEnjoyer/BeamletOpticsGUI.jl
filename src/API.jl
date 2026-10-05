@@ -449,8 +449,8 @@ which is shown unless `display` is `false`.
 
 The new window is a live view of its own: it takes over the layout, the theme, the catalog, the
 names and labels, how the system and the beams are drawn, the beams that are switched off, the
-tracing, the snapping, the table and the settings of the controls (e.g. the steps of the keys and
-the constraints) of the `gui`, but not its clip planes, sliders, panels, tools, pinned cards,
+tracing, the snapping, the table, the debug mode and the settings of the controls (e.g. the steps
+of the keys and the constraints) of the `gui`, but not its clip planes, sliders, panels, tools, pinned cards,
 hidden objects and camera. The `kwargs` are those of [`live_view`](@ref) and take
 precedence, e.g. `layout = :app` or `size = (1000, 700)`.
 
