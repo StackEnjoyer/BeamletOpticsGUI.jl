@@ -27,7 +27,10 @@ boxes and the rows of the type) and "Properties"; the card of a `Detector` has "
 them (details below), the card of a source "Color" (a menu of colors with "wavelength" and
 "layout", a box for a hex value or a color name, sliders for the opacity and the line width;
 display only, the same as `beam_kwargs = Dict(source => (; color, alpha, linewidth))` from a
-script; sources start in the color of their wavelength), a component or source from the catalog
+script; sources start with `color = :wavelength`: every ray in the display color of its own
+wavelength (`wavelength_color` of BeamletOptics), a fixed color draws all rays in one color,
+"wavelength" again returns to the colors per ray; the box shows the color of the first ray's
+wavelength in that mode; a color or length change while a long solve runs starts that solve again), a component or source from the catalog
 "Edit" (the form of its entry, "Apply" builds it again in its pose); a card with a single page (inspected point, measurement) has no bar. A card
 opens on "Results" for a detector, else on "Pose"; a pinned card keeps its page. Rows of the
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
@@ -39,7 +42,7 @@ beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true
 beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength and amplitude of
 the drawn curve, log scale; astigmatic beamlets: amplitude × beam radius). Of a group only the
 central beam; display only. The box `length` [mm] sets how long rays that hit nothing are drawn
-(`flen`). Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
+(`flen`; changes the drawn length in place, the beam is not drawn anew). Start states: `beams_off = [src]`, `beam_kwargs = Dict(b => (;
 show_polarization = true, show_beams = true, pol_λ = 1e-3, pol_amplitude = 2e-4))`.
 The card of the selected object also has, on its page "Pose", the keyboard step (e.g. `250 nm` or `50 µrad`; shown in the unit of its size, pm to m and nrad to mrad) and a
 "Move"/"Rotate" control (in sync with the key `m`); the page "Properties" lists the properties of
