@@ -347,6 +347,29 @@ add_tool!(gui, "Optical axis"; toggle = true, key = Keyboard._3) do gui, active
 end
 ```
 
+## Scripting the live view
+
+Demos, tutorials and tests drive a window from code. Changing an object directly, e.g.
+`translate3d!(lens, offset)`, leaves the window unaware: neither the drawing nor the beams follow.
+The verbs of BeamletOptics with the window as first argument do what a gesture of the user does:
+the drawing, the selection box and the cards follow, the systems are solved like after a drag
+(respecting `trace_budget` and `auto_trace`), the `constraints` apply, static objects throw an
+`ArgumentError`, and each call is one entry of the undo history. [`select!`](@ref) and
+[`spectator!`](@ref) act like a click and the key `v`, and [`wait_solve`](@ref) waits until the
+solve in the background is shown.
+
+```julia
+gui = live_view(system, beam)
+display(gui)
+select!(gui, lens)
+for Δ in range(0, 5e-3, 20)
+    translate_to3d!(gui, lens, [0, 0.1 + Δ, 0])
+    wait_solve(gui)
+end
+rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))
+spectator!(gui, true)
+```
+
 ## Manual tracing
 
 Solving a large system on every mouse-drag event can be too slow for smooth interaction. With

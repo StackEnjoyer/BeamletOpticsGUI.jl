@@ -22,6 +22,18 @@ add_controls!
 add_tool!
 ```
 
+## Scripting the live view
+
+The gestures of the user from code: the verbs of BeamletOptics with the live view as first argument.
+
+```@docs
+translate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector)
+rotate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector, ::Real)
+select!
+spectator!
+wait_solve
+```
+
 ## Adding and removing components
 
 ```@docs

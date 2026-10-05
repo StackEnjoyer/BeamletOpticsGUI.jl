@@ -859,11 +859,18 @@ function _request_update!(ctrl::KinematicController)
     return nothing
 end
 
-function _apply_update!(ctrl::KinematicController)
+_apply_update!(ctrl::KinematicController) = _apply_update!(ctrl, ctrl.selected[])
+
+"""
+    _apply_update!(ctrl, obj)
+
+Shows the change of `obj` (by default the selection): updates the render of all objects and the
+selection box and calls `on_change` with `obj`, unless it is `nothing`.
+"""
+function _apply_update!(ctrl::KinematicController, obj)
     ctrl.dirty = false
     update_render!(ctrl.h)
     _update_selection_box!(ctrl)
-    obj = ctrl.selected[]
     isnothing(obj) && return nothing
     # Errors must not propagate into the render loop
     try
