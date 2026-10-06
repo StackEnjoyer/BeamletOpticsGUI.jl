@@ -38,19 +38,41 @@ catch
     false
 end
 
+# The names of Base that the exported code calls
+const _CODE_BASE_NAMES = ("Dict", "push!", "delete!")
+
+"""
+    _is_taken_name(s) -> Bool
+
+Returns `true` if the exported code can not use `s` as the variable of an object, since it uses
+the name otherwise: a name exported by BeamletOptics or this package, e.g. `Detector` or
+`live_view`, a name of Base that it calls (`Dict`, `push!`, `delete!`), or one of its own variables,
+`system`, `system1`, … and `gui`. Other names of Base, e.g. `first`, are free: the variable hides
+the function of Base in the script, which does not call it.
+"""
+function _is_taken_name(s::AbstractString)
+    (s == "gui" || occursin(r"^system\d*$", s) || s in _CODE_BASE_NAMES) && return true
+    sym = Symbol(s)
+    return Base.isexported(BMO, sym) || Base.isexported(@__MODULE__, sym)
+end
+
 """
     _export_names(gui, objects)
 
 Returns the variable names of the `objects` in the code of `export_changes`: the label of an
-object if it is a valid, unique variable name, otherwise `obj1`, `obj2`, … by the position `k`
-of the object in `objects`, i.e. in the component menu.
+object if it is a valid, unique variable name that the code does not take otherwise (see
+`_is_taken_name`), else the label in lowercase if that is one, e.g. `detector` for the label
+`Detector`, otherwise `obj1`, `obj2`, … by the position `k` of the object in `objects`, i.e. in
+the component menu.
 """
 function _export_names(gui::LiveView, objects)
     names = IdDict{Any, String}()
     used = Set{String}()
     for (k, obj) in enumerate(objects)
         label = get(gui.labels, obj, "")
-        name = _is_variable_name(label) && !(label in used) ? label : "obj$k"
+        candidates = (label, lowercase(label))
+        i = findfirst(c -> _is_variable_name(c) && !_is_taken_name(c) && !(c in used), candidates)
+        name = isnothing(i) ? "obj$k" : candidates[i]
         while name in used
             name *= "_"
         end
@@ -81,7 +103,8 @@ end
     _export_system_names(gui, used) -> IdDict
 
 Returns the variable names of the systems of the `gui` in the code of `export_changes`: the label
-of a system if it is a valid variable name that is not among the `used` names (of the objects),
+of a system if it is a valid variable name that is not among the `used` names (of the objects)
+and not taken otherwise (see `_is_taken_name`),
 otherwise `system`, or `system1`, `system2`, … by the position of the system if the view shows
 several systems.
 """
@@ -92,7 +115,8 @@ function _export_system_names(gui::LiveView, used)
     for (i, h) in enumerate(gui.system_handles)
         sys = rendered(h)
         label = get(gui.labels, sys, "")
-        name = _is_variable_name(label) && !(label in used) ? label : several ? "system$i" : "system"
+        free = _is_variable_name(label) && !_is_taken_name(label) && !(label in used)
+        name = free ? label : several ? "system$i" : "system"
         while name in used
             name *= "_"
         end
@@ -291,8 +315,10 @@ shows several systems. An added source is its constructor call, its `rotate3d!` 
 `translate_to3d!` and the `solve_system!(system, name)` that traces it; a removed source that the
 view started with is a comment, since the script that traces it is not known.
 
-The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
-otherwise `obj1`, `obj2`, … by the position of the object in the component menu. A comment above
+The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
+that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as
+`Detector` or `live_view`, and not `system` or `gui`; then after the label in lowercase if that is
+free, e.g. `detector`, otherwise `obj1`, `obj2`, … by the position of the object in the component menu. A comment above
 each change names the label and the type of the object.
 
 ```julia
@@ -522,8 +548,10 @@ in its pose when the view got it, and the lines that use its variable are commen
 of its pose since then, its `push!` to its system, its `solve_system!`, its entries in `live_view`).
 A `StaticSystem` with such an object is a comment as a whole.
 
-The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
-otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
+The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
+that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as
+`Detector` or `live_view`, and not `system` or `gui`; then after the label in lowercase if that is
+free, e.g. `detector`, otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
 several. Components that were removed are not part of the script. Neither are the looks (colors,
 opacity, hidden objects), the clip planes, the extras and the other keyword arguments of
 `live_view`.
