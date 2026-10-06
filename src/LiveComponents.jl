@@ -103,10 +103,31 @@ end
 
 The `origin` of the component or source `x` for the keyword `code` of [`add_component!`](@ref):
 `code`, the constructor call of `x`, with the pose of `x` now, in which `code` constructs it; `nothing`
-without `code`.
+without `code`. Throws an `ArgumentError` unless `code` is one Julia expression, see `_check_code`.
 """
-_code_origin(x, code::AbstractString) = (; code = String(code), pose0 = _pose(x))
+function _code_origin(x, code::AbstractString)
+    _check_code(code)
+    return (; code = String(code), pose0 = _pose(x))
+end
 _code_origin(x, ::Nothing) = nothing
+
+"""
+    _check_code(code)
+
+Throws an `ArgumentError` unless `code` is one Julia expression: [`export_script`](@ref) writes it as
+`name = code`, such that a typing error, an empty string or several statements would give a script
+that does not run. What the expression evaluates to is not checked, since that would run it.
+"""
+function _check_code(code::AbstractString)
+    ex = Meta.parse(code; raise = false)
+    reason = isnothing(ex) ? "it is empty" :
+             !(ex isa Expr) ? nothing :
+             ex.head === :toplevel ? "it has several statements" :
+             ex.head in (:error, :incomplete) ? "it does not parse as a single expression" : nothing
+    isnothing(reason) || throw(ArgumentError(
+        "`code` must be one Julia expression that constructs the object, but $reason: $(repr(code))"))
+    return nothing
+end
 
 """
     _attach!(gui, obj, sys; label = nothing, origin = nothing)

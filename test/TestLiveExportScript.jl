@@ -238,6 +238,17 @@ const GUI = BeamletOpticsGUI
         m = add_component!(gui, RoundPlanoMirror(25e-3, 5e-3); label = "m", select = false)
         @test isnothing(gui.components.origin[m])
         @test occursin("# m = … ", _setup(_script(gui)))
+        # `code` is one expression, otherwise the script would not run: nothing is added
+        for bad in ("", "RoundPlanoMirror(25e-3, 5e-3", "RoundPlanoMirror(25e-3 5e-3)",
+                "m = RoundPlanoMirror(25e-3, 5e-3)\ntranslate3d!(m, [0, 0.1, 0])",
+                "RoundPlanoMirror(25e-3, 5e-3); nothing")
+            @test_throws ArgumentError add_component!(gui, RoundPlanoMirror(25e-3, 5e-3); code = bad)
+            @test_throws ArgumentError add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0]); code = bad)
+        end
+        @test only(GUI._systems(gui)).objects == [m] && isempty(gui.pairs)
+        # any single expression is taken, e.g. a qualified call or a block
+        @test isnothing(GUI._check_code("BeamletOptics.RoundPlanoMirror(25e-3, 5e-3)"))
+        @test isnothing(GUI._check_code("let d = 25e-3\n    RoundPlanoMirror(d, d / 5)\nend"))
         close(gui)
     end
 

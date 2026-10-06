@@ -73,7 +73,10 @@ without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
 `add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)")` gives the constructor call of an
 object built in code (also of a source): add it in the pose in which `code` constructs it and move
 it afterwards (inside `retrace!(gui) do ... end`); `export_script` then writes the call and the
-moves, as for a part of the catalog.
+moves, as for a part of the catalog. `code` is one expression that runs on its own after
+`using BeamletOptics`: write the values out, no variables of the session. A `code` that does not
+parse throws an `ArgumentError`; an object that was moved before it was added with `code` is
+exported in a wrong pose, which is not checked.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
 the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in

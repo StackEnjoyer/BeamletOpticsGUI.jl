@@ -393,8 +393,15 @@ which constructs `obj` in the pose that it has when it is added. [`export_script
 this call followed by the change of the pose of `obj` since it was added, like for a component of
 the catalog; without `code` the constructor is not known and the script marks where to construct
 `obj`. Give `code` for an object built from code, e.g. by a tool or an agent, before you move it,
-and move it afterwards (e.g. in [`retrace!`](@ref)); the page "Edit" and copying stay for the
-components of the catalog, whose parameters are known.
+and move it afterwards (e.g. in [`retrace!`](@ref)): an object that was moved before it was added
+with `code` is exported in a wrong pose, which is not checked. The page "Edit" and copying stay for
+the components of the catalog, whose parameters are known.
+
+`code` must be one Julia expression that runs on its own in the script, i.e. after
+`using BeamletOptics` only: write the values out and do not refer to variables or functions of the
+session, e.g. a glass `nbk7`, which the script does not define. An `ArgumentError` is thrown, and
+nothing is added, if `code` is empty, does not parse or has several statements; what it evaluates
+to is not checked.
 
 The components of the catalog are added this way once they are placed, see
 [`component_catalog`](@ref). [`remove_component!`](@ref) removes a component again,
