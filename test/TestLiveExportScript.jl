@@ -196,6 +196,36 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "labels that the script takes otherwise" begin
+        sys = System()
+        gui = _live_view(sys)
+        # the name of a type of BeamletOptics, the variables of the script, a name of this package
+        pd = _add!(gui, "Detector"; at = [0.0, 0.2, 0], label = "Detector")
+        lens = _add!(gui, "Thin lens"; at = [0.0, 0.1, 0], label = "system")
+        m1 = _add!(gui, "Round mirror"; at = [0.0, 0.3, 0], label = "gui")
+        m2 = _add!(gui, "Round mirror"; at = [0.0, 0.4, 0], label = "live_view")
+        laser = _add!(gui, "Beam"; label = "Beam")
+        names = GUI._export_script_names(gui, [pd, lens, m1, m2, laser])
+        @test names[pd] == "detector" && names[laser] == "beam"
+        @test names[lens] == "obj2" && names[m1] == "obj3" && names[m2] == "obj4"
+        @test GUI._is_taken_name("Detector") && GUI._is_taken_name("system12") &&
+              GUI._is_taken_name("live_view") && GUI._is_taken_name("Dict")
+        # free: a name of Base that the script does not call, and a plain name
+        @test !GUI._is_taken_name("first") && !GUI._is_taken_name("detector")
+        code = _script(gui)
+        setup = _setup(code)
+        @test occursin("\ndetector = Detector(", setup) && occursin("\nbeam = Beam(", setup)
+        @test occursin("\nsystem = System([detector, obj2, obj3, obj4])\n", setup)
+        # the script runs and keeps the labels of the view
+        mod = _run(setup)
+        @test _same_objects(_value(mod, :system).objects, sys.objects)
+        @test occursin("        detector => \"Detector\",\n", code)
+        # the changes use the same names
+        changes, _ = GUI._export_code(gui)
+        @test occursin("push!(system, detector)", changes) && !occursin("(system, Detector)", changes)
+        close(gui)
+    end
+
     @testset "objects without an origin" begin
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
