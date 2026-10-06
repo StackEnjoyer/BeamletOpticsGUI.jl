@@ -69,9 +69,10 @@ end
 _forget_detector!(::LiveView, _) = nothing
 
 # `origin` is `nothing` or `(; code, pose0)`: the constructor call of `obj` as Julia code and its
-# pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`
+# pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`.
+# The public keyword `code` gives one with the pose of `obj` when it is added, see `_code_origin`
 function add_component!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject); system = nothing,
-        select::Bool = true, label = nothing, origin = nothing)
+        select::Bool = true, label = nothing, code = nothing, origin = _code_origin(obj, code))
     ctrl = gui.controls
     sys = _add_system(gui, system)
     for leaf in _leaves(obj)
@@ -95,6 +96,37 @@ function add_component!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject); s
     _on_change!(gui, obj)
     _record_added!(gui, obj)
     return obj
+end
+
+"""
+    _code_origin(x, code) -> Union{NamedTuple, Nothing}
+
+The `origin` of the component or source `x` for the keyword `code` of [`add_component!`](@ref):
+`code`, the constructor call of `x`, with the pose of `x` now, in which `code` constructs it; `nothing`
+without `code`. Throws an `ArgumentError` unless `code` is one Julia expression, see `_check_code`.
+"""
+function _code_origin(@nospecialize(x), code::AbstractString)
+    _check_code(code)
+    return (; code = String(code), pose0 = _pose(x))
+end
+_code_origin(@nospecialize(x), ::Nothing) = nothing
+
+"""
+    _check_code(code)
+
+Throws an `ArgumentError` unless `code` is one Julia expression: [`export_script`](@ref) writes it as
+`name = code`, such that a typing error, an empty string or several statements would give a script
+that does not run. What the expression evaluates to is not checked, since that would run it.
+"""
+function _check_code(code::AbstractString)
+    ex = Meta.parse(code; raise = false)
+    reason = isnothing(ex) ? "it is empty" :
+             !(ex isa Expr) ? nothing :
+             ex.head === :toplevel ? "it has several statements" :
+             ex.head in (:error, :incomplete) ? "it does not parse as a single expression" : nothing
+    isnothing(reason) || throw(ArgumentError(
+        "`code` must be one Julia expression that constructs the object, but $reason: $(repr(code))"))
+    return nothing
 end
 
 """

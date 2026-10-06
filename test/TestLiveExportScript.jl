@@ -196,6 +196,62 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "objects added with their code" begin
+        gui = _live_view(System())
+        # built in code, e.g. by an agent: added in the pose of its code, moved afterwards
+        lens_code = "SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)"
+        lens = add_component!(gui, include_string(@__MODULE__, lens_code); code = lens_code,
+            label = "lens", select = false)
+        laser_code = "GaussianBeamlet([0.0, -0.05, 0.0], [0.0, 1.0, 0.0], 1.064e-6, 0.001)"
+        laser = add_component!(gui, include_string(@__MODULE__, laser_code); code = laser_code,
+            label = "laser", select = false)
+        retrace!(gui) do
+            zrotate3d!(lens, 0.1)
+            translate_to3d!(lens, [0.01, 0.2, 0.0])
+        end
+        @test gui.components.origin[lens].code == lens_code
+        # the page "Edit" and copying need the entry of the catalog
+        @test !GUI._editable(gui, lens) && !GUI._editable(gui, laser)
+
+        setup = _setup(_script(gui))
+        @test occursin("\nlens = $lens_code\n", setup)
+        @test occursin("\ntranslate_to3d!(lens, [0.01, 0.2, 0.0])\n", setup)
+        @test occursin("\nlaser = $laser_code\n", setup) && !occursin("(laser, [", setup)
+        @test occursin("\nsystem = System([lens])\n", setup)
+        @test !occursin("construct it here", setup)
+        # the script rebuilds the setup in its current pose
+        mod = _run(setup)
+        @test _same_objects(_value(mod, :system).objects, [lens])
+        @test _same_pose(_value(mod, :laser), laser)
+        # the changes list it with its constructor as well
+        changes, _ = GUI._export_code(gui)
+        @test occursin("lens = $lens_code", changes)
+
+        # a removed and restored component keeps its code
+        remove_component!(gui, lens)
+        GUI._undo!(gui.controls)
+        @test gui.components.origin[lens].code == lens_code
+        close(gui)
+
+        # without `code` nothing changes: the constructor is not known
+        gui = _live_view(System())
+        m = add_component!(gui, RoundPlanoMirror(25e-3, 5e-3); label = "m", select = false)
+        @test isnothing(gui.components.origin[m])
+        @test occursin("# m = … ", _setup(_script(gui)))
+        # `code` is one expression, otherwise the script would not run: nothing is added
+        for bad in ("", "RoundPlanoMirror(25e-3, 5e-3", "RoundPlanoMirror(25e-3 5e-3)",
+                "m = RoundPlanoMirror(25e-3, 5e-3)\ntranslate3d!(m, [0, 0.1, 0])",
+                "RoundPlanoMirror(25e-3, 5e-3); nothing")
+            @test_throws ArgumentError add_component!(gui, RoundPlanoMirror(25e-3, 5e-3); code = bad)
+            @test_throws ArgumentError add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0]); code = bad)
+        end
+        @test only(GUI._systems(gui)).objects == [m] && isempty(gui.pairs)
+        # any single expression is taken, e.g. a qualified call or a block
+        @test isnothing(GUI._check_code("BeamletOptics.RoundPlanoMirror(25e-3, 5e-3)"))
+        @test isnothing(GUI._check_code("let d = 25e-3\n    RoundPlanoMirror(d, d / 5)\nend"))
+        close(gui)
+    end
+
     @testset "labels that the script takes otherwise" begin
         sys = System()
         gui = _live_view(sys)
