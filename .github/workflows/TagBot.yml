@@ -28,3 +28,6 @@ jobs:
       - uses: JuliaRegistries/TagBot@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # The tag is pushed with the deploy key: a push with GITHUB_TOKEN starts no workflow,
+          # so the documentation of the release would not be built
+          ssh: ${{ secrets.DOCUMENTER_KEY }}
