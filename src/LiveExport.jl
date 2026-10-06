@@ -307,7 +307,8 @@ exported.
 Components that were removed and added at runtime (see [`remove_component!`](@ref) and
 [`add_component!`](@ref)) come first. A removed component is a `delete!(system, name)`, or a comment
 if its label is no valid variable name. An added component is its constructor call (for a component
-of the catalog, see [`component_catalog`](@ref); otherwise a comment marks where to construct it),
+of the catalog, see [`component_catalog`](@ref), and for one added with its `code`, see
+[`add_component!`](@ref); otherwise a comment marks where to construct it),
 a `push!(system, name)` and the `rotate3d!` and `translate_to3d!` from its pose as constructed
 (otherwise: from its pose when it was added) to its current pose. The system is named after its
 label if that is a valid variable name, otherwise `system`, or `system1`, `system2`, … if the view
@@ -540,7 +541,8 @@ The script consists of, in this order:
    `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
    `labels`. The lines above it run without a window.
 
-An object or source of the catalog (see [`component_catalog`](@ref)) is its constructor call
+An object or source of the catalog (see [`component_catalog`](@ref)), or one that was added with
+its `code` (see [`add_component!`](@ref)), is its constructor call
 followed by the `rotate3d!` about its position and the `translate_to3d!` from its pose as
 constructed to its current pose, with the full precision of `Float64`. The constructor of any other object, e.g. of one that the view started
 with, is not known: a comment with its variable, type and position [m] marks where to construct it,
@@ -558,7 +560,7 @@ opacity, hidden objects), the clip planes, the extras and the other keyword argu
 
 ```julia
 gui = live_view(System())
-# add components and sources from the catalog, move them, then
+# add components and sources from the catalog, or with `add_component!(...; code)`, move them, then
 code = export_script(gui)
 ```
 """
