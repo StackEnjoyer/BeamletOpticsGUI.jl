@@ -1,6 +1,6 @@
-using GLMakie
 using BeamletOptics
 using BeamletOpticsGUI
+using GLMakie
 using Documenter
 
 DocMeta.setdocmeta!(

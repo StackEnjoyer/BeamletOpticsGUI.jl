@@ -59,7 +59,7 @@ menu, if any, shows the names.
 """
 function _name_objects!(gui::LiveView)
     layout = gui.objects
-    function name!(obj)
+    function name!(@nospecialize(obj))
         (haskey(gui.labels, obj) || haskey(layout.names, obj)) && return nothing
         base = string(nameof(typeof(obj)))
         n = layout.counters[base] = get(layout.counters, base, 0) + 1
@@ -83,7 +83,7 @@ end
 Returns the state of the eye of the row of `obj`: `nothing` if none of its `_leaves` is rendered,
 i.e. it can not be hidden, otherwise whether any of them is shown.
 """
-function _tree_visible(gui::LiveView, drawn, obj)
+function _tree_visible(gui::LiveView, drawn, @nospecialize(obj))
     leaves = filter(leaf -> leaf in drawn, _leaves(obj))
     isempty(leaves) && return nothing
     return !all(leaf -> leaf in gui.objects.hidden, leaves)
@@ -91,7 +91,7 @@ end
 # Clip planes are switched off, not hidden, see `_toggle_hidden!`
 _tree_visible(::LiveView, _, ::LiveClipPlane) = nothing
 
-function _push_tree_rows!(rows, gui::AppView, drawn, obj, depth)
+function _push_tree_rows!(rows, gui::AppView, drawn, @nospecialize(obj), depth)
     children = _children(obj)
     expanded = get(gui.layout.expanded, obj, false)
     push!(rows, _TreeRow(obj, _label(gui, obj), depth, _tree_kind(obj), !isempty(children),
@@ -155,14 +155,14 @@ the expander of a system expands or collapses it.
 """
 _tree_click!(gui::AppView, h::AbstractSystemRenderHandle) = _inspect!(gui, h)
 
-function _tree_click!(gui::AppView, obj)
+function _tree_click!(gui::AppView, @nospecialize(obj))
     _is_movable(gui.controls, obj) ? _select!(gui, obj) : _inspect!(gui, obj)
     return nothing
 end
 
 # The row of the inspected object is highlighted like the selected one, see `_on_selected!`
 _show_inspected!(::AppView, ::Nothing) = nothing
-function _show_inspected!(gui::AppView, obj)
+function _show_inspected!(gui::AppView, @nospecialize(obj))
     _reveal!(gui, obj)
     _set_selected!(gui.layout.tree, _row_key(gui, obj))
     return nothing
@@ -176,7 +176,7 @@ _reveal!(::AppView, ::Nothing) = nothing
 # The rows of the systems are always shown
 _reveal!(::AppView, ::BMO.AbstractSystem) = nothing
 
-function _reveal!(gui::AppView, obj)
+function _reveal!(gui::AppView, @nospecialize(obj))
     ctrl = gui.controls
     expanded = gui.layout.expanded
     chain = _chain(ctrl, obj)

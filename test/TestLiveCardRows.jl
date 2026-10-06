@@ -302,6 +302,87 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "solve in the background" begin
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        translate3d!(lens, [0, 0.05, 0])
+        m, pd = _fixture()
+        gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9))
+        # A job in the background that ends once the test releases or cancels it, like a solve
+        # whose task traces the beams and fills the detectors
+        function slow_job(timing; background = true)
+            sink = BMO.ProgressSink()
+            done = Base.Event()
+            release = Threads.Atomic{Bool}(false)
+            task = Threads.@spawn try
+                while !release[] && !sink.cancel[]
+                    sleep(0.001)
+                end
+            finally
+                notify(done)
+            end
+            job = GUI._SolveJob(task, done, [sink], [Point3f(0)], _ -> GUI._update_inspector!(gui),
+                nothing, timing, time(), (; k = 0, t0 = NaN, t = NaN, count = 0))
+            background && (gui.trace.job = job)
+            return job, release
+        end
+        _select!(gui, m)
+        @test _text(gui, :beam) == "1 ray, AOI 45.0°"
+        # While the solve runs, the cards do not read the beams and detectors, which it changes:
+        # the card that is shown, and the card of an object that is selected meanwhile
+        job, release = slow_job(:solve_time)
+        GUI._update_inspector!(gui)
+        @test _text(gui, :beam) == GUI._TRACING_VALUE
+        _select!(gui, lens)
+        @test _text(gui, :beam) == GUI._TRACING_VALUE
+        @test _text(gui, :index) == GUI._TRACING_VALUE
+        # a property of the lens, not a result
+        @test _text(gui, :thickness) == "5 mm"
+        @test GUI._card_widget(gui.cards.selection, :y).displayed_string[] == "50.0"
+        _select!(gui, pd)
+        @test _text(gui, :signal) == GUI._TRACING_VALUE
+        # shown again once the solve is done
+        release[] = true
+        @test wait_solve(gui; timeout = 10)
+        @test _text(gui, :signal) == "1 hit"
+        @test _text(gui, :beam) == "1 ray, AOI 0.0°"
+        # and after it was cancelled
+        job, release = slow_job(:solve_time)
+        _select!(gui, lens)
+        @test _text(gui, :index) == GUI._TRACING_VALUE
+        GUI._cancel_solve!(gui)
+        @test isnothing(gui.trace.job)
+        @test _text(gui, :index) == "1.5 at 633 nm"
+        # A job that only computes detector views changes neither
+        job, release = slow_job(:view_time)
+        _select!(gui, m)
+        @test _text(gui, :beam) == "1 ray, AOI 45.0°"
+        GUI._cancel_solve!(gui)
+        # A solve counts as running from its start, i.e. also while the task that started it waits
+        # for it (see `_run!`) and another task runs, e.g. the render loop of the window if a
+        # script started the solve: its ticks neither read the beams nor show the result
+        gui.trace.progress_delay = 10.0
+        job, release = slow_job(:solve_time; background = false)
+        seen = Ref{Any}(nothing)
+        ticks = @async begin
+            timedwait(() -> gui.trace.awaited, 10.0; pollint = 0.001)
+            GUI._poll_job!(gui)
+            GUI._update_inspector!(gui)
+            seen[] = (GUI._running(gui), gui.trace.job === job, _text(gui, :beam))
+            release[] = true
+        end
+        @test GUI._run!(gui, job, GUI._TRACING)
+        wait(ticks)
+        @test seen[] == (true, true, GUI._TRACING_VALUE)
+        @test isnothing(gui.trace.job) && !gui.trace.awaited
+        @test _text(gui, :beam) == "1 ray, AOI 45.0°"
+        # A solve of the systems that continues in the background ends with the values on the card
+        gui.trace.progress_delay = 0.0
+        translate3d!(gui, m, [0, 1e-3, 0])
+        @test wait_solve(gui; timeout = 10)
+        @test _text(gui, :beam) == "1 ray, AOI 45.0°"
+        close(gui)
+    end
+
     @testset "refresh of 1000 rays" begin
         m, pd = _fixture()
         src = UniformDiscSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 1000)

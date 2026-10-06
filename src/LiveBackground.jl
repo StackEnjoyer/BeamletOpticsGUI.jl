@@ -34,15 +34,15 @@ The `row` of the card of `obj` on the card of the `_BackgroundItem` of `obj`: it
 instead of the item in `value(gui, obj)` and `on(gui, obj, v)`. An input with `solve = true` is
 applied like on the card of `obj` itself (see `_apply_on!`), i.e. `on_change` gets `obj`.
 """
-_for_object(r::CardRow, obj) = CardRow(Union{String, CardWidget}[_for_object(c, obj) for c in r.cells])
+_for_object(r::CardRow, @nospecialize(obj)) = CardRow(Union{String, CardWidget}[_for_object(c, obj) for c in r.cells])
 _for_object(s::String, _) = s
-_for_object(w::CardWidget, obj) = CardWidget(w.type, w.attributes, _value_of(w.value, obj),
+_for_object(w::CardWidget, @nospecialize(obj)) = CardWidget(w.type, w.attributes, _value_of(w.value, obj),
     _on_of(w.on, obj, w.solve), false, w.name)
 
 _value_of(::Nothing, _) = nothing
-_value_of(value, obj) = (gui, _) -> value(gui, obj)
+_value_of(value, @nospecialize(obj)) = (gui, _) -> value(gui, obj)
 _on_of(::Nothing, _, ::Bool) = nothing
-_on_of(on, obj, solve::Bool) = (gui, _, v) -> _apply_on!(gui, on, obj, v, Val(solve))
+_on_of(on, @nospecialize(obj), solve::Bool) = (gui, _, v) -> _apply_on!(gui, on, obj, v, Val(solve))
 
 """
     _background_object(gui, spec)
@@ -53,7 +53,7 @@ evaluated at each click, or the object itself.
 """
 _background_object(::LiveView, ::Nothing) = nothing
 _background_object(gui::LiveView, f::Function) = f(gui)
-_background_object(::LiveView, obj) = obj
+_background_object(::LiveView, @nospecialize(obj)) = obj
 
 """
     _background_anchor(scene) -> Point3f
@@ -91,5 +91,5 @@ The item of the card of the background for the result `x` of `_background_object
 the click (see `_background_anchor`), or for `obj => point` the object at the `point` [m] of the
 3D `scene`, e.g. on a sky dome.
 """
-_background_item(obj, scene) = _BackgroundItem(obj, _background_anchor(scene))
+_background_item(@nospecialize(obj), scene) = _BackgroundItem(obj, _background_anchor(scene))
 _background_item((obj, point)::Pair, _) = _BackgroundItem(obj, Point3f(point))

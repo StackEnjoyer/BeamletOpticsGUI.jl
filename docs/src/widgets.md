@@ -7,7 +7,7 @@ and how parameters without a scene object get their own controls. Everything wor
 `layout = :compact` and `layout = :app`. The user-facing description of the window is on the page
 [Live view](@ref).
 
-All code blocks assume `using GLMakie, BeamletOptics, BeamletOpticsGUI`, need a `Makie` backend with
+All code blocks assume `using BeamletOptics, BeamletOpticsGUI, GLMakie`, need a `Makie` backend with
 a window (`GLMakie`) and are therefore not run when the docs are built. Unless a recipe names another test file, they are run as tests in `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI, from which they are
 copied unchanged.
 

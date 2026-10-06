@@ -16,9 +16,16 @@ Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
 
+[weakdeps]
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+
+[extensions]
+BeamletOpticsGUIGLMakieExt = "GLMakie"
+
 [compat]
 AbstractTrees = "0.4"
 BeamletOptics = "0.13.12"
+GLMakie = "0.13"
 GeometryBasics = "0.5"
 InteractiveUtils = "1"
 LinearAlgebra = "1"

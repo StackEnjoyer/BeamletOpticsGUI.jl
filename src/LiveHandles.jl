@@ -38,7 +38,7 @@ end
 rendered(h::LiveSystemHandle) = h.sys
 render_children(h::LiveSystemHandle) = h.children
 
-function render_parent(h::LiveSystemHandle, obj)
+function render_parent(h::LiveSystemHandle, @nospecialize(obj))
     for s in h.sources
         parent = render_parent(s, obj)
         isnothing(parent) || return parent
@@ -57,7 +57,7 @@ function Base.delete!(h::LiveSystemHandle, oh::AbstractObjectRenderHandle)
 end
 
 """Returns the top-level object of `obj` in the hierarchy of `h`, i.e. the outermost group."""
-function _top_level(h::AbstractSystemRenderHandle, obj)
+function _top_level(h::AbstractSystemRenderHandle, @nospecialize(obj))
     parent = render_parent(h, obj)
     while !isnothing(parent)
         obj = parent
@@ -81,7 +81,7 @@ function _pick_leaf(h::AbstractSystemRenderHandle, plot)
 end
 
 """Returns the object handle of `obj` among the children of `h`, or `nothing`."""
-function _child_handle(h::AbstractSystemRenderHandle, obj)
+function _child_handle(h::AbstractSystemRenderHandle, @nospecialize(obj))
     i = findfirst(oh -> rendered(oh) === obj, render_children(h))
     return isnothing(i) ? nothing : render_children(h)[i]
 end
@@ -90,14 +90,35 @@ end
 _pickable_plots(oh::AbstractObjectRenderHandle) = pickable_plots(rendered(oh), render_plots(oh))
 
 #=
+Search by identity. A closure like `o -> o === x` is compiled for the type of each object it
+is called with, these are compiled once
+=#
+
+"""Returns `true` if `x` is one of `xs`, like `any(y -> y === x, xs)`."""
+function _has(xs, @nospecialize(x))
+    for y in xs
+        y === x && return true
+    end
+    return false
+end
+
+"""Returns the index or key of `x` in `xs`, or `nothing`, like `findfirst(y -> y === x, xs)`."""
+function _index(xs, @nospecialize(x))
+    for (i, y) in pairs(xs)
+        y === x && return i
+    end
+    return nothing
+end
+
+#=
 Poses and backend, like the live rendering of BeamletOptics
 =#
 
 """Returns the pose `(position, orientation)` of `x`; of a directed thing, see `_direction_frame`."""
-_pose(x) = _pose(BMO.kinematic_trait_of(x), x)
-_pose(::Any, x) = (Point3{Float64}(position(x)), Matrix{Float64}(BMO.orientation(x)))
+_pose(@nospecialize(x)) = _pose(BMO.kinematic_trait_of(x), x)
+_pose(::Any, @nospecialize(x)) = (Point3{Float64}(position(x)), Matrix{Float64}(BMO.orientation(x)))
 # Beams only have a direction, which is the local y-axis of the frame
-_pose(::BMO.Movable{BMO.Directed}, x) = (Point3{Float64}(position(x)), _direction_frame(BMO.direction(x)))
+_pose(::BMO.Movable{BMO.Directed}, @nospecialize(x)) = (Point3{Float64}(position(x)), _direction_frame(BMO.direction(x)))
 
 """Returns a right-handed orthonormal frame with the local y-axis along `d`."""
 function _direction_frame(d)

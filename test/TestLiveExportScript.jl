@@ -69,7 +69,7 @@ const GUI = BeamletOpticsGUI
         code = _script(gui)
         @test startswith(code, "# Script of the live view")
         @test occursin("\nusing BeamletOptics\n\nsystem = System()\n", code)
-        @test occursin("\n# Live view\nusing GLMakie, BeamletOpticsGUI\ngui = live_view(\n    system\n)\n", code)
+        @test occursin("\n# Live view\nusing BeamletOpticsGUI, GLMakie\ngui = live_view(\n    system\n)\n", code)
         @test !occursin("solve_system!", code)
         @test isempty(_value(_run(_setup(code)), :system).objects)
 

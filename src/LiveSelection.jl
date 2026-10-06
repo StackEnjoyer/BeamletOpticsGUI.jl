@@ -3,7 +3,7 @@ Selection of the live view: labels, the component menu, hiding and showing, the 
 =#
 
 """Formats the position of `obj` in mm."""
-function _position_string(obj)
+function _position_string(@nospecialize(obj))
     p = round.(1e3 .* collect(Float64, position(obj)), digits = 6)
     return "(" * join(p, ", ") * ") mm"
 end
@@ -30,11 +30,11 @@ _angle_string(x) = _unit_string(x, (1e-6 => "µrad", 1e-3 => "mrad", deg2rad(1) 
 The name of `obj` in the `gui`: its entry in `labels`, else its automatic name, e.g. "Lens 2", see
 `_name_objects!`, else the name of its type. The same in all layouts.
 """
-_label(gui::LiveView, obj) = get(() -> get(gui.objects.names, obj, string(nameof(typeof(obj)))),
+_label(gui::LiveView, @nospecialize(obj)) = get(() -> get(gui.objects.names, obj, string(nameof(typeof(obj)))),
     gui.labels, obj)
 
 """Describes the pose of `obj`, including the change since the controls were enabled."""
-function _pose_string(gui, obj)
+function _pose_string(gui, @nospecialize(obj))
     s = "$(_label(gui, obj)) at $(_position_string(obj))"
     haskey(gui.controls.init_poses, obj) || return s
     P0, R0 = gui.controls.init_poses[obj]
@@ -52,7 +52,7 @@ with the nesting `depth` of the group. Clip planes are not listed.
 """
 function _menu_entries(ctrl::KinematicController)
     entries = Tuple{Any, Int}[]
-    function add!(obj, depth)
+    function add!(@nospecialize(obj), depth)
         push!(entries, (obj, depth))
         foreach(c -> add!(c, depth + 1), _children(obj))
         return nothing
@@ -148,7 +148,7 @@ tree, and shows its pose in the status line. Nothing is selected in the spectato
 `h` of a system inspects the system instead, see `_inspect!`.
 """
 _select!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, h)
-function _select!(gui::LiveView, obj)
+function _select!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     ctrl.selected[] === obj && return nothing
     if ctrl.spectator[]
@@ -183,7 +183,7 @@ function _on_shown!(gui::LiveView)
     obj = _shown_object(gui)
     isnothing(obj) || _end_browse!(gui)
     key = _row_key(gui, obj)
-    i = isnothing(obj) ? nothing : findfirst(o -> o === key, gui.objects.menu)
+    i = isnothing(obj) ? nothing : _index(gui.objects.menu, key)
     _show_menu_selection!(gui.widgets.menu, something(i, 0))
     _update_inspector!(gui)
     _update_cards!(gui)
@@ -222,7 +222,7 @@ of the 3D view or a new selection, see `_end_inspection!` and `_on_select!`. The
 inspected object that is not movable reject inputs, see `_apply_pose_input!`.
 """
 _inspect!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, rendered(h))
-function _inspect!(gui::LiveView, obj)
+function _inspect!(gui::LiveView, @nospecialize(obj))
     gui.objects.inspected === obj && return nothing
     ctrl = gui.controls
     if !isnothing(ctrl.selected[])
@@ -251,7 +251,7 @@ end
 The key of `obj` in the component menu and in the object tree: the object itself, the
 `AbstractSystemRenderHandle` of a system (or of the extras).
 """
-_row_key(::LiveView, obj) = obj
+_row_key(::LiveView, @nospecialize(obj)) = obj
 function _row_key(gui::LiveView, sys::BMO.AbstractSystem)
     for h in (gui.system_handles..., gui.extras)
         rendered(h) === sys && return h
@@ -296,7 +296,7 @@ end
 Sets the `visible` attribute of all plots of the rendered objects (leaves) of `obj`. A leaf shown
 again whose opacity was set to 0 gets its initial opacity back, see `_set_opacity!`.
 """
-function _set_hidden!(gui::LiveView, obj, hide::Bool)
+function _set_hidden!(gui::LiveView, @nospecialize(obj), hide::Bool)
     for leaf in _leaves(obj)
         hide ? push!(gui.objects.hidden, leaf) : delete!(gui.objects.hidden, leaf)
         oh = _child_handle(gui.controls.h, leaf)
@@ -310,7 +310,7 @@ function _set_hidden!(gui::LiveView, obj, hide::Bool)
     return nothing
 end
 
-_is_source(obj) = obj isa Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}
+_is_source(@nospecialize(obj)) = obj isa Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}
 
 """
 Returns `true` if the markers of the sources of the `gui` are shown: while its "sources" toggle is
@@ -377,7 +377,7 @@ of its rendered objects invisible and clears the selection if it is hidden now, 
 object of a hidden group or system, or shows it again if all of them are hidden. A hidden object
 can not be selected in the 3D view, but it stays in the systems.
 """
-function _toggle_hidden!(gui::LiveView, obj)
+function _toggle_hidden!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     hide = !_all_hidden(gui, obj)
     _set_hidden!(gui, obj, hide)
@@ -403,7 +403,7 @@ function _toggle_hidden!(gui::LiveView, ::LiveClipPlane)
 end
 
 """Returns `true` if all rendered objects (leaves) of `obj` are hidden in the `gui`."""
-_all_hidden(gui::LiveView, obj) = all(leaf -> leaf in gui.objects.hidden, _leaves(obj))
+_all_hidden(gui::LiveView, @nospecialize(obj)) = all(leaf -> leaf in gui.objects.hidden, _leaves(obj))
 
 """Returns how a hidden object of the `gui` is shown again, for the status line."""
 _show_hint(::LiveView) = "select it in the menu to show it again"

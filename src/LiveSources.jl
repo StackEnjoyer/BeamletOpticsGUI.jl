@@ -143,12 +143,12 @@ function _attach!(gui::LiveView, src::_Source, sys::BMO.AbstractSystem; label = 
     isnothing(label) || (gui.labels[src] = String(label))
     _name_objects!(gui)
     # A source the view started with, removed and added again to its systems, is no change
-    i = findfirst(o -> o === src, comp.removed)
+    i = _index(comp.removed, src)
     if !isnothing(i) && length(comp.source_systems[src]) == 1 && only(comp.source_systems[src]) === sys
         deleteat!(comp.removed, i)
         delete!(comp.source_systems, src)
     else
-        any(o -> o === src, comp.added) || push!(comp.added, src)
+        _has(comp.added, src) || push!(comp.added, src)
         comp.system[src] = sys
         comp.origin[src] = origin
     end
@@ -177,7 +177,7 @@ function _snapshot(gui::LiveView, src::_Source)
         label = get(gui.labels, src, nothing), origin = get(gui.components.origin, src, nothing),
         names, init_poses, kwargs, on = _beam_on(gui, src),
         # a source that the view started with
-        start = !any(o -> o === src, gui.components.added))
+        start = !_has(gui.components.added, src))
 end
 
 function _restore!(gui::LiveView, src::_Source, snap)
@@ -257,7 +257,7 @@ function _detach!(gui::LiveView, src::_Source)
     delete!(gui.beams.overlay_kwargs, src)
     delete!(gui.beams.pol_view, src)
     # A source the view started with is listed by `export_changes` as removed, under its name
-    added = findfirst(o -> o === src, comp.added)
+    added = _index(comp.added, src)
     _release!(gui, src, Base.IdSet{Any}((src,)); keep_name = isnothing(added))
     oh = _child_handle(ctrl.h, src)
     if !isnothing(oh)

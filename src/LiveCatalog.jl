@@ -469,7 +469,7 @@ function _show_catalog_target!(gui::LiveView, w::_CatalogWidget)
     _update!(w.target.text, "into")
     systems = isnothing(entry) ? _systems(gui) : _catalog_systems(gui, entry)
     names = isempty(systems) ? ["no system"] : String[_label(gui, s) for s in systems]
-    i = something(findfirst(s -> s === sys, systems), 1)
+    i = something(_index(systems, sys), 1)
     # Showing the system is no choice of the user, see `_choose_catalog_target!`
     w.showing = true
     try
@@ -807,8 +807,8 @@ take the keyboard, see `_register_widget!`.
 function _release_catalog_inputs!(gui::LiveView, w::_CatalogWidget)
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), w.boxes)
     foreach(m -> m.is_open[] && (m.is_open[] = false), w.menus)
-    filter!(b -> !any(tb -> tb === b, w.boxes), gui.custom.boxes)
-    filter!(b -> !any(m -> m === b, w.menus), gui.custom.menus)
+    filter!(b -> !_has(w.boxes, b), gui.custom.boxes)
+    filter!(b -> !_has(w.menus, b), gui.custom.menus)
     # ... and the menus of the presets no longer follow their boxes, see `_catalog_preset_menu!`
     _release_listeners!(gui, Any[[tb.focused for tb in w.boxes]; [m.is_open for m in w.menus];
         [m.selection for m in w.menus]; [m.i_selected for m in w.menus];
