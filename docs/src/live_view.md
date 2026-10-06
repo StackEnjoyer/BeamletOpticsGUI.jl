@@ -569,15 +569,19 @@ history are kept per window. Closing one of the windows ends the link.
 
 The toggle "Debug" among the tools, or the keyword `debug`, shows the bounding sphere of each
 shape of the traced components: the sphere with which the solver of BeamletOptics skips a shape
-that a ray can not hit (`BeamletOptics.bounding_sphere`). The mode has no key.
+that a ray can not hit (`BeamletOptics.bounding_sphere_of`). The mode has no key.
 
 ```julia
 gui = live_view(system, beam; debug = true)
 ```
 
-The spheres follow their components, an object of several shapes (e.g. a doublet) has one per
-shape, and a shape without a bounding sphere (e.g. a mesh) has none. See the section "Debug mode"
-in the docstring of [`live_view`](@ref).
+The spheres of the shapes are magenta. An object of several shapes (e.g. a doublet or a cube
+beamsplitter) has one per shape and, in orange, its main sphere around them, with which the
+solver skips all its shapes at once; a group has such a main sphere as well, around the spheres of
+its objects. The spheres follow their components, and a main sphere changes when an object of a
+group is moved on its own. An object without a bounding sphere (e.g. a `NonInteractableObject`)
+has none, and neither has a group that contains one. See the section "Debug mode" in the docstring
+of [`live_view`](@ref).
 
 ## Adding and removing components
 

@@ -25,14 +25,16 @@ const GUI = BeamletOpticsGUI
         translate3d!(m, [0, y, 0])
         return m
     end
-    function _lens(y)
+    function _lens(y, x = 0.0)
         lens = SphericalLens(0.05, -0.05, 0.01, 0.02)
-        translate3d!(lens, [0, y, 0])
+        translate3d!(lens, [x, y, 0])
         return lens
     end
 
     # A beam along +y through a lens, a doublet, a cube beamsplitter and a group of a lens and a
-    # mesh, onto a mirror: objects of one and of several shapes, with and without a bounding sphere
+    # mesh, onto a mirror: objects of one and of several shapes, with and without a bounding sphere.
+    # Beside the beam a group of a group of two lenses (`pair` of `a` and `b`) and a lens (`c`):
+    # groups with a main sphere, in contrast to the group with the mesh
     function _setup()
         lens = _lens(0.05)
         doublet = SphericalDoubletLens(0.1, -0.08, -0.2, 6e-3, 3e-3, 0.02, 1.6, 1.7)
@@ -44,9 +46,12 @@ const GUI = BeamletOpticsGUI
         translate3d!(dummy, [0.05, 0.2, 0])
         group = ObjectGroup([inner, dummy])
         mirror = _mirror()
-        sys = System([lens, doublet, cube, group, mirror])
+        a, b, c = _lens(0.2, 0.1), _lens(0.23, 0.1), _lens(0.26, 0.1)
+        pair = ObjectGroup([a, b])
+        nested = ObjectGroup([pair, c])
+        sys = System([lens, doublet, cube, group, nested, mirror])
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
-        return (; sys, beam, lens, doublet, cube, group, inner, dummy, mirror)
+        return (; sys, beam, lens, doublet, cube, group, inner, dummy, mirror, nested, pair, a, b, c)
     end
 
     # The shapes that the solver tests one by one, see `TestRenderBoundingSphere.jl` of BeamletOptics
@@ -55,16 +60,32 @@ const GUI = BeamletOpticsGUI
     _shapes(::BMO.SingleShape, obj) = Any[BMO.shape(obj)]
     _shapes(::BMO.MultiShape, obj) = reduce(vcat, (_shapes(part) for part in BMO.shape(obj)); init = Any[])
     _shapes(sys::BMO.AbstractSystem) = reduce(vcat, (_shapes(obj) for obj in sys.objects); init = Any[])
+    # What is tested with a sphere of its own: the objects of one shape and the shapes of the
+    # objects of several shapes (`_parts`), and the objects of several shapes and the groups
+    # themselves, with their main sphere (`_mains`)
+    _parts(obj) = _parts(BMO.shape_trait_of(obj), obj)
+    _parts(shape::BMO.AbstractShape) = Any[shape]
+    _parts(::BMO.SingleShape, obj) = Any[obj]
+    _parts(::BMO.MultiShape, obj) = reduce(vcat, (_parts(part) for part in BMO.shape(obj)); init = Any[])
+    _parts(sys::BMO.AbstractSystem) = reduce(vcat, (_parts(obj) for obj in sys.objects); init = Any[])
+    _mains(obj) = _mains(BMO.shape_trait_of(obj), obj)
+    _mains(::BMO.AbstractShape) = Any[]
+    _mains(::BMO.SingleShape, obj) = Any[]
+    _mains(::BMO.MultiShape, obj) = reduce(vcat, (_mains(part) for part in BMO.shape(obj)); init = Any[obj])
+    _mains(sys::BMO.AbstractSystem) = reduce(vcat, (_mains(obj) for obj in sys.objects); init = Any[])
+    _spheres(x) = vcat(_parts(x), _mains(x))
     # Those with a bounding sphere, which BeamletOptics decides, not a list of types
-    _with_sphere(x) = filter(s -> !isnothing(BMO.world_bounding_sphere(s)), _shapes(x))
+    _has_sphere(x) = BMO.bounding_sphere_of(x) isa BMO.SingleBoundingSphere
+    _with_sphere(x) = filter(_has_sphere, _spheres(x))
 
     _debug(gui) = gui.components.debug
     _shape(part::BMO.AbstractShape) = part
     _shape(part) = BMO.shape(part)
-    # The sphere plots of the view per shape
-    _plots(gui) = IdDict{Any, Any}(_shape(part) => only(render_plots(oh)) for (part, oh) in _debug(gui).handles)
-    _plots(gui, x) = Any[p for (s, p) in _plots(gui) if any(q -> q === s, _shapes(x))]
+    # The sphere plots of the view per part and per object with a main sphere
+    _plots(gui) = IdDict{Any, Any}(x => only(render_plots(oh)) for (x, oh) in _debug(gui).handles)
+    _plots(gui, x) = Any[p for (s, p) in _plots(gui) if any(q -> q === s, _spheres(x))]
     _in_scene(gui, plot) = any(q -> q === plot, gui.ax.scene.plots)
+    _has_color(p, color) = Makie.to_color(p.color[]) == Makie.to_color(color)
 
     # The points of the plot in world coordinates, i.e. with its model matrix applied
     function _world_points(p)
@@ -75,14 +96,15 @@ const GUI = BeamletOpticsGUI
             Makie.Point3d(w[1], w[2], w[3]) ./ w[4]
         end
     end
-    # Whether the plot `p` shows the bounding sphere of the `shape` as it is now
-    function _on_sphere(p, shape; rtol = 1e-4)
-        center, radius = BMO.world_bounding_sphere(shape)
-        c = Makie.Point3d(center)
+    # Whether the plot `p` shows the bounding sphere of `x` as it is now
+    function _on_sphere(p, x; rtol = 1e-4)
+        sphere = BMO.bounding_sphere_of(x)
+        c = Makie.Point3d(sphere.pos)
         pts = _world_points(p)
-        return !isempty(pts) && all(q -> isapprox(norm(q - c), radius; rtol), pts)
+        return !isempty(pts) && all(q -> isapprox(norm(q - c), sphere.radius; rtol), pts)
     end
-    # Whether the view shows exactly the spheres of the shapes of its systems, where they are
+    # Whether the view shows exactly the spheres of the parts and the main spheres of the objects
+    # of its systems, where they are
     function _matches(gui)
         plots = _plots(gui)
         expected = reduce(vcat, (_with_sphere(rendered(h)) for h in gui.system_handles); init = Any[])
@@ -97,15 +119,46 @@ const GUI = BeamletOpticsGUI
         parts = GUI._debug_parts(s.lens)
         @test length(parts) == 1 && parts[1] === s.lens
         # one part per shape of an object of several shapes and of a group
-        for obj in (s.doublet, s.cube, s.group, s.mirror)
+        for obj in (s.doublet, s.cube, s.group, s.nested, s.mirror)
             parts = GUI._debug_parts(obj)
             @test length(parts) == length(_shapes(obj))
             @test all(((p, shape),) -> _shape(p) === shape, zip(parts, _shapes(obj)))
+            @test all(((p, q),) -> p === q, zip(parts, _parts(obj)))
         end
         # a source has none
         @test isempty(GUI._debug_parts(s.beam))
         # the fixture has shapes with a bounding sphere
         @test !isempty(_with_sphere(s.sys))
+        # a mesh has a sphere, the object that is never hit has none
+        @test _has_sphere(BMO.shape(s.dummy)) && !_has_sphere(s.dummy)
+    end
+
+    @testset "objects with a main sphere" begin
+        s = _setup()
+        # an object of one shape, a shape and a source have none
+        @test isempty(GUI._debug_mains(s.lens))
+        @test isempty(GUI._debug_mains(BMO.shape(s.lens)))
+        @test isempty(GUI._debug_mains(s.beam))
+        # an object of several shapes
+        for obj in (s.doublet, s.cube)
+            mains = GUI._debug_mains(obj)
+            @test length(mains) == 1 && mains[1] === obj
+        end
+        # a group and the groups in it, each one before the ones it contains
+        mains = GUI._debug_mains(s.nested)
+        @test length(mains) == 2 && mains[1] === s.nested && mains[2] === s.pair
+        mains = GUI._debug_mains(s.group)
+        @test length(mains) == 1 && mains[1] === s.group
+        for obj in (s.lens, s.doublet, s.cube, s.group, s.nested, s.mirror)
+            mains = GUI._debug_mains(obj)
+            @test length(mains) == length(_mains(obj))
+            @test all(((p, q),) -> p === q, zip(mains, _mains(obj)))
+        end
+        # no object is a part and has a main sphere
+        @test !any(p -> any(q -> q === p, _mains(s.sys)), _parts(s.sys))
+        # the fixture has main spheres, and a group without one: one of its objects has no sphere
+        @test all(_has_sphere, (s.doublet, s.cube, s.nested, s.pair))
+        @test !_has_sphere(s.group)
     end
 
     @testset "tool and kwarg, $layout" for layout in (:compact, :app)
@@ -122,15 +175,21 @@ const GUI = BeamletOpticsGUI
         @test d.shown
         @test occursin("debug mode on", gui.status.text[])
         plots = _plots(gui)
-        # one sphere per shape with a sphere, none for a shape without
+        # one sphere per part with a sphere and one per object with a main sphere, none for one
+        # without
         @test length(plots) == length(_with_sphere(s.sys))
         @test length(gui.ax.scene.plots) == n_scene + length(plots)
         @test _matches(gui)
         @test _all_visible(values(plots))
         @test all(p -> p isa Makie.Lines && _in_scene(gui, p), values(plots))
-        for shape in _shapes(s.sys)
-            @test haskey(plots, shape) == !isnothing(BMO.world_bounding_sphere(shape))
+        for x in _spheres(s.sys)
+            @test haskey(plots, x) == _has_sphere(x)
         end
+        # the spheres of the parts in magenta, the main spheres in orange
+        @test all(x -> !haskey(plots, x) || _has_color(plots[x], :magenta), _parts(s.sys))
+        @test all(x -> !haskey(plots, x) || _has_color(plots[x], :orange), _mains(s.sys))
+        @test all(x -> haskey(plots, x), (s.doublet, s.cube, s.nested, s.pair))
+        @test !haskey(plots, s.group) && !haskey(plots, s.dummy)
         # an overlay: not among the plots of the objects, not picked, not clipped, and the box of
         # the scene is the same
         @test length(render_plots(gui.controls.h)) == n_objects
@@ -238,6 +297,70 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "main spheres, $layout" for layout in (:compact, :app)
+        s = _setup()
+        gui = _live_view(s.sys => s.beam; layout, debug = true)
+        d = _debug(gui)
+        n_scene = length(gui.ax.scene.plots)
+        plots = _plots(gui)
+        same(x) = _plots(gui)[x] === plots[x]
+
+        # a group that is moved as a whole: its main spheres are moved, not drawn again
+        retrace!(gui) do
+            translate3d!(s.nested, [0, 0, 0.01])
+            zrotate3d!(s.nested, deg2rad(20))
+        end
+        @test _matches(gui)
+        @test all(((x, p),) -> _plots(gui)[x] === p, collect(plots))
+
+        # an object of a group that is moved on its own changes the main sphere of the group
+        r0 = BMO.bounding_sphere_of(s.nested).radius
+        retrace!(() -> translate3d!(s.c, [0, 0, 0.03]), gui)
+        @test BMO.bounding_sphere_of(s.nested).radius > r0
+        @test _matches(gui)
+        @test !same(s.nested) && same(s.pair) && same(s.c) && same(s.doublet)
+        @test !_in_scene(gui, plots[s.nested])
+        @test _has_color(_plots(gui)[s.nested], :orange)
+        @test length(gui.ax.scene.plots) == n_scene
+
+        # and so does an object of a group in the group, for both groups
+        plots = _plots(gui)
+        retrace!(() -> translate3d!(s.a, [0, 0, 0.04]), gui)
+        @test _matches(gui)
+        @test !same(s.pair) && !same(s.nested) && same(s.a) && same(s.cube)
+        @test length(gui.ax.scene.plots) == n_scene
+        # undo and redo of a step of the keys of this object
+        gui.controls.selected[] = s.nested
+        GUI._update_selection_box!(gui.controls)
+        _key!(gui, Keyboard.up)
+        @test _matches(gui)
+        @test GUI._undo!(gui.controls)
+        @test _matches(gui)
+
+        # a main sphere that is drawn again stays hidden with its group and in the spectator mode
+        GUI._toggle_hidden!(gui, s.nested)
+        retrace!(() -> translate3d!(s.b, [0, 0, -0.02]), gui)
+        @test _matches(gui)
+        @test _none_visible(_plots(gui, s.nested))
+        GUI._toggle_hidden!(gui, s.nested)
+        @test _all_visible(values(_plots(gui)))
+        gui.controls.spectator[] = true
+        retrace!(() -> translate3d!(s.b, [0, 0, 0.01]), gui)
+        @test _none_visible(values(_plots(gui)))
+        gui.controls.spectator[] = false
+        @test _matches(gui) && _all_visible(values(_plots(gui)))
+
+        # moved while the mode is off
+        d.toggle.active[] = false
+        retrace!(() -> translate3d!(s.a, [0.01, 0, 0]), gui)
+        @test _none_visible(values(_plots(gui)))
+        d.toggle.active[] = true
+        @test _matches(gui) && _all_visible(values(_plots(gui)))
+        @test length(gui.ax.scene.plots) == n_scene
+        @test isnothing(gui.last_error)
+        close(gui)
+    end
+
     @testset "add and remove, $layout" for layout in (:compact, :app)
         s = _setup()
         gui = _live_view(s.sys => s.beam; layout, debug = true)
@@ -279,6 +402,16 @@ const GUI = BeamletOpticsGUI
         @test _matches(gui)
         @test GUI._undo!(gui.controls)
         @test _matches(gui)
+        # a group of groups with its main spheres
+        old = _plots(gui, s.nested)
+        @test length(old) == length(_with_sphere(s.nested)) == 5
+        remove_component!(gui, s.nested)
+        @test isempty(_plots(gui, s.nested)) && !any(p -> _in_scene(gui, p), old)
+        @test !haskey(d.handles, s.nested) && !haskey(d.handles, s.pair)
+        @test _matches(gui)
+        @test GUI._undo!(gui.controls)
+        @test length(_plots(gui, s.nested)) == 5
+        @test _matches(gui) && _all_visible(values(_plots(gui)))
 
         # added while the mode is off: drawn when it is switched on
         d.toggle.active[] = false
@@ -328,8 +461,8 @@ const GUI = BeamletOpticsGUI
         all_plots = collect(values(_plots(gui)))
         others(x) = filter(p -> !any(q -> q === p, _plots(gui, x)), all_plots)
 
-        # hidden with their object
-        for obj in (s.lens, s.doublet, s.group)
+        # hidden with their object, also the main spheres
+        for obj in (s.lens, s.doublet, s.group, s.nested)
             GUI._toggle_hidden!(gui, obj)
             @test _none_visible(_plots(gui, obj))
             @test _all_visible(others(obj))
@@ -343,6 +476,18 @@ const GUI = BeamletOpticsGUI
         end
         GUI._toggle_hidden!(gui, s.lens)
         GUI._toggle_hidden!(gui, s.cube)
+        GUI._show_all!(gui)
+        @test _all_visible(all_plots)
+        # the main sphere of a group is hidden when all its objects are
+        main(x) = _plots(gui)[x]
+        GUI._toggle_hidden!(gui, s.a)
+        @test _none_visible(_plots(gui, s.a)) && _all_visible(others(s.a))
+        @test main(s.pair).visible[] && main(s.nested).visible[]
+        GUI._toggle_hidden!(gui, s.b)
+        @test !main(s.pair).visible[] && main(s.nested).visible[]
+        @test _none_visible(_plots(gui, s.pair)) && _all_visible(others(s.pair))
+        GUI._toggle_hidden!(gui, s.c)
+        @test !main(s.pair).visible[] && !main(s.nested).visible[]
         GUI._show_all!(gui)
         @test _all_visible(all_plots)
 
@@ -387,6 +532,11 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard.up)
         @test _matches(gui) && _matches(other)
         retrace!(() -> translate3d!(s.lens, [0.01, 0, 0]), other)
+        @test _matches(gui) && _matches(other)
+        # also a main sphere that changes
+        retrace!(() -> translate3d!(s.a, [0, 0, 0.03]), gui)
+        @test _matches(gui) && _matches(other)
+        retrace!(() -> translate3d!(s.c, [0.02, 0, 0]), other)
         @test _matches(gui) && _matches(other)
 
         # and so do added and removed components

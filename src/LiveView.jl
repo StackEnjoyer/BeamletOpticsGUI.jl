@@ -1086,9 +1086,11 @@ planes do not snap. It is an overlay: nothing of it is traced, clipped or export
 The toggle "Debug" among the tools (or the `debug` kwarg) switches the debug mode, which has no
 key. It shows the bounding sphere of each shape of the traced components as three magenta circles:
 the sphere with which the solver of BeamletOptics skips a shape that a ray can not hit, see
-`BeamletOptics.bounding_sphere`. An object of several shapes, e.g. a doublet or a cube
-beamsplitter, has one sphere per shape; a shape without a bounding sphere, e.g. a mesh, has none,
-and neither do the sources and the extras. The spheres follow their components, are hidden with
+`BeamletOptics.bounding_sphere_of`. An object of several shapes, e.g. a doublet or a cube
+beamsplitter, and an object group have one sphere per shape and, in orange, the sphere around all
+of them, with which the solver skips the whole object or group. A shape without a bounding sphere
+has none, and neither do objects that are never hit (e.g. a `MeshDummy`), groups that contain one,
+the sources and the extras. The spheres follow their components, are hidden with
 them and in the spectator mode, and are an overlay: they are neither selected nor clipped, and
 nothing of them is traced or exported.
 
