@@ -1839,8 +1839,8 @@ end
     set_render_look(:modern)
 end
 
-# from the live beam tests of BeamletOptics
-@testset "Live view solves by brute force" begin
+# The live view relies on it: `solve_system!` solves a beam from its start, whatever it held before
+@testset "Solving again gives the path of a new beam" begin
     # Start points of the rays of a beam, of the chief ray of a beamlet, of all beams of a group
     path(b::Beam) = [Vector{Float64}(position(r)) for r in BMO.rays(b)]
     path(g::GaussianBeamlet) = path(g.chief)
@@ -1853,15 +1853,15 @@ end
             () -> GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3),
             () -> CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40))
         b = make()
-        GUI._solve_from_start!(sys, b)
+        solve_system!(sys, b)
         p = path(b)
         @test length(p) > 1
         # Solved again, the path is the same, nothing is appended
-        GUI._solve_from_start!(sys, b)
+        solve_system!(sys, b)
         @test path(b) == p
         # After a change of the system, the path is that of a new beam solved from its start
         translate3d!(m, [0, 0.05, 0])
-        GUI._solve_from_start!(sys, b)
+        solve_system!(sys, b)
         ref = make()
         solve_system!(sys, ref)
         @test length(path(b)) == length(path(ref)) && all(path(b) .≈ path(ref))

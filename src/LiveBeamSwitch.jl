@@ -28,7 +28,7 @@ function _on_pairs(gui::LiveView, pairs, handles)
     return pairs[keep], handles[keep]
 end
 
-"""Resets the `beam` (a beam or a beam group) to its untraced start state, see `_solve_from_start!`."""
+"""Resets the `beam` (a beam or a beam group) to its untraced start state."""
 _empty_beam!(beam::BMO.AbstractBeam) = (empty!(beam); nothing)
 _empty_beam!(bg::BMO.AbstractBeamGroup) = (foreach(empty!, BMO.beams(bg)); nothing)
 _empty_beam!(_) = nothing
