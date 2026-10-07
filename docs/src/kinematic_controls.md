@@ -8,11 +8,13 @@ change and is the place to re-solve the system and update dependent plots:
 
 ```julia
 ctrl = kinematic_controls!(ax, hsys; on_change = obj -> begin
-    empty!(detector)
-    solve_system!(system, beam)
+    solve_system!(system, beam; initialize = true)
     update_render!(hbeam)
 end)
 ```
+
+`initialize = true` empties the detectors of the system before the solve, see `initialize!` in
+BeamletOptics. Without it, the hits of every solve add up on them.
 
 A click selects a component, a drag on the selected component moves or rotates it, and every
 other drag rotates the camera as usual, so that rotating the camera never selects or moves a

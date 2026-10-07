@@ -287,6 +287,12 @@ Errors raised inside `on_change` are logged once and do not interrupt the intera
 [Interactive Michelson interferometer](@ref) example for a full callback that tracks the optical
 power over time.
 
+Before every solve, the live view initializes all its systems with `initialize!` of BeamletOptics,
+once for all sources: a detector holds the hits of the last solve only, of all sources that hit
+it. `on_change` therefore reads the result of one solve and does not empty a detector itself. An
+own component type that stores data during a solve is reset in the same way once it has a method
+of `BeamletOptics.initialize!`, see [Checklist for a new component](@ref).
+
 ## Own panels, controls and tools
 
 Own parts are added to a `gui = live_view(...)` by three functions, which work with both layouts;

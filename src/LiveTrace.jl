@@ -37,14 +37,18 @@ end
 """
     _compute(pairs, handles, requests, sinks; systems = first.(pairs), coarse = false, preview = false)
 
-Empties all `Detector`s of the `systems` (by default those of the `pairs`), solves the systems of
-the `pairs` and computes the detector views of the `requests` (see `_ViewRequest` and
-`_view_field`), without changing any plot, such that it can run in a background task, see
-`_solve!`. `handles` are the render handles of the beams of the `pairs`. The caller leaves out the
-pairs of beams that are switched off (see `_on_pairs`) but passes all `systems`, such that no old
-hits of these beams remain. Each source is traced, and each view computed, with its progress output
-`sinks[k]` (see `BMO.PROGRESS_SINK`, `nothing` for the terminal): first one per pair, then one per
-request.
+Initializes the `systems` (by default those of the `pairs`) with `initialize!` of BeamletOptics,
+which discards what their objects stored during the last solve, e.g. the hits of the `Detector`s,
+solves the systems of the `pairs` and computes the detector views of the `requests` (see
+`_ViewRequest` and `_view_field`), without changing any plot, such that it can run in a background
+task, see `_solve!`. `handles` are the render handles of the beams of the `pairs`. The caller leaves
+out the pairs of beams that are switched off (see `_on_pairs`) but passes all `systems`, such that
+no old hits of these beams remain. Each source is traced, and each view computed, with its progress
+output `sinks[k]` (see `BMO.PROGRESS_SINK`, `nothing` for the terminal): first one per pair, then
+one per request.
+
+The systems are initialized once, before the first solve, and not by the solves (`initialize` of
+`solve_system!`): the sources of a system and the systems that share a detector superpose on it.
 
 With `preview`, beam groups rendered with `render_every > 1` are solved only for their rendered
 beams, see `_solve_preview!`. Returns `(; previewed, requests, results, solve_time, field_time)`:
@@ -55,8 +59,8 @@ function _compute(pairs, handles, requests, sinks; systems = first.(pairs), coar
         preview = false)
     # Monotonic clock with ns resolution, time() is too coarse on Windows for fast solves
     t0 = time_ns()
-    # A detector can be part of several systems, hence empty all before solving
-    foreach(empty!, _find_detectors(systems))
+    # A detector can be part of several systems, hence all are initialized before solving
+    foreach(initialize!, systems)
     previewed = preview && any(i -> _previewable(pairs[i].second, handles[i]), eachindex(pairs))
     for (i, (sys, beam)) in enumerate(pairs)
         h = handles[i]
@@ -134,7 +138,7 @@ end
 """
     _resolve!(gui::LiveView, obj; coarse = false, preview = false)
 
-Empties all `Detector`s, solves all systems and updates the beams, the shown detector views and the
+Initializes and solves all systems and updates the beams, the shown detector views and the
 status line of the `gui`, see `_compute` and `_apply!`. The user `on_change` is called with the
 moved `obj`, or `nothing`. Unlike `_solve!`, it returns only after the solve, which runs on the
 calling task; a solve of the `gui` in the background is cancelled first.
@@ -158,9 +162,9 @@ Starts `_compute` for the `pairs` whose beams are switched on (with the beam ren
 the `requests` of detector views (by default those of the shown views, see `_view_requests`) of the
 `gui` in a background task, with a progress sink per source and request, see `_SolveJob`. `apply`
 shows the result, `timing` is the duration field that a cancelled job updates, `:view_time` for a
-job that only computes views, i.e. without `pairs`. The detectors of the `systems` are emptied
-first: by default those of the `pairs`; a solve passes all systems of the `gui`, also those
-without a source.
+job that only computes views, i.e. without `pairs`. The `systems` are initialized first, i.e. their
+detectors are emptied: by default those of the `pairs`; a solve passes all systems of the `gui`,
+also those without a source.
 """
 _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles; kwargs...) =
     _start_job(gui, apply, obj, pairs, handles, _view_requests(gui); kwargs...)
@@ -168,7 +172,7 @@ _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles; kwargs...) 
 function _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles, requests;
         systems = BMO.AbstractSystem[first.(pairs)...], coarse = false, preview = false,
         timing::Symbol)
-    # The detectors of the systems are emptied, also of those whose beams are all switched off
+    # The systems are initialized, also those whose beams are all switched off
     isempty(systems) || _views_solve_started!(gui)
     # Beams that are switched off are not traced, see `_set_beam_on!`. The task works on its own
     # copies of the lists (filtered here, such that the sinks and anchors match them), the objects

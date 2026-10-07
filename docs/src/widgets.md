@@ -337,6 +337,8 @@ end
 ## Checklist for a new component
 
 - `interact3d(system, object, beam, ray)`: required, see Core design page of BeamletOptics.
+- `BeamletOptics.initialize!(object)`: only if `interact3d` stores data in the component, e.g. the
+  hits of an own detector. It discards them; the live view calls it before every solve.
 - `render!`: optional, how the component is drawn.
 - `card_rows` (and `card_actions`): optional, its rows and buttons on the card of the live view.
 - `BeamletOptics.properties`: optional, the properties listed on the page "Properties" of the card

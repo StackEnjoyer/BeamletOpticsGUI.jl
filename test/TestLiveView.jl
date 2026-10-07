@@ -142,11 +142,9 @@ _points(h) = only(render_plots(h))[1][]
         _key!(gui, Keyboard.left)
         n_gui = length(BMO.hits(pd))
         # reference: fresh solves of both pairs
-        empty!(pd)
-        solve_system!(sys1, b1)
+        solve_system!(sys1, b1; initialize = true)
         n1 = length(BMO.hits(pd))
-        empty!(pd)
-        solve_system!(sys2, b2)
+        solve_system!(sys2, b2; initialize = true)
         n2 = length(BMO.hits(pd))
         @test n1 == 1 && n2 == 1
         @test n_gui == n1 + n2
@@ -668,8 +666,7 @@ _points(h) = only(render_plots(h))[1][]
         # beam points and spot of a fresh solve of the system
         function _fresh(sys, pd)
             b = Beam([0.0, 0, 0], [0.0, 1, 0])
-            empty!(pd)
-            solve_system!(sys, b)
+            solve_system!(sys, b; initialize = true)
             pts = Point3f[p for s in GUI._beam_segments!(GUI._BeamSegment[], b; flen = 1.0)
                           for p in (Point3f(s.a), Point3f(s.b))]
             return pts, length(BMO.hits(pd)), _spot(pd)

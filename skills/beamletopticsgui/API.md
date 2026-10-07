@@ -134,5 +134,8 @@ internals or `gui.controls.on_change` for this.
 
 - Everything is SI (meters, radians); cards show mm and mrad and convert.
 - Changes of the optics from own controls go through `retrace!(f, gui)`, never directly.
+- The live view initializes its systems before every solve (`BeamletOptics.initialize!`, once for
+  all sources): a detector holds the hits of the last solve of all sources. Do not `empty!` a
+  detector in `on_change` or solve the systems of an open view yourself.
 - The card functions are `BeamletOpticsGUI.card_rows` etc., not `BeamletOptics.card_rows`.
 - The window needs a display. On headless Linux use `xvfb-run -a`; there is no CairoMakie fallback.
