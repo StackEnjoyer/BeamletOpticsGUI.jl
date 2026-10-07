@@ -66,10 +66,10 @@ end
 
 `Ctrl+V` in the `gui`: builds the component or source that `_copy_selected!` kept again, in the
 orientation of the original, and attaches it to the mouse like "Place" of the catalog, see
-`_start_placement!`: a click drops it into the system of the selection, else the first one (see
-`_catalog_target`), `Esc` cancels. Each `Ctrl+V` pastes another one. Returns the new object, or
-`nothing` with the reason in the status line: nothing was copied, the view has no system that
-takes it, or its constructor threw.
+`_start_placement!`: a click drops it into the system of the selection, else the first one, or
+into no system (see `_catalog_target`), `Esc` cancels. Each `Ctrl+V` pastes another one. Returns
+the new object, or `nothing` with the reason in the status line: nothing was copied or its
+constructor threw.
 """
 function _paste!(gui::LiveView)
     c = _CLIPBOARD[]
@@ -78,10 +78,6 @@ function _paste!(gui::LiveView)
         return nothing
     end
     system = _catalog_target(gui, c.entry)
-    if isnothing(system)
-        gui.status.text[] = "$(c.name) not pasted: the view has no System that takes a component"
-        return nothing
-    end
     built = try
         _catalog_component(c.entry, c.strings)
     catch e
