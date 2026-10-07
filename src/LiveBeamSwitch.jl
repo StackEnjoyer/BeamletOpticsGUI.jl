@@ -28,7 +28,7 @@ function _on_pairs(gui::LiveView, pairs, handles)
     return pairs[keep], handles[keep]
 end
 
-"""Resets the `beam` (a beam or a beam group) to its untraced start state, see `_solve_from_start!`."""
+"""Resets the `beam` (a beam or a beam group) to its untraced start state."""
 _empty_beam!(beam::BMO.AbstractBeam) = (empty!(beam); nothing)
 _empty_beam!(bg::BMO.AbstractBeamGroup) = (foreach(empty!, BMO.beams(bg)); nothing)
 _empty_beam!(_) = nothing
@@ -83,7 +83,7 @@ function _remove_overlay!(gui::LiveView, store::IdDict, beam)
 end
 
 #=
-Length of the final rays
+Settings of the render handles of a beam, e.g. the length of the final rays
 =#
 
 """
@@ -108,46 +108,54 @@ function _flen(gui::LiveView, beam)
 end
 
 """
+    _render_settings!(gui, beam; kwargs...)
+
+Changes the settings with which the `beam` (a beam or beam group of the pairs) of the `gui` is
+drawn, see `BeamletOptics.render_settings!`: of each render handle of a pair with the `beam` (a
+beam can be part of several pairs), and `flen` also of its overlays (see `_add_overlay!`), which
+draw the same rays. The handles and their plots stay, hidden, dimmed and clipped as they are.
+Display only: nothing is solved, except that a solve that runs in the background is cancelled and
+started again, since the handles draw the rays as they are; also if a setting is refused with an
+`ArgumentError`, see `BeamletOptics.render_settings!`.
+"""
+function _render_settings!(gui::LiveView, beam; kwargs...)
+    isempty(kwargs) && return nothing
+    running = _running(gui)
+    try
+        _change!(gui.controls, beam) do
+            for (p, h) in zip(gui.pairs, gui.beam_handles)
+                p.second === beam && render_settings!(h; kwargs...)
+            end
+            if haskey(kwargs, :flen)
+                for store in _overlay_stores(gui)
+                    h = get(store, beam, nothing)
+                    isnothing(h) || render_settings!(h; flen = kwargs[:flen])
+                end
+            end
+        end
+    finally
+        running && gui.controls.on_change(beam)
+    end
+    return nothing
+end
+
+"""
     _set_flen!(gui, beam, flen)
 
 Draws the final rays of the `beam` (a beam or beam group of the pairs) of the `gui` with the length
-`flen` [m]. BeamletOptics fixes the length when a beam is rendered, hence the beam is rendered
-again: its handles in `gui.beam_handles` are replaced, with the kwargs they were rendered with, and
-so are its overlays that are shown (see `_add_overlay!`). The new plots are hidden, dimmed and
-clipped like the old ones. Display only: nothing is solved, except that a solve that runs in the
-background, which would update the replaced handles, is cancelled and started again. Throws an
-`ArgumentError` unless `flen` is positive and finite. Nothing happens if the length does not change.
+`flen` [m], also those of its overlays that are shown, see `_render_settings!`; the length is kept
+in its kwargs, with which the beam is rendered when it is added again. Throws an `ArgumentError`
+unless `flen` is positive and finite. Nothing happens if the length does not change.
 """
 function _set_flen!(gui::LiveView, beam, flen::Real)
     (isfinite(flen) && flen > 0) ||
         throw(ArgumentError("the length of the final rays must be positive and finite, got $flen"))
     old = _flen(gui, beam)
     (isnothing(old) || old == flen) && return nothing
-    running = _running(gui)
-    _change!(gui.controls, beam) do
-        new = (; flen = Float64(flen))
-        gui.beams.kwargs[beam] = merge(get(gui.beams.kwargs, beam, (;)), new)
-        gui.beams.overlay_kwargs[beam] = merge(get(gui.beams.overlay_kwargs, beam, (;)), new)
-        visible = _beam_on(gui, beam)
-        for (i, p) in enumerate(gui.pairs)
-            p.second === beam || continue
-            h = gui.beam_handles[i]
-            foreach(plot -> delete!(gui.trace.beam_alphas, plot), _beam_plots(h))
-            remove_render!(h)
-            h = _live_render_beam!(gui.ax, gui.layout, beam, gui.beams.kwargs[beam])
-            foreach(plot -> plot.visible[] = visible, _beam_plots(h))
-            gui.beam_handles[i] = h
-        end
-        for (store, set!) in ((gui.beams.pol, _set_polarization!), (gui.beams.gen, _set_generating_beams!))
-            haskey(store, beam) || continue
-            set!(gui, beam, false)
-            set!(gui, beam, true)
-        end
-        # New plots of outdated beams are dimmed like them
-        gui.trace.stale && _dim_beams!(gui)
-        _apply_clip_planes!(gui)
-    end
-    running && gui.controls.on_change(beam)
+    new = (; flen = Float64(flen))
+    gui.beams.kwargs[beam] = merge(get(gui.beams.kwargs, beam, (;)), new)
+    gui.beams.overlay_kwargs[beam] = merge(get(gui.beams.overlay_kwargs, beam, (;)), new)
+    _render_settings!(gui, beam; new...)
     return nothing
 end
 

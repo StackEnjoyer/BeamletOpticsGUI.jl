@@ -14,7 +14,7 @@ This file is for **developing** the GUI. Guidance for **using** it lives in the 
 Evaluate every change against these principles. The "Gap" column is the planned work; do not
 describe it as available in docs or the skill.
 
-| # | Principle | Gap in 0.2 |
+| # | Principle | Gap in 0.3 |
 |---|---|---|
 | P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components and sources can be added to and removed from the scene in the GUI. One view holds several systems with several beams each. | `StaticSystem`s can not be changed; only components and sources from the catalog can be changed afterwards (page "Edit"); `export_script` writes the constructors of those and of the objects added with `code` (`add_component!`), since the constructor of an object from the user's script is not known otherwise; the glasses of the catalog (`catalog_glasses`) are data of the GUI until BeamletOptics has a glass catalog |
 | P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`, `_has_view`), only `Detector` has a view; tree icons per type are internal |

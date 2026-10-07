@@ -347,7 +347,9 @@ end
 The beams of a `LiveView` (the objects `last.(gui.pairs)`) as their cards switch them: the beams
 that are `off`, i.e. neither traced nor drawn (see `_set_beam_on!`); per beam, the `kwargs` of
 `live_render!` of its handle in `gui.beam_handles` besides the style of the layout, with which it
-is rendered again for another length of its final rays (see `_set_flen!`); the handles of its
+is rendered when it is added again, e.g. by an undo; they follow the settings of the handle that
+change at runtime, i.e. the length of its final rays and its color (see `_set_flen!`,
+`_set_beam_color!`); the handles of its
 overlays, the polarization curve in `pol` (see `_set_polarization!`) and the generating beams of a
 Gaussian beamlet in `gen` (see `_set_generating_beams!`), and the kwargs of `live_render!` of the
 overlays in `overlay_kwargs`, taken from the `beam_kwargs` of `live_view` without `render_every`,
@@ -655,7 +657,7 @@ Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of 
 "Properties" with its properties (see [`properties`](@ref), the same rows as in the inspector of
 the app layout) and, for a `Detector`, "Results" with its view between them, see "Detector view".
 The card of a source (a beam, a beam group or a Gaussian beamlet) has the page "Color": a menu of
-colors ("wavelength" for the color of its wavelength, in which every source starts, "layout" for
+colors ("wavelength" for the color of the wavelength of each ray, in which every source starts, "layout" for
 the color of the layout, or a fixed color), a box for any color as a hex value such as `#ff8000` or
 by its name, and sliders for the opacity and the line width. They only change how the source is
 drawn: nothing is traced again.
@@ -1148,8 +1150,9 @@ them changes in the other one as well, and only the window in which something ch
   vector of `obj` or `obj => render_kwargs`, e.g. `[housing => (; transparency = true, color =
   RGBAf(0.7, 0.8, 0.9, 0.05))]`, see "Extras and opacity"
 - `beam_kwargs = Dict()`: `beam => kwargs` passed to `live_render!` of the beam, by default
-  `(; render_every = 5)` for beam groups. A source is drawn in the color of its wavelength (a dark
-  red for infrared, a dark violet for ultraviolet light) unless its kwargs set a `color`. `show_polarization = true` of a polarized beam and
+  `(; render_every = 5)` for beam groups. The rays of a source are drawn in the color of their
+  wavelength, i.e. with `color = :wavelength` (a dark red for infrared, a dark violet for
+  ultraviolet light), unless its kwargs set a `color`. `show_polarization = true` of a polarized beam and
   `show_beams = true` of a Gaussian beamlet start with the toggles "polarization" and "beams" of
   its card on, `pol_λ`, `pol_amplitude` and `pol_scale` set the start values of the sliders of
   the polarization curve, see [`beam_card_rows`](@ref); of a beam group only its central beam is

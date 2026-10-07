@@ -104,19 +104,13 @@ end
 
 The snapshot (see `_snapshot`) with which `new` takes the place of `old`, whose snapshot is `snap`:
 the system and the label of `old`, its name, and the `origin` of `new`. A source keeps how it is
-drawn, except a color that was the one of the wavelength of `old`, which follows the wavelength.
+drawn: one that is drawn in the colors of its wavelengths (`color = :wavelength`) follows the
+wavelength of `new`, a fixed color stays.
 """
 function _replacement_snapshot(gui::LiveView, old, new, origin, snap)
     names = haskey(gui.objects.names, old) ? Pair{Any, String}[new => gui.objects.names[old]] :
             Pair{Any, String}[]
-    return _replacement_kwargs(old, merge(snap, (; origin, names, init_poses = Pair{Any, Any}[])))
-end
-
-_replacement_kwargs(_, snap) = snap
-function _replacement_kwargs(old::_Source, snap)
-    ref = get(_wavelength_style(old), :color, nothing)
-    follows = haskey(snap.kwargs, :color) && !isnothing(ref) && _same_color(snap.kwargs.color, ref)
-    return follows ? merge(snap, (; kwargs = Base.structdiff(snap.kwargs, NamedTuple{(:color,)}))) : snap
+    return merge(snap, (; origin, names, init_poses = Pair{Any, Any}[]))
 end
 
 """

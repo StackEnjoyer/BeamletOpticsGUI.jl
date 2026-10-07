@@ -312,8 +312,9 @@ the group. These change the display only. The initial states are set by the `liv
 
 The last row, `length`, has a box with the length [mm] with which the final rays of the beam, i.e.
 those that hit nothing, are drawn (`flen` of `live_render!`: by default 1 m, of Gaussian beamlets
-0.1 m, or as given by the `beam_kwargs`). An input draws the beam and its overlays again with that
-length, nothing is solved; an input that is no positive number is reported in the status line.
+0.1 m, or as given by the `beam_kwargs`). An input changes the drawn length of the beam and of its
+overlays in place, nothing is solved; an input that is no positive number is reported in the status
+line.
 
 The card of an own beam type adds the rows after its own rows, e.g.
 
@@ -412,9 +413,9 @@ The components of the catalog are added this way once they are placed, see
 Adds the `source` (a beam or a beam group, e.g. a `Beam`, a `GaussianBeamlet` or a
 `CollimatedSource`) to the `gui`: it is traced through the `system` with every solve, rendered with
 the `beam_kwargs` (those of `live_render!` of the beam, as an entry of the `beam_kwargs` of
-`live_view`; by default in the color of its wavelength, e.g. red for 632.8 nm and a dark red for
-infrared light, and a beam group with `render_every = 5`; `beam_kwargs = (; color = :blue)` sets
-another color) and gets a marker, with
+`live_view`; by default each ray in the color of its wavelength, i.e. `color = :wavelength`, e.g.
+red for 632.8 nm and a dark red for infrared light, and a beam group with `render_every = 5`;
+`beam_kwargs = (; color = :blue)` sets one color for all rays) and gets a marker, with
 which it is selected and moved like the sources the view started with, also in a view with
 `movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
 source does not change; by default the system that gets a component, otherwise the first system of

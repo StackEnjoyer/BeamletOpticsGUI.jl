@@ -67,8 +67,10 @@ per window. Closing a window ends the link.
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and
 gives it a marker, `remove_component!(gui, source)` removes it, also the last one. Every source is
-drawn in the color of its wavelength (dark red for infrared), unless its `beam_kwargs` set a `color`
-(`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`). A view may start
+drawn with `color = :wavelength` (every ray in the display color of its own wavelength, dark red
+for infrared and dark violet for ultraviolet), unless its `beam_kwargs` set a fixed `color` for all
+rays (`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`;
+`(; color = :wavelength)` or `(:wavelength, alpha)` are accepted). A view may start
 without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
 `add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)")` gives the constructor call of an
 object built in code (also of a source): add it in the pose in which `code` constructs it and move

@@ -3,7 +3,7 @@ name: beamletopticsgui
 description: Build, extend and debug the interactive GUI of BeamletOptics.jl with BeamletOpticsGUI.jl (Julia). Use when writing Julia code that uses live_view, kinematic_controls!, view_cube!, cards (card_rows, CardRow, CardWidget), add_panel!, add_controls! or add_tool!, or when the user wants an interactive window in which optical components are moved with the mouse and the beams and detectors update live.
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 metadata:
-  beamletopticsgui-version: "0.2"
+  beamletopticsgui-version: "0.3"
 ---
 
 You are helping the user with the interactive GUI **BeamletOpticsGUI.jl**: a Julia package that opens a
@@ -16,7 +16,7 @@ When this Skill is active:
   axis (+y), components, beams, `solve_system!`, detectors and the rendering functions (`render!`,
   `live_render!`, look, camera helpers) are described there. Use it for everything except the window. If it
   is not installed: `using BeamletOptics; BeamletOptics.install_agent_skill()`.
-- This skill describes BeamletOpticsGUI **0.2** (`beamletopticsgui-version` above). Check the installed
+- This skill describes BeamletOpticsGUI **0.3** (`beamletopticsgui-version` above). Check the installed
   version with `julia --project=<env> -e 'using BeamletOpticsGUI; println(pkgversion(BeamletOpticsGUI))'`.
   If its major or minor version differs, treat the signatures in these files as possibly outdated,
   confirm them with the docstrings and tell the user that

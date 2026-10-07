@@ -1,6 +1,6 @@
 name = "BeamletOpticsGUI"
 uuid = "d62ba671-5e61-47cc-8a7f-19d21d414e61"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Hugo Uittenbosch <hugo.uittenbosch@dlr.de>, Oliver Kliebisch <oliver.kliebisch@dlr.de> and Thomas Dekorsy <thomas.dekorsy@dlr.de>"]
 
 [workspace]
@@ -24,7 +24,7 @@ BeamletOpticsGUIGLMakieExt = "GLMakie"
 
 [compat]
 AbstractTrees = "0.4"
-BeamletOptics = "0.13.12"
+BeamletOptics = "0.14"
 GLMakie = "0.13"
 GeometryBasics = "0.5"
 InteractiveUtils = "1"

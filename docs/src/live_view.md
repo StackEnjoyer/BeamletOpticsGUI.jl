@@ -147,13 +147,17 @@ The results of a detector are on its card. Every card has pages, chosen by a pag
 and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
 has a third page, "Results", between them, which shows the detector view. The card of a source (a
 beam, a beam group or a Gaussian beamlet) has the page "Color": a menu sets the color in which it is
-drawn ("wavelength" for the color of its wavelength, in which every source starts, "layout" for the
-color of the layout, or a fixed color), a box takes any color as a hex value such as `#ff8000` or
-by its name, a slider sets the opacity, e.g. to see the components through the envelope of a
+drawn ("wavelength" draws every ray in the display color of its own wavelength (`wavelength_color`
+of BeamletOptics), so the beams of a group with several wavelengths, or the beams behind a
+dispersive prism, each get their own color; every source starts in this mode. "layout" is the color
+of the layout, a preset or a hex value is one fixed color for all rays; choosing "wavelength" again
+returns to the colors per ray), a box takes any color as a hex value such as `#ff8000` or
+by its name (in the mode "wavelength" it shows the color of the wavelength of the first ray), a slider sets the opacity, e.g. to see the components through the envelope of a
 Gaussian beamlet, and another one the line width of its rays. They only change the display: nothing
 is traced again, and they are not part of [`export_changes`](@ref). In a script,
 `beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5, linewidth = 2))` sets them from the
-start. A card with a single
+start; `color = :wavelength` (or `(:wavelength, alpha)`) is the default mode. If a long solve runs
+in the background while the color or the length changes, that solve starts again. A card with a single
 page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
 detector and on "Pose" for every other object; a pinned card keeps its page.
 

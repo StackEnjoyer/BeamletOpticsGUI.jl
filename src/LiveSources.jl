@@ -27,31 +27,12 @@ _source_system(::LiveView, x) =
     throw(ArgumentError("`system` must be a system of the live view, got a $(typeof(x))"))
 
 """
-    _wavelength_color(λ) -> RGBf
-
-The color in which a source with the wavelength `λ` [m] is drawn: the color of its light between
-380 nm and 780 nm (the piecewise linear approximation of the spectrum by D. Bruton, with a gamma of
-0.8), dimmed to half towards both ends of the spectrum. Beyond them the color of the end is kept,
-i.e. a dark violet for ultraviolet and a dark red for infrared light, e.g. 1064 nm.
+The color of a source that is added to the live view, as a kwarg of its `live_render!`:
+`:wavelength`, i.e. each of its rays in the color of its wavelength, see
+`BeamletOptics.wavelength_color`; nothing for a source without rays.
 """
-function _wavelength_color(λ::Real)
-    nm = clamp(1e9 * Float64(λ), 380.0, 780.0)
-    r, g, b = nm < 440 ? ((440 - nm) / 60, 0.0, 1.0) :
-              nm < 490 ? (0.0, (nm - 440) / 50, 1.0) :
-              nm < 510 ? (0.0, 1.0, (510 - nm) / 20) :
-              nm < 580 ? ((nm - 510) / 70, 1.0, 0.0) :
-              nm < 645 ? (1.0, (645 - nm) / 65, 0.0) : (1.0, 0.0, 0.0)
-    # The eye is less sensitive towards the ends of the spectrum
-    f = nm < 420 ? 0.5 + 0.5 * (nm - 380) / 40 : nm > 700 ? 0.5 + 0.5 * (780 - nm) / 80 : 1.0
-    return RGBf((r * f)^0.8, (g * f)^0.8, (b * f)^0.8)
-end
-
-"""
-The color of a source that is added to the live view, as a kwarg of its `live_render!`: the color
-of its wavelength, see `_wavelength_color`; nothing for a source without rays to take it from.
-"""
-_wavelength_style(src::Union{BMO.Beam, BMO.GaussianBeamlet, BMO.AstigmaticGaussianBeamlet}) =
-    (; color = _wavelength_color(BMO.wavelength(_first_ray(src))))
+_wavelength_style(::Union{BMO.Beam, BMO.GaussianBeamlet, BMO.AstigmaticGaussianBeamlet}) =
+    (; color = :wavelength)
 _wavelength_style(src::BMO.AbstractBeamGroup) =
     isempty(BMO.beams(src)) ? (;) : _wavelength_style(first(BMO.beams(src)))
 _wavelength_style(_) = (;)
@@ -60,8 +41,8 @@ _wavelength_style(_) = (;)
     _source_kwargs(src, beam_kwargs) -> NamedTuple
 
 The kwargs of a source that is added to the live view from its `beam_kwargs`, which are those of
-the `beam_kwargs` of `live_view`: by default it is drawn in the color of its wavelength (see
-`_wavelength_color`), like the sources of the start (see `_beam_style`), and a beam group with
+the `beam_kwargs` of `live_view`: by default it is drawn in the colors of its wavelengths (see
+`_wavelength_style`), like the sources of the start (see `_beam_style`), and a beam group with
 `render_every = 5`. Throws an `ArgumentError` for `show_polarization = true` of a
 source without polarized rays and for `show_beams = true` of one that is no Gaussian beamlet.
 """
