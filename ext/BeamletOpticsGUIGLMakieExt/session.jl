@@ -147,8 +147,8 @@ end
 Opens a live view of the `fixture` (see `_fixture`) in the `layout` in an invisible window and uses
 it with the mouse and the keys: hover, selection, dragging in both modes and with the gizmo, key
 steps, undo, snapping, the camera, the view cube, the inspection of a beam, clip planes, the
-catalog, placing, copy and paste, removing, and in the app layout the object tree and the splitters
-of the sidebars. Returns the live view and its screen, which the caller closes.
+catalog, placing, copy and paste, removing, and in the app layout the object tree (with the button
+"+" of the system, which picks its members) and the splitters of the sidebars. Returns the live view and its screen, which the caller closes.
 
 The steps do not depend on the time that they take, which is much longer while they are compiled:
 the animations of the camera are run to their end and the solves are awaited (see `_settle!`), and
@@ -331,6 +331,20 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             frame!()
             tree.eye_clicked[] = fx.detector
             frame!()
+        end
+        step("tree: + of the system (pick its members)") do
+            i = findfirst(r -> !isnothing(r.buttons), tree.rows)
+            # the pixel of the button "+" of the row of the system
+            o = minimum(tree.scene.viewport[])
+            a = (Float64(o[1] + GUI._button_columns(tree).add), Float64(o[2] + GUI._row_y(tree, i)))
+            _click!(gui, a)
+            frame!()
+            pick = GUI._member_pick(gui)
+            _check(!isnothing(pick) && pick.add && pick.sys === fx.system, "the click did not start the pick")
+            # a second click ends it
+            _click!(gui, a)
+            frame!()
+            _check(isnothing(GUI._member_pick(gui)), "the second click did not end the pick")
         end
         # the splitters, the right one with the view of the detector in the inspector
         step("splitter: drag the right sidebar") do
