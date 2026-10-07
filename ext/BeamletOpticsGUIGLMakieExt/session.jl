@@ -312,6 +312,29 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _check(isnothing(gui.objects.inspected), "Esc did not close the card of the system")
     end
 
+    # Systems of the window: a new one, a member of both systems, tracing per system, its removal
+    step("system: add, shared mirror, auto trace off, Trace, remove") do
+        n = length(GUI._systems(gui))
+        sys = add_system!(gui)
+        frame!()
+        _check(length(GUI._systems(gui)) == n + 1 && gui.objects.inspected === sys, "no system was added")
+        add_component!(gui, fx.mirror; system = sys, select = false)
+        settle!()
+        _check(GUI._member_systems(gui, fx.mirror) == [fx.system, sys], "the mirror is not in both systems")
+        GUI._set_system_auto!(gui, sys, false)
+        GUI._inspect!(gui, sys)
+        frame!()
+        button(name) = _rect_center(GUI._card_widget(
+            only(c for c in GUI._edit_cards(gui) if !isnothing(GUI._card_widget(c, name))), name))
+        _click!(gui, button(:trace))
+        settle!()
+        _check(!GUI._system_stale(gui, sys), "Trace did not trace the system")
+        _click!(gui, button(:remove))
+        settle!()
+        _check(length(GUI._systems(gui)) == n && GUI._member_systems(gui, fx.mirror) == [fx.system],
+            "the system was not removed")
+    end
+
     step(() -> (_move!(gui, _center(gui)); _key!(gui, Keyboard.insert); frame!()), "catalog: Insert")
     step(() -> (_key!(gui, Keyboard.escape); frame!()), "catalog: escape")
     # a component of the catalog, which can be copied

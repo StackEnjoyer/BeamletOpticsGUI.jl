@@ -383,6 +383,17 @@ shows several systems. An added source is its constructor call, its `rotate3d!` 
 `translate_to3d!` and the `solve_system!(system, name)` that traces it; a removed source that the
 view started with is a comment, since the script that traces it is not known.
 
+The systems are listed as well (see `add_system!`, [`remove_system!`](@ref) and the keyword
+`system` of [`add_component!`](@ref)). A system that was added in the window is a comment and
+`systemN = System()`, named like the systems above; a system of the start that was removed is a
+comment. An object that the view started with and that became a member of another system, or left
+one, gets a `push!(system, name)` or a `delete!(system, name)` per system under a comment that
+names the object, or a comment if its variable is not known. An object that was added at runtime is
+pushed to each of its systems, or marked by a comment if it has none, i.e. it is not traced. A
+source that the view started with and that changed its system is a comment, since the script that
+traces it is not known; an added source without a system is a comment instead of its
+`solve_system!`.
+
 The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
 that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as
 `Detector` or `live_view`, and not `system` or `gui`; then after the label in lowercase if that is
@@ -623,6 +634,11 @@ The script consists of, in this order:
 5. after the comment line `# Live view`: `using BeamletOpticsGUI, GLMakie` and the call
    `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
    `labels`. The lines above it run without a window.
+6. `add_component!(gui, name; system = :none)` for each object and source without a system, which
+   the call of `live_view` does not contain: it is shown, but not traced. A source without a system
+   has no `solve_system!` and no pair in `live_view`.
+
+An object that belongs to several systems is constructed once and listed in each of them.
 
 An object or source of the catalog (see [`component_catalog`](@ref)), or one that was added with
 its `code` (see [`add_component!`](@ref)), is its constructor call
@@ -638,8 +654,9 @@ that the code does not use otherwise, i.e. no name exported by BeamletOptics or 
 `Detector` or `live_view`, and not `system` or `gui`; then after the label in lowercase if that is
 free, e.g. `detector`, otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
 several. Components that were removed are not part of the script. Neither are the looks (colors,
-opacity, hidden objects), the clip planes, the extras and the other keyword arguments of
-`live_view`.
+opacity, hidden objects), the clip planes, the objects of the `extras` kwarg of `live_view` and its
+other keyword arguments. A component that was added without a system or taken out of its last one
+is part of the script (item 6), unlike an extra.
 
 ```julia
 gui = live_view(System())

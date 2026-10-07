@@ -45,7 +45,8 @@ The card of the selected object also has, on its page "Pose", the keyboard step 
 "Move"/"Rotate" control (in sync with the key `m`); the page "Properties" lists the properties of
 the object (the same rows as the inspector of the app). Objects without a `labels` entry
 get automatic names ("Mirror 1", "Clip plane 2") in the cards, menus and tree. The card of a system
-(number of objects, rays, solve time) opens from its entry in the component menu of the tool rail (compact) or its
+(the system widget: name, "auto" and "Trace", "+" and "−" for its members, the list of its
+members, number of objects, rays, solve time, "remove") opens from its entry in the component menu of the tool rail (compact) or its
 row in the tree (app), without a selection; non-movable objects are shown the same way (pose
 inputs are rejected). A click on an object of a group opens a small menu under the cursor ("Select <group>" under
 the cursor, so a second click selects the top-level group, and "More ›"); "More ›" opens the
@@ -91,8 +92,10 @@ running trace stays. `Shift+V` hides the help as well (only the 3D view, for scr
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
 `extras = [housing => (; color = :lightblue), ...]` (`obj` or `obj => render_kwargs`), not into
 the system and not via `render!(gui.ax, ...)`: extras cost nothing in the solves, but can be
-selected, moved, hidden and exported like components. An extra must not also be an object of a
-system (`ArgumentError`). The card of a `NonInteractableObject`/`MeshDummy` or
+selected, moved, hidden, removed and exported like components. An extra is an object without a
+system (tree row "No system"); it must not also be an object of a system at the start
+(`ArgumentError`), later it can become a member of one with `add_component!(gui, obj; system =
+sys)`. The card of a `NonInteractableObject`/`MeshDummy` or
 `IntersectableObject` has an "opacity" slider (0-100 %, 0 % hides it); below 50 % a click in the
 3D view passes through it (select it in the tree or the component menu).
 

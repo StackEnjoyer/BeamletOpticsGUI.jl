@@ -90,7 +90,9 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
 A system (subtype of `AbstractSystem`) has a card too: shown, without gizmo and without a selection
 (`gui.controls.selected[]` stays `nothing`), by its entry in the component menu (compact) or its row in
 the tree (app); `Esc`, a click on empty space or selecting an object closes it. Default rows: number
-of objects, number of rays, duration of the last solve. Same steps as above, but no pose. Extend the
+of objects, number of rays, duration of the last solve; the window puts its own rows around them
+(name, "auto" and "Trace", "+" and "−", the list of the members, "remove"), and your `card_rows`
+method for the system type is called there. Same steps as above, but no pose. Extend the
 default via `invoke`. Objects that are not movable are shown the same way (pose inputs rejected).
 
 ```julia

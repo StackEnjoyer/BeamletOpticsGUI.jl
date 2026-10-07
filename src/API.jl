@@ -19,8 +19,14 @@ function kinematic_controls! end
 Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
 without a source, e.g. an empty table `live_view(System())` that gets its sources in the window: a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
-sliders. After each change, all detectors are emptied, all systems are solved again and the beams
+sliders. After each change, the detectors are emptied, the systems are solved again and the beams
 and the shown detector views are updated. Returns a `LiveView`, which can be shown via `display`.
+
+A source is given once: `live_view(sys1 => beam, sys2 => beam)` throws an `ArgumentError`, since a
+source belongs to at most one system. Systems are added and removed in the window
+([`add_system!`](@ref), [`remove_system!`](@ref)), an object may belong to several systems or to
+none, and each system is traced on its own; see "Systems" and "Tracing per system" in the method
+below.
 
 The card of a `Detector` has a page "Results" with its detector view (spot diagram, PSF or
 intensity, with metrics such as centroid, RMS or 1/e² radius and power), which collapses to a
@@ -36,9 +42,11 @@ these detectors at start, with `kind` one of `:auto`, `:spot`, `:psf` and `:inte
 options `n`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
-`edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects that are rendered,
-selected, moved and hidden like the components, but never traced, e.g. a housing from an STL file
-(`MeshDummy`); the card of such mechanics has an opacity slider. `background_card = obj` (or
+`edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects without a system that are
+rendered, selected, moved and hidden like the components, but never traced, e.g. a housing from an
+STL file (`MeshDummy`); the card of such mechanics has an opacity slider. `auto_trace` is the start
+value of the auto tracing of every system. `sidebar_width` and `dock_height` set the start sizes
+of the sidebars and the dock of `layout = :app`, which are resized with the mouse. `background_card = obj` (or
 `gui -> obj`, `nothing` for none) shows the card of an object without a place in the scene, e.g.
 an environment, after a click on the empty background while nothing is selected; its
 [`card_rows`](@ref) get `obj` itself. `layout = :app` arranges the window like an application, with a toolbar,
@@ -262,7 +270,8 @@ number of hits), mechanics (`NonInteractableObject`, e.g. a
 `MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
 (`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
 shows the number of its objects, the number of rays of its sources that are on and the duration of
-the last solve. Add a method for an own type to show its properties or controls on its card, e.g.
+the last solve; the window adds the rows of the system widget to these (its name, its tracing, its
+members and "remove", see "Systems" of [`live_view`](@ref)), which are not part of this method. Add a method for an own type to show its properties or controls on its card, e.g.
 
 ```julia
 BeamletOpticsGUI.card_rows(l::MyLens) = (pose_card_rows(l)...,

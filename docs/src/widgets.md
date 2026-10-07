@@ -123,8 +123,10 @@ A system (a subtype of `AbstractSystem`) has a card as well: it is shown, withou
 without a selection (`gui.controls.selected[]` stays `nothing`), when its entry in the component menu
 (`layout = :compact`) or its row in the object tree (`layout = :app`) is clicked, and closed by
 `Esc`, a click on empty space or the selection of an object. By default, it shows the number of its
-objects, the number of rays and the duration of the last solve. The steps are those of the card of a
-type, except that a system has no pose. Extend the default rows via `invoke`:
+objects, the number of rays and the duration of the last solve; the window adds the rows of the
+system widget around them (its name, its tracing, "+" and "−", the list of its members and "remove",
+see [Several systems](@ref)), and calls your `card_rows` method there. The steps are those of the
+card of a type, except that a system has no pose. Extend the default rows via `invoke`:
 
 ```julia
 # A system with a name, traced like a `System`

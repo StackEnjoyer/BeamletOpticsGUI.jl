@@ -332,8 +332,16 @@ function _finish!(gui::LiveView, job::_SolveJob)
         _fail!(gui, e)
         return false
     end
-    # The systems that were traced are up to date, see `_trace_set`
-    _solves(job) && _set_fresh!(gui, job.systems)
+    if _solves(job)
+        was_stale = gui.trace.stale
+        # The systems that were traced are up to date, see `_trace_set`
+        _set_fresh!(gui, job.systems)
+        # The cards that say which systems are outdated were updated before, see `_apply!`
+        if was_stale
+            _update_inspector!(gui)
+            _update_cards!(gui)
+        end
+    end
     return true
 end
 

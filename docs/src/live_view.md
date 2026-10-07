@@ -72,6 +72,11 @@ receiver path of a lidar, which are solved with different sources:
 gui = live_view(system_tx => beam_tx, system_rx => source_rx)
 ```
 
+A source is given once: a beam in two pairs, `live_view(sys1 => beam, sys2 => beam)`, throws an
+`ArgumentError`, since a source belongs to at most one system. One system may have several sources,
+`live_view(sys => beam1, sys => beam2)`. Systems that share objects are described in
+[Several systems](@ref).
+
 A system can also be shown without a source, e.g. an empty table `live_view(System())`: its sources
 are added in the window, from the group "Sources" of the catalog, or from code, see
 [Adding and removing components](@ref components_page).
@@ -85,9 +90,60 @@ direction, the green axis is its direction. If a marker covers small components,
 toggle of the tool rail (or the toolbar) or the key `1` hides all markers and shows them again, `show_sources =
 false` starts with hidden markers. Pass `movable_sources = false` to omit the markers altogether.
 
+## Several systems
+
+A view holds any number of systems. They are added and removed in the window, and an object
+belongs to any number of them, or to none, and is drawn once. A source belongs to at most one
+system. The example is a transmitter and a receiver that share a mirror, e.g. of a lidar:
+
+```julia
+gui = live_view(tx => beam_tx)
+rx = add_system!(gui; label = "Receiver")
+add_component!(gui, mirror; system = rx)    # the mirror of tx, now in both systems
+add_component!(gui, beam_rx; system = rx)   # a source, traced through rx
+```
+
+The mirror is one object with one pose, one card and one set of plots. The beams of both systems
+are traced through it, and moving it traces both systems (with auto tracing on for both). `remove_component!(gui, mirror; system = rx)`
+takes it out of the receiver only, without `system` it is removed from the view and from all its
+systems. The tool "System" of the tool rail (compact layout) or the toolbar (app layout) adds an
+empty system as well.
+
+In the window, the card of a system is the system widget. It has the name of the system in a box,
+the toggle "auto" and the button "Trace" of its tracing, the buttons "+" and "−" for its members,
+the list of its members and the button "remove". "+" starts a pick: a click on a component or on
+the marker of a source, in the 3D view, in the object tree (app layout) or in the component menu
+(compact layout), adds it to the system; "−" takes it out. Meanwhile everything that is not a member
+is see-through, and a chip next to the help pill names the pick. `Esc` ends it. In the app layout,
+"+" and "−" are also on the row of the system in the object tree, which lists each system with its
+sources and objects. An object of several systems is listed under each of them with the number of
+its systems; the row "No system" lists the sources and objects without a system and is shown only
+if there are any.
+
+An object without a system is what an extra is: shown, selected, moved, hidden and exported, but
+never traced. A component that is taken out of its last system, or added with
+`add_component!(gui, obj; system = :none)`, is in this state, and so is a source that is left
+without a system, except that a source without a system is not drawn either and keeps its marker.
+Removing a system with "remove" on its card or [`remove_system!`](@ref) deletes nothing: its sources
+and the objects that are in no other system stay in the view without a system. The last system of a
+view can not be removed.
+
+Each system is traced on its own. The toggle "auto" of the card switches the auto tracing of that
+system; the "Auto trace" toggle of the tool rail or the toolbar is on while any system is traced
+automatically, and switches all of them. `auto_trace` is the start value of every system. A change
+traces the affected systems that have auto tracing; the other affected ones become outdated, i.e.
+only their beams are dimmed. "Trace" on the card of a system traces only that system, the trace
+button and the key `t` trace all of them. Systems that share a `Detector` are always traced
+together, because a detector is emptied as a whole before a solve.
+
+[`export_changes`](@ref) and [`export_script`](@ref) write the memberships: the systems that were
+added in the window, a `push!` or `delete!` per object that changed its systems, and
+`add_component!(gui, x; system = :none)` lines for what has no system. See the docstring of
+[`live_view`](@ref), sections "Systems" and "Tracing per system".
+
 ## Extras and static context
 
-Objects that are not part of any `system`, e.g. a housing from a CAD file, are passed as `extras`,
+Objects without a system, e.g. a housing from a CAD file, are passed as `extras`,
 each optionally with the kwargs of its `render!` call:
 
 ```julia
@@ -97,7 +153,9 @@ gui = live_view(system => beam; extras = [housing => (; transparency = true, col
 
 Extras are never traced, so they cost nothing in the solves, and moving them does not solve the
 systems. Otherwise they act like components: they are selected with a click, in the component menu
-or in the object tree (under "Extras"), moved, hidden and exported. They do not block clicking on
+or in the object tree (under "No system"), moved, hidden and exported, and removed with "remove" or
+`Delete`. Later they can become a member of a system like any component, see [Several systems](@ref).
+They do not block clicking on
 the optics behind them: objects are picked by intersecting the camera ray with the optical
 components first, which a `NonInteractableObject` never intersects. The card of a
 `NonInteractableObject` (e.g. a `MeshDummy`) or an `IntersectableObject` has an "opacity" slider,
@@ -408,7 +466,8 @@ solves the systems (and updates the beams and detector views) on request: the `T
 of the tool rail (compact layout) or the toolbar (app layout), the key `t`, or switching the "Auto trace" toggle back on (which solves once if
 the state is outdated). While outdated, the beam plots are dimmed and the status line shows a
 hint. With `auto_trace = false`, the view also starts untraced, with the hint "not traced, press t
-to trace" in the status line, such that a slow system opens right away.
+to trace" in the status line, such that a slow system opens right away. The auto tracing can also be
+switched per system, with the toggle "auto" on the card of the system, see [Several systems](@ref).
 
 With `auto_trace = true`, `live_view` adapts to slow systems as well: if solving takes longer than
 `trace_budget` (30 ms by default), the components still follow the mouse immediately, while the
@@ -515,8 +574,8 @@ where `solve = true` solves the systems again after an input, like a move. The r
 an own component or system type, for own widget types and for controls without a scene object are
 on the page [Cards and widgets](@ref).
 
-The card of a system shows the number of its objects, the number of rays of its beams that are on
-and the duration of the last solve. A system is shown by its entry ("System 1", ...) in the component menu (compact layout) or by
+The card of a system shows its name, its tracing and its members, the number of its objects, the
+number of rays of its beams that are on and the duration of the last solve, see [Several systems](@ref). A system is shown by its entry ("System 1", ...) in the component menu (compact layout) or by
 a click on its row in the object tree (app layout), without a selection and without a gizmo, i.e.
 `gui.controls.selected[]` stays `nothing`. An object that is not movable is shown in the same way
 instead of being selected; its pose boxes reject inputs with a message in the status line. `Esc`, a
@@ -633,12 +692,14 @@ component or source that is moved, added, removed or edited in one of them chang
 one as well. Only the window in which something changed solves the systems, the other one shows
 the result. The switch of the auto tracing is shared: switched in one window, it is switched in
 the other one as well. The selection, the camera, colors, hidden objects, clip planes and the undo
-history are kept per window. Closing one of the windows ends the link.
+history are kept per window. Closing one of the windows ends the link. A system that is open in
+another window can not be removed with [`remove_system!`](@ref); close that window first.
 
 ## Adding and removing components
 
 Components can be added to a `System` of the view and removed again at runtime, from a catalog in
-the window or from code with [`add_component!`](@ref) and [`remove_component!`](@ref). See
+the window or from code with [`add_component!`](@ref) and [`remove_component!`](@ref); systems are
+added and removed with [`add_system!`](@ref) and [`remove_system!`](@ref). See
 [Adding and removing components](@ref components_page) and the section of the same name in the docstring of
 [`live_view`](@ref).
 
