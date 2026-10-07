@@ -315,12 +315,11 @@ _marker_stroke(layout::AbstractLiveLayout) = layout.theme.marker_stroke
 
 """
 Default kwargs of `live_render!` of the source `beam` in the `layout`: the colors of its wavelengths
-(see `_wavelength_style`) for beams, Gaussian beamlets and beam groups, nothing for anything else
-and for astigmatic beam groups. `layout.theme.rays` is the color of the entry "layout" of the menu
-of colors of the card of a source.
+(see `_wavelength_style`) for beams, Gaussian beamlets and beam groups, nothing for anything else.
+`layout.theme.rays` is the color of the entry "layout" of the menu of colors of the card of a
+source.
 """
 _beam_style(::AbstractLiveLayout, beam) = _wavelength_style(beam)
-_beam_style(::AbstractLiveLayout, ::BMO.AstigmaticBeamGroup) = (;)
 
 """
     _theme_render!(layout, h::AbstractSystemRenderHandle)

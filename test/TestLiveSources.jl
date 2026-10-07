@@ -208,6 +208,18 @@ const GUI = BeamletOpticsGUI
         @test all(c -> _is(c, Makie.to_color(:black)), _colors(other))
         @test GUI._color_preset(gui, other) == "black"
         close(gui)
+
+        # a group of astigmatic beamlets as well, as a source of the start and as an added one
+        astigmatic() = SphericalGaussianBeamletSource([0.0, 0, 0], [0.0, 1, 0], deg2rad(2), 532e-9;
+            num_rings = 2, num_rays = 40)
+        first_group, added = astigmatic(), astigmatic()
+        gui = _live_view(System([_mirror()]) => first_group)
+        add_component!(gui, added)
+        for src in (first_group, added)
+            @test BMO.render_settings(_main_handle(src)).color === :wavelength
+            @test GUI._color_preset(gui, src) == "wavelength"
+        end
+        close(gui)
     end
 
     @testset "overlays of an added source" begin
