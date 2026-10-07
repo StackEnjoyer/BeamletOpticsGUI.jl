@@ -324,6 +324,36 @@ function _build_view!(gui::AppView, c::_DockedCard, w::Real)
 end
 
 """
+    _resize_docked_views!(gui::AppView)
+
+The detector views of the docked cards of the `gui` take the width of the inspector, e.g. while the
+right sidebar is resized: those that are shown, the others when their page is shown, see
+`_show_view!`. Their kind, their options and the limits that the mouse set are kept.
+"""
+function _resize_docked_views!(gui::AppView)
+    w = _docked_width(gui)
+    for c in _docked_cards(gui)
+        (c.view_part.shown && !isnothing(c.view)) && _resize_view!(c.view, w, w)
+    end
+    return nothing
+end
+
+"""
+    _on_inspector_resized!(gui::AppView)
+
+Fits the inspector of the `gui` to the width of the right sidebar after it was resized: the
+detector views (see `_resize_docked_views!`) and the texts of the header and of the heads of the
+pinned cards, which are shortened to their room. Typed inputs are kept.
+"""
+function _on_inspector_resized!(gui::AppView)
+    gui.layout.right.shown || return nothing
+    _resize_docked_views!(gui)
+    _show_header!(gui, gui.layout.inspector.shown)
+    _refresh_inspector!(gui)
+    return nothing
+end
+
+"""
 Expands the view of the docked card `c` or collapses it to its thumbnail, by its chevrons or a
 click on the thumbnail. The card remembers the state. An expanded view is computed on its full
 grid, see `_view_needed!`.

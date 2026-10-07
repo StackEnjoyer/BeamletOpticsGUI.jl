@@ -52,8 +52,8 @@ and implements
 
 - `_build_layout(layout::L, fig, spec) -> NamedTuple`: creates the widgets in the `Figure` `fig`,
   which `_figure(layout, size)` created. `spec` holds the inputs of `live_view`: `slider_specs`,
-  `labels`, `lighting`, `view_cube`, `auto_trace`, `clip_beams`, `orthographic`, `show_sources` and
-  `view_specs`. The result has the fields
+  `labels`, `lighting`, `view_cube`, `auto_trace`, `clip_beams`, `orthographic`, `show_sources`,
+  `view_specs` and `part_sizes`, the result of `_part_sizes`. The result has the fields
   - `ax`: the `LScene` of the 3D view, with `studio_lighting!` applied, and `cube`: its view cube
     or `nothing`
   - `sliders`: a `SliderGrid` of `spec.slider_specs` or `nothing`, `status`: the `Label` of the
@@ -72,6 +72,11 @@ and implements
 and optionally, with defaults for any layout,
 
 - `_figure(layout::L, size)`: the `Figure`, and `_default_size(layout::L)`: its size unless given
+- `_part_sizes(layout::L, sidebar_width, dock_height, size)`: checks the `sidebar_width` and
+  `dock_height` kwargs of `live_view` for a figure of the `size` before the window is built and
+  returns them as the layout uses them, in `spec.part_sizes` of `_build_layout`; a layout without
+  such parts ignores them (the default). `_part_size_kwargs(gui)` returns these kwargs for the
+  sizes that the parts have now, e.g. for a second window (none by default)
 - `_connect_layout!(gui::LiveView{L})`: connects the widgets that only the layout has, e.g.
   collapsing; its listeners belong in `gui.controls.listeners`; `_close_layout!(gui)` stops what
   runs besides them when the view is closed, e.g. timers
@@ -140,6 +145,25 @@ this way, and [`add_tool!`](@ref) its tools with the group `:user`.
 The layouts of `live_view` are `CompactLayout` and `AppLayout`.
 """
 abstract type AbstractLiveLayout end
+
+"""
+    _part_sizes(layout, sidebar_width, dock_height, size)
+
+The `sidebar_width` and `dock_height` kwargs of [`live_view`](@ref) as the `layout` uses them in a
+figure of the `size`, see `AbstractLiveLayout`: `nothing` for a layout without sidebars and a dock,
+which ignores them, e.g. the compact layout. A layout with such parts throws an `ArgumentError` for
+values outside of its limits.
+"""
+_part_sizes(::AbstractLiveLayout, _, _, _) = nothing
+
+"""
+    _part_size_kwargs(gui) -> NamedTuple
+
+The `sidebar_width` and `dock_height` kwargs of [`live_view`](@ref) with the sizes that the parts
+of the layout of the `gui` have now, e.g. after they were dragged, for a window that takes them
+over; none for a layout that ignores these kwargs, see `_part_sizes`.
+"""
+_part_size_kwargs(_) = (;)
 
 """
     _UserPanel
@@ -972,6 +996,14 @@ actions in the 3D view are unchanged:
 The sidebars and the dock can be collapsed via the toolbar, the 3D view then takes their space.
 The component menu of the compact layout is replaced by the tree.
 
+The sidebars and the dock are resized with the mouse: a drag at the edge between a sidebar and the
+3D view changes the width of the sidebar within 160 and 600 px, a drag at the upper edge of the
+dock its height within 80 px and 70 % of the height of the window. The edge is marked by a line
+while the mouse is over it. The object tree, the rows of the cards and the detector views follow
+the width, the tiles of the docked catalog are arranged again when the drag ends. A double click
+on the edge restores the size of the start, see the `sidebar_width` and `dock_height` kwargs. A
+part that is collapsed comes back with the size it had.
+
 # Compact layout
 
 With `layout = :compact`, the 3D view fills the window; the panels of [`add_panel!`](@ref), if
@@ -1150,6 +1182,13 @@ them changes in the other one as well, and only the window in which something ch
   draws the rays, the markers and the dark materials of the render look (detectors, polarizers) in
   lighter colors; `:light` keeps the colors of the default look.
 - `size`: size of the figure, by default `(1400, 800)` for `:compact` and `(1600, 950)` for `:app`
+- `sidebar_width = (240, 300)`: [px] widths of the left and the right sidebar of the app layout at
+  the start, a single number sets both; each within 160 and 600, otherwise an `ArgumentError` is
+  thrown. Ignored by the compact layout. See "App layout" for resizing them with the mouse.
+- `dock_height = nothing`: [px] height of the analysis dock of the app layout at the start, within
+  80 and 70 % of the height of the figure, otherwise an `ArgumentError` is thrown; `nothing` is
+  36 % of the height of the window, which then follows the size of the window. Ignored by the
+  compact layout.
 - `auto_trace = true`: solves the systems at the start and after each change, otherwise only on
   request, see "Manual tracing"
 - `detectors = :auto`: every `Detector` has the page "Results" on its card, no card is pinned at
@@ -1226,6 +1265,8 @@ function live_view(
         args::_ViewArg...;
         size = nothing,
         layout::Symbol = :compact,
+        sidebar_width = (240, 300),
+        dock_height = nothing,
         theme::Symbol = :light,
         auto_trace::Bool = true,
         detectors = :auto,
@@ -1287,9 +1328,12 @@ function live_view(
     table_spec = _table_spec(table)
 
     lay = _live_layout(layout, theme)
-    fig = _figure(lay, something(size, _default_size(lay)))
+    fig_size = something(size, _default_size(lay))
+    # Checked before the window is built; ignored by a layout without sidebars and a dock
+    part_sizes = _part_sizes(lay, sidebar_width, dock_height, fig_size)
+    fig = _figure(lay, fig_size)
     w = _build_layout(lay, fig, (; slider_specs, labels, lighting, view_cube, auto_trace,
-        clip_beams, orthographic, show_sources, view_specs))
+        clip_beams, orthographic, show_sources, view_specs, part_sizes))
     ax = w.ax
     # Pose, keyboard step and hide button of the selected object, next to it in the 3D view
     card = _ComponentCard(fig, lay, _card_z(1))

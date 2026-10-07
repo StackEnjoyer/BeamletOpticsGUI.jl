@@ -272,11 +272,12 @@ The tiles are built again when another group is chosen (see `_build_catalog_tile
 when another entry is chosen (see `_build_catalog_form!`) and, at the next frame while `dirty`,
 after a menu of a glass changed to or from "constant", see `_flush_catalog_form!`. `settle` holds
 the grids of a new form and its time until its boxes were moved once, see `_settle_catalog_form!`.
+The `style` changes when the place of the widgets gets another width, see `_restyle_catalog!`.
 """
 mutable struct _CatalogWidget
     const layout::GridLayout
     const theme::NamedTuple
-    const style::NamedTuple
+    style::NamedTuple
     const entries::Vector{CatalogEntry}
     const groups::Vector{String}
     const target::Label
@@ -601,6 +602,41 @@ function _select_catalog_entry!(gui::LiveView, w::_CatalogWidget, i::Integer)
     _show_catalog_entry!(w)
     _show_catalog_target!(gui, w)
     _build_catalog_form!(gui, w, String[_catalog_string(p) for p in w.entries[i].params])
+    return nothing
+end
+
+"""
+    _regrid!(grid::GridLayout, old::Int, new::Int)
+
+Arranges the content of the `grid`, which fills its rows with `old` cells each, in rows of `new`
+cells, in the same order, e.g. the tiles of the catalog. The blocks are moved, not built again:
+they keep their state and their listeners.
+"""
+function _regrid!(grid::GridLayout, old::Int, new::Int)
+    old == new && return nothing
+    for gc in copy(grid.content)
+        row, col = gc.span.rows.start, gc.span.cols.start
+        k = row == 1 ? col : (row - 1) * old + col
+        grid[fldmod1(k, new)...] = gc.content
+    end
+    _GLB.trim!(grid)
+    return nothing
+end
+
+"""
+    _restyle_catalog!(w, style)
+
+Lays out the catalog widget `w` by another `style` of the same kind (see `_catalog_style`), e.g.
+after its place got another width: the icons of the groups and the tiles of the entries are
+arranged in the rows of the `style`. The chosen group and entry, the form and the texts of its
+inputs are kept.
+"""
+function _restyle_catalog!(w::_CatalogWidget, style::NamedTuple)
+    old = w.style
+    w.style = style
+    groups = _GLB.gridcontent(first(w.group_buttons).box).parent
+    _regrid!(groups, old.groups_per_row, style.groups_per_row)
+    _regrid!(w.tiles, old.tiles_per_row, style.tiles_per_row)
     return nothing
 end
 

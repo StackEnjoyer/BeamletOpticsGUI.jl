@@ -62,6 +62,9 @@ describe it as available in docs or the skill.
 - `src/LiveScroll.jl`: scroll areas (`_ScrollArea`), e.g. the sidebars of the app layout: Makie has
   no scroll container and GLMakie does not clip, so the content lies behind the other parts of the
   window, which cover what is scrolled out, and gets the mouse only inside its region.
+- `src/LiveSplitter.jl`: splitters (`_Splitter`, `_Splitters`), e.g. of the sidebars and the dock of
+  the app layout: the mouse drags the edge of a `_LayoutPart` to resize it, a double click restores
+  the size of the start. An invisible strip around the edge instead of a column or row of the layout.
 - `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes, the collapsible parts of the
   layouts (`_LayoutPart`, `_set_shown!`: the only way to collapse a part of the figure layout) and
   the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,

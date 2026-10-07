@@ -37,6 +37,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 |---------|---------|
 | `layout = :compact` or `:app` | the window layout (compact: 3D view fills the window, tools on demand in a tool rail over it; app: a tree, an inspector, a dock and a toolbar) |
 | `theme = :light` or `:dark` | colors of the whole window |
+| `sidebar_width = (240, 300)`, `dock_height = nothing` | app layout only (compact ignores them): start widths [px] of the left and right sidebar (a number sets both, each within 160 and 600) and start height [px] of the dock (within 80 and 70 % of the figure height; `nothing`: 36 % of the window); outside the limits throws `ArgumentError`. In the window: drag the edge of a sidebar or the upper edge of the dock, a double click restores the start size |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
 | `constraints = Dict(obj => (; move = (), rotate = (:x, :v)))` | lock axes of components |
 | `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; n, colorscale, colorrange, colorbar, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries go to `BeamletOptics.intensity`; `history` throws `ArgumentError`) |

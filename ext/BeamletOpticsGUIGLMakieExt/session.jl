@@ -79,6 +79,11 @@ end
 # The pixel in the middle of a block of the layout, e.g. of the title of a card
 _rect_center(block) = (r = block.layoutobservables.computedbbox[]; Tuple(Float64.(minimum(r) .+ widths(r) ./ 2)))
 _center(gui) = Tuple(Float64.(minimum(gui.ax.scene.viewport[]) .+ widths(gui.ax.scene.viewport[]) ./ 2))
+# The pixel in the middle of the splitter of a sidebar `part`: its right (`side = 1`) or left edge
+function _splitter_px(part, side)
+    r = part.box.layoutobservables.computedbbox[]
+    return (Float64((side > 0 ? maximum(r) : minimum(r))[1]), Float64(minimum(r)[2] + widths(r)[2] / 2))
+end
 
 _move!(gui, xy) = (_events(gui).mouseposition[] = (Float64(xy[1]), Float64(xy[2])))
 _press!(gui, button = Mouse.left) = (_events(gui).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.press))
@@ -142,8 +147,8 @@ end
 Opens a live view of the `fixture` (see `_fixture`) in the `layout` in an invisible window and uses
 it with the mouse and the keys: hover, selection, dragging in both modes and with the gizmo, key
 steps, undo, snapping, the camera, the view cube, the inspection of a beam, clip planes, the
-catalog, placing, copy and paste, removing. Returns the live view and its screen, which the caller
-closes.
+catalog, placing, copy and paste, removing, and in the app layout the object tree and the splitters
+of the sidebars. Returns the live view and its screen, which the caller closes.
 
 The steps do not depend on the time that they take, which is much longer while they are compiled:
 the animations of the camera are run to their end and the solves are awaited (see `_settle!`), and
@@ -327,7 +332,28 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             tree.eye_clicked[] = fx.detector
             frame!()
         end
+        # the splitters, the right one with the view of the detector in the inspector
+        step("splitter: drag the right sidebar") do
+            right = gui.layout.right
+            w = right.size.x
+            a = _splitter_px(right, -1)
+            _move!(gui, a)
+            frame!()
+            _drag!(gui, a, a .- (40, 0))
+            settle!()
+            _check(right.size.x == w + 40, "the drag did not resize the right sidebar")
+        end
         step(() -> (tree.clicked[] = fx.mirror; frame!()), "tree: click mirror")
+        step("splitter: drag the left sidebar") do
+            left = gui.layout.left
+            w = left.size.x
+            a = _splitter_px(left, 1)
+            _move!(gui, a)
+            frame!()
+            _drag!(gui, a, a .+ (50, 0))
+            settle!()
+            _check(left.size.x == w + 50, "the drag did not resize the left sidebar")
+        end
     end
 
     return gui, screen
