@@ -161,13 +161,19 @@ The view is expanded by default. Its chevron collapses it to a thumbnail (92 px)
 the key value (the power or the number of rays), the centroid and the radii; a click on the
 thumbnail or on its chevron expands it again. The expanded view has:
 
-- a switch of the kinds that the hits of the last solve offer, the toggles "log" and "profiles"
-  (field views only) and the button "fit"
+- a switch of the kinds that the hits of the last solve offer, the toggles "log", "profiles" and
+  "bar" (field views only) and the button "fit"
 - the plot in mm with equal scales, the y axis on the right, the ticks, tick labels and axis names
   inside the frame, and the centroid as a red cross
+- the colorbar of a field below the plot
 - the metrics in two lines below the plot
 
-"profiles" adds an axis with the intensity along x (red) and z (blue) through the centroid.
+"profiles" adds an axis with the intensity along x (red) and z (blue) through the centroid. "bar"
+switches the colorbar, which is on by default: it shows the colors of the image over its color
+range, in W/m² with an SI prefix for an intensity ("rel." for a PSF, which is normalized to its
+peak) and at the powers of ten with "log". The image is scaled to its maximum after every solve,
+i.e. it looks the same while the intensity changes; the ticks of the bar show the change. Use
+`colorrange` for a fixed scale.
 
 The kinds depend on the hits, the first is the default:
 
@@ -229,6 +235,7 @@ beam. The following options are not passed to `intensity`:
 | `n = 100`               | grid points per axis of a field                                      |
 | `colorscale = :linear`  | `:log` shows `log10` of the intensity, with a floor of 1e-4 times the maximum |
 | `colorrange = nothing`  | `(lo, hi)`: fixed color range of the intensity (in `log10` units for `:log`) |
+| `colorbar = true`       | `false` hides the colorbar below the plot of a field                  |
 | `profiles = false`      | `true` adds the axis with the intensity along x and z through the centroid |
 | `expanded = true`       | `false` starts the pinned card with the thumbnail                    |
 

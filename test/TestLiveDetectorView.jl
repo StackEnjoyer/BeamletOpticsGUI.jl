@@ -112,10 +112,39 @@ GLMakie.activate!(; visible = false)
         @test called ⊆ Set(["spot_diagram", "intensity", "hits", "hit_count", "is_cancelled"])
     end
 
+    @testset "scale of the colorbar" begin
+        I, psf = GUI._IntensityKind(), GUI._PSFKind()
+        # linear: the color range in a unit in which the largest tick has two to four digits
+        s = GUI._bar_scale(I, (0, 1350), :linear)
+        @test s.limits == (0.0, 1350.0) && s.unit == "W/m²" && s.ticks === GUI._VIEW_BAR_TICKS
+        s = GUI._bar_scale(I, (0, 25000), :linear)
+        @test collect(s.limits) ≈ [0, 25] && s.unit == "kW/m²"
+        s = GUI._bar_scale(I, (0, 0.5), :linear)
+        @test collect(s.limits) ≈ [0, 500] && s.unit == "mW/m²"
+        @test GUI._bar_scale(I, (0, 3e8), :linear).unit == "MW/m²"
+        @test GUI._bar_scale(I, (0, 1e-12), :linear).unit == "nW/m²"
+        s = GUI._bar_scale(psf, (0, 1), :linear)
+        @test s.limits == (0.0, 1.0) && s.unit == "rel."
+        # a degenerate range still has limits
+        @test GUI._bar_scale(psf, (2, 2), :linear).limits == (2.0, 3.0)
+        # logarithmic: the powers of ten in the range, without a prefix of the unit
+        s = GUI._bar_scale(I, (log10(0.135), log10(1350)), :log)
+        @test collect(s.limits) ≈ [log10(0.135), log10(1350)] && s.unit == "W/m²"
+        @test s.ticks == ([0.0, 1.0, 2.0, 3.0], ["10⁰", "10¹", "10²", "10³"])
+        # at most about five of them
+        s = GUI._bar_scale(I, (-12, 0), :log)
+        @test s.ticks == ([-12.0, -9.0, -6.0, -3.0, 0.0], ["10⁻¹²", "10⁻⁹", "10⁻⁶", "10⁻³", "10⁰"])
+        # a range without a power of ten shows the values
+        values, labels = GUI._bar_scale(I, (2.1, 2.4), :log).ticks
+        @test !isempty(values) && all(x -> 2.1 <= x <= 2.4, values)
+        @test labels == [GUI._fmt_sigdigits(10.0^x) for x in values]
+    end
+
     @testset "options" begin
         o = GUI._ViewOptions()
         @test o.kind == :auto && o.n == 100 && o.kwargs == (;) && o.colorscale == :linear
-        @test isnothing(o.colorrange) && !o.profiles && isnothing(o.window)
+        @test isnothing(o.colorrange) && o.colorbar && !o.profiles && isnothing(o.window)
+        @test !GUI._ViewOptions(o; colorbar = false).colorbar
         p = GUI._ViewOptions(o; kind = :psf, window = (-1, 1, -2, 2))
         @test p.kind == :psf && p.n == 100 && p.window === (-1.0, 1.0, -2.0, 2.0)
         @test o.kind == :auto
@@ -295,6 +324,33 @@ GLMakie.activate!(; visible = false)
         x0, x1, z0, z1 = _limits(v.ax)
         @test (x1 - x0) / (z1 - z0) ≈ 200 / 160
 
+        # the colorbar of a field, below the axis: as wide as the axis with its unit
+        @test v.bar_shown && v.bar_ax.blockscene.visible[] && v.bar_toggle.active[]
+        frame, bar, unit = Rect2f(v.ax.scene.viewport[]), Rect2f(v.bar_ax.scene.viewport[]),
+        Rect2f(v.bar_unit.layoutobservables.computedbbox[])
+        @test maximum(bar)[2] < minimum(frame)[2] && Makie.widths(bar)[2] ≈ GUI._VIEW_BAR_HEIGHT
+        @test abs(minimum(bar)[1] - minimum(frame)[1]) < 1 && maximum(bar)[1] < minimum(unit)[1]
+        @test abs(maximum(unit)[1] - maximum(frame)[1]) < 1
+        # its limits are the color range of the image in its unit, the colormap spans them
+        s = GUI._bar_scale(GUI._IntensityKind(), v.images[2].colorrange[], :linear)
+        @test endswith(s.unit, "W/m²") && v.bar_unit.text[] == s.unit
+        @test collect(_limits(v.bar_ax)) ≈ [s.limits..., 0, 1] && collect(v.bar_image[1][]) ≈ collect(s.limits)
+        @test v.bar_image.transformation.translation[][3] > 0
+        h_bar = GUI._view_size(v)[2]
+        _show!(v, pd, GUI._ViewOptions(; n = 30, colorbar = false))
+        @test !v.bar_shown && !v.bar_ax.blockscene.visible[] && !v.bar_toggle.active[]
+        @test GUI._view_size(v)[2] < h_bar - GUI._VIEW_BAR_HEIGHT
+        h_none = GUI._view_size(v)[2]
+        # without the bar, the profiles take its row
+        _show!(v, pd, GUI._ViewOptions(; n = 30, colorbar = false, profiles = true))
+        @test v.profiles_shown && !v.bar_shown
+        h_profiles = GUI._view_size(v)[2]
+        _show!(v, pd, GUI._ViewOptions(; n = 30, profiles = true))
+        @test maximum(Rect2f(v.profiles_ax.scene.viewport[]))[2] < minimum(Rect2f(v.bar_ax.scene.viewport[]))[2]
+        @test GUI._view_size(v)[2] - h_profiles ≈ h_bar - h_none atol = 1
+        _show!(v, pd, GUI._ViewOptions(; n = 30))
+        @test v.bar_shown && GUI._view_size(v)[2] ≈ h_bar
+
         # profiles of a field, below the axis
         @test !v.profiles_shown && !v.profiles_ax.blockscene.visible[]
         h = GUI._view_size(v)[2]
@@ -304,6 +360,8 @@ GLMakie.activate!(; visible = false)
         @test length(v.profile_x[1][]) == 30 && length(v.profile_z[1][]) == 30
         _show!(v, pd, GUI._ViewOptions(; n = 30, kind = :spot, profiles = true))
         @test !v.profiles_shown && GUI._view_size(v)[2] <= h + 1
+        # a spot diagram has no colorbar
+        @test !v.bar_shown && !v.bar_ax.blockscene.visible[]
 
         # the picture is drawn
         @test Makie.colorbuffer(fig) isa AbstractMatrix
@@ -351,10 +409,15 @@ GLMakie.activate!(; visible = false)
         @test v.log_toggle.active[]
         @test collect(v.images[2].colorrange[]) ≈ [-4, 0]
         @test v.images[2][3][] ≈ log10.(max.(r.data[3], 1e-4))
+        # the colorbar of the PSF: its decades on the logarithmic scale, no unit of an intensity
+        @test collect(_limits(v.bar_ax)) ≈ [-4, 0, 0, 1] && v.bar_unit.text[] == "rel."
+        @test v.bar_ax.xticks[] == ([-4.0, -3.0, -2.0, -1.0, 0.0], ["10⁻⁴", "10⁻³", "10⁻²", "10⁻¹", "10⁰"])
         GUI._show_result!(v, "PD", r, GUI._ViewOptions(o; colorscale = :linear))
         @test v.images[2][3][] ≈ r.data[3] && collect(v.images[2].colorrange[]) ≈ [0, 1]
+        @test collect(_limits(v.bar_ax)) ≈ [0, 1, 0, 1] && v.bar_ax.xticks[] === GUI._VIEW_BAR_TICKS
         GUI._show_result!(v, "PD", r, GUI._ViewOptions(o; colorrange = (0, 5)))
         @test collect(v.images[2].colorrange[]) == [0, 5] && !v.log_toggle.active[]
+        @test collect(_limits(v.bar_ax)) ≈ [0, 5, 0, 1]
         # showing a result never reports an option
         @test isempty(options)
 
@@ -627,7 +690,9 @@ GLMakie.activate!(; visible = false)
         empty!(options)
         v.log_toggle.active[] = true
         v.profiles_toggle.active[] = true
-        @test options == Any[:colorscale => :log, :profiles => true]
+        v.bar_toggle.active[] = false
+        @test options == Any[:colorscale => :log, :profiles => true, :colorbar => false]
+        pop!(options)
         v.log_toggle.active[] = false
         @test last(options) == (:colorscale => :linear)
         v.collapse_button.clicks[] += 1

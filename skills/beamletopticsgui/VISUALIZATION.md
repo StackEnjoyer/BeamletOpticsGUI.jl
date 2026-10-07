@@ -92,9 +92,12 @@ system (`ArgumentError`). The card of a `NonInteractableObject`/`MeshDummy` or
 **Detector view.** The results of a `Detector` are on the page "Results" of its card (no panels
 beside the 3D view or in the dock). The view is expanded by default; its chevron collapses it to a
 thumbnail (92 px: kind, key value, centroid, radii), a click on the thumbnail expands it. Expanded:
-a switch of the kinds, toggles "log" and "profiles" (field views only), button "fit", the plot in mm
-(centroid as a red cross) and two lines of metrics; "profiles" adds the intensity along x (red) and
-z (blue) through the centroid. Kinds (first = default): rays (`RayHit`, `PolarizedRayHit`): "Spot"
+a switch of the kinds, toggles "log", "profiles" and "bar" (field views only), button "fit", the
+plot in mm (centroid as a red cross), the colorbar of a field and two lines of metrics; "profiles"
+adds the intensity along x (red) and z (blue) through the centroid, "bar" (on by default) switches
+the colorbar below the plot (the color range of the image, in W/m² with an SI prefix, "rel." for a
+PSF, powers of ten with "log"; the image rescales to its maximum after every solve, so read
+changes of the intensity from the ticks of the bar or fix the scale with `colorrange`). Kinds (first = default): rays (`RayHit`, `PolarizedRayHit`): "Spot"
 and "PSF" (`intensity` of the rays, normalized to its peak, metrics without power); Gaussian
 beamlets: "Intensity" (W/m², with power) and "Spot" (1/e² outlines). A kind that the hits do not
 offer falls back to the default; without hits the view reads "no hits". Mouse as on a Makie `Axis`: wheel zooms
@@ -107,7 +110,7 @@ progress window and "Cancel"; above `trace_budget` a coarse preview comes first.
 are computed (page "Results" of the selected detector or of a pinned, not collapsed card; a
 thumbnail on at most 48 points per axis). A floating card with an expanded view is resizable by its
 grip at the bottom right (160 px up to the size of the 3D view). `detectors = [pd => (:intensity,
-(; n = 100, colorscale = :log, colorrange = (lo, hi), profiles = true, expanded = false, x_min, ...))]`
+(; n = 100, colorscale = :log, colorrange = (lo, hi), colorbar = false, profiles = true, expanded = false, x_min, ...))]`
 pins the card at start (floating next to the detector in compact, docked in the right sidebar in
 app); other entries go to `BeamletOptics.intensity`, `x_min`/`x_max`/`z_min`/`z_max` set the area
 that "fit" shows. `history` is gone (`ArgumentError`): record in `on_change`, plot in `add_panel!`.

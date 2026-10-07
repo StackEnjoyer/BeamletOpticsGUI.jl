@@ -817,9 +817,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         p0 = top_left(c)
         _move!(gui, _grip(c))
         @test GUI._over_grip(c, ev) && !GUI._over_handle(c, ev)
-        _drag!(gui, _grip(c), _grip(c) .+ Point2f(60, -40))
-        @test c.view_size ≈ Vec2f(340, 320) && v.ax.width[] ≈ 340 && v.ax.height[] ≈ 320
-        @test Makie.widths(Rect2f(v.ax.scene.viewport[])) ≈ Vec2f(340, 320)
+        _drag!(gui, _grip(c), _grip(c) .+ Point2f(60, 40))
+        @test c.view_size ≈ Vec2f(340, 240) && v.ax.width[] ≈ 340 && v.ax.height[] ≈ 240
+        @test Makie.widths(Rect2f(v.ax.scene.viewport[])) ≈ Vec2f(340, 240)
         @test isnothing(c.spot) && _eye(gui) ≈ eye && ctrl.selected[] === pd
         @test top_left(c) ≈ p0
         @test maximum(_rect(c.background))[1] ≈ p0[1] + 340 + 2 * GUI._CARD_PADDING

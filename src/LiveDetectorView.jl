@@ -52,14 +52,14 @@ const _THUMB_N = 48
 
 """
     _ViewOptions(; kind = :auto, n = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
-        profiles = false, window = nothing)
+        colorbar = true, profiles = false, window = nothing)
     _ViewOptions(opts; changed...)
 
 Options of the view of a detector: the `kind` (`:auto` or a name, see `_kind_name`; a kind that the
 hits do not offer falls back to their default), the grid `n` of a field and further `kwargs` of
 `BeamletOptics.intensity`, the `colorscale` (`:linear` or `:log`) and the fixed `colorrange` of a
-field (or `nothing`), whether the `profiles` of a field are shown, and the `window`
-`(x_min, x_max, z_min, z_max)` [m] of a field, `nothing` for the automatic limits of
+field (or `nothing`), whether the `colorbar` and the `profiles` of a field are shown, and the
+`window` `(x_min, x_max, z_min, z_max)` [m] of a field, `nothing` for the automatic limits of
 BeamletOptics. The second form copies `opts` with changed fields.
 """
 struct _ViewOptions
@@ -68,17 +68,18 @@ struct _ViewOptions
     kwargs::NamedTuple
     colorscale::Symbol
     colorrange::Any
+    colorbar::Bool
     profiles::Bool
     window::Union{Nothing, NTuple{4, Float64}}
 end
 
 _ViewOptions(; kind = :auto, n = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
-    profiles = false, window = nothing) =
-    _ViewOptions(kind, n, kwargs, colorscale, colorrange, profiles, _view_window(window))
+    colorbar = true, profiles = false, window = nothing) =
+    _ViewOptions(kind, n, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
 
 _ViewOptions(o::_ViewOptions; kind = o.kind, n = o.n, kwargs = o.kwargs, colorscale = o.colorscale,
-    colorrange = o.colorrange, profiles = o.profiles, window = o.window) =
-    _ViewOptions(kind, n, kwargs, colorscale, colorrange, profiles, _view_window(window))
+    colorrange = o.colorrange, colorbar = o.colorbar, profiles = o.profiles, window = o.window) =
+    _ViewOptions(kind, n, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
 
 _view_window(::Nothing) = nothing
 _view_window(w) = NTuple{4, Float64}(Float64.(Tuple(w)))
@@ -329,6 +330,9 @@ The view widget
 const _THUMB_SIZE = 92.0f0
 # Height of the axis of the profiles [px]
 const _VIEW_PROFILES_HEIGHT = 70.0f0
+# Height of the colorbar of a field without its tick labels [px], and its ticks
+const _VIEW_BAR_HEIGHT = 8.0f0
+const _VIEW_BAR_TICKS = Makie.WilkinsonTicks(4; k_min = 2)
 # Ticks of the expanded view, of the axis and of the labels drawn inside its frame
 const _VIEW_TICKS = Makie.WilkinsonTicks(5; k_min = 3)
 # Font size of the texts inside the frame, their offsets from the edges of the frame [px] and the
@@ -364,10 +368,12 @@ off-screen:
   metrics. A click on the thumbnail or the chevron calls `on_expanded(true)`.
 - expanded (`full`): the switch of the kinds that the hits offer (a `_Segmented` per set of kinds,
   built when it is first needed) and the chevron `collapse_button`, which calls
-  `on_expanded(false)`; below, the toggles "log" and "profiles" of a field and the button "fit";
-  the axis `ax` of `width` × `height` pixels in mm with equal scales, the y axis on the right and
-  all decorations inside its frame; the axis of the profiles of a field along x (red) and z
-  (blue) through the centroid, if its options ask for them; the metrics in two lines.
+  `on_expanded(false)`; below, the toggles "log", "profiles" and "bar" of a field and the button
+  "fit"; the axis `ax` of `width` × `height` pixels in mm with equal scales, the y axis on the
+  right and all decorations inside its frame; the colorbar of a field (`bar`: the colormap over
+  the color range of the image in the axis `bar_ax`, its ticks below and its unit right of it,
+  see `_set_bar!`) and the axis of the profiles of a field along x (red) and z (blue) through the
+  centroid, each if its options ask for it; the metrics in two lines.
 
 The tick labels and the axis names of `ax` are own texts in the axis (`xlabels`, `zlabels`,
 `xname`, `zname`, `status`), in front of the image by `_VIEW_OVERLAY_DZ`, since the decorations of
@@ -395,10 +401,15 @@ mutable struct _DetectorView
     const field_controls::GridLayout
     const log_toggle::Toggle
     const profiles_toggle::Toggle
+    const bar_toggle::Toggle
     const fit_button::Button
     const collapse_button::_IconButton
     const plots::GridLayout
     const ax::Axis
+    const bar::GridLayout
+    const bar_ax::Axis
+    const bar_unit::Label
+    const bar_image::AbstractPlot
     const profiles_ax::Axis
     const metrics_label::Label
     # the switch per set of kinds and the one that is shown
@@ -435,6 +446,7 @@ mutable struct _DetectorView
     extent::NTuple{4, Float64}
     status_text::String
     fields_shown::Bool
+    bar_shown::Bool
     profiles_shown::Bool
     # the limits of a spot diagram were changed by the mouse, they stay over new results
     zoomed::Bool
@@ -521,14 +533,26 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     log_toggle = Toggle(field_controls[1, 2]; toggle...)
     Label(field_controls[1, 3], "profiles"; small...)
     profiles_toggle = Toggle(field_controls[1, 4]; toggle...)
+    Label(field_controls[1, 5], "bar"; small...)
+    bar_toggle = Toggle(field_controls[1, 6]; toggle...)
     colgap!(field_controls, 2, 8)
+    colgap!(field_controls, 4, 8)
     fit_button = Button(controls[1, 3]; label = "fit", _card_style(t, Button)..., fontsize = 11,
         height = 20, padding = (6, 6, 2, 2))
     colsize!(controls, 2, Auto())
     plots = GridLayout(full[3, 1]; halign = :left, valign = :top, default_rowgap = 5)
     ax = _view_axis(plots[1, 1], t; width, height, yaxisposition = :right, xtickalign = 1,
         ytickalign = 1, xticksize = 4, yticksize = 4, xticks = _VIEW_TICKS, yticks = _VIEW_TICKS)
-    profiles_ax = Axis(plots[2, 1]; _card_style(t, Axis)..., height = _VIEW_PROFILES_HEIGHT,
+    # The colorbar: its axis fills the width that its unit leaves
+    bar = GridLayout(plots[2, 1]; tellwidth = false, default_colgap = 6)
+    bar_ax = Axis(bar[1, 1]; _card_style(t, Axis)..., height = _VIEW_BAR_HEIGHT,
+        alignmode = Outside(), backgroundcolor = :transparent, xgridvisible = false,
+        ygridvisible = false, yticksvisible = false, yticklabelsvisible = false,
+        xticks = _VIEW_BAR_TICKS, xticklabelsize = 9, xticksize = 3)
+    _deregister_interactions!(bar_ax)
+    bar_unit = Label(bar[1, 2], ""; small..., fontsize = _VIEW_FONTSIZE, valign = :top,
+        padding = (0, 0, 0, -1))
+    profiles_ax = Axis(plots[3, 1]; _card_style(t, Axis)..., height = _VIEW_PROFILES_HEIGHT,
         tellwidth = false, alignmode = Outside(), backgroundcolor = :transparent,
         xgridvisible = false, ygridvisible = false, yticksvisible = false,
         yticklabelsvisible = false, xticklabelsize = 9, xticksize = 3)
@@ -545,7 +569,11 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     corner = lift(l -> [Makie.Point2d(minimum(l)[1], maximum(l)[2])], profiles_ax.finallimits)
     legend_x = text!(profiles_ax, corner; text = ["x"], color = t.gizmo[1], offset = (6, -4), legend...)
     legend_z = text!(profiles_ax, corner; text = ["z"], color = t.gizmo[3], offset = (18, -4), legend...)
-    foreach(p -> translate!(p, 0, 0, 2), (profile_x, profile_z))
+    # The colormap from its first to its last color over the limits of the bar, see `_set_bar!`
+    bar_image = image!(bar_ax, (0.0, 1.0), (0.0, 1.0), reshape(collect(range(0.0f0, 1.0f0; length = 256)), :, 1);
+        colormap = :viridis, colorrange = (0.0f0, 1.0f0), interpolate = true, inspectable = false)
+    limits!(bar_ax, 0, 1, 0, 1)
+    foreach(p -> translate!(p, 0, 0, 2), (profile_x, profile_z, bar_image))
     foreach(p -> translate!(p, 0, 0, _VIEW_OVERLAY_DZ), (legend_x, legend_z))
     # The rectangle of a zoom selection does not count for the limits
     select = (; visible = false, inspectable = false, xautolimits = false, yautolimits = false)
@@ -566,12 +594,13 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     foreach(p -> translate!(p, 0, 0, _VIEW_OVERLAY_DZ), (xlabels, zlabels, xname, zname, status))
 
     v = _DetectorView(grid, t, true, thumb, thumb_ax, expand_button, kind_label, info_label, full,
-        header, controls, field_controls, log_toggle, profiles_toggle, fit_button, collapse_button,
-        plots, ax, profiles_ax, metrics_label, Dict{Any, _Segmented}(), nothing, (),
+        header, controls, field_controls, log_toggle, profiles_toggle, bar_toggle, fit_button,
+        collapse_button, plots, ax, bar, bar_ax, bar_unit, bar_image, profiles_ax, metrics_label,
+        Dict{Any, _Segmented}(), nothing, (),
         AbstractPlot[a.frame, b.frame], AbstractPlot[a.image, b.image], AbstractPlot[a.spots, b.spots], AbstractPlot[a.cross, b.cross],
         profile_x, profile_z, select_fill, select_line, xlabels, zlabels, xname, zname, status, Rect2f[],
         _tree_font(ax.blockscene, :regular), Dict{String, Vec2f}(), false, "", nothing,
-        _ViewOptions(), nothing, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, false,
+        _ViewOptions(), nothing, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, true, false,
         false, nothing, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[])
 
     on(_ -> _update_decorations!(v), ax.finallimits)
@@ -581,9 +610,11 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     on(_ -> _fit!(v), fit_button.clicks)
     on(a -> v.refreshing || v.on_options(; colorscale = a ? :log : :linear), log_toggle.active)
     on(a -> v.refreshing || v.on_options(; profiles = a), profiles_toggle.active)
+    on(a -> v.refreshing || v.on_options(; colorbar = a), bar_toggle.active)
 
     # Both states are built, the one that is not shown and the parts without a result are detached
     _show_profiles!(v, false)
+    _show_bar!(v, false)
     _show_field_controls!(v, false)
     _view_detach!(expanded ? thumb : full)
     v.expanded = expanded
@@ -675,12 +706,25 @@ end
 function _show_profiles!(v::_DetectorView, shown::Bool)
     v.profiles_shown == shown && return nothing
     v.profiles_shown = shown
-    if shown
-        _view_attach!(v.plots, 2, 1, v.profiles_ax, v.expanded)
-    else
-        _view_detach!(v.profiles_ax)
-        Makie.trim!(v.plots)
-    end
+    _arrange_plots!(v)
+    return nothing
+end
+
+function _show_bar!(v::_DetectorView, shown::Bool)
+    v.bar_shown == shown && return nothing
+    v.bar_shown = shown
+    _arrange_plots!(v)
+    return nothing
+end
+
+# The colorbar and the profiles below the axis, in this order: those that are shown, without a
+# row for the other one
+function _arrange_plots!(v::_DetectorView)
+    _view_detach!(v.bar)
+    _view_detach!(v.profiles_ax)
+    Makie.trim!(v.plots)
+    v.bar_shown && _view_attach!(v.plots, 2, 1, v.bar, v.expanded)
+    v.profiles_shown && _view_attach!(v.plots, v.bar_shown ? 3 : 2, 1, v.profiles_ax, v.expanded)
     return nothing
 end
 
@@ -854,6 +898,7 @@ function _show_result!(v::_DetectorView, name::String, result::Union{Nothing, _V
     try
         _update!(v.log_toggle.active, opts.colorscale == :log)
         _update!(v.profiles_toggle.active, opts.profiles)
+        _update!(v.bar_toggle.active, opts.colorbar)
         _draw!(v, result, opts, fresh)
     catch e
         v.last_error = _log_once(e, v.last_error, "detector view \"$name\"")
@@ -899,6 +944,7 @@ function _draw_kind!(v::_DetectorView, kind::_SpotKind, r::_ViewResult, ::_ViewO
         v.zoomed || _fit_spots!(v.ax, v.xy)
     end
     _show_profiles!(v, false)
+    _show_bar!(v, false)
     _show_texts!(v, kind, r)
     return nothing
 end
@@ -916,8 +962,10 @@ function _draw_kind!(v::_DetectorView, kind::_FieldKind, r::_ViewResult, opts::_
         foreach(p -> Makie.update!(p; visible = false), v.spots)
         foreach(p -> Makie.update!(p; arg1 = ex, arg2 = ez, arg3 = Float32.(values), colorrange,
                 visible = true), v.images)
+        _set_bar!(v, kind, colorrange, opts.colorscale)
         _show_centroid!(v, r.metrics)
     end
+    _show_bar!(v, opts.colorbar)
     v.extent = 1e3 .* (Float64(first(x)), Float64(last(x)), Float64(first(z)), Float64(last(z)))
     _view_limits!(v.thumb_ax, v.extent)
     _view_limits!(v.ax, _window_mm(opts.window, v.extent))
@@ -928,6 +976,77 @@ end
 
 _window_mm(::Nothing, extent) = extent
 _window_mm(w::NTuple{4, Float64}, _) = 1e3 .* w
+
+#=
+The colorbar of a field
+=#
+
+# SI prefixes of the unit of the colorbar (`factor => prefix`, from small to large)
+const _BAR_PREFIXES = (1e-9 => "n", 1e-6 => "µ", 1e-3 => "m", 1.0 => "", 1e3 => "k", 1e6 => "M", 1e9 => "G")
+const _SUPERSCRIPTS = ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')
+
+"""Returns the integer `k` in superscript digits, e.g. `"⁻²"`, for the label of a power of ten."""
+_superscript(k::Integer) = join(c == '-' ? '⁻' : _SUPERSCRIPTS[c - '0' + 1] for c in string(k))
+
+"""
+    _bar_unit(kind) -> String
+    _bar_prefix(kind, hi) -> Pair{Float64, String}
+
+The unit of the values of the field `kind`: `W/m²` for the intensity, `rel.` for the PSF, which is
+normalized to its maximum. `_bar_prefix` is the SI prefix (`factor => prefix`) with which the
+linear colorbar shows values up to `hi`, such that its largest tick has two to four digits, e.g.
+`1e3 => "k"` for 25000 W/m²; none for the PSF.
+"""
+_bar_unit(::_IntensityKind) = "W/m²"
+_bar_unit(::_PSFKind) = "rel."
+_bar_prefix(::_IntensityKind, hi::Real) =
+    _BAR_PREFIXES[something(findlast(p -> 10 * first(p) <= hi, _BAR_PREFIXES), 1)]
+_bar_prefix(::_PSFKind, _) = 1.0 => ""
+
+"""
+    _bar_scale(kind, colorrange, colorscale) -> (; limits, ticks, unit)
+
+What the colorbar of the field `kind` shows for the `colorrange` of its image: its `limits`, its
+`ticks` (an object for the `xticks` of an `Axis`) and its `unit`. On the linear scale, the limits
+are the color range in the unit with the prefix of `_bar_prefix`. On the logarithmic scale, the
+color range and the limits are `log10` of the values in the unit without a prefix, with ticks at
+the powers of ten (at most about five, e.g. `10⁻²`); a range without a power of ten gets the values
+themselves as tick labels.
+"""
+function _bar_scale(kind::_FieldKind, colorrange, colorscale::Symbol)
+    lo, hi = Float64.(Tuple(colorrange))
+    # A degenerate range has no limits
+    hi > lo || (hi = lo + 1)
+    unit = _bar_unit(kind)
+    if colorscale == :linear
+        factor, prefix = _bar_prefix(kind, max(abs(lo), abs(hi)))
+        return (; limits = (lo / factor, hi / factor), ticks = _VIEW_BAR_TICKS, unit = prefix * unit)
+    end
+    k0, k1 = ceil(Int, lo - 1e-9), floor(Int, hi + 1e-9)
+    if k0 <= k1
+        decades = collect(k0:max(1, cld(k1 - k0 + 1, 5)):k1)
+        return (; limits = (lo, hi), ticks = (Float64.(decades), ["10" * _superscript(k) for k in decades]), unit)
+    end
+    values = Makie.get_tickvalues(_VIEW_BAR_TICKS, lo, hi)
+    return (; limits = (lo, hi), ticks = (values, [_fmt_sigdigits(10.0^x) for x in values]), unit)
+end
+
+"""
+    _set_bar!(view, kind, colorrange, colorscale)
+
+Shows the `colorrange` of the image of the field `kind` in the colorbar of the `view`, see
+`_bar_scale`: the colormap spans its limits, i.e. the bar looks the same for every range and only
+its ticks and its unit change.
+"""
+function _set_bar!(v::_DetectorView, kind::_FieldKind, colorrange, colorscale::Symbol)
+    s = _bar_scale(kind, colorrange, colorscale)
+    lo, hi = s.limits
+    Makie.update!(v.bar_image; arg1 = (lo, hi))
+    v.bar_ax.xticks[] = s.ticks
+    limits!(v.bar_ax, lo, hi, 0, 1)
+    _update!(v.bar_unit.text, s.unit)
+    return nothing
+end
 
 # Edges [mm] of the image of a field with the samples `x` [m]
 function _pixel_edges(x)
@@ -967,6 +1086,7 @@ function _draw_empty!(v::_DetectorView, message::String)
     foreach(p -> Makie.update!(p; arg1 = Point2f[], visible = false), v.spots)
     foreach(p -> Makie.update!(p; arg1 = Point2f[]), v.crosses)
     _show_profiles!(v, false)
+    _show_bar!(v, false)
     _show_field_controls!(v, false)
     _update!(v.kind_label.text, message)
     _update!(v.info_label.text, "")

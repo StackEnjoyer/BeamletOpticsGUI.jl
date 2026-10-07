@@ -858,7 +858,10 @@ a red cross marks the centroid. Below it are the metrics: the number of hits, th
 radius and the geometric radius of a spot diagram, or the power, the peak, the centroid and the
 1/e² radii along x and z from the second moments of a field. "log" shows `log10` of a field with a
 floor of 1e-4 times its maximum, "profiles" adds an axis with the field along x (red) and z (blue)
-through the centroid.
+through the centroid. "bar" shows the colorbar of a field below the plot, which is on by default:
+the colors of the image over its color range, in W/m² with an SI prefix for an intensity ("rel."
+for a PSF, which is normalized) and at the powers of ten with "log". The image is scaled to its
+maximum after every solve, so the ticks of the bar tell how the intensity changed.
 
 The mouse acts like on an `Axis` of Makie: the wheel zooms about the cursor, a drag with the left
 button selects the rectangle to zoom to (of the shape of the plot, i.e. a square in a square
@@ -883,6 +886,7 @@ The options of a view in the `kwargs` of `detectors`, which are not passed to `i
 - `n = 100`: number of points per axis of a field
 - `colorscale = :linear`: `:log` starts with "log" on
 - `colorrange = nothing`: fixed color range of a field, in `log10` units for `:log`
+- `colorbar = true`: `false` starts with "bar" off
 - `profiles = false`: starts with "profiles" on
 - `expanded = true`: `false` starts with the thumbnail
 

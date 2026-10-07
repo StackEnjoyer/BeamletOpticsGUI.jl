@@ -54,6 +54,10 @@ const GUI = BeamletOpticsGUI
             profiles = true, expanded = false))]))
         @test opts.opts.kind == :psf && opts.opts.colorscale == :log && opts.opts.profiles
         @test opts.opts.colorrange == (-3, 0) && !opts.expanded && isempty(opts.opts.kwargs)
+        # the colorbar is shown unless it is switched off, and is no kwarg of `intensity`
+        @test opts.opts.colorbar
+        opts = only(GUI._detector_specs([pd => (:intensity, (; colorbar = false))]))
+        @test !opts.opts.colorbar && isempty(opts.opts.kwargs)
         @test_throws ArgumentError GUI._detector_specs([pd => :heat])
         @test_throws ArgumentError GUI._detector_specs([pd => (:spot, (; colorscale = :sqrt))])
         @test_throws ArgumentError GUI._detector_specs([pd => "spot"])
@@ -111,6 +115,8 @@ const GUI = BeamletOpticsGUI
         r = state.result
         GUI._set_view!(gui, pd; colorscale = :log)
         @test state.opts.colorscale == :log && state.result === r && !state.stale
+        GUI._set_view!(gui, pd; colorbar = false)
+        @test !state.opts.colorbar && state.result === r && !state.stale
         GUI._set_view!(gui, pd; colorscale = :log)
         @test state.result === r
         # after a cancelled solve the views wait for the next one, like the beams
