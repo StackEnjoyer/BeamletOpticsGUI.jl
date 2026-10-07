@@ -128,6 +128,8 @@ function _open_kwargs(gui::LiveView, system, sources)
         orthographic = gui.widgets.orthographic_toggle.active[],
         view_cube = !isnothing(gui.widgets.view_cube), snap = ctrl.snap[],
         table = _table_kwarg(gui.components.table),
+        # the sizes of the sidebars and the dock, see `_part_size_kwargs`
+        _part_size_kwargs(gui)...,
         # the controls
         ctrl.rotation_axis, ctrl.plane_normal, ctrl.rotate_speed, ctrl.fine_step, ctrl.fine_angle,
         ctrl.throttle, ctrl.select_modifier, ctrl.drag_threshold, ctrl.constraints,
