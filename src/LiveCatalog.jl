@@ -48,11 +48,15 @@ function _catalog_args(f, entry::CatalogEntry, values)
     positional = Any[]
     keywords = Pair{Symbol, Any}[]
     for (p, v) in zip(entry.params, values)
-        isnothing(p.keyword) ? push!(positional, f(p, v)) : push!(keywords, p.keyword => f(p, v))
+        keyword = _catalog_keyword(p)
+        isnothing(keyword) ? push!(positional, f(p, v)) : push!(keywords, keyword => f(p, v))
     end
     return positional, keywords
 end
 _catalog_args(entry::CatalogEntry, values) = _catalog_args(_catalog_arg, entry, values)
+
+# The keyword as which the parameter `p` is passed, `nothing` for a positional argument
+_catalog_keyword(p::Union{CatalogParam, CatalogGlass}) = p.keyword
 
 """
     _catalog_object(entry, values) -> Union{AbstractObject, AbstractBeam, AbstractBeamGroup}
@@ -87,8 +91,16 @@ code, e.g. `"ThinBeamsplitter(0.0254, 0.0254; reflectance = 0.5)"`: the call tha
 constructor, see `_glass_code`, such that the code runs without this package. The code of an entry
 with `source` has the position and the direction of the source before the arguments, e.g.
 `"Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.328e-7)"`.
+
+The code of an entry whose constructor is a function of the GUI is the one of `_entry_code` for
+that function, e.g. the call of the lens of BeamletOptics that `_surface_lens` builds.
 """
-function _catalog_code(entry::CatalogEntry, values)
+_catalog_code(entry::CatalogEntry, values) = _entry_code(entry.constructor, entry, values)
+
+_entry_code(@nospecialize(constructor), entry::CatalogEntry, values) = _call_code(entry, values)
+
+# The call `code_name(arguments...; keywords...)` of the `entry`, see `_catalog_code`
+function _call_code(entry::CatalogEntry, values)
     positional, keywords = _catalog_args(_catalog_arg_code, entry, values)
     # the position and the direction that `_catalog_object` passes
     entry.source && pushfirst!(positional, "[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]")
@@ -212,6 +224,10 @@ const _CATALOG_GLASS_WIDTH = 128
 # ... and the menus of the presets of a number, and their option for a value that is no preset
 const _CATALOG_PRESET_WIDTH = 96
 const _CATALOG_PRESET_CUSTOM = "custom"
+# ... the menus of the kinds of a surface, and the indent of the fields of an asphere below its
+# surface, where they are in two columns
+const _CATALOG_SURFACE_WIDTH = 96
+const _CATALOG_INDENT = 16
 # Gap between the name, the box and the unit of a parameter in the form of the catalog, and
 # between its two columns [px]
 const _CATALOG_GAP = 8
@@ -233,7 +249,9 @@ as its content, or in a place of the `width` [px], e.g. a section of a sidebar.
   `nothing` for icon buttons of `tile_size` without a name, in a narrow place, where the name of
   the entry under the mouse is shown below them. In rows of `tiles_per_row`.
 - `two_columns`: the numbers of an entry are in two columns from this number on
-- `constant_inline`: whether the box of a "constant" glass is right of its menu, otherwise below it
+- `constant_inline`: whether the box of a "constant" glass is right of its menu, otherwise below it;
+  likewise the box of the radius of a surface, and with it, the fields of an asphere are in two
+  columns, otherwise in one
 """
 _catalog_style() = (; group_size = 32, group_icon = 20, groups_per_row = typemax(Int),
     tile_width = 86, tile_size = 40, tiles_per_row = 4, two_columns = 5, constant_inline = true)
@@ -263,14 +281,18 @@ theme tokens `theme`, from top to bottom:
   the `style`; `tile_buttons`, each with the index of its entry), of which the one of the entry
   with the index `entry` is chosen; `entry_label` names it, see `_show_catalog_entry!`
 - `form`: the inputs of the parameters of the chosen entry (`inputs`, one per parameter): a
-  `Textbox` per number, and per glass its menu and, for "constant", the box of the refractive
-  index, as `(; menu, box)`. `boxes` and `menus` hold all of them; the `menus` also hold the menus
-  of the presets of the numbers, which set their boxes, see `_catalog_preset_menu!`.
+  `Textbox` per number, per glass its menu and, for "constant", the box of the refractive
+  index, as `(; menu, box)`, and per surface its menu, the box of its radius and, for "aspheric",
+  the boxes of its conic constant and of its coefficients, as
+  `(; menu, radius, conic, coefficients)`, see `_fill_catalog_surfaces!`. `boxes` and `menus` hold
+  all of them; the `menus` also hold the menus of the presets of the numbers, which set their
+  boxes, see `_catalog_preset_menu!`.
 - `place`: the button "Place"
 
 The tiles are built again when another group is chosen (see `_build_catalog_tiles!`), the form
 when another entry is chosen (see `_build_catalog_form!`) and, at the next frame while `dirty`,
-after a menu of a glass changed to or from "constant", see `_flush_catalog_form!`. `settle` holds
+after a menu of a glass changed to or from "constant" or the one of a surface to or from
+"aspheric", see `_flush_catalog_form!`. `settle` holds
 the grids of a new form and its time until its boxes were moved once, see `_settle_catalog_form!`.
 """
 mutable struct _CatalogWidget
@@ -308,6 +330,17 @@ function _catalog_input_string(p::CatalogGlass, input::NamedTuple)
     glass == _GLASS_CONSTANT || return String(glass)
     # "constant" was chosen and its box is not built yet, see `_flush_catalog_form!`
     return isnothing(input.box) ? _catalog_number_string(p.n) : String(input.box.displayed_string[])
+end
+
+# The text of a surface from its menu and its boxes, see `_surface_string`
+function _catalog_input_string(::CatalogSurface, input::NamedTuple)
+    radius = String(input.radius.displayed_string[])
+    input.menu.selection[] == _SURFACE_ASPHERIC || return _surface_string(false, radius, "0", String[])
+    # "aspheric" was chosen and its boxes are not built yet, see `_flush_catalog_form!`
+    isnothing(input.conic) &&
+        return _surface_string(true, radius, "0", fill("0", length(_SURFACE_ORDERS)))
+    return _surface_string(true, radius, String(input.conic.displayed_string[]),
+        String[tb.displayed_string[] for tb in input.coefficients])
 end
 
 """The texts of the inputs of the catalog widget `w`, one per parameter of its entry, see `_catalog_value`."""
@@ -629,7 +662,7 @@ Form
 # The layout of the form of the catalog in the `layout` of its widgets, see `_CatalogWidget`
 _catalog_form(layout::GridLayout) = GridLayout(layout[6, 1]; halign = :left, default_rowgap = 6)
 
-# A grid of the form of the catalog: the numbers or the glasses, see `_fill_catalog_form!`
+# A grid of the form of the catalog: the surfaces, the numbers or the glasses, see `_fill_catalog_form!`
 _catalog_form_grid(pos) = GridLayout(pos; halign = :left, default_rowgap = 6, default_colgap = _CATALOG_GAP)
 
 """
@@ -683,12 +716,109 @@ function _catalog_preset_menu!(gui::LiveView, pos, p::CatalogParam, tb::Textbox,
     return menu
 end
 
+# The unit of the coefficient of the `order` of an asphere as shown in the form, e.g. mm^-3 for A4.
+# Rich text, since the font of the labels may not have the superscript digits of Unicode
+_surface_unit(order::Integer) = Makie.rich(_SURFACE_UNIT, Makie.superscript(string(1 - order)))
+
+"""
+    _fill_catalog_surfaces!(gui, w, pos, surfaces, strings) -> Vector{GridLayout}
+
+Builds the inputs of the surfaces of the chosen entry of the catalog widget `w` at the position
+`pos` of its form, i.e. of its parameters with the indices `surfaces` (see `CatalogSurface`), with
+the `strings` as their texts, see `_surface_string`: per surface its name, the menu of "spherical"
+and "aspheric" and the box of its radius in mm, right of the menu or below it (see
+`_catalog_style`). An asphere has the boxes of its conic constant `k` and of its coefficients A4,
+A6, ... (see `_SURFACE_ORDERS`) with their units below it, in two columns or in one. They come and
+go at the next frame after the menu changed, see `_flush_catalog_form!`.
+
+Sets the inputs `(; menu, radius, conic, coefficients)` of the surfaces in `w.inputs`, with
+`conic === nothing` and no `coefficients` for a spherical surface, and adds their boxes and menus
+to `w.boxes` and `w.menus`. Returns the grids of the boxes, see `_settle_catalog_form!`.
+"""
+function _fill_catalog_surfaces!(gui::LiveView, w::_CatalogWidget, pos, surfaces, strings)
+    params = _catalog_entry(w).params
+    t = w.theme
+    label = (; _card_style(t, Label)..., halign = :left)
+    box = (; _card_style(t, Textbox)..., width = _CATALOG_BOX_WIDTH, halign = :left)
+    kinds = [_SURFACE_SPHERICAL, _SURFACE_ASPHERIC]
+    # An emptied box shows its placeholder
+    stored(s) = isempty(s) ? nothing : s
+    inline = w.style.constant_inline
+    grids = GridLayout[]
+    # Where the box of the radius is right of the menu, each surface has a grid of its own in a
+    # column of grids, and so have the fields of an asphere, which are wider than their surface:
+    # a layout does not make room for content that spans its columns. Otherwise all are in one
+    # grid of labels, boxes and units, whose last two columns a menu spans
+    outer = inline ? GridLayout(pos; halign = :left, default_rowgap = 6) : _catalog_form_grid(pos)
+    inline || push!(grids, outer)
+    row = 0
+    for i in surfaces
+        p = params[i]
+        f = _surface_fields(strings[i])
+        row += 1
+        head = inline ? _catalog_form_grid(outer[row, 1]) : outer
+        inline && push!(grids, head)
+        Label(head[inline ? 1 : row, 1], p.name; label...)
+        menu = Menu(inline ? head[1, 2] : head[row, 2:3]; options = kinds,
+            default = f.aspheric ? _SURFACE_ASPHERIC : _SURFACE_SPHERICAL, _card_style(t, Menu)...,
+            width = _CATALOG_SURFACE_WIDTH, halign = :left)
+        inline || (row += 1)
+        r, col = inline ? (1, 2) : (row, 0)
+        Label(head[r, col + 1], "R"; label..., halign = inline ? :left : :right)
+        # An emptied box shows the default as its placeholder, see `_catalog_value`
+        radius = Textbox(head[r, col + 2]; stored_string = stored(f.radius),
+            placeholder = _catalog_string(p), box...)
+        Label(head[r, col + 3], _SURFACE_UNIT; label...)
+        push!(w.boxes, radius)
+        conic = nothing
+        coefficients = Textbox[]
+        if f.aspheric
+            fields = outer
+            if inline
+                row += 1
+                fields = GridLayout(outer[row, 1]; halign = :left, default_rowgap = 6,
+                    default_colgap = _CATALOG_GAP, alignmode = Makie.Outside(_CATALOG_INDENT, 0, 0, 0))
+                push!(grids, fields)
+            end
+            names = String["k"; ["A$order" for order in _SURFACE_ORDERS]]
+            texts = String[f.conic; f.coefficients]
+            for (k, (name, text)) in enumerate(zip(names, texts))
+                # row by row in two columns, or down the column of the boxes of the radii
+                if inline
+                    r, c = fldmod1(k, 2)
+                    col = 3 * (c - 1)
+                else
+                    row += 1
+                    r, col = row, 0
+                end
+                Label(fields[r, col + 1], name; label..., halign = inline ? :left : :right)
+                tb = Textbox(fields[r, col + 2]; stored_string = stored(text), placeholder = "0", box...)
+                # the conic constant has no unit
+                k == 1 || Label(fields[r, col + 3], _surface_unit(_SURFACE_ORDERS[k - 1]); label...)
+                push!(w.boxes, tb)
+                k == 1 ? (conic = tb) : push!(coefficients, tb)
+            end
+            inline && Makie.colgap!(fields, 3, _CATALOG_COLUMN_GAP)
+        end
+        w.inputs[i] = (; menu, radius, conic, coefficients)
+        push!(w.menus, menu)
+        # The boxes of an asphere come and go with the next frame, not while the menu, which is
+        # deleted with the form, handles its own selection
+        aspheric = f.aspheric
+        push!(gui.controls.listeners, on(menu.selection) do s
+            (s == _SURFACE_ASPHERIC) == aspheric || (w.dirty = true)
+            return nothing
+        end)
+    end
+    return grids
+end
+
 """
     _fill_catalog_form!(gui, w, strings)
 
 Builds the form of the catalog widget `w` for its chosen entry with the `strings` as the texts of
-its inputs (see `_catalog_strings`): first the numbers, each with its name, a `Textbox` and its
-unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
+its inputs (see `_catalog_strings`): first the surfaces (see `_fill_catalog_surfaces!`), then the
+numbers, each with its name, a `Textbox` and its unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
 with its name and the menu of the glasses and "constant", for which a box takes the refractive
 index, right of the menu or below it. A number with presets has their menu right of its unit, or
 below its box where the box of "constant" is below its menu, see `_catalog_preset_menu!`. The boxes
@@ -703,9 +833,14 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     # An empty layout has no size
     isempty(params) && Label(w.form[1, 1], "no parameters"; label..., color = t.muted)
     grids = GridLayout[]
+    # the row of the form of the next part
+    part = 0
+    surfaces = findall(p -> p isa CatalogSurface, params)
+    isempty(surfaces) ||
+        append!(grids, _fill_catalog_surfaces!(gui, w, w.form[part += 1, 1], surfaces, strings))
     numbers = findall(p -> p isa CatalogParam, params)
     if !isempty(numbers)
-        grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
+        grid = _catalog_form_grid(w.form[part += 1, 1])
         push!(grids, grid)
         two = length(numbers) >= w.style.two_columns
         per_column = two ? cld(length(numbers), 2) : length(numbers)
@@ -740,7 +875,7 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     end
     glasses = findall(p -> p isa CatalogGlass, params)
     if !isempty(glasses)
-        grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
+        grid = _catalog_form_grid(w.form[part += 1, 1])
         push!(grids, grid)
         names = [_glass_names(); _GLASS_CONSTANT]
         inline = w.style.constant_inline
@@ -842,8 +977,9 @@ end
     _flush_catalog_form!(gui, w)
 
 Builds the form of the catalog widget `w` again with the texts of its inputs if it is `dirty`,
-i.e. after the menu of a glass changed to or from "constant": the box of the refractive index is
-added or removed. Called every frame, see `_connect_catalog_window!`.
+i.e. after the menu of a glass changed to or from "constant" or the one of a surface to or from
+"aspheric": the box of the refractive index or the boxes of the asphere are added or removed.
+Called every frame, see `_connect_catalog_window!`.
 """
 function _flush_catalog_form!(gui::LiveView, w::_CatalogWidget)
     w.dirty && _build_catalog_form!(gui, w, _catalog_strings(w))

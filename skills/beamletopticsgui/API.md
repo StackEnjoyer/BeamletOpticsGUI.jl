@@ -88,7 +88,13 @@ component (all components of BeamletOptics with a constructor of numbers and gla
 (`Beam`, `GaussianBeamlet`, `CollimatedSource`, `UniformDiscSource`, `PointSource`,
 `UniformPointSource`, `AstigmaticGaussianBeamlet`; placed along +y, then rotated with the controls), its form takes
 the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,
-N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. "Place"
+N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. Each
+surface of the entries Singlet, Doublet and Triplet (S1, S2, ...) has a menu "spherical"/"aspheric":
+a radius [mm, sign of BeamletOptics, `Inf` for a plane], and for an even asphere also the conic
+constant `k` and the coefficients A4 to A16 in mm^(1 - order) as on a data sheet (A2 is zero). A
+lens with an asphere is built and exported as the `Lens`, `DoubletLens` or `TripletLens` of its
+surfaces, e.g. `Lens(SphericalSurface(r, d), EvenAsphericalSurface(r, d, k, [0.0, A4, ...]),
+thickness, n)`; a cemented surface belongs to both elements that it joins. "Place"
 attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
 selected component or source. It moves in the plane of the table (perpendicular to `rotation_axis`,
 at the height of the source of its system) and snaps onto beams while `snap` is on; the first component or source of

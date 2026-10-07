@@ -60,6 +60,11 @@ arguments are parameters, the others keep the defaults of the constructor, e.g. 
 follow BeamletOptics: positive if the center of the surface lies behind it (towards +y), i.e.
 `R1 > 0` and `R2 < 0` for a biconvex lens, `Inf` for a plane surface of a `SphericalLens`.
 
+The surfaces of the entries "Singlet", "Doublet" and "Triplet" are spherical or aspheric each (see
+`CatalogSurface`), hence their constructors are those of the GUI, see `_surface_lens`: with
+spherical surfaces they call the `SphericalLens`, the `SphericalDoubletLens` and the
+`SphericalTripletLens` of BeamletOptics, which their `code_name` is.
+
 The sources (entries with `source = true`) are constructed at the origin along +y with a wavelength
 of 632.8 nm, which offers the laser lines `_LASER_LINES` as its presets; the half angle of the point sources is entered in degrees, the numbers of rings and
 rays are whole numbers.
@@ -79,6 +84,10 @@ function _builtin_catalog()
         end
         return nothing
     end
+    # A lens with surfaces, see `_surface_lens`: its constructor and its spherical lens in code
+    lens(name, icon, (constructor, spherical), params...) = CatalogEntry(name, constructor;
+        group = "Lenses", icon, params, code_name = string(nameof(spherical)))
+    surface = CatalogSurface
     # the parameters of the sources: a helium-neon laser, the numbers of rings and rays of BeamletOptics
     wavelength = CatalogParam("wavelength", 632.8e-9; unit = "nm", scale = 1e-9,
         presets = ["$(_catalog_number_string(nm)) nm" => round(nm * 1e-9; sigdigits = 15)
@@ -102,16 +111,17 @@ function _builtin_catalog()
         source = true)
     group!("Lenses",
         ("Thin lens", :thin_lens, ThinLens,
-            len("R1", 50e-3), len("R2", -50e-3), diameter, CatalogGlass()),
-        ("Singlet", :singlet, SphericalLens,
-            len("R1", 50e-3), len("R2", -50e-3), thickness, diameter, CatalogGlass()),
+            len("R1", 50e-3), len("R2", -50e-3), diameter, CatalogGlass()))
+    push!(entries,
+        lens("Singlet", :singlet, _surface_lens => SphericalLens,
+            surface("S1", 50e-3), surface("S2", -50e-3), thickness, diameter, CatalogGlass()),
         # an achromat of 100 mm focal length
-        ("Doublet", :doublet, SphericalDoubletLens,
-            len("R1", 62.8e-3), len("R2", -45.7e-3), len("R3", -128.2e-3),
+        lens("Doublet", :doublet, _surface_doublet => SphericalDoubletLens,
+            surface("S1", 62.8e-3), surface("S2", -45.7e-3), surface("S3", -128.2e-3),
             len("thickness 1", 4e-3), len("thickness 2", 2.5e-3), diameter,
             CatalogGlass("glass 1"), CatalogGlass("glass 2"; default = flint)),
-        ("Triplet", :triplet, SphericalTripletLens,
-            len("R1", 60e-3), len("R2", -45e-3), len("R3", 45e-3), len("R4", -60e-3),
+        lens("Triplet", :triplet, _surface_triplet => SphericalTripletLens,
+            surface("S1", 60e-3), surface("S2", -45e-3), surface("S3", 45e-3), surface("S4", -60e-3),
             len("thickness 1", 5e-3), len("thickness 2", 2.5e-3), len("thickness 3", 5e-3), diameter,
             CatalogGlass("glass 1"), CatalogGlass("glass 2"; default = flint), CatalogGlass("glass 3")))
     group!("Mirrors",

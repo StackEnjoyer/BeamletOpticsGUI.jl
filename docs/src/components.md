@@ -72,7 +72,7 @@ takes numbers and glasses:
 | group | entries |
 |:--|:--|
 | Sources | Beam, Gaussian beamlet, Collimated source, Uniform disc source, Point source, Uniform point source, Astigmatic Gaussian beamlet |
-| Lenses | Thin lens, Singlet (`SphericalLens`), Doublet, Triplet |
+| Lenses | Thin lens, Singlet (`SphericalLens`), Doublet, Triplet, the last three also with aspheric surfaces |
 | Mirrors | Round mirror, Square mirror, Rectangular mirror, Thin mirror (`SquarePlanoMirror2D`), Prism mirror, Retroreflector |
 | Curved mirrors | Spherical, Parabolic, Conic, Ellipsoidal and Hyperbolic mirror, the last four also off-axis |
 | Beamsplitters | Thin beamsplitter, Round thin beamsplitter, Plate beamsplitter, Round plate beamsplitter, Cube beamsplitter, Compensator plate |
@@ -102,6 +102,19 @@ rendered beam within 12 px; of a beam group only onto its central beam, of a Gau
 its chief ray. With "position + rotation" its optical axis also turns along the beam. The component that is being
 placed is not traced until it is dropped. See the section "Adding and removing components" of
 [`live_view`](@ref) for the details of the placement.
+
+The surfaces of the entries "Singlet", "Doublet" and "Triplet" (S1, S2, ... in the order of the
+light along +y) are chosen one by one: a menu per surface sets it to "spherical" or "aspheric". A
+spherical surface takes its radius of curvature [mm], with the sign of BeamletOptics (positive if
+the center lies behind the surface, `Inf` for a plane). An aspheric surface, an even asphere, also
+takes its conic constant `k` and its coefficients A4 to A16 in mm^(1 - order) as on a data sheet,
+e.g. A4 in mm⁻³; an empty box is zero, and the coefficient A2 is zero, since the radius holds the
+curvature at the vertex. A cemented surface of a doublet or triplet belongs to both elements that
+it joins. A lens with spherical surfaces is a `SphericalLens`, a `SphericalDoubletLens` or a
+`SphericalTripletLens`; one with an asphere is the `Lens`, the `DoubletLens` or the `TripletLens`
+of its surfaces, a `SphericalSurface` or an `EvenAsphericalSurface` each, which is also its code in
+[`export_changes`](@ref). BeamletOptics has no shape for a meniscus element with an asphere whose
+edge leaves no cylindrical section: such a lens is not placed, and the status line says so.
 
 A source of the group "Sources" is placed the same way: its marker follows the mouse, a click
 drops it, and its beam is traced through the system that the catalog names as "into". It points

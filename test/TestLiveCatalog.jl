@@ -297,7 +297,10 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test !GUI._typing(gui)
         @test _active(widget) == ["Doublet"] && widget.entry_label.text[] == "Doublet"
         @test _texts(w.boxes) == ["62.8", "-45.7", "-128.2", "4", "2.5", "25.4"]
-        @test [mn.selection[] for mn in w.menus] == ["N-BK7", "N-SF5"]
+        # a menu per surface, before those of the glasses
+        @test [mn.selection[] for mn in w.menus] == ["spherical", "spherical", "spherical", "N-BK7", "N-SF5"]
+        @test all(s -> s in w.labels, ("S1", "S2", "S3")) && count(==("R"), w.labels) == 3
+        @test count(==("mm"), w.labels) == 6 && !("k" in w.labels)
         @test all(tb -> !any(o -> o === tb, old), w.boxes)
         @test Set(gui.custom.boxes) == Set([w.boxes; other_boxes()]) && !(menu in gui.custom.menus)
         @test Set(gui.custom.menus) == Set([w.menus; other_menus()])
@@ -541,6 +544,198 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         end
     end
 
+    @testset "surfaces ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout)
+        win = _window(gui)
+        # the window lays the fields of an asphere out in two columns, the dock in one
+        docks = layout == :app
+        docks || GUI._show_catalog!(gui, true)
+        w = _choose!(gui, "Singlet")
+        widget = w.widget
+        @test widget.style.constant_inline == !docks
+        bbox(x) = Rect2f(x.layoutobservables.computedbbox[])
+        surface(i) = GUI._catalog_widget(win).inputs[i]
+        orders = 4:2:16
+        aspheric(text) = "Lens(SphericalSurface(0.05, 0.0254), EvenAsphericalSurface($text), 0.005, $bk7)"
+
+        # a surface: its name, the menu of its kinds and the box of its radius
+        @test all(s -> s in w.labels, ("S1", "S2")) && count(==("R"), w.labels) == 2
+        @test surface(1).menu.options[] == ["spherical", "aspheric"]
+        @test [mn.selection[] for mn in w.menus] == ["spherical", "spherical", "N-BK7"]
+        @test widget.menus == w.menus && widget.boxes == w.boxes
+        @test isnothing(surface(1).conic) && isempty(surface(1).coefficients)
+        @test surface(2).radius === w.boxes[2]
+        @test _texts(w.boxes) == ["50", "-50", "5", "25.4"] && !("k" in w.labels)
+        @test GUI._catalog_strings(widget) == ["50", "-50", "5", "25.4", "N-BK7"]
+
+        # "aspheric": the fields come with the next frame, the typed texts stay
+        surface(2).radius.displayed_string[] = "-40"
+        w.boxes[3].displayed_string[] = "6"
+        surface(2).menu.i_selected[] = 2
+        @test widget.dirty && length(_widgets(gui).boxes) == 4
+        @test GUI._catalog_strings(widget) == ["50", "-40; 0; 0, 0, 0, 0, 0, 0, 0", "6", "25.4", "N-BK7"]
+        _tick!(gui)
+        w = _widgets(gui)
+        s1, s2 = surface(1), surface(2)
+        @test !widget.dirty && length(w.boxes) == 12 && widget.boxes == w.boxes
+        @test [mn.selection[] for mn in w.menus] == ["spherical", "aspheric", "N-BK7"]
+        @test isnothing(s1.conic) && isempty(s1.coefficients)
+        @test s2.conic isa Textbox && length(s2.coefficients) == length(orders)
+        @test _texts(w.boxes) == ["50", "-40", fill("0", 8)..., "6", "25.4"]
+        @test "k" in w.labels && all(o -> "A$o" in w.labels, orders)
+        @test GUI._catalog_strings(widget) == ["50", "-40; 0; 0, 0, 0, 0, 0, 0, 0", "6", "25.4", "N-BK7"]
+        # they take the keyboard, besides those of the hidden window of a docked catalog
+        @test filter(b -> b in w.boxes, gui.custom.boxes) == w.boxes
+        @test all(mn -> mn in gui.custom.menus, w.menus)
+        s2.coefficients[7].focused[] = true
+        @test GUI._typing(gui)
+        s2.coefficients[7].focused[] = false
+        @test !GUI._typing(gui)
+
+        # below the surface, with their units, inside the window or the sidebar
+        _tick!(gui)
+        fields = [s2.conic; s2.coefficients]
+        units = filter(b -> b isa Label && !(b.text[] isa AbstractString), GUI._blocks!(Any[], widget.layout))
+        @test length(units) == length(orders)
+        @test all(tb -> maximum(bbox(tb))[2] < minimum(bbox(s2.radius))[2] + 1, fields)
+        @test all(tb -> minimum(bbox(tb))[2] > maximum(bbox(w.boxes[11]))[2] - 1, fields)
+        if docks
+            # in one column, below the box of the radius
+            @test allequal(round(minimum(bbox(tb))[1]) for tb in [s2.radius; fields])
+            @test issorted([minimum(bbox(tb))[2] for tb in fields]; rev = true)
+            side = bbox(gui.layout.left.grid)
+            @test all(u -> maximum(bbox(u))[1] <= maximum(side)[1] - GUI._SIDEBAR_PADDING + 0.5, units)
+        else
+            # in two columns, row by row: k and A4, A6 and A8, ...
+            @test allequal(round(minimum(bbox(tb))[1]) for tb in fields[1:2:end])
+            @test allequal(round(minimum(bbox(tb))[1]) for tb in fields[2:2:end])
+            @test minimum(bbox(fields[2]))[1] > maximum(bbox(fields[1]))[1]
+            @test all(k -> minimum(bbox(fields[k]))[2] ≈ minimum(bbox(fields[k + 1]))[2], 1:2:7)
+            @test minimum(bbox(fields[3]))[2] < minimum(bbox(fields[1]))[2]
+            @test all(u -> maximum(bbox(u))[1] < maximum(GUI._catalog_rect(win))[1], units)
+        end
+
+        # "Place" takes the texts of the fields, also without Enter, as the one text of the surface
+        s2.conic.displayed_string[] = "-1"
+        s2.coefficients[1].displayed_string[] = "1e-6"
+        text = "-40; -1; 1e-6, 0, 0, 0, 0, 0, 0"
+        @test GUI._catalog_strings(widget) == ["50", text, "6", "25.4", "N-BK7"]
+        w.place.clicks[] += 1
+        @test GUI._placing(gui) && gui.components.placement.obj isa Lens
+        origin = gui.components.placement.origin
+        @test origin.strings == ["50", text, "6", "25.4", "N-BK7"]
+        @test origin.code == "Lens(SphericalSurface(0.05, 0.0254), " *
+                             "EvenAsphericalSurface(-0.04, 0.0254, -1.0, [0.0, 1000.0]), 0.006, $bk7)"
+        GUI._end_placement!(gui)
+        # an emptied field: the default of the radius, zero otherwise
+        w.boxes[11].displayed_string[] = "5"
+        s2.radius.displayed_string[] = " "
+        s2.conic.displayed_string[] = " "
+        @test GUI._catalog_strings(widget)[2] == "; ; 1e-6, 0, 0, 0, 0, 0, 0"
+        w.place.clicks[] += 1
+        @test gui.components.placement.origin.code == aspheric("-0.05, 0.0254, 0.0, [0.0, 1000.0]")
+        GUI._end_placement!(gui)
+        # not a number
+        s2.coefficients[2].displayed_string[] = "x"
+        gui.status.text[] = ""
+        w.place.clicks[] += 1
+        @test occursin("Singlet not placed", gui.status.text[]) && !GUI._placing(gui)
+        @test occursin("invalid input \"x\" for A6 of S2", gui.status.text[])
+        s2.coefficients[2].displayed_string[] = "0"
+
+        if docks
+            # the window shows what the dock shows, with the fields of the asphere, and back
+            s2.radius.displayed_string[] = "-40"
+            s2.conic.displayed_string[] = "-0.5"
+            strings = GUI._catalog_strings(widget)
+            @test strings[2] == "-40; -0.5; 1e-6, 0, 0, 0, 0, 0, 0"
+            win.dock.float_button.clicks[] += 1
+            @test GUI._catalog_widget(win) === win.widget && win.widget.style.constant_inline
+            @test GUI._catalog_strings(win.widget) == strings && length(win.widget.boxes) == 12
+            @test surface(2).conic.displayed_string[] == "-0.5"
+            surface(2).conic.displayed_string[] = "-2"
+            win.dock_button.clicks[] += 1
+            @test GUI._catalog_widget(win) === widget
+            @test GUI._catalog_strings(widget)[2] == "-40; -2; 1e-6, 0, 0, 0, 0, 0, 0"
+            w = _widgets(gui)
+            @test length(w.boxes) == 12 && surface(2).conic.displayed_string[] == "-2"
+        end
+
+        # back to "spherical": the fields go, the radius stays
+        surface(2).radius.displayed_string[] = "-30"
+        surface(2).menu.i_selected[] = 1
+        @test widget.dirty && GUI._catalog_strings(widget) == ["50", "-30", "5", "25.4", "N-BK7"]
+        _tick!(gui)
+        w = _widgets(gui)
+        @test !widget.dirty && _texts(w.boxes) == ["50", "-30", "5", "25.4"]
+        @test !("k" in w.labels) && isnothing(surface(2).conic) && isempty(surface(2).coefficients)
+        @test [mn.selection[] for mn in w.menus] == ["spherical", "spherical", "N-BK7"]
+        @test Set(filter(b -> b in w.boxes, gui.custom.boxes)) == Set(w.boxes)
+        # the listeners of the fields are released: there and back again adds none
+        n = length(gui.controls.listeners)
+        surface(2).menu.i_selected[] = 2
+        _tick!(gui)
+        @test length(gui.controls.listeners) > n
+        surface(2).menu.i_selected[] = 1
+        _tick!(gui)
+        w = _widgets(gui)
+        @test length(gui.controls.listeners) == n && _texts(w.boxes) == ["50", "-30", "5", "25.4"]
+        w.place.clicks[] += 1
+        @test gui.components.placement.origin.code == "SphericalLens(0.05, -0.03, 0.005, 0.0254, $bk7)"
+        @test gui.components.placement.origin.strings == ["50", "-30", "5", "25.4", "N-BK7"]
+        GUI._end_placement!(gui)
+        # both surfaces, and a field that is no number: it stays one field, which "Place" names
+        surface(1).menu.i_selected[] = 2
+        surface(2).menu.i_selected[] = 2
+        _tick!(gui)
+        w = _widgets(gui)
+        @test length(w.boxes) == 20 && count(==("k"), w.labels) == 2
+        surface(1).conic.displayed_string[] = "1;2"
+        surface(2).menu.i_selected[] = 1
+        _tick!(gui)
+        w = _widgets(gui)
+        @test _texts(w.boxes) == ["50", "1 2", fill("0", 7)..., "-30", "5", "25.4"]
+        gui.status.text[] = ""
+        w.place.clicks[] += 1
+        @test occursin("conic constant of S1", gui.status.text[]) && !GUI._placing(gui)
+        @test sys.objects == [m]
+
+        # a doublet with an asphere, here its cemented surface: the `DoubletLens` of the surfaces
+        w = _choose!(gui, "Doublet")
+        @test [mn.selection[] for mn in w.menus[1:3]] == fill("spherical", 3)
+        surface(2).menu.i_selected[] = 2
+        _tick!(gui)
+        w = _widgets(gui)
+        @test length(w.boxes) == 14 && surface(2).conic isa Textbox
+        gui.status.text[] = ""
+        w.place.clicks[] += 1
+        @test GUI._placing(gui) && gui.components.placement.obj isa DoubletLens
+        @test startswith(gui.components.placement.origin.code, "DoubletLens(SphericalSurface(0.0628, 0.0254), " *
+                                                               "EvenAsphericalSurface(-0.0457, 0.0254, 0.0, [0.0]), ")
+        @test gui.components.placement.origin.strings[2] == "-45.7; 0; 0, 0, 0, 0, 0, 0, 0"
+        GUI._end_placement!(gui)
+        @test sys.objects == [m] && isempty(gui.components.added)
+        # ... a spherical one is the `SphericalDoubletLens`
+        surface(2).menu.i_selected[] = 1
+        _tick!(gui)
+        _widgets(gui).place.clicks[] += 1
+        @test startswith(gui.components.placement.origin.code, "SphericalDoubletLens(0.0628, -0.0457, ")
+        GUI._end_placement!(gui)
+
+        # the singlet with an asphere is placed and dropped
+        w = _choose!(gui, "Singlet")
+        @test _texts(w.boxes) == ["50", "-50", "5", "25.4"]
+        surface(1).menu.i_selected[] = 2
+        _tick!(gui)
+        surface(1).conic.displayed_string[] = "-0.6"
+        _widgets(gui).place.clicks[] += 1
+        obj = gui.components.placement.obj
+        @test gui.components.placement.origin.strings[1] == "50; -0.6; 0, 0, 0, 0, 0, 0, 0"
+        GUI._drop_placement!(gui)
+        @test obj isa Lens && length(sys.objects) == 2 && any(o -> o === obj, sys.objects)
+        close(gui)
+    end
+
     @testset "no widget ($layout)" for layout in (:compact, :app)
         # an empty catalog
         gui, _ = _fixture(; layout, catalog = CatalogEntry[])
@@ -782,7 +977,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         # the entry with the most parameters fits into the 3D view
         _choose!(gui, "Triplet")
         _tick!(gui)
-        @test length(win.widget.boxes) == 8 && length(win.widget.menus) == 3
+        @test length(win.widget.boxes) == 8 && length(win.widget.menus) == 7
         @test inside() && Makie.widths(GUI._catalog_rect(win))[2] < Makie.widths(view)[2]
         _choose!(gui, "Thin lens")
 
@@ -941,15 +1136,20 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         # the form in one column, the box of a constant glass below its menu
         _choose!(gui, "Triplet")
         _tick!(gui)
-        @test length(d.widget.boxes) == 8 && length(d.widget.menus) == 3
-        @test allequal(round(minimum(bbox(b))[1]) for b in d.widget.boxes)
+        @test length(d.widget.boxes) == 8 && length(d.widget.menus) == 7
+        # the boxes of the radii of the surfaces, each below its menu, and those of the numbers
+        left(b) = round(minimum(bbox(b))[1])
+        @test allequal(left(b) for b in d.widget.boxes[1:4])
+        @test allequal(left(b) for b in d.widget.boxes[5:8])
+        @test all(i -> maximum(bbox(d.widget.inputs[i].radius))[2] <
+                       minimum(bbox(d.widget.inputs[i].menu))[2] + 1, 1:4)
         @test inside()
-        menu = first(d.widget.menus)
+        menu = d.widget.inputs[9].menu
         menu.i_selected[] = length(menu.options[])
         _tick!(gui)
         @test length(d.widget.boxes) == 9 && inside()
         constant = last(d.widget.boxes)
-        @test maximum(bbox(constant))[2] < minimum(bbox(first(d.widget.menus)))[2] + 1
+        @test maximum(bbox(constant))[2] < minimum(bbox(d.widget.inputs[9].menu))[2] + 1
         first(d.widget.boxes).displayed_string[] = "61"
         strings = GUI._catalog_strings(d.widget)
         @test strings[1] == "61" && strings[9] == "1.5" && strings[10] == "N-SF5"

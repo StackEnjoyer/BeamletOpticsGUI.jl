@@ -555,6 +555,20 @@ function CatalogGlass(name::AbstractString = "glass"; default::AbstractString = 
 end
 
 """
+    CatalogSurface(name, radius)
+
+A surface of a lens of the built-in catalog (internal, see `LiveSurfaces.jl`): the catalog shows a
+menu of "spherical" and "aspheric", a box for the radius of curvature with the default `radius`
+[m], shown in mm, and for an asphere the boxes of its conic constant and of its coefficients. The
+constructor of the entry gets the surface as a `_SurfaceValue`, without a diameter, which is a
+parameter of its own; hence it is a function of the GUI, e.g. `_surface_lens`.
+"""
+struct CatalogSurface
+    name::String
+    radius::Float64
+end
+
+"""
     CatalogEntry(name, constructor; group = "Components", params = [], code_name = string(nameof(constructor)), icon = nothing, source = false)
 
 An entry of the component catalog of [`live_view`](@ref), see [`component_catalog`](@ref): a
@@ -591,7 +605,7 @@ struct CatalogEntry
     name::String
     group::String
     constructor::Any
-    params::Vector{Union{CatalogParam, CatalogGlass}}
+    params::Vector{Union{CatalogParam, CatalogGlass, CatalogSurface}}
     code_name::String
     icon::Union{Nothing, Symbol, Makie.BezierPath}
     source::Bool
@@ -603,7 +617,7 @@ function CatalogEntry(name::AbstractString, constructor; group::AbstractString =
     # an unknown name throws
     icon isa Symbol && _icon(icon)
     return CatalogEntry(String(name), String(group), constructor,
-        Union{CatalogParam, CatalogGlass}[params...], String(code_name), icon, source)
+        Union{CatalogParam, CatalogGlass, CatalogSurface}[params...], String(code_name), icon, source)
 end
 
 """
