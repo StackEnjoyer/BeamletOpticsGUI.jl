@@ -60,10 +60,7 @@ card_rows(@nospecialize(src::Union{BMO.CollimatedSource, BMO.PointSource})) = (p
 # Gaussian beamlets: wavelength, waist and Rayleigh range
 card_rows(@nospecialize(g::BMO.GaussianBeamlet)) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
     beam_card_rows(g)...)
-# Systems (inspected, see `_inspect!`): no pose, the number of objects, the rays of their sources and
-# the duration of the last solve
-card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text; width = 48),
-    _text_row("rays", :rays, _rays_text; width = 48), _text_row("solve", :solve, _solve_text; width = 48))
+# Systems: see `LiveSystemCard.jl`
 
 card_actions(@nospecialize(obj)) = (CardWidget(Button; name = :hide, label = "hide",
     value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
@@ -73,10 +70,6 @@ card_actions(@nospecialize(obj)) = (CardWidget(Button; name = :hide, label = "hi
 # names the reason in the status line for any other object, e.g. an object of a group or an extra
 _remove_button() = CardWidget(Button; name = :remove, label = "remove",
     on = (gui, o, _) -> _remove_selected!(gui, o))
-
-# Systems: also "new window", which opens the system in a window of its own, see `open_system`
-card_actions(sys::BMO.AbstractSystem) = (invoke(card_actions, Tuple{Any}, sys)...,
-    CardWidget(Button; name = :open, label = "new window", on = (gui, s, _) -> _open_system!(gui, s)))
 
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),

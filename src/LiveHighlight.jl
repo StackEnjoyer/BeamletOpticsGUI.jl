@@ -161,6 +161,72 @@ function _end_highlight!(gui::LiveView)
     return nothing
 end
 
+#=
+Highlight while the members of a system are picked, see `_set_member_pick!`
+=#
+
+# Opacity of what is not a member of the system of the pick, relative to its opacity before
+const _PICK_OPACITY = 0.25
+
+# Per live view with a pick, the plots that are see-through with their attributes before (`alpha`,
+# `transparency` and the image marker of a scatter, like `base` of `_Highlight`); the keys are weak
+const _PICK_HIGHLIGHTS = WeakKeyDict{LiveView, IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}}()
+
+"""
+    _pick_dimmed(gui) -> IdDict
+
+The plots of the `gui` that are see-through while the members of a system are picked, with their
+attributes before, see `_update_pick_highlight!`; empty without a pick.
+"""
+_pick_dimmed(gui::LiveView) =
+    get(() -> IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}(), _PICK_HIGHLIGHTS, gui)
+
+"""
+    _update_pick_highlight!(gui)
+
+Shows the pick of the members of a system of the `gui` (see `_set_member_pick!`) in its 3D view:
+the members of the system, i.e. its objects and the markers of its sources, are shown as they are,
+and the plots of all other components and source markers at `_PICK_OPACITY` of their opacity, like
+a browsed group (see `_browse_highlight!`); clip planes and beams are not changed. Without a pick,
+all plots get their attributes back. Only the plots whose state changes are touched, hence it is
+called after every change of the members and every frame while picking, e.g. for a component that
+is added meanwhile.
+"""
+function _update_pick_highlight!(gui::LiveView)
+    pick = _member_pick(gui)
+    dimmed = get(_PICK_HIGHLIGHTS, gui, nothing)
+    isnothing(pick) && isnothing(dimmed) && return nothing
+    # the plots of the components and source markers of the view, and those that are to be see-through
+    shown, wanted = Base.IdSet{AbstractPlot}(), Base.IdSet{AbstractPlot}()
+    members = Base.IdSet{Any}()
+    if !isnothing(pick)
+        foreach(obj -> foreach(leaf -> push!(members, leaf), _leaves(obj)), pick.sys.objects)
+        foreach(src -> push!(members, src), _sources_of(gui, pick.sys))
+        isnothing(dimmed) && (dimmed = _PICK_HIGHLIGHTS[gui] = IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}())
+    end
+    for oh in render_children(gui.controls.h)
+        x = rendered(oh)
+        _pick_candidate(x) || continue
+        for p in _pickable_plots(oh)
+            push!(shown, p)
+            (isnothing(pick) || x in members) || push!(wanted, p)
+        end
+    end
+    for (p, base) in collect(dimmed)
+        p in wanted && continue
+        # the plots of a component that was removed meanwhile are deleted, not restored
+        p in shown && _restore_plot!(p, base...)
+        delete!(dimmed, p)
+    end
+    for p in wanted
+        haskey(dimmed, p) && continue
+        dimmed[p] = (_plot_alpha(p), Bool(p.transparency[]), _image_marker(p))
+        _dim_plot!(p, _PICK_OPACITY)
+    end
+    isnothing(pick) && delete!(_PICK_HIGHLIGHTS, gui)
+    return nothing
+end
+
 """
     _part_under_cursor(gui, parts)
 

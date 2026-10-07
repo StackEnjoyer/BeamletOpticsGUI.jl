@@ -145,12 +145,15 @@ end
 
 Selects the movable `obj` like a click in the 3D view, e.g. from the component menu or the object
 tree, and shows its pose in the status line. Nothing is selected in the spectator mode. The entry
-`h` of a system inspects the system instead, see `_inspect!`.
+`h` of a system inspects the system instead, see `_inspect!`. While the members of a system are
+picked (see `_set_member_pick!`), a component or a source is picked instead of selected, see
+`_pick_shown!`.
 """
 _select!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, h)
 function _select!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     ctrl.selected[] === obj && return nothing
+    _pick_shown!(gui, obj) && return nothing
     if ctrl.spectator[]
         gui.status.text[] = "spectator mode, press v to select components"
         _show_menu_selection!(gui.widgets.menu, 0)
@@ -219,11 +222,15 @@ the app layout) without selecting it for moving, i.e. without gizmo and selectio
 is not movable. The selection of the controls is cleared, since `gui.objects.inspected` and
 `controls.selected[]` exclude each other. The inspection ends with Esc, a click on the empty space
 of the 3D view or a new selection, see `_end_inspection!` and `_on_select!`. The pose boxes of an
-inspected object that is not movable reject inputs, see `_apply_pose_input!`.
+inspected object that is not movable reject inputs, see `_apply_pose_input!`. While the members of
+a system are picked (see `_set_member_pick!`), a component or a source is picked instead of
+inspected, see `_pick_shown!`; a system is inspected as usual, which ends the pick if it is another
+one.
 """
 _inspect!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, rendered(h))
 function _inspect!(gui::LiveView, @nospecialize(obj))
     gui.objects.inspected === obj && return nothing
+    _pick_shown!(gui, obj) && return nothing
     ctrl = gui.controls
     if !isnothing(ctrl.selected[])
         ctrl.selected[] = nothing
@@ -235,6 +242,30 @@ function _inspect!(gui::LiveView, @nospecialize(obj))
     gui.status.text[] = "$(_label(gui, obj)) inspected, not selected for moving, Esc closes its card"
     _on_shown!(gui)
     return nothing
+end
+
+"""
+    _pick_shown!(gui, obj) -> Bool
+
+What `obj`, which is about to be selected or inspected in the `gui`, e.g. from the component menu
+or the object tree, means while the members of a system are picked (see `_set_member_pick!`): a
+component or a source is picked (see `_pick_member!`) and neither selected nor inspected, for which
+it returns `true`; the component menu shows the object of the cards again. Another system ends the
+pick and is inspected. Returns `false` without a pick and for anything else, e.g. a clip plane.
+"""
+function _pick_shown!(gui::LiveView, @nospecialize(obj))
+    pick = _member_pick(gui)
+    isnothing(pick) && return false
+    if obj isa BMO.AbstractSystem
+        obj === pick.sys || _end_member_pick!(gui)
+        return false
+    end
+    _pick_candidate(obj) || return false
+    _pick_member!(gui, obj)
+    shown = _shown_object(gui)
+    i = isnothing(shown) ? nothing : _index(gui.objects.menu, _row_key(gui, shown))
+    _show_menu_selection!(gui.widgets.menu, something(i, 0))
+    return true
 end
 
 """Ends the inspection of the `gui`, see `_inspect!`; nothing without one."""
