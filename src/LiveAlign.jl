@@ -62,6 +62,7 @@ function _commit_pose!(gui::LiveView, @nospecialize(obj), P0, R0)
     ctrl.last_key_step = nothing
     _push_history!(ctrl, obj, P0, R0, P1, R1)
     update_render!(ctrl.h)
+    _update_debug!(gui)
     _update_selection_box!(ctrl)
     ctrl.on_change(obj)
     return nothing

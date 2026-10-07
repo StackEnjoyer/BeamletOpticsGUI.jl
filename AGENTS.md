@@ -103,6 +103,9 @@ describe it as available in docs or the skill.
   components snap onto (the `snap_grid` of the controls). `src/LiveAlign.jl`: the buttons of the
   card of a component that align it to the nearest beam. `src/LiveAim.jl`: aiming a source with
   the mouse.
+  `src/LiveDebug.jl`: the debug mode, an overlay with the bounding spheres of the shapes of the
+  traced components (`render_bounding_sphere!` of BMO via `live_render!(draw, ax, x)`), whose
+  handles are not part of the handle of the controls.
 - `src/LiveLinks.jl`: `open_system`, a system of a view in a second window: the views are linked
   (`_ViewLinks`) and show the same objects; the view that changes solves, the others follow
   (`_sync_links!` after a solve and when the beams become outdated, `_sync_structure!` after adding

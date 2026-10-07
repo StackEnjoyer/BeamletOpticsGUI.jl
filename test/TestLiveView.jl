@@ -1664,8 +1664,8 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.layout isa GUI.CompactLayout
         @test gui.fig.scene.backgroundcolor[] == t.background
         @test gui.ax.scene.backgroundcolor[] == t.view
-        # the rays in the color of their wavelength, here 1000 nm, in both themes
-        @test _rgb(only(render_plots(gui.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
+        # the rays in the color of their wavelength, here 1000 nm, in both themes (one color per vertex)
+        @test only(unique(_rgb.(only(render_plots(gui.beam_handles[1])).color[]))) == _rgb(GUI._wavelength_color(1.0e-6))
         plane = only(gui.clip.planes)
         @test _plane_color(gui, plane) == _rgb(:purple)
         @test all(==(_rgb(:black)), _strokes(gui, plane, beam))
@@ -1699,7 +1699,7 @@ _points(h) = only(render_plots(h))[1][]
         @test _rgb(o.rail.box.strokecolor[]) == _rgb(t.border)
         @test _rgb(dark.widgets.auto_trace_toggle.box.color[]) == _rgb(t.accent_soft)
         @test Makie.Colors.alpha(Makie.to_color(dark.widgets.measure_toggle.box.color[])) == 0
-        @test _rgb(only(render_plots(dark.beam_handles[1])).color[]) == _rgb(GUI._wavelength_color(1.0e-6))
+        @test only(unique(_rgb.(only(render_plots(dark.beam_handles[1])).color[]))) == _rgb(GUI._wavelength_color(1.0e-6))
         @test _plane_color(dark, only(dark.clip.planes)) == _rgb(t.clip_plane)
         @test all(==(_rgb(t.marker_stroke)), _strokes(dark, only(dark.clip.planes), beam))
         @test _detector_color(dark, pd) == t.materials[:detector]

@@ -18,19 +18,17 @@ _has_preview(gui::LiveView) = gui.trace.preview_enabled &&
 """
     _solve_from_start!(system, beam)
 
-Solves the `beam` (a beam or a beam group) in the `system` by brute force: from its start ray, with
-`retrace = false`, since retracing the path of the last solve is not reliable in the live view.
-Each beam is reset to its untraced start state first (`empty!`): without retracing,
-`solve_system!` does not trace a beam whose last ray already ends on a surface.
+Solves the `beam` (a beam or a beam group) in the `system` from its start ray. Each beam is reset
+to its untraced start state first (`empty!`).
 """
 function _solve_from_start!(system, beam::BMO.AbstractBeam)
     empty!(beam)
-    solve_system!(system, beam; retrace = false)
+    solve_system!(system, beam)
     return nothing
 end
 function _solve_from_start!(system, bg::BMO.AbstractBeamGroup)
     foreach(empty!, BMO.beams(bg))
-    solve_system!(system, bg; retrace = false)
+    solve_system!(system, bg)
     return nothing
 end
 
@@ -677,6 +675,7 @@ function _connect_sliders!(gui::LiveView, callbacks)
         empty!(pending)
         # The callbacks may have moved objects or sources
         update_render!(gui.controls.h)
+        _update_debug!(gui)
         _on_change!(gui, nothing)
         return nothing
     end

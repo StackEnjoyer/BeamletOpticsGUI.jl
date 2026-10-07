@@ -25,7 +25,8 @@ const GUI = BeamletOpticsGUI
     _card(gui::GUI.AppView) = gui.layout.inspector.card
     _card(gui) = gui.cards.selection
     _hex(c) = GUI._color_hex(Makie.to_color(c))
-    _plot_colors(gui, beam) = unique(_hex(p.color[]) for p in GUI._color_plots(gui, beam))
+    # The plots of a beam hold one color per vertex
+    _plot_colors(gui, beam) = unique(_hex(c) for p in GUI._color_plots(gui, beam) for c in p.color[])
     # Shows the page of the card of the selected `obj`
     function _show!(gui, obj, page)
         gui.controls.selected[] = obj

@@ -10,6 +10,7 @@ module BeamletOpticsGUI
 using BeamletOptics
 import BeamletOptics: live_render!, update_render!, remove_render!, pick_object, pickable_plots,
                       rendered, render_plots, render_children, render_parent, render_settings,
+                      render_settings!,
                       look_colors, AbstractRenderHandle, AbstractObjectRenderHandle,
                       AbstractSystemRenderHandle, AbstractBeamRenderHandle
 import BeamletOptics: translate3d!, translate_to3d!, rotate3d!
@@ -87,6 +88,7 @@ include("LiveEdit.jl")
 include("LivePlacement.jl")
 include("LiveSnap.jl")
 include("LiveTable.jl")
+include("LiveDebug.jl")
 include("LiveAlign.jl")
 include("LiveAim.jl")
 include("LiveLinks.jl")

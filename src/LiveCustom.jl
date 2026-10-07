@@ -332,6 +332,7 @@ function retrace!(f, gui::LiveView)
     # Like a slider, see `_connect_sliders!`: `f` may change any object
     _change!(f, gui.controls, nothing)
     update_render!(gui.controls.h)
+    _update_debug!(gui)
     _on_change!(gui, nothing)
     return nothing
 end

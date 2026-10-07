@@ -39,7 +39,7 @@ using Pkg
 Pkg.add("BeamletOpticsGUI")
 ```
 
-It needs BeamletOptics 0.13 (0.13.12 or newer) and a Makie backend, preferably GLMakie.
+It needs BeamletOptics 0.14 and a Makie backend, preferably GLMakie.
 
 The order of the packages in `using` makes a difference: load GLMakie last, as above. The window
 works in any order, but with GLMakie loaded first, Julia compiles about twice as much at the first
