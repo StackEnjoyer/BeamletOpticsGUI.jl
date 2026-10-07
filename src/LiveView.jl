@@ -21,6 +21,8 @@ task, see `_solve!` and `_run!`.
 - `t0`: `time()` at the start
 - `shown`: the loop whose progress window is shown, `(; k, t0, t, count)`: the index of its sink,
   its start and the time and count when its window appeared (`k = 0` before the first window)
+- `systems`: the systems that a solve traces, `nothing` for all systems of the view, see
+  `_trace_set`
 """
 mutable struct _SolveJob
     task::Task
@@ -32,7 +34,12 @@ mutable struct _SolveJob
     timing::Symbol
     t0::Float64
     shown::@NamedTuple{k::Int, t0::Float64, t::Float64, count::Int}
+    systems::Any
 end
+
+# A job of all systems
+_SolveJob(task, done, sinks, anchors, apply, obj, timing, t0, shown) =
+    _SolveJob(task, done, sinks, anchors, apply, obj, timing, t0, shown, nothing)
 
 """
     AbstractLiveLayout

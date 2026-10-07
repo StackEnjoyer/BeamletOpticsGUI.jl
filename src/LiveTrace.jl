@@ -107,7 +107,7 @@ After a preview (see `_compute`), the detector views are marked as a preview and
 `gui.trace.preview` is set, such that the full solve follows once the movement pauses, see
 `_on_idle!`. `on_change` is only called after full solves.
 """
-function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false)
+function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = nothing)
     t0 = time_ns()
     # The solve succeeded, the message of a failed one is outdated
     _clear_solve_error!(gui)
@@ -146,7 +146,7 @@ function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false)
     # e.g. values of the last solve on the cards
     _update_inspector!(gui)
     # The linked views show the beams, which this one traced, see `_follow!`
-    _sync_links!(gui, obj; stale = false, preview = previewed)
+    _sync_links!(gui, obj; stale = false, preview = previewed, traced)
     return nothing
 end
 
@@ -186,7 +186,7 @@ _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles; kwargs...) 
 
 function _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles, requests;
         systems = BMO.AbstractSystem[first.(pairs)...], coarse = false, preview = false,
-        timing::Symbol)
+        timing::Symbol, traced = nothing)
     # The detectors of the systems are emptied, also of those whose beams are all switched off
     isempty(systems) || _views_solve_started!(gui)
     # Beams that are switched off are not traced, see `_set_beam_on!`. The task works on its own
@@ -203,7 +203,7 @@ function _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles, re
         notify(done)
     end
     return _SolveJob(task, done, sinks, anchors, apply, obj, timing, time(),
-        (; k = 0, t0 = NaN, t = NaN, count = 0))
+        (; k = 0, t0 = NaN, t = NaN, count = 0), traced)
 end
 
 """
@@ -302,7 +302,8 @@ function _cancel!(gui::LiveView, job::_SolveJob)
     setproperty!(gui.trace, job.timing, max(getproperty(gui.trace, job.timing), time() - job.t0))
     gui.trace.pending = gui.trace.preview = gui.trace.coarse = false
     _views_cancelled!(gui)
-    _mark_stale!(gui, nothing; msg = _CANCELLED)
+    # the systems that the job traced, all of them for a job of the whole view
+    _mark_stale!(gui, nothing; msg = _CANCELLED, systems = job.systems)
     # The cards show the beams and detectors again, see `_TRACING_VALUE`
     _update_inspector!(gui)
     return nothing
@@ -331,10 +332,8 @@ function _finish!(gui::LiveView, job::_SolveJob)
         _fail!(gui, e)
         return false
     end
-    if _solves(job)
-        _restore_beams!(gui)
-        _set_fresh!(gui)
-    end
+    # The systems that were traced are up to date, see `_trace_set`
+    _solves(job) && _set_fresh!(gui, job.systems)
     return true
 end
 
@@ -354,9 +353,9 @@ function _fail!(gui::LiveView, e)
     end
     e = _task_error(e)
     gui.last_error = _log_once(e, gui.last_error, "solving the systems")
-    gui.trace.stale || _dim_beams!(gui)
     gui.trace.stale = true
     _note_stale!(gui, nothing)
+    _dim_beams!(gui)
     gui.status.text[] = "solving the systems failed, see the log"
     _show_solve_error!(gui, e)
     _sync_links!(gui, nothing; stale = true)
@@ -436,16 +435,37 @@ _beam_plots(h::AbstractBeamRenderHandle) = render_plots(h)
 _beam_plots(h) = AbstractPlot[]
 
 """
-Dims all beam plots of the `gui`, including the polarization overlays, to indicate outdated beams,
-stores the original `alpha`.
+Dims the beam plots of the `gui` whose systems are outdated (see `_system_stale`), including their
+overlays, e.g. the polarization, and stores their original `alpha`; the plots of the systems that
+are up to date get theirs back. Called after `gui.trace` says which systems are outdated.
 """
 function _dim_beams!(gui::LiveView)
-    for h in _all_beam_handles(gui), plot in _beam_plots(h)
-        haskey(plot, :alpha) || continue
-        haskey(gui.trace.beam_alphas, plot) || (gui.trace.beam_alphas[plot] = plot.alpha[])
-        plot.alpha[] = _STALE_ALPHA
+    alphas = gui.trace.beam_alphas
+    function dim!(beam, h)
+        stale = _beam_stale(gui, beam)
+        for plot in _beam_plots(h)
+            haskey(plot, :alpha) || continue
+            if stale
+                haskey(alphas, plot) || (alphas[plot] = plot.alpha[])
+                plot.alpha[] = _STALE_ALPHA
+            elseif haskey(alphas, plot)
+                plot.alpha[] = pop!(alphas, plot)
+            end
+        end
+        return nothing
+    end
+    foreach((p, h) -> dim!(p.second, h), gui.pairs, gui.beam_handles)
+    for store in _overlay_stores(gui), (beam, h) in store
+        dim!(beam, h)
     end
     return nothing
+end
+
+# Whether the `beam` of the `gui` is outdated: the system that it is traced through is
+function _beam_stale(gui::LiveView, beam)
+    gui.trace.stale || return false
+    sys = _system_of_source(gui, beam)
+    return isnothing(sys) || _system_stale(gui, sys)
 end
 
 """
@@ -461,11 +481,16 @@ function _restore_beams!(gui::LiveView)
     return nothing
 end
 
-"""Marks the beams and detector views of the `gui` as outdated after `obj` (or a slider) changed."""
-function _mark_stale!(gui::LiveView, @nospecialize(obj); msg = "outdated, press t to trace")
-    gui.trace.stale || _dim_beams!(gui)
+"""
+Marks the beams and detector views of the `gui` as outdated after `obj` (or a slider) changed: those
+of the `systems`, by default of the systems of `obj`, or of all systems if they are not known, see
+`_note_stale!`.
+"""
+function _mark_stale!(gui::LiveView, @nospecialize(obj); msg = "outdated, press t to trace",
+        systems = nothing)
     gui.trace.stale = true
-    _note_stale!(gui, obj)
+    isnothing(systems) ? _note_stale!(gui, obj) : _note_stale_systems!(gui, systems)
+    _dim_beams!(gui)
     gui.status.text[] = isnothing(obj) ? msg : "$(_pose_string(gui, obj)) — $msg"
     # The beams of the linked views are outdated as well, see `_follow!`
     _sync_links!(gui, obj; stale = true)
@@ -482,17 +507,22 @@ Afterwards the appearance of the beams is restored; if solving fails, the beams 
 views are kept marked as outdated. Returns `true` if the solve succeeded without continuing in
 the background.
 """
-function _solve!(gui::LiveView, @nospecialize(obj); coarse = false, preview = false)
+function _solve!(gui::LiveView, @nospecialize(obj); coarse = false, preview = false,
+        systems = nothing)
     _cancel_solve!(gui)
     gui.trace.pending = false
-    job = _start_job(gui, r -> _apply!(gui, r, obj; coarse), obj, gui.pairs, gui.beam_handles;
-        systems = _systems(gui), coarse, preview, timing = preview ? :preview_time : :solve_time)
+    # Only these systems, with those that share a detector with them; `nothing` for all
+    traced = isnothing(systems) ? nothing : _trace_set(gui, systems)
+    pairs, handles = _traced_pairs(gui, traced)
+    job = _start_job(gui, r -> _apply!(gui, r, obj; coarse, traced), obj, pairs, handles;
+        systems = isnothing(traced) ? _systems(gui) : traced, traced, coarse, preview,
+        timing = preview ? :preview_time : :solve_time)
     done = _run!(gui, job, _TRACING)
     if _running(gui.trace.job)
         # Outdated until the solve in the background is shown, see `_finish!`
-        gui.trace.stale || _dim_beams!(gui)
         gui.trace.stale = true
-        _note_stale!(gui, obj)
+        isnothing(traced) ? _note_stale!(gui, obj) : _note_stale_systems!(gui, traced)
+        _dim_beams!(gui)
         _sync_links!(gui, obj; stale = true)
     end
     return done
@@ -519,17 +549,27 @@ a preview of beam groups (see `_resolve!`) and a coarse preview of slow detector
 them as outdated. If solving (the preview solve, if any) is slower than the `trace_budget`, the
 solve is deferred until the movement pauses, see `_on_idle!`.
 """
-function _on_change!(gui::LiveView, @nospecialize(obj))
-    gui.trace.last_change = time()
+function _on_change!(gui::LiveView, @nospecialize(obj); systems = nothing)
+    trace = gui.trace
+    # The systems that the change affects, `nothing` for all, and those of them that are traced
+    # after each change, see `_system_auto`; the other ones are outdated until they are traced
+    affected = isnothing(systems) ? _affected_systems(gui, obj) : systems
+    (!isnothing(affected) && isempty(affected)) && return nothing
+    trace.last_change = time()
     preview = _has_preview(gui)
-    if !gui.trace.auto[]
-        _mark_stale!(gui, obj)
-    elseif (preview ? gui.trace.preview_time : gui.trace.solve_time) <= gui.trace.budget
-        _solve!(gui, obj; coarse = gui.trace.view_time > gui.trace.budget, preview)
+    auto, manual = _split_auto(gui, affected)
+    if isempty(auto)
+        _mark_stale!(gui, obj; systems = affected)
+    elseif (preview ? trace.preview_time : trace.solve_time) <= trace.budget
+        # a system without a source has nothing to trace
+        filter!(sys -> !isempty(_sources_of(gui, sys)), manual)
+        isempty(manual) || _mark_stale!(gui, obj; systems = manual)
+        _solve!(gui, obj; coarse = trace.view_time > trace.budget, preview,
+            systems = _solved_systems(gui, auto))
     else
-        _mark_stale!(gui, obj; msg = "tracing when the movement pauses")
-        gui.trace.pending = true
-        gui.trace.pending_obj = obj
+        _mark_stale!(gui, obj; msg = "tracing when the movement pauses", systems = affected)
+        trace.pending = true
+        trace.pending_obj = obj
     end
     return nothing
 end
@@ -542,10 +582,10 @@ function _on_idle!(gui::LiveView)
     time() - gui.trace.last_change > gui.trace.idle_delay || return nothing
     _running(gui) && return nothing
     if gui.trace.pending && gui.trace.auto[]
-        _solve!(gui, gui.trace.pending_obj)
+        _solve!(gui, gui.trace.pending_obj; systems = _solved_systems(gui, _auto_systems(gui)))
     elseif gui.trace.preview
         # Also if auto tracing was switched off in the meantime, since the preview is incomplete
-        _solve!(gui, gui.trace.preview_obj)
+        _solve!(gui, gui.trace.preview_obj; systems = _solved_systems(gui, _auto_systems(gui)))
     elseif gui.trace.coarse
         job = _start_job(gui, r -> _refine!(gui, r), gui.trace.preview_obj, empty(gui.pairs),
             empty(gui.beam_handles), _view_requests(gui); timing = :view_time)
@@ -596,7 +636,12 @@ function _connect_trace!(gui::LiveView)
         return Consume(false)
     end)
     push!(listeners, on(gui.trace.auto) do active
+        # set to follow the systems, see `_set_system_auto!`
+        gui.trace.auto_sync && return nothing
+        # The switch of the view switches all its systems
+        empty!(gui.trace.manual)
         active && gui.trace.stale && _trace!(gui)
+        _update_inspector!(gui)
         return nothing
     end)
     push!(listeners, on(events(scene).tick) do _
