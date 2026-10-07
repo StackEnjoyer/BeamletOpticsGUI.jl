@@ -365,7 +365,10 @@ GLMakie.activate!(; visible = false)
         x0, x1, z0, z1 = _limits(v.ax)
         @test v.cut_x[1][] ≈ [Point2f(x0, c[2]), Point2f(x1, c[2])]
         @test v.cut_z[1][] ≈ [Point2f(c[1], z0), Point2f(c[1], z1)]
-        @test v.cut_x.color[] == v.profile_x.color[] && v.cut_z.color[] == v.profile_z.color[]
+        for (cut, profile) in ((v.cut_x, v.profile_x), (v.cut_z, v.profile_z))
+            a, b = Makie.to_color(cut.color[]), Makie.to_color(profile.color[])
+            @test RGBf(a) == RGBf(b) && Makie.alpha(a) == GUI._VIEW_CUT_ALPHA
+        end
         @test v.cut_x.linestyle[] != v.profile_x.linestyle[]
         @test v.images[2].transformation.translation[][3] < v.cut_x.transformation.translation[][3] <
               v.crosses[2].transformation.translation[][3]

@@ -348,8 +348,10 @@ const _VIEW_DOUBLE_CLICK = 0.35
 # The rectangle of a zoom selection: its z above the plots, the opacity of its fill and the
 # smallest size [px] that zooms
 const _VIEW_SELECT_DZ = 4.5f0
-# z of the lines of the cuts of the profiles: above the image, below the centroid
+# The lines of the cuts of the profiles: their z, above the image and below the centroid, and their
+# opacity, with which they stay in the background of the image
 const _VIEW_CUT_DZ = 3.5f0
+const _VIEW_CUT_ALPHA = 0.5f0
 const _VIEW_SELECT_ALPHA = 0.2f0
 const _VIEW_SELECT_MIN = 4.0f0
 
@@ -590,8 +592,8 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     foreach(p -> translate!(p, 0, 0, _VIEW_SELECT_DZ), (select_fill, select_line))
     # The lines of the cuts of the profiles follow the limits, see `_update_cuts!`
     cut = (; linestyle = :dash, linewidth = 1, inspectable = false, xautolimits = false, yautolimits = false)
-    cut_x = lines!(ax, Point2f[]; color = t.gizmo[1], cut...)
-    cut_z = lines!(ax, Point2f[]; color = t.gizmo[3], cut...)
+    cut_x = lines!(ax, Point2f[]; color = (t.gizmo[1], _VIEW_CUT_ALPHA), cut...)
+    cut_z = lines!(ax, Point2f[]; color = (t.gizmo[3], _VIEW_CUT_ALPHA), cut...)
     foreach(p -> translate!(p, 0, 0, _VIEW_CUT_DZ), (cut_x, cut_z))
 
     # The texts inside the frame do not count for the limits, which they follow
@@ -1081,7 +1083,7 @@ end
     _set_cuts!(view, c)
 
 Shows the lines of the two cuts of the profiles through the point `c` [mm] in the axis of the
-`view`, or none for `nothing`: dashed, the one along x in the color of the profile along x, the one
+`view`, or none for `nothing`: dashed and half transparent, the one along x in the color of the profile along x, the one
 along z in that of the profile along z. They span the shown limits and follow them.
 """
 function _set_cuts!(v::_DetectorView, c::Union{Nothing, Point2f})
