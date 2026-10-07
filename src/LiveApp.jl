@@ -27,7 +27,9 @@ Layout of `live_view(...; layout = :app)`, an application window around the 3D v
   chips of the mode and the keyboard step and the help card, see `_HelpUI`
 
 The sidebars and the dock are collapsed via toggles in the toolbar, then the 3D view takes their
-space, see `_set_shown!`. In the spectator mode, all parts are collapsed, also the toolbar and the
+space, see `_set_shown!`. Their inner edges are `splitters` (a `_Splitters`), which the mouse drags
+to resize them, see `_build_splitters!`; they start with the sizes of the `sidebar_width` and
+`dock_height` kwargs, see `_part_sizes`. In the spectator mode, all parts are collapsed, also the toolbar and the
 status bar, and the 3D view fills the window, see `_set_spectator_ui!`. The colors come from the tokens `theme` of the `theme` kwarg, see
 `_APP_THEMES`. The fields are set by `_build_layout`.
 """
@@ -66,6 +68,8 @@ mutable struct AppLayout <: AbstractLiveLayout
     expanded::IdDict{Any, Bool}
     # the inspector with the docked card of the selection, an `_Inspector`, see LiveInspector.jl
     inspector::Any
+    # the splitters of the sidebars and the dock, see `_build_splitters!`
+    splitters::_Splitters
     AppLayout(theme::NamedTuple) = new(theme)
 end
 
@@ -79,6 +83,68 @@ _default_size(::AppLayout) = (1600, 950)
 _figure(layout::AppLayout, size) =
     Figure(; size, backgroundcolor = layout.theme.background, figure_padding = 0,
         _makie_theme(layout.theme)...)
+
+#=
+Sizes of the sidebars and the dock
+=#
+
+# Smallest and largest width of a sidebar [px]
+const _SIDEBAR_WIDTH_LIMITS = (160, 600)
+# Smallest height of the dock [px] and its largest one as a fraction of the height of the figure
+const _DOCK_HEIGHT_MIN = 80
+const _DOCK_HEIGHT_MAX = 0.7
+# Height of the dock as a fraction of the height of the window, unless it is given or was dragged
+const _DOCK_HEIGHT = 0.36
+
+"""The smallest and the largest height [px] of the dock in a figure of the `height`."""
+_dock_height_limits(height::Real) =
+    (Float64(_DOCK_HEIGHT_MIN), max(Float64(_DOCK_HEIGHT_MIN), round(_DOCK_HEIGHT_MAX * height; digits = 3)))
+
+function _sidebar_width(width, side)
+    lo, hi = _SIDEBAR_WIDTH_LIMITS
+    (width isa Real && lo <= width <= hi) || throw(ArgumentError(
+        "sidebar_width: the width of the $side sidebar must be a number within $lo and $hi px, got $(repr(width))"))
+    return Float64(width)
+end
+
+"""
+    _part_sizes(layout::AppLayout, sidebar_width, dock_height, size) -> (; left, right, dock)
+
+The sizes of the sidebars and the dock of the app layout at the start, as sizes of their column or
+row, from the `sidebar_width` and `dock_height` kwargs of [`live_view`](@ref) for a figure of the
+`size`: the widths `left` and `right` [px] from a number for both or from two numbers, each within
+`_SIDEBAR_WIDTH_LIMITS`, and the height `dock` [px] within `_dock_height_limits`, or `_DOCK_HEIGHT`
+of the height of the window for `nothing`. Throws an `ArgumentError` for anything else.
+"""
+function _part_sizes(::AppLayout, sidebar_width, dock_height, size)
+    ws = sidebar_width isa Real ? (sidebar_width, sidebar_width) : sidebar_width
+    (ws isa Union{Tuple, AbstractVector} && length(ws) == 2) || throw(ArgumentError(
+        "sidebar_width must be a number or the two widths (left, right), got $(repr(sidebar_width))"))
+    left, right = _sidebar_width(first(ws), "left"), _sidebar_width(last(ws), "right")
+    dock = if isnothing(dock_height)
+        Relative(_DOCK_HEIGHT)
+    else
+        lo, hi = _dock_height_limits(size[2])
+        (dock_height isa Real && lo <= dock_height <= hi) || throw(ArgumentError(
+            "dock_height must be `nothing` or a number within $(round(Int, lo)) and $(round(Int, hi)) px ($(round(Int, 100 * _DOCK_HEIGHT_MAX)) % of the height of the figure), got $(repr(dock_height))"))
+        Fixed(dock_height)
+    end
+    return (; left = Fixed(left), right = Fixed(right), dock)
+end
+
+"""
+The `sidebar_width` and `dock_height` kwargs of [`live_view`](@ref) for the sizes that the sidebars
+and the dock of the `gui` have now, see `_part_size_kwargs`: a dock that was neither given a height
+nor dragged keeps following the window (`nothing`), a higher one than a window of the default size
+allows gets its largest height there.
+"""
+function _part_size_kwargs(gui::AppView)
+    layout = gui.layout
+    dock = layout.dock.size
+    hi = last(_dock_height_limits(_default_size(layout)[2]))
+    return (; sidebar_width = (Float64(layout.left.size.x), Float64(layout.right.size.x)),
+        dock_height = dock isa Fixed ? min(Float64(dock.x), hi) : nothing)
+end
 
 #=
 Slots
@@ -307,10 +373,11 @@ function _build_layout(layout::AppLayout, fig, spec)
     studio_lighting!(ax; preset = spec.lighting)
     cube = spec.view_cube ? view_cube!(ax) : nothing
     # Sidebars and dock
-    layout.left = _sidebar_part(fig.scene, main, (1, 1), s -> colsize!(main, 1, s), Fixed(240), t.sidebar)
-    layout.right = _sidebar_part(fig.scene, main, (1, 3), s -> colsize!(main, 3, s), Fixed(300), t.sidebar)
+    sizes = spec.part_sizes
+    layout.left = _sidebar_part(fig.scene, main, (1, 1), s -> colsize!(main, 1, s), sizes.left, t.sidebar)
+    layout.right = _sidebar_part(fig.scene, main, (1, 3), s -> colsize!(main, 3, s), sizes.right, t.sidebar)
     layout.dock = _app_part(root, (3, 1), s -> rowsize!(root, 3, s),
-        Relative(0.36), t.sidebar; padding = 8)
+        sizes.dock, t.sidebar; padding = 8)
     layout.sections = Dict(:left => Pair{String, GridLayout}[], :right => Pair{String, GridLayout}[])
     layout.fillers = Dict(s => Label(getfield(layout, s).grid[1, 1], ""; tellwidth = false,
         tellheight = false) for s in (:left, :right))
@@ -430,6 +497,7 @@ function _connect_layout!(gui::AppView)
     push!(listeners, on(v -> _set_shown!(layout.right, v && !layout.ui_hidden), layout.collapse.right.active))
     push!(listeners, on(_ -> _update_dock!(layout), layout.collapse.dock.active))
     _connect_dock!(gui)
+    _build_splitters!(gui)
     # Object tree
     tree = layout.tree
     push!(listeners, on(key -> _tree_click!(gui, key), tree.clicked))
@@ -438,6 +506,40 @@ function _connect_layout!(gui::AppView)
     _update_tree!(gui)
     _on_clipping!(gui)
     _connect_inspector!(gui)
+    return nothing
+end
+
+"""
+    _build_splitters!(gui::AppView)
+
+Builds and connects the splitters of the app layout of the `gui`, see `_Splitters`: the edges of
+the left and the right sidebar towards the 3D view, which change their widths within
+`_SIDEBAR_WIDTH_LIMITS`, and the upper edge of the dock, which changes its height within
+`_dock_height_limits` of the window; the dock has a `Fixed` height once it was dragged. A double
+click restores the size of the start, see `_part_sizes`. A splitter takes the mouse only while its
+part is shown and not in the spectator mode.
+
+The contents follow the sizes on their own, besides the detector views of the docked cards, which
+are resized with the right sidebar (see `_resize_docked_views!`). When a drag ends, the docked
+catalog is laid out again for the width of the left sidebar (see `_resize_catalog_dock!`) and the
+inspector fits its texts to the width of the right one (see `_on_inspector_resized!`).
+"""
+function _build_splitters!(gui::AppView)
+    layout = gui.layout
+    scene = gui.fig.scene
+    active = () -> !layout.ui_hidden
+    sidebar = () -> Float64.(_SIDEBAR_WIDTH_LIMITS)
+    left = layout.left
+    splitters = _Splitter[
+        _Splitter(left, 1, 1, sidebar; active,
+            on_end = () -> _resize_catalog_dock!(gui, left.size.x - 2 * _SIDEBAR_PADDING)),
+        _Splitter(layout.right, 1, -1, sidebar; active,
+            on_resize = () -> _resize_docked_views!(gui),
+            on_end = () -> _on_inspector_resized!(gui)),
+        _Splitter(layout.dock, 2, 1, () -> _dock_height_limits(Makie.widths(scene.viewport[])[2]);
+            active)]
+    layout.splitters = _Splitters(scene, splitters; color = layout.theme.accent)
+    append!(gui.controls.listeners, _connect_splitters!(layout.splitters, events(scene)))
     return nothing
 end
 
@@ -498,7 +600,9 @@ _controls_slot!(gui::AppView, title::String) = _add_sidebar_section!(gui, :left,
 
 The dock of the component catalog in the app layout: the section `title` of the left sidebar, below
 the object tree. Its content is a collapsible part, the buttons of the dock are at the right of its
-title (see `_section_header`), and `reveal` switches the toggle of the sidebar on.
+title (see `_section_header`), and `reveal` switches the toggle of the sidebar on. Its `width` is
+that of the sidebar at the start; the catalog is laid out again when the sidebar was resized, see
+`_build_splitters!`.
 """
 function _catalog_dock_slot!(gui::AppView, title::AbstractString)
     layout = gui.layout

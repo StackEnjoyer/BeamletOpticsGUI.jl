@@ -76,6 +76,13 @@ cards have the same pages as floating ones (a detector view takes the width of t
 resize grip; both sidebars scroll with the mouse wheel when their content is higher than the window). The dock below the 3D view only has
 tabs of `add_panel!` and stays collapsed until the first one exists. Its 3D view has
 the same help pill, chips and help card at the top left.
+The sidebars and the dock are resized with the mouse: drag the edge between a sidebar and the 3D
+view (160 to 600 px) or the upper edge of the dock (80 px to 70 % of the window height), a line
+marks the edge under the mouse; a double click on the edge restores the start size. The start sizes
+are `sidebar_width = (240, 300)` (left, right; a number sets both) and `dock_height = nothing`
+(36 % of the window height) [px]; values outside the limits throw an `ArgumentError`, the compact
+layout ignores both. The tree, the card rows and the detector views follow the width, the tiles of
+the docked catalog are arranged again when the drag ends.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the
 start) shows only the 3D view and the help in both layouts: tools, status, view cube, cards,
 source markers (and with the cards the detector views), panels, toolbar, sidebars and dock are hidden and come back as they were, with the selection from before; the progress window of a

@@ -552,6 +552,23 @@ as in the compact layout; the dock button in its head moves it back. Only the do
 room in the sidebar. The floating cards and the docked cards are built by the same code from the
 same declarations.
 
+The sidebars and the dock of the app layout are resized with the mouse. A drag at the edge between
+a sidebar and the 3D view changes the width of the sidebar within 160 and 600 px, a drag at the
+upper edge of the dock changes its height within 80 px and 70 % of the height of the window; a
+line marks the edge while the mouse is over it. The object tree, the rows of the cards and the
+detector views follow the width, the tiles of the docked catalog are arranged again when the drag
+ends. A double click on the edge restores the size of the start, and a part that is collapsed
+comes back with the size it had. The sizes of the start are keyword arguments:
+
+```julia
+gui = live_view(system, beam; layout = :app, sidebar_width = (320, 280), dock_height = 200)
+```
+
+`sidebar_width = (240, 300)` holds the widths of the left and the right sidebar in pixels, a single
+number sets both. `dock_height = nothing` is 36 % of the height of the window, which follows the
+size of the window; a number is a height in pixels. Values outside of the limits throw an
+`ArgumentError`. The compact layout ignores both.
+
 In the compact layout, the tool rail (the button "⋯") holds the component menu ("select component")
 and "Show all". The menu lists the systems,
 each entry followed by its movable components and sources, by their `labels` (or automatic names),
