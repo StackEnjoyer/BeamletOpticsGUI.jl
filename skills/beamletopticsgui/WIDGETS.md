@@ -333,6 +333,8 @@ moves it to where it is placed.
 ## Checklist for a new component
 
 - `interact3d(system, object, beam, ray)`: required.
+- `BeamletOptics.initialize!(object)`: only if `interact3d` stores data in the component (e.g. the
+  hits of an own detector). It discards them; the live view calls it before every solve.
 - `render!`: optional, how it is drawn.
 - `card_rows` (and `card_actions`): optional, its rows and buttons on the card.
 - `BeamletOptics.properties`: optional, the properties on the page "Properties" of the card.

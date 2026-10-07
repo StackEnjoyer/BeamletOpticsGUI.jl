@@ -38,7 +38,10 @@ describe it as available in docs or the skill.
   entry on the BMO version pins. Never `BMO._x` names in `src/`, never
   `Base.get_extension(BeamletOptics, ...)`. If something is missing, add it to BMO first.
 - **Physics stays in BMO.** Solving is `solve_system!`; the GUI never computes rays, intersections
-  or detector fields itself.
+  or detector fields itself. What the objects stored during the last solve is discarded by
+  `initialize!`, never by the GUI (no `empty!` of a detector): once for all systems before their
+  sources are solved (`_compute`), since the sources superpose on a detector, and for a component
+  that is removed.
 - **A solve in the background owns the beams and detectors**, from its start until its result is
   shown or it is cancelled. Nothing else changes or reads them meanwhile: changes of objects go
   through `_change!`, which cancels the solve first, and code that reads the beams or the hits
