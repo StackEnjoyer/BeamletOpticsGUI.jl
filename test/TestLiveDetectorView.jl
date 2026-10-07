@@ -283,12 +283,12 @@ GLMakie.activate!(; visible = false)
         @test GUI._over_view(v, _center(v.ax))
         @test !GUI._over_view(v, Point2f(maximum(widget)) .+ 5)
 
-        # the field is an interpolated image, in front of it the centroid and the texts
+        # the field is an interpolated image, in front of it the texts; no centroid without profiles
         thumb_image, image = v.images
         @test image isa Makie.Image && image.interpolate[] && image.visible[] && thumb_image.visible[]
         @test size(image[3][]) == (30, 30)
         @test !v.spots[2].visible[]
-        @test length(v.crosses[2][1][]) == 1
+        @test all(p -> isempty(p[1][]), v.crosses) && isempty(v.cut_x[1][]) && isempty(v.cut_z[1][])
         @test v.xlabels.transformation.translation[][3] > image.transformation.translation[][3]
         @test v.switch.keys == [:intensity, :spot] && v.switch.selected[] == :intensity
         @test startswith(v.metrics_label.text[], "P = ")
@@ -358,8 +358,31 @@ GLMakie.activate!(; visible = false)
         @test v.profiles_shown && v.profiles_ax.blockscene.visible[] && v.profiles_toggle.active[]
         @test GUI._view_size(v)[2] > h + GUI._VIEW_PROFILES_HEIGHT
         @test length(v.profile_x[1][]) == 30 && length(v.profile_z[1][]) == 30
+        # with the profiles, the plot shows the centroid and a dashed line along each cut, in the
+        # color of its profile, between the image and the centroid
+        c = only(v.crosses[2][1][])
+        @test only(v.crosses[1][1][]) == c
+        x0, x1, z0, z1 = _limits(v.ax)
+        @test v.cut_x[1][] ≈ [Point2f(x0, c[2]), Point2f(x1, c[2])]
+        @test v.cut_z[1][] ≈ [Point2f(c[1], z0), Point2f(c[1], z1)]
+        @test v.cut_x.color[] == v.profile_x.color[] && v.cut_z.color[] == v.profile_z.color[]
+        @test v.cut_x.linestyle[] != v.profile_x.linestyle[]
+        @test v.images[2].transformation.translation[][3] < v.cut_x.transformation.translation[][3] <
+              v.crosses[2].transformation.translation[][3]
+        # the lines follow the limits
+        GUI._view_limits!(v.ax, (x0 / 2, x1 / 2, z0 / 2, z1 / 2))
+        x0, x1, z0, z1 = _limits(v.ax)
+        @test v.cut_x[1][] ≈ [Point2f(x0, c[2]), Point2f(x1, c[2])]
+        @test v.cut_z[1][] ≈ [Point2f(c[1], z0), Point2f(c[1], z1)]
+        # and leave with the profiles
+        _show!(v, pd, GUI._ViewOptions(; n = 30))
+        @test all(p -> isempty(p[1][]), v.crosses) && isempty(v.cut_x[1][]) && isempty(v.cut_z[1][])
+        _show!(v, pd, GUI._ViewOptions(; n = 30, profiles = true))
+        @test !isempty(v.cut_x[1][])
         _show!(v, pd, GUI._ViewOptions(; n = 30, kind = :spot, profiles = true))
         @test !v.profiles_shown && GUI._view_size(v)[2] <= h + 1
+        # a spot diagram keeps the centroid, without the lines
+        @test length(v.crosses[2][1][]) == 1 && isempty(v.cut_x[1][]) && isempty(v.cut_z[1][])
         # a spot diagram has no colorbar
         @test !v.bar_shown && !v.bar_ax.blockscene.visible[]
 

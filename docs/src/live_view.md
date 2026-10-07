@@ -164,11 +164,13 @@ thumbnail or on its chevron expands it again. The expanded view has:
 - a switch of the kinds that the hits of the last solve offer, the toggles "log", "profiles" and
   "bar" (field views only) and the button "fit"
 - the plot in mm with equal scales, the y axis on the right, the ticks, tick labels and axis names
-  inside the frame, and the centroid as a red cross
+  inside the frame, and the centroid of a spot diagram as a red cross
 - the colorbar of a field below the plot
 - the metrics in two lines below the plot
 
-"profiles" adds an axis with the intensity along x (red) and z (blue) through the centroid. "bar"
+"profiles" adds an axis with the intensity along x (red) and z (blue) through the centroid. While
+it is on, a red cross marks the centroid in the plot and a dashed line runs along each of the two
+cuts, in the color of its profile. "bar"
 switches the colorbar, which is on by default: it shows the colors of the image over its color
 range, in W/m² with an SI prefix for an intensity ("rel." for a PSF, which is normalized to its
 peak) and at the powers of ten with "log". The image is scaled to its maximum after every solve,
@@ -183,8 +185,8 @@ The kinds depend on the hits, the first is the default:
 | Gaussian beamlets (`GaussianBeamletHit`, `AstigmaticGaussianBeamletHit`) | "Intensity" (in W/m², with the power), "Spot" (the 1/e² outlines) |
 
 A chosen kind that the current hits do not offer falls back to their default and applies again
-when they offer it. Without hits, the view reads "no hits". The metrics, with the centroid marked
-by a red cross, are for alignment:
+when they offer it. Without hits, the view reads "no hits". The metrics are for alignment; a red
+cross marks the centroid in a spot diagram, and in a field while "profiles" is on:
 
 - spot diagram: the number of hits `N`, the centroid `c`, the RMS radius `sqrt(mean(|p - c|²))`
   and the geometric radius, i.e. the largest distance from the centroid

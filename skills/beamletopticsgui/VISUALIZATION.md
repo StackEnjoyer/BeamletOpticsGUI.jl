@@ -93,8 +93,9 @@ system (`ArgumentError`). The card of a `NonInteractableObject`/`MeshDummy` or
 beside the 3D view or in the dock). The view is expanded by default; its chevron collapses it to a
 thumbnail (92 px: kind, key value, centroid, radii), a click on the thumbnail expands it. Expanded:
 a switch of the kinds, toggles "log", "profiles" and "bar" (field views only), button "fit", the
-plot in mm (centroid as a red cross), the colorbar of a field and two lines of metrics; "profiles"
-adds the intensity along x (red) and z (blue) through the centroid, "bar" (on by default) switches
+plot in mm (centroid of a spot diagram as a red cross), the colorbar of a field and two lines of
+metrics; "profiles" adds the intensity along x (red) and z (blue) through the centroid, which the
+plot then marks by a red cross and a dashed line per cut in the color of its profile, "bar" (on by default) switches
 the colorbar below the plot (the color range of the image, in W/m² with an SI prefix, "rel." for a
 PSF, powers of ten with "log"; the image rescales to its maximum after every solve, so read
 changes of the intensity from the ticks of the bar or fix the scale with `colorrange`). Kinds (first = default): rays (`RayHit`, `PolarizedRayHit`): "Spot"

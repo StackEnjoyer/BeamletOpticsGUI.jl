@@ -348,6 +348,8 @@ const _VIEW_DOUBLE_CLICK = 0.35
 # The rectangle of a zoom selection: its z above the plots, the opacity of its fill and the
 # smallest size [px] that zooms
 const _VIEW_SELECT_DZ = 4.5f0
+# z of the lines of the cuts of the profiles: above the image, below the centroid
+const _VIEW_CUT_DZ = 3.5f0
 const _VIEW_SELECT_ALPHA = 0.2f0
 const _VIEW_SELECT_MIN = 4.0f0
 
@@ -373,7 +375,9 @@ off-screen:
   right and all decorations inside its frame; the colorbar of a field (`bar`: the colormap over
   the color range of the image in the axis `bar_ax`, its ticks below and its unit right of it,
   see `_set_bar!`) and the axis of the profiles of a field along x (red) and z (blue) through the
-  centroid, each if its options ask for it; the metrics in two lines.
+  centroid, each if its options ask for it; the metrics in two lines. A red cross marks the
+  centroid of a spot diagram, and that of a field while its profiles are shown, together with a
+  dashed line along each of the two cuts in the color of its profile (`cut_x`, `cut_z`).
 
 The tick labels and the axis names of `ax` are own texts in the axis (`xlabels`, `zlabels`,
 `xname`, `zname`, `status`), in front of the image by `_VIEW_OVERLAY_DZ`, since the decorations of
@@ -423,6 +427,10 @@ mutable struct _DetectorView
     const crosses::Vector{AbstractPlot}
     const profile_x::AbstractPlot
     const profile_z::AbstractPlot
+    # the lines of the cuts of the profiles in the axis and the point [mm] they cross in
+    const cut_x::AbstractPlot
+    const cut_z::AbstractPlot
+    cut::Union{Nothing, Point2f}
     # the rectangle of a zoom selection in the axis
     const select_fill::AbstractPlot
     const select_line::AbstractPlot
@@ -580,6 +588,11 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     select_fill = poly!(ax, Rect2f(0, 0, 1, 1); color = (t.text, _VIEW_SELECT_ALPHA), select...)
     select_line = lines!(ax, Point2f[]; color = t.text, linewidth = 1, select...)
     foreach(p -> translate!(p, 0, 0, _VIEW_SELECT_DZ), (select_fill, select_line))
+    # The lines of the cuts of the profiles follow the limits, see `_update_cuts!`
+    cut = (; linestyle = :dash, linewidth = 1, inspectable = false, xautolimits = false, yautolimits = false)
+    cut_x = lines!(ax, Point2f[]; color = t.gizmo[1], cut...)
+    cut_z = lines!(ax, Point2f[]; color = t.gizmo[3], cut...)
+    foreach(p -> translate!(p, 0, 0, _VIEW_CUT_DZ), (cut_x, cut_z))
 
     # The texts inside the frame do not count for the limits, which they follow
     o = _VIEW_LABEL_OFFSET
@@ -598,12 +611,14 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
         collapse_button, plots, ax, bar, bar_ax, bar_unit, bar_image, profiles_ax, metrics_label,
         Dict{Any, _Segmented}(), nothing, (),
         AbstractPlot[a.frame, b.frame], AbstractPlot[a.image, b.image], AbstractPlot[a.spots, b.spots], AbstractPlot[a.cross, b.cross],
-        profile_x, profile_z, select_fill, select_line, xlabels, zlabels, xname, zname, status, Rect2f[],
+        profile_x, profile_z, cut_x, cut_z, nothing, select_fill, select_line, xlabels, zlabels, xname,
+        zname, status, Rect2f[],
         _tree_font(ax.blockscene, :regular), Dict{String, Vec2f}(), false, "", nothing,
         _ViewOptions(), nothing, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, true, false,
         false, nothing, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[])
 
     on(_ -> _update_decorations!(v), ax.finallimits)
+    on(_ -> _update_cuts!(v), ax.finallimits)
     on(_ -> _update_decorations!(v), ax.scene.viewport)
     on(_ -> v.on_expanded(true), expand_button.clicks)
     on(_ -> v.on_expanded(false), collapse_button.clicks)
@@ -944,6 +959,7 @@ function _draw_kind!(v::_DetectorView, kind::_SpotKind, r::_ViewResult, ::_ViewO
         v.zoomed || _fit_spots!(v.ax, v.xy)
     end
     _show_profiles!(v, false)
+    _set_cuts!(v, nothing)
     _show_bar!(v, false)
     _show_texts!(v, kind, r)
     return nothing
@@ -963,7 +979,6 @@ function _draw_kind!(v::_DetectorView, kind::_FieldKind, r::_ViewResult, opts::_
         foreach(p -> Makie.update!(p; arg1 = ex, arg2 = ez, arg3 = Float32.(values), colorrange,
                 visible = true), v.images)
         _set_bar!(v, kind, colorrange, opts.colorscale)
-        _show_centroid!(v, r.metrics)
     end
     _show_bar!(v, opts.colorbar)
     v.extent = 1e3 .* (Float64(first(x)), Float64(last(x)), Float64(first(z)), Float64(last(z)))
@@ -1055,9 +1070,36 @@ function _pixel_edges(x)
     return (lo - h, hi + h)
 end
 
-function _show_centroid!(v::_DetectorView, m)
-    c = isfinite(m.cx) ? [Point2f(1e3 * m.cx, 1e3 * m.cz)] : Point2f[]
+# The red cross at the centroid of the metrics `m` in the thumbnail and in the axis, if `shown`
+function _show_centroid!(v::_DetectorView, m, shown::Bool = true)
+    c = shown && isfinite(m.cx) ? [Point2f(1e3 * m.cx, 1e3 * m.cz)] : Point2f[]
     foreach(p -> Makie.update!(p; arg1 = c), v.crosses)
+    return nothing
+end
+
+"""
+    _set_cuts!(view, c)
+
+Shows the lines of the two cuts of the profiles through the point `c` [mm] in the axis of the
+`view`, or none for `nothing`: dashed, the one along x in the color of the profile along x, the one
+along z in that of the profile along z. They span the shown limits and follow them.
+"""
+function _set_cuts!(v::_DetectorView, c::Union{Nothing, Point2f})
+    v.cut = c
+    _update_cuts!(v)
+    return nothing
+end
+
+_update_cuts!(v::_DetectorView) = _update_cuts!(v, v.cut)
+function _update_cuts!(v::_DetectorView, ::Nothing)
+    isempty(v.cut_x[1][]) && return nothing
+    foreach(p -> Makie.update!(p; arg1 = Point2f[]), (v.cut_x, v.cut_z))
+    return nothing
+end
+function _update_cuts!(v::_DetectorView, c::Point2f)
+    x0, x1, z0, z1 = _shown_limits(v.ax)
+    Makie.update!(v.cut_x; arg1 = [Point2f(x0, c[2]), Point2f(x1, c[2])])
+    Makie.update!(v.cut_z; arg1 = [Point2f(c[1], z0), Point2f(c[1], z1)])
     return nothing
 end
 
@@ -1086,6 +1128,7 @@ function _draw_empty!(v::_DetectorView, message::String)
     foreach(p -> Makie.update!(p; arg1 = Point2f[], visible = false), v.spots)
     foreach(p -> Makie.update!(p; arg1 = Point2f[]), v.crosses)
     _show_profiles!(v, false)
+    _set_cuts!(v, nothing)
     _show_bar!(v, false)
     _show_field_controls!(v, false)
     _update!(v.kind_label.text, message)
@@ -1095,9 +1138,13 @@ function _draw_empty!(v::_DetectorView, message::String)
     return nothing
 end
 
-# The intensity along x and z through the centroid of the metrics `m`, see `_ViewOptions`
+# The intensity along x and z through the centroid of the metrics `m`, see `_ViewOptions`: the
+# profiles below the axis, and in the image the centroid and the lines of the two cuts
 function _draw_profiles!(v::_DetectorView, shown::Bool, x, z, I, m)
-    if !(shown && isfinite(m.cx))
+    shown = shown && isfinite(m.cx)
+    _show_centroid!(v, m, shown)
+    _set_cuts!(v, shown ? Point2f(1e3 * m.cx, 1e3 * m.cz) : nothing)
+    if !shown
         _show_profiles!(v, false)
         return nothing
     end

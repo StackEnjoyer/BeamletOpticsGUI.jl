@@ -854,11 +854,12 @@ selects another:
 
 A kind that the hits do not offer falls back to their default and applies again once they offer it.
 The plot has equal scales in mm, the y axis on its right and its ticks and labels inside its frame;
-a red cross marks the centroid. Below it are the metrics: the number of hits, the centroid, the RMS
+a red cross marks the centroid of a spot diagram. Below it are the metrics: the number of hits, the centroid, the RMS
 radius and the geometric radius of a spot diagram, or the power, the peak, the centroid and the
 1/e² radii along x and z from the second moments of a field. "log" shows `log10` of a field with a
 floor of 1e-4 times its maximum, "profiles" adds an axis with the field along x (red) and z (blue)
-through the centroid. "bar" shows the colorbar of a field below the plot, which is on by default:
+through the centroid, which a red cross then marks in the plot, with a dashed line along each of
+the two cuts in the color of its profile. "bar" shows the colorbar of a field below the plot, which is on by default:
 the colors of the image over its color range, in W/m² with an SI prefix for an intensity ("rel."
 for a PSF, which is normalized) and at the powers of ten with "log". The image is scaled to its
 maximum after every solve, so the ticks of the bar tell how the intensity changed.
