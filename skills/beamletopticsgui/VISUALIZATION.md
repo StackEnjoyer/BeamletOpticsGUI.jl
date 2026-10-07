@@ -5,7 +5,7 @@ for headless scripts. Rendering of components and beams (`render!`, look, camera
 belongs to BeamletOptics, see `VISUALIZATION.md` of the `beamletoptics` skill.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 gui = live_view(system, beam)   # several systems: live_view(sys1 => beam1, sys2 => beam2)
 display(gui)
@@ -154,6 +154,7 @@ end
 Solves longer than `progress_delay` (kwarg, default 0.5 s) run in the background: the window stays
 usable and a small progress window appears next to the source being traced or the detector whose
 field is computed, connected to it by a line. Moving a component or the button "Cancel" of the progress window cancels the solve (`Esc` does not).
+Until it is done, the rows of the cards with results of the solve ("beam", "n", "signal") show "tracing…".
 
 A failed solve (also the initial one, `live_view` does not throw) opens a card "Solve failed" in the
 3D view besides the log. A detector stores one kind of hits per solve: two kinds on one detector

@@ -69,7 +69,7 @@ e.g. the inspector of the app layout; nothing by default.
 _refresh_inspector!(::LiveView; force::Bool = false) = nothing
 
 """Returns `true` if the constraints of `obj` allow a move by `Δ`, see `kinematic_controls!`."""
-function _move_allowed(ctrl::KinematicController, obj, Δ)
+function _move_allowed(ctrl::KinematicController, @nospecialize(obj), Δ)
     haskey(_constraints_of(ctrl, obj), :move) || return true
     allowed = _allowed_axes(ctrl, obj, :move)
     isempty(allowed) && return iszero(Δ)
@@ -88,7 +88,7 @@ the status line, and so does an input for an object that is not movable, e.g. an
 `_inspect!`).
 """
 _apply_pose_input!(gui::LiveView, ::Nothing, ::Int, _) = _update_inspector!(gui; force = true)
-function _apply_pose_input!(gui::LiveView, obj, k::Int, s)
+function _apply_pose_input!(gui::LiveView, @nospecialize(obj), k::Int, s)
     ctrl = gui.controls
     if !_is_movable(ctrl, obj)
         gui.status.text[] = "$(_label(gui, obj)) is not movable, its pose can not be changed"
@@ -242,7 +242,7 @@ that the mouse moved stays at its `spot` instead (see `_spot_position`). Only ch
 the layout.
 """
 _update_card!(::LiveView, c::_ComponentCard, ::Nothing, ::Vector{Rect2f}) = _hide_card!(c)
-function _update_card!(gui::LiveView, c::_ComponentCard, obj, obstacles::Vector{Rect2f})
+function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obstacles::Vector{Rect2f})
     pose = _card_pose(obj)
     if c.pose === nothing || c.pose[1] !== obj
         # The rows of the card are those of its page, see `_declarations`
@@ -296,7 +296,7 @@ its default page (see `_default_page`), unless the card is pinned and has the pa
 before, e.g. a card that was docked on this page, and the view of an object with a view, see
 `_build_view!`.
 """
-function _build_pages!(gui::LiveView, c::_ComponentCard, obj)
+function _build_pages!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
     pages = _card_pages(gui, obj)
     _choose_page!(gui, c, obj)
     _show_bar!(gui, c, pages)
@@ -308,7 +308,7 @@ end
 The page of the floating card `c` for its new object `obj`: its default page (see `_default_page`),
 unless the card is pinned and has the page that it showed before.
 """
-function _choose_page!(gui::LiveView, c::_ComponentCard, obj)
+function _choose_page!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
     (c.pinned && c.page in _card_pages(gui, obj)) || (c.page = _default_page(obj))
     return nothing
 end
@@ -371,7 +371,7 @@ Replaces the view of the floating card `c` by one of its new object `obj`, if `o
 the view set the options of the view of `obj` (see `_set_view!`), its chevrons and its thumbnail
 expand and collapse it, see `_expand_view!`.
 """
-function _build_view!(gui::LiveView, c::_ComponentCard, obj)
+function _build_view!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
     _drop_view!(gui, c)
     _has_view(obj) || return nothing
     c.view_part = _card_part(c.scene)
@@ -391,7 +391,7 @@ function _drop_view!(gui::LiveView, c::_ComponentCard)
     view = c.view
     c.view, c.view_shown, c.view_switches = nothing, false, 0
     isnothing(view) && return nothing
-    filter!(l -> !any(x -> x === l, view.listeners), gui.controls.listeners)
+    filter!(l -> !_has(view.listeners, l), gui.controls.listeners)
     _delete_view!(view)
     return nothing
 end
@@ -401,7 +401,7 @@ Expands the view of `obj` on the card `c` of the `gui`, or collapses it to its t
 remembers the state. An expanded view is computed on the full grid, if it was not, see
 `_view_needed!`.
 """
-function _expand_view!(gui::LiveView, c::_ComponentCard, obj, expanded::Bool)
+function _expand_view!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), expanded::Bool)
     c.view_expanded = expanded
     _set_expanded!(c.view, expanded)
     _update_cards!(gui)
@@ -417,7 +417,7 @@ object, the page "Results", an expanded or a pinned card), the view shows the st
 `obj` and is computed if that is stale, see `_view_needed!`. The switches of the view, which are
 built with its results, come before the mouse shield of the cards.
 """
-function _show_view!(gui::LiveView, c::_ComponentCard, obj)
+function _show_view!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
     shown = !isnothing(_card_view(c))
     if shown && !c.view_shown
         c.view_shown = true
@@ -463,7 +463,7 @@ e.g. for another mirror, the widgets are kept and only take the new declarations
 host of the declarations, see `_AbstractCard`, e.g. the floating card, whose new widgets come
 before the mouse shield of the cards (see `_on_content_built!`), or the docked card of the app.
 """
-function _build_content!(gui::LiveView, c::_AbstractCard, obj)
+function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
     actions, rows = _declarations(gui, c, obj)
     key = (_layout_key(actions), _layout_key(rows))
     declared = CardWidget[_declared_widgets(actions)..., _declared_widgets(rows)...]
@@ -522,7 +522,7 @@ The declarations of the widgets of `obj` on the card `c`: [`card_actions`](@ref)
 of a component or a source (see `_card_rows`), which a host may extend, e.g. the docked card of
 the app layout.
 """
-_declarations(gui::LiveView, c::_AbstractCard, obj) =
+_declarations(gui::LiveView, c::_AbstractCard, @nospecialize(obj)) =
     (_head_actions(obj), _page_rows(gui, obj, c.page))
 
 """
@@ -534,9 +534,9 @@ a component, i.e. an `AbstractObject` ("onto beam", "face beam" and "remove", se
 `_source_row`). They are a row and not actions in the head, whose width the name of the object
 needs in the inspector of the app layout.
 """
-_card_rows(obj) = card_rows(obj)
-_card_rows(obj::BMO.AbstractObject) = (card_rows(obj)..., _component_row())
-_card_rows(obj::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (card_rows(obj)..., _source_row())
+_card_rows(@nospecialize(obj)) = card_rows(obj)
+_card_rows(@nospecialize(obj::BMO.AbstractObject)) = (card_rows(obj)..., _component_row())
+_card_rows(@nospecialize(obj::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})) = (card_rows(obj)..., _source_row())
 
 """
     _head_actions(obj)
@@ -546,7 +546,7 @@ another object with parts (see `_part_children`), the button "parts", which open
 card, see `_browse!`. A click selects such an object as a whole (see `_open_menu!`), the button is
 the visible way to its parts.
 """
-_head_actions(obj) = isempty(_part_children(obj)) ? card_actions(obj) :
+_head_actions(@nospecialize(obj)) = isempty(_part_children(obj)) ? card_actions(obj) :
     (card_actions(obj)..., CardWidget(Button; name = :parts, label = "parts ›",
         on = (gui, o, _) -> _browse!(gui, o)))
 
@@ -605,14 +605,14 @@ function _on_input!(gui::LiveView, c::_AbstractCard, i::Int, v)
     _update_cards!(gui)
     return nothing
 end
-_apply_input!(gui::LiveView, on, obj, v, solve::Bool) = _apply_on!(gui, on, obj, v, Val(solve))
+_apply_input!(gui::LiveView, on, @nospecialize(obj), v, solve::Bool) = _apply_on!(gui, on, obj, v, Val(solve))
 _apply_input!(::LiveView, ::Nothing, _, _, ::Bool) = nothing
 _apply_input!(::LiveView, _, ::Nothing, _, ::Bool) = nothing
 _apply_input!(::LiveView, ::Nothing, ::Nothing, _, ::Bool) = nothing
-_apply_on!(gui::LiveView, on, obj, v, ::Val{false}) = (on(gui, obj, v); nothing)
+_apply_on!(gui::LiveView, on, @nospecialize(obj), v, ::Val{false}) = (on(gui, obj, v); nothing)
 # The input changes the optics, see `solve` of `CardWidget`: like a move, via the `on_change` of
 # the controls, which callers of the live view may extend
-function _apply_on!(gui::LiveView, on, obj, v, ::Val{true})
+function _apply_on!(gui::LiveView, on, @nospecialize(obj), v, ::Val{true})
     _change!(() -> on(gui, obj, v), gui.controls, obj)
     gui.controls.on_change(obj)
     return nothing
@@ -640,7 +640,7 @@ function _refresh_card!(gui::LiveView, c::_AbstractCard; force::Bool = false)
     _refresh_selection_part!(gui, c, obj)
     return nothing
 end
-_refresh_widget!(b, value, gui::LiveView, obj; force::Bool = false) = _show_value!(b, value(gui, obj), force)
+_refresh_widget!(b, value, gui::LiveView, @nospecialize(obj); force::Bool = false) = _show_value!(b, value(gui, obj), force)
 _refresh_widget!(_, ::Nothing, ::LiveView, _; force::Bool = false) = nothing
 
 """
@@ -652,7 +652,7 @@ card and the card of an inspected object (see `_inspect!`) take the bounding box
 `obj` once (see `_card_bbox`) and move it with the pose of `obj` (see `key` and `_card_pose`),
 since the plots follow a move only after they are rendered again.
 """
-function _card_corners(gui::LiveView, c::_ComponentCard, obj)
+function _card_corners(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
     ctrl = gui.controls
     (c.pinned || obj !== ctrl.selected[]) || return ctrl.box_obs[]
     if c.key === nothing || c.key[1] !== obj
@@ -669,7 +669,7 @@ The pose of the object `obj` of a card (see `_pose`), by which the card notices 
 for a system, whose card is refreshed after the moves of its objects like any card, see
 `_update_inspector!`.
 """
-_card_pose(obj) = _pose(obj)
+_card_pose(@nospecialize(obj)) = _pose(obj)
 _card_pose(::BMO.AbstractSystem) = nothing
 
 """
@@ -689,7 +689,7 @@ The bounding box of the plots of `obj` in the controls `ctrl`, see `_selection_b
 the union of the boxes of its rendered objects (see `_leaves`), or a box around its first object if
 all of them are clipped.
 """
-_card_bbox(ctrl::KinematicController, obj) = _selection_bbox(ctrl, obj, _object_plots(ctrl.h, obj))
+_card_bbox(ctrl::KinematicController, @nospecialize(obj)) = _selection_bbox(ctrl, obj, _object_plots(ctrl.h, obj))
 function _card_bbox(ctrl::KinematicController, sys::BMO.AbstractSystem)
     leaves = _leaves(sys)
     isempty(leaves) && return GeometryBasics.Rect3d(fill(-5e-3, 3), fill(1e-2, 3))
@@ -745,16 +745,16 @@ function _reset_pages!(gui::LiveView, c::_ComponentCard)
 end
 
 """Unpins the cards of the `gui` that are pinned to `obj`, e.g. a removed clip plane."""
-_unpin!(gui::LiveView, obj) = foreach(c -> _toggle_pinned!(gui, c), _floating_cards(gui, obj))
+_unpin!(gui::LiveView, @nospecialize(obj)) = foreach(c -> _toggle_pinned!(gui, c), _floating_cards(gui, obj))
 
 """Returns `true` if a card of the `gui` is pinned to `obj`: the pinned cards float by default."""
-_is_pinned(gui::LiveView, obj) = _is_floating(gui, obj)
+_is_pinned(gui::LiveView, @nospecialize(obj)) = _is_floating(gui, obj)
 
 """Returns the pinned cards of the `gui` that float next to `obj` in the 3D view."""
-_floating_cards(gui::LiveView, obj) = filter(c -> c.pinned && c.obj === obj, gui.cards.all)
+_floating_cards(gui::LiveView, @nospecialize(obj)) = filter(c -> c.pinned && c.obj === obj, gui.cards.all)
 
 """Returns `true` if a pinned card of the `gui` floats next to `obj` in the 3D view."""
-_is_floating(gui::LiveView, obj) = any(c -> c.pinned && c.obj === obj, gui.cards.all)
+_is_floating(gui::LiveView, @nospecialize(obj)) = any(c -> c.pinned && c.obj === obj, gui.cards.all)
 
 """
     _float!(gui, obj)
@@ -774,7 +774,7 @@ Pins a card to `obj`, independent of the card of the selection, or unpins the ca
 `obj`. Where a pinned card is shown depends on the layout (see `_pin!`, `_unpin!` and
 `_is_pinned`): floating next to its object by default, docked below the inspector in the app layout.
 """
-function _toggle_pin!(gui::LiveView, obj)
+function _toggle_pin!(gui::LiveView, @nospecialize(obj))
     _is_pinned(gui, obj) ? _unpin!(gui, obj) : _pin!(gui, obj)
     _on_pinned!(gui)
     return nothing
@@ -791,12 +791,12 @@ also if the mouse moved it before. The card `c` keeps its `page`, if `obj` has i
 `view_expanded` and the size `view_size` of its view, which a caller may set before, e.g. to those
 of a docked card.
 """
-function _pin!(gui::LiveView, obj)
+function _pin!(gui::LiveView, @nospecialize(obj))
     c = _spare_card!(gui)
     c.page = _default_page(obj)
     return _pin!(gui, c, obj)
 end
-function _pin!(gui::LiveView, c::_ComponentCard, obj)
+function _pin!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
     c.pinned, c.obj, c.key, c.pose, c.spot = true, obj, nothing, nothing, nothing
     _show_head!(c)
     _update_cards!(gui)
@@ -917,10 +917,10 @@ const _INSPECTOR_SKIPPED = ("Type", "Position [m]")
 Shows the properties of `obj` (see `_inspector_rows`) in the property list of the part of the
 selection `part`, see `_selection_part!`.
 """
-_show_properties!(gui::LiveView, part, obj) = (_set_rows!(part.list, _inspector_rows(gui, obj)); nothing)
+_show_properties!(gui::LiveView, part, @nospecialize(obj)) = (_set_rows!(part.list, _inspector_rows(gui, obj)); nothing)
 
 """Returns the rows of the property list for `obj`, see `BeamletOptics.properties`."""
-function _inspector_rows(::LiveView, obj)
+function _inspector_rows(::LiveView, @nospecialize(obj))
     props = try
         BMO.properties(obj)
     catch e
@@ -960,7 +960,7 @@ object `obj`: the card of the selection, and a pinned card while its object is s
 then shown instead of the card of the selection (see `_update_cards!`). Not in a layout that shows
 them elsewhere, e.g. in the inspector of the app layout, see `_selection_card_shown`.
 """
-_shows_step(gui::LiveView, c::_ComponentCard, obj) = c === gui.cards.selection ||
+_shows_step(gui::LiveView, c::_ComponentCard, @nospecialize(obj)) = c === gui.cards.selection ||
     (_selection_card_shown(gui) && !c.transient && obj === gui.controls.selected[])
 
 """
@@ -979,7 +979,7 @@ Shows the properties of `obj` in the property list of the card `c` while it is s
 cards; the docked cards of the app layout list the properties themselves, see
 `_refresh_inspector!`.
 """
-function _refresh_selection_part!(gui::LiveView, c::_AbstractCard, obj)
+function _refresh_selection_part!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
     _has_list(c) || return nothing
     _list_shown(c, obj) ? _show_properties!(gui, c, obj) : _hide_properties!(c)
     return nothing
@@ -990,7 +990,7 @@ _refresh_selection_part!(::LiveView, ::_AbstractCard, ::Nothing) = nothing
 _has_list(::_AbstractCard) = false
 _has_list(::_ComponentCard) = true
 # A floating card lists the properties on its page "Properties"
-_list_shown(c::_ComponentCard, obj) = c.page === :properties && _has_properties(obj)
+_list_shown(c::_ComponentCard, @nospecialize(obj)) = c.page === :properties && _has_properties(obj)
 # The list of a floating card that is not shown is moved away with its part, see `_lower_parts`
 _hide_properties!(::_AbstractCard) = nothing
 
@@ -1011,7 +1011,7 @@ function _shield_cards!(gui::LiveView)
     ev = events(gui.ax.scene)
     listeners = gui.controls.listeners
     foreach(off, gui.cards.shield)
-    filter!(l -> !any(s -> s === l, gui.cards.shield), listeners)
+    filter!(l -> !_has(gui.cards.shield, l), listeners)
     over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
                  _over_catalog(gui) || _over_layout(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
@@ -1060,7 +1060,7 @@ function _connect_cards!(gui::LiveView)
 end
 
 """Selects the object `obj` of a pinned card of the `gui` after a click on the card, if it can be selected."""
-function _select_pinned!(gui::LiveView, obj)
+function _select_pinned!(gui::LiveView, @nospecialize(obj))
     (isnothing(obj) || !_is_movable(gui.controls, obj)) && return nothing
     _select!(gui, obj)
     return nothing

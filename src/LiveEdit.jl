@@ -7,13 +7,13 @@ the form of the entry, and "Apply", which builds the object again in its pose, s
 Whether `obj` of the `gui` can be built again with other parameters: it was built from an entry of
 the catalog, whose `origin` keeps the entry and its inputs, see `_catalog_component`.
 """
-function _editable(gui::LiveView, obj)
+function _editable(gui::LiveView, @nospecialize(obj))
     origin = get(gui.components.origin, obj, nothing)
     return !isnothing(origin) && haskey(origin, :entry) && haskey(origin, :strings)
 end
 
-_has_page(gui::LiveView, obj, ::Val{:edit}) = _editable(gui, obj)
-_page_rows(gui::LiveView, obj, ::Val{:edit}) = _editable(gui, obj) ? _edit_rows(gui, obj) : ()
+_has_page(gui::LiveView, @nospecialize(obj), ::Val{:edit}) = _editable(gui, obj)
+_page_rows(gui::LiveView, @nospecialize(obj), ::Val{:edit}) = _editable(gui, obj) ? _edit_rows(gui, obj) : ()
 
 """
     _edit_strings(gui, obj) -> Vector{String}
@@ -22,11 +22,11 @@ The inputs of the page "Edit" of `obj`, one per parameter of its entry of the ca
 `_catalog_value`): those with which it was built, or those that were changed since and are not
 applied yet.
 """
-_edit_strings(gui::LiveView, obj) =
+_edit_strings(gui::LiveView, @nospecialize(obj)) =
     get(gui.components.edits, obj, gui.components.origin[obj].strings)
 
 # Changes the input `i` of the page "Edit" of `obj` to `s`, without applying it
-function _set_edit_string!(gui::LiveView, obj, i::Int, s::AbstractString)
+function _set_edit_string!(gui::LiveView, @nospecialize(obj), i::Int, s::AbstractString)
     strings = copy(_edit_strings(gui, obj))
     strings[i] = String(s)
     gui.components.edits[obj] = strings
@@ -47,7 +47,7 @@ _edit_cards(gui::AppView) = Any[gui.cards.all..., _docked_cards(gui)...]
 Takes what the boxes of the page "Edit" of the cards of `obj` show into its inputs, see
 `_edit_strings`: "Apply" also takes a text that was typed without Enter.
 """
-function _read_edit_inputs!(gui::LiveView, obj)
+function _read_edit_inputs!(gui::LiveView, @nospecialize(obj))
     params = gui.components.origin[obj].entry.params
     for c in _edit_cards(gui)
         (c.page === :edit && _card_object(gui, c) === obj) || continue
@@ -64,7 +64,7 @@ end
 
 # The text of the box of a number is its input; the box of a glass only while "constant" is chosen
 _takes_edit_text(::LiveView, _, ::CatalogParam, ::Int, text) = !isempty(text)
-_takes_edit_text(gui::LiveView, obj, ::CatalogGlass, i::Int, text) =
+_takes_edit_text(gui::LiveView, @nospecialize(obj), ::CatalogGlass, i::Int, text) =
     !isempty(text) && !(_edit_strings(gui, obj)[i] in _glass_names())
 
 """
@@ -76,7 +76,7 @@ see `_replace!`. An
 invalid input or an error of the constructor only shows a message in the status line; unchanged
 inputs do nothing.
 """
-function _apply_edit!(gui::LiveView, obj; read::Bool = true)
+function _apply_edit!(gui::LiveView, @nospecialize(obj); read::Bool = true)
     _editable(gui, obj) || return nothing
     read && _read_edit_inputs!(gui, obj)
     origin = gui.components.origin[obj]
@@ -148,7 +148,7 @@ function _replace!(gui::LiveView, old, new, origin)
 end
 
 """Shows the page "Edit" of the cards of `obj` again, e.g. after it replaced the object of the page."""
-function _show_edit_page!(gui::LiveView, obj)
+function _show_edit_page!(gui::LiveView, @nospecialize(obj))
     _update_cards!(gui)
     _update_inspector!(gui)
     for c in _edit_cards(gui)
@@ -162,20 +162,20 @@ Rows of the page
 =#
 
 # The value of the box of the parameter `i`: its input, of a glass only a constant refractive index
-_edit_box_text(gui::LiveView, obj, ::CatalogParam, i::Int) = _edit_strings(gui, obj)[i]
-function _edit_box_text(gui::LiveView, obj, ::CatalogGlass, i::Int)
+_edit_box_text(gui::LiveView, @nospecialize(obj), ::CatalogParam, i::Int) = _edit_strings(gui, obj)[i]
+function _edit_box_text(gui::LiveView, @nospecialize(obj), ::CatalogGlass, i::Int)
     s = _edit_strings(gui, obj)[i]
     return s in _glass_names() ? "" : s
 end
 
 # The entry of the menu of the glass `i`: its glass, or "constant"
-function _edit_glass(gui::LiveView, obj, i::Int)
+function _edit_glass(gui::LiveView, @nospecialize(obj), i::Int)
     s = _edit_strings(gui, obj)[i]
     return s in _glass_names() ? s : _GLASS_CONSTANT
 end
 
 # The menu of the glass `i` chose `name`: the glass, or the constant refractive index of the box
-function _choose_edit_glass!(gui::LiveView, obj, p::CatalogGlass, i::Int, name)
+function _choose_edit_glass!(gui::LiveView, @nospecialize(obj), p::CatalogGlass, i::Int, name)
     name isa AbstractString || return nothing
     # The card shows its values again after an input: keep what was typed into its boxes
     _read_edit_inputs!(gui, obj)
@@ -189,7 +189,7 @@ function _choose_edit_glass!(gui::LiveView, obj, p::CatalogGlass, i::Int, name)
 end
 
 # Enter in the box of the parameter `i`: its input, then "Apply"
-function _enter_edit!(gui::LiveView, obj, i::Int, s)
+function _enter_edit!(gui::LiveView, @nospecialize(obj), i::Int, s)
     # the other boxes as they are shown, then the entered one
     _read_edit_inputs!(gui, obj)
     isnothing(s) || _set_edit_string!(gui, obj, i, strip(s))
@@ -221,7 +221,7 @@ name of the entry, a box per number and a menu of the glasses with the box of a 
 index per glass, as in the form of the catalog, and the button "Apply", see `_apply_edit!`. Enter
 in a box applies as well.
 """
-function _edit_rows(gui::LiveView, obj)
+function _edit_rows(gui::LiveView, @nospecialize(obj))
     entry = gui.components.origin[obj].entry
     rows = CardRow[CardRow(CardWidget(Label; text = entry.name, font = :bold, halign = :left))]
     for (i, p) in enumerate(entry.params)

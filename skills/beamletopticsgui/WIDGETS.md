@@ -1,6 +1,6 @@
 # Own cards, widgets and controls in the live view
 
-Recipes for `gui = live_view(...)` of BeamletOpticsGUI (`using GLMakie, BeamletOptics, BeamletOpticsGUI`;
+Recipes for `gui = live_view(...)` of BeamletOpticsGUI (`using BeamletOptics, BeamletOpticsGUI, GLMakie`;
 needs a window, not for headless scripts). Use them when adding a component type whose parameters
 should be editable in the window, or a GUI extension. Everything works identically in
 `layout = :compact` and `layout = :app`. Look up any signature before use with

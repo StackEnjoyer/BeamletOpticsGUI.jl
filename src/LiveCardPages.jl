@@ -20,8 +20,8 @@ _has_page(_, ::Val{:pose}) = true
 _has_page(_, ::Val{:color}) = false
 # Only with the view, which knows what was built from the catalog, see `_card_pages(gui, obj)`
 _has_page(_, ::Val{:edit}) = false
-_has_page(obj, ::Val{:results}) = _has_view(obj)
-_has_page(obj, ::Val{:properties}) = _has_properties(obj)
+_has_page(@nospecialize(obj), ::Val{:results}) = _has_view(obj)
+_has_page(@nospecialize(obj), ::Val{:properties}) = _has_properties(obj)
 
 """
     _card_pages(obj) -> Tuple{Vararg{Symbol}}
@@ -30,7 +30,7 @@ The pages of the card of `obj`, in the order of the page bar, see `_has_page`: e
 `(:pose, :properties)` for a mirror, `(:pose, :results, :properties)` for a detector and
 `(:pose, :color, :properties)` for a source. A card with a single page shows no page bar.
 """
-_card_pages(obj) = Tuple(page for (page, _) in _PAGES if _has_page(obj, Val(page)))
+_card_pages(@nospecialize(obj)) = Tuple(page for (page, _) in _PAGES if _has_page(obj, Val(page)))
 
 """
     _page_rows(obj, page) -> Tuple
@@ -39,8 +39,8 @@ The rows of the card of `obj` on its `page`, as declarations like those of [`car
 rows of the page "Color" (see `_color_rows`), otherwise those of the page "Pose" (see `_card_rows`),
 which stay built on the pages without rows.
 """
-_page_rows(obj, page::Symbol) = _page_rows(obj, Val(page))
-_page_rows(obj, ::Val) = _card_rows(obj)
+_page_rows(@nospecialize(obj), page::Symbol) = _page_rows(obj, Val(page))
+_page_rows(@nospecialize(obj), ::Val) = _card_rows(obj)
 
 """
     _card_pages(gui, obj) -> Tuple{Vararg{Symbol}}
@@ -51,10 +51,10 @@ The pages of the card of `obj` in the `gui` and the rows of its `page`: those of
 was built from an entry of the catalog, with the form of the entry, see `_editable` and
 `_edit_rows`.
 """
-_card_pages(gui, obj) = Tuple(page for (page, _) in _PAGES if _has_page(gui, obj, Val(page)))
-_has_page(_, obj, page::Val) = _has_page(obj, page)
-_page_rows(gui, obj, page::Symbol) = _page_rows(gui, obj, Val(page))
-_page_rows(_, obj, page::Val) = _page_rows(obj, page)
+_card_pages(gui, @nospecialize(obj)) = Tuple(page for (page, _) in _PAGES if _has_page(gui, obj, Val(page)))
+_has_page(_, @nospecialize(obj), page::Val) = _has_page(obj, page)
+_page_rows(gui, @nospecialize(obj), page::Symbol) = _page_rows(gui, obj, Val(page))
+_page_rows(_, @nospecialize(obj), page::Val) = _page_rows(obj, page)
 
 """Whether the `page` of a card shows declared rows, see `_page_rows`."""
 _shows_rows(page::Symbol) = page === :pose || page === :color || page === :edit
@@ -65,7 +65,7 @@ _shows_rows(page::Symbol) = page === :pose || page === :color || page === :edit
 The page that the card of `obj` shows when it gets this object: the results of an object with a
 view, such that a click on a detector shows what it measures, otherwise the pose.
 """
-_default_page(obj) = _has_view(obj) ? :results : :pose
+_default_page(@nospecialize(obj)) = _has_view(obj) ? :results : :pose
 
 """Label of the `page` of a card in the page bar."""
 _page_label(page::Symbol) = last(_PAGES[findfirst(p -> first(p) === page, _PAGES)])

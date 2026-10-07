@@ -26,11 +26,11 @@ _aiming(gui::LiveView, src) = _aiming(gui) && gui.components.aim.src === src
 The point [m] of the component or source `leaf` of the controls `ctrl` that a source is aimed at: of
 a component the center of the bounding box of its plots, of a source its position.
 """
-function _aim_point(ctrl::KinematicController, leaf::BMO.AbstractObject)
+function _aim_point(ctrl::KinematicController, @nospecialize(leaf::BMO.AbstractObject))
     bb = _selection_bbox(ctrl, leaf, _object_plots(ctrl.h, leaf))
     return Vector{Float64}(minimum(bb)) .+ Vector{Float64}(GeometryBasics.widths(bb)) ./ 2
 end
-_aim_point(::KinematicController, leaf) = Vector{Float64}(position(leaf))
+_aim_point(::KinematicController, @nospecialize(leaf)) = Vector{Float64}(position(leaf))
 
 """
     _aim_target(gui, a::_Aim) -> Union{Nothing, NamedTuple}
@@ -142,7 +142,7 @@ function _start_aim!(gui::LiveView, src::_Source)
     gui.status.text[] = "aiming $name: click a component or a point, Esc to cancel"
     return nothing
 end
-_start_aim!(gui::LiveView, obj) =
+_start_aim!(gui::LiveView, @nospecialize(obj)) =
     (gui.status.text[] = "$(_label(gui, obj)) is no source, only sources are aimed"; nothing)
 
 """Ends the aim of the `gui`: removes its line and gives the mouse back to the controls."""

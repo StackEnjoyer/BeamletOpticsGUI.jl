@@ -6,7 +6,7 @@ the example from code, describes the catalog and how to extend it with own compo
 user-facing description of the window is in the section "Adding and removing components" of
 [`live_view`](@ref).
 
-All code blocks assume `using GLMakie, BeamletOptics, BeamletOpticsGUI`, need a `Makie` backend with
+All code blocks assume `using BeamletOptics, BeamletOpticsGUI, GLMakie`, need a `Makie` backend with
 a window (`GLMakie`) and are therefore not run when the docs are built.
 
 ## From code
@@ -181,12 +181,30 @@ gui = live_view(System())
 code = export_script(gui)
 ```
 
+An object that is built in code, e.g. by a tool or an agent, is exported with its constructor as
+well if it is added with the keyword `code` of [`add_component!`](@ref), its constructor call as
+Julia code. Add it as `code` constructs it and move it afterwards, since the script writes the call
+followed by the change of the pose since it was added:
+
+```julia
+code = "SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)"
+lens = add_component!(gui, SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5); code, label = "lens")
+retrace!(gui) do
+    translate_to3d!(lens, [0, 0.1, 0])
+end
+```
+
+`code` must be one expression that runs on its own after `using BeamletOptics`, without variables
+of the session. An expression that does not parse throws an `ArgumentError`; that it constructs the
+object in the pose in which it is added is not checked.
+
 Limits of this version:
 
 - A `StaticSystem` can not be changed: a view without a `System` only offers the sources of the
   catalog. Objects inside a group can not be added or removed, remove the group instead.
-- Only components and sources from the catalog can be changed on the page "Edit" and are written
-  with their constructors by [`export_script`](@ref).
+- Only components and sources from the catalog can be changed on the page "Edit" and copied.
+  [`export_script`](@ref) writes the constructors of those and of the objects added with `code`;
+  an object that the view started with is a comment.
 - The script does not contain how the sources are drawn, the extras, the clip planes and the other
   keywords of `live_view`.
 

@@ -204,6 +204,6 @@ function _plot_part(gui::LiveView, parts, plot)
     leaf = _pick_leaf(gui.controls.h, plot)
     isnothing(leaf) && return nothing
     chain = _chain(gui.controls, leaf)
-    i = findfirst(x -> any(o -> o === x, chain), parts)
+    i = findfirst(x -> _has(chain, x), parts)
     return isnothing(i) ? nothing : parts[i]
 end

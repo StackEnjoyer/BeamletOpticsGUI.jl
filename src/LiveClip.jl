@@ -206,7 +206,7 @@ was handled, i.e. `false` without a selection.
 """
 _delete_selected!(::LiveView, ::Nothing) = false
 _delete_selected!(gui::LiveView, plane::LiveClipPlane) = (_remove_clip_plane!(gui, plane); true)
-_delete_selected!(gui::LiveView, obj) = (_remove_selected!(gui, obj); true)
+_delete_selected!(gui::LiveView, @nospecialize(obj)) = (_remove_selected!(gui, obj); true)
 
 """Connects the clip plane keys of the `gui`, see `_clip_key!`."""
 function _connect_clip_planes!(gui::LiveView)

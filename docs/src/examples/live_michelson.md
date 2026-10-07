@@ -18,7 +18,7 @@ The full script can be found [here](https://github.com/StackEnjoyer/BeamletOptic
 The system is identical to the tutorial, but without the optomechanical parts. A `GaussianBeamlet` is used as the HeNe laser source.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 const BMO = BeamletOptics
 const cm = 1e-2

@@ -1,4 +1,4 @@
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 const BMO = BeamletOptics
 const cm = 1e-2

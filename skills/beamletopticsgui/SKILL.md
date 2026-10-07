@@ -24,7 +24,10 @@ When this Skill is active:
 - Use only documented API. **Do not invent functions or keywords.** Print the docstring before use:
   `julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc live_view)'`, or list the exports with
   `names(BeamletOpticsGUI)`.
-- Every script starts with `using GLMakie, BeamletOptics, BeamletOpticsGUI`.
+- Every script starts with `using BeamletOptics, BeamletOpticsGUI, GLMakie`. The order makes a
+  difference: GLMakie is loaded last. The window works in any order, but with GLMakie loaded before
+  BeamletOpticsGUI, Julia rejects a part of the precompiled code of the GUI and compiles about twice
+  as much at the first hover, click or drag.
 - The window needs GLMakie and a display. It is not for headless scripts; on headless Linux run under
   `xvfb-run -a`. Say so to the user when you cannot open it, and do not claim that the window works
   when you did not run it.
@@ -54,8 +57,10 @@ When this Skill is active:
 - Extras are fixed when the view starts (they can be hidden). Components of a `System` and sources can
   be added and removed at runtime, with these limits: the objects of a `StaticSystem` and objects
   inside a group cannot be added or removed; a component or source that is being placed is not traced until it is
-  dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card)
-  and are written with their constructors by `export_script`. Adding, removing and changing are undone with
+  dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card).
+  `export_script` writes the constructors of those and of the objects added with
+  `add_component!(...; code = "...")`; an object that the view started with is a comment in the
+  script. Adding, removing and changing are undone with
   `Ctrl+Z` and redone with `Ctrl+Y`. `Ctrl+C` and `Ctrl+V` copy and paste the selected component or
   source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
   the object again and call `add_component!`.
