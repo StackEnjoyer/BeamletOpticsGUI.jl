@@ -95,7 +95,9 @@ describe it as available in docs or the skill.
   `component_catalog`) and its widgets (groups, tiles, form), `src/LiveCatalogWindow.jl`: its
   window over the 3D view (pin, minimize) and its dock in a place of the layout
   (`_catalog_dock_slot!`, e.g. the left sidebar of the app layout), `src/LiveCatalogEntries.jl`: the entries of the components of
-  BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`).
+  BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`),
+  `src/LiveSurfaces.jl`: the surfaces of its lenses (`CatalogSurface`, internal: spherical or
+  aspheric each), the lenses that are built from them and their code.
   `src/LivePlacement.jl`: placing a new component with the mouse, with snapping onto beams.
   `src/LiveSnap.jl`: snapping of dragged components onto beams (the beams of the live view for
   the snapping of the controls, see `_set_snap!` in `src/LiveInteraction.jl`).

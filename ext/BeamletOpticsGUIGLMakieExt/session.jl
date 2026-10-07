@@ -287,6 +287,73 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
     step(() -> (_key!(gui, Keyboard.h); frame!(); _key!(gui, Keyboard.h); frame!()), "key h (help)")
 
     step(() -> (_move!(gui, _center(gui)); _key!(gui, Keyboard.insert); frame!()), "catalog: Insert")
+    # the form of a lens with surfaces: the last one as an asphere, whose fields come with the next
+    # frame; the lens is placed with the button of the window, which closes when it is dropped
+    aspheric = Ref{Any}(nothing)
+    step("catalog: aspheric surface") do
+        widget = GUI._catalog_widget(GUI._catalog_window(gui))
+        i = findfirst(e -> any(p -> p isa GUI.CatalogSurface, e.params), widget.entries)
+        k = findfirst(==(widget.entries[i].group), widget.groups)
+        _click!(gui, _rect_center(widget.group_buttons[k].box))
+        frame!()
+        j = findfirst(tile -> first(tile) == i, widget.tile_buttons)
+        _check(!isnothing(j), "the click did not choose the group of the lens")
+        _click!(gui, _rect_center(last(widget.tile_buttons[j]).box))
+        frame!()
+        _check(widget.entry == i, "the click did not choose the lens")
+        s = findlast(p -> p isa GUI.CatalogSurface, widget.entries[i].params)
+        menu = widget.inputs[s].menu
+        menu.i_selected[] = findfirst(==(GUI._SURFACE_ASPHERIC), menu.options[])
+        frame!()
+        input = widget.inputs[s]
+        _check(!isnothing(input.conic) && length(input.coefficients) == length(GUI._SURFACE_ORDERS),
+            "the fields of the asphere were not built")
+        _move!(gui, _rect_center(input.conic))
+        frame!()
+    end
+    step("catalog: place aspheric lens") do
+        widget = GUI._catalog_widget(GUI._catalog_window(gui))
+        _click!(gui, _rect_center(widget.place))
+        _check(GUI._placing(gui), "the lens was not placed: $(gui.status.text[])")
+        aspheric[] = gui.components.placement.obj
+        a = _free_px(gui)
+        _move!(gui, a .+ (3, 0))
+        _tick!(gui)
+        _move!(gui, a)
+        frame!()
+        _click!(gui)
+        settle!()
+        _check(GUI._has(fx.system.objects, aspheric[]), "the aspheric lens was not dropped")
+    end
+    # the page "Edit" of the lens: its asphere as a spherical surface again, whose fields go with
+    # the next frame, then "Apply", which builds the lens again
+    step("edit: surface + apply") do
+        lens = aspheric[]
+        isnothing(lens) && return nothing
+        gui.controls.selected[] === lens || select!(gui, lens)
+        frame!()
+        # the card of the selection, in a layout with docked cards the docked one
+        card() = last(filter(c -> GUI._card_object(gui, c) === gui.controls.selected[], GUI._edit_cards(gui)))
+        GUI._set_page!(gui, card(), :edit)
+        frame!()
+        s = findlast(p -> p isa GUI.CatalogSurface, gui.components.origin[lens].entry.params)
+        menu = GUI._card_widget(card(), GUI._edit_surface_menu(s))
+        menu.i_selected[] = findfirst(==(GUI._SURFACE_SPHERICAL), menu.options[])
+        frame!()
+        _check(!(GUI._card_widget(card(), GUI._edit_field(s, 2)) isa Textbox),
+            "the fields of the asphere were not removed")
+        notify(GUI._card_widget(card(), :edit_apply).clicks)
+        settle!()
+        _check(!GUI._has(fx.system.objects, lens), "the lens was not built again")
+        aspheric[] = gui.controls.selected[]
+    end
+    step("catalog: delete aspheric lens") do
+        isnothing(aspheric[]) && return nothing
+        gui.controls.selected[] === aspheric[] || select!(gui, aspheric[])
+        _key!(gui, Keyboard.delete)
+        settle!()
+        _check(!GUI._has(fx.system.objects, aspheric[]), "the aspheric lens was not removed")
+    end
     step(() -> (_key!(gui, Keyboard.escape); frame!()), "catalog: escape")
     # a component of the catalog, which can be copied
     entry = first(e for e in component_catalog() if !e.source)
