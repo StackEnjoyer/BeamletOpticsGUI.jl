@@ -33,7 +33,7 @@ on, as far as they do not depend on `obj` (see `_snap_lines`), the one closest t
 `_nearest_line`. `nothing` with the reason in the status line: for an object that is not movable,
 while a solve in the background traces the beams, and without a beam.
 """
-function _align_line(gui::LiveView, obj)
+function _align_line(gui::LiveView, @nospecialize(obj))
     name = _label(gui, obj)
     if !_is_movable(gui.controls, obj)
         gui.status.text[] = "$name is not movable, it can not be aligned"
@@ -56,7 +56,7 @@ card: records it in the undo history as one gesture, renders the objects, moves 
 selection and solves like after a move, see `_on_moved!`. Unlike `_request_update!` of the
 controls, also for an object that is not selected, e.g. on a pinned card.
 """
-function _commit_pose!(gui::LiveView, obj, P0, R0)
+function _commit_pose!(gui::LiveView, @nospecialize(obj), P0, R0)
     ctrl = gui.controls
     P1, R1 = _pose(obj)
     ctrl.last_key_step = nothing
@@ -75,7 +75,7 @@ Moves the component `obj` of the `gui` onto the nearest beam (see `_align_line`)
 the beam closest to its position, along the axes that its constraints allow. One gesture of the undo
 history. Returns whether it moved; otherwise the status line tells why not.
 """
-function _center_on_beam!(gui::LiveView, obj)
+function _center_on_beam!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     line = _align_line(gui, obj)
     isnothing(line) && return false
@@ -107,7 +107,7 @@ lens straight in the beam or a mirror that sends it back. Its position is kept. 
 undo history. Returns whether it turned; otherwise the status line tells why not, e.g. for an
 object whose rotation is constrained.
 """
-function _face_beam!(gui::LiveView, obj)
+function _face_beam!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     line = _align_line(gui, obj)
     isnothing(line) && return false

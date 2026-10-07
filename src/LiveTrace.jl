@@ -105,7 +105,7 @@ After a preview (see `_compute`), the detector views are marked as a preview and
 `gui.trace.preview` is set, such that the full solve follows once the movement pauses, see
 `_on_idle!`. `on_change` is only called after full solves.
 """
-function _apply!(gui::LiveView, r, obj; coarse = false)
+function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false)
     t0 = time_ns()
     # The solve succeeded, the message of a failed one is outdated
     _clear_solve_error!(gui)
@@ -156,7 +156,7 @@ status line of the `gui`, see `_compute` and `_apply!`. The user `on_change` is 
 moved `obj`, or `nothing`. Unlike `_solve!`, it returns only after the solve, which runs on the
 calling task; a solve of the `gui` in the background is cancelled first.
 """
-function _resolve!(gui::LiveView, obj; coarse = false, preview = false)
+function _resolve!(gui::LiveView, @nospecialize(obj); coarse = false, preview = false)
     _cancel_solve!(gui)
     requests = _view_requests(gui)
     _views_solve_started!(gui)
@@ -179,10 +179,10 @@ job that only computes views, i.e. without `pairs`. The detectors of the `system
 first: by default those of the `pairs`; a solve passes all systems of the `gui`, also those
 without a source.
 """
-_start_job(gui::LiveView, apply, obj, pairs, handles; kwargs...) =
+_start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles; kwargs...) =
     _start_job(gui, apply, obj, pairs, handles, _view_requests(gui); kwargs...)
 
-function _start_job(gui::LiveView, apply, obj, pairs, handles, requests;
+function _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles, requests;
         systems = BMO.AbstractSystem[first.(pairs)...], coarse = false, preview = false,
         timing::Symbol)
     # The detectors of the systems are emptied, also of those whose beams are all switched off
@@ -223,11 +223,24 @@ once, see `_finish!`, and `true` is returned on success. Otherwise the job conti
 background as `gui.trace.job` (shown once it is done, see `_poll_job!`), the status line shows `msg`
 and `false` is returned. Solves up to `progress_delay` thus behave as if they ran on the render
 task, only longer ones keep the window responsive and show their progress.
+
+The job is `gui.trace.job` already while it is waited for (`gui.trace.awaited`), such that it counts
+as running, see `_running`: other tasks run while this one waits, e.g. the render loop of the
+window if a script started the solve (see `translate3d!(gui, obj, offset)`), whose ticks must not
+read what the job changes, start a second one or show this one, see `_poll!`.
 """
 function _run!(gui::LiveView, job::_SolveJob, msg::AbstractString)
-    _wait(job.done, gui.trace.progress_delay)
+    trace = gui.trace
+    trace.job = job
+    trace.awaited = true
+    try
+        _wait(job.done, trace.progress_delay)
+    finally
+        trace.awaited = false
+    end
+    # cancelled by another task meanwhile, see `_cancel!`
+    trace.job === job || return false
     istaskdone(job.task) && return _finish!(gui, job)
-    gui.trace.job = job
     gui.status.text[] = msg
     return false
 end
@@ -245,10 +258,18 @@ end
 Whether a job of the `gui` runs in the background, or a solve of a view that is linked with it and
 shows one of its systems: it traces the same beams and empties the same detectors, see `_ViewLinks`.
 """
-_running(gui::LiveView) = _running(gui.trace.job) ||
-    any(v -> v !== gui && _solving(v.trace.job) && _shares_system(v, gui), gui.links.views)
+_running(gui::LiveView) = _running(gui.trace.job) || _tracing(gui)
 _running(::Nothing) = false
 _running(::_SolveJob) = true
+
+"""
+Whether a solve in the background traces the beams of the `gui` and fills its detectors: its own,
+or the one of a view that is linked with it and shows one of its systems. Until it is done, they
+belong to its task and are not read, e.g. by the values of the cards, see `_beam_text`. Unlike
+`_running`, not for a job that only computes detector views, which changes neither.
+"""
+_tracing(gui::LiveView) = _solving(gui.trace.job) ||
+    any(v -> v !== gui && _solving(v.trace.job) && _shares_system(v, gui), gui.links.views)
 
 """
     _cancel_solve!(gui::LiveView)
@@ -280,6 +301,8 @@ function _cancel!(gui::LiveView, job::_SolveJob)
     gui.trace.pending = gui.trace.preview = gui.trace.coarse = false
     _views_cancelled!(gui)
     _mark_stale!(gui, nothing; msg = _CANCELLED)
+    # The cards show the beams and detectors again, see `_TRACING_VALUE`
+    _update_inspector!(gui)
     return nothing
 end
 
@@ -321,6 +344,8 @@ _solving(job::_SolveJob) = _solves(job)
 """Marks the beams and detector views of the `gui` as outdated after the solve failed with `e`."""
 function _fail!(gui::LiveView, e)
     _views_cancelled!(gui)
+    # The cards show the beams and detectors again, see `_TRACING_VALUE`
+    _update_inspector!(gui)
     if BMO.is_cancelled(e)
         _mark_stale!(gui, nothing; msg = _CANCELLED)
         return nothing
@@ -343,9 +368,10 @@ _task_error(e) = e
     _poll_job!(gui::LiveView)
 
 Called every frame: shows the result of the solve of the `gui` in the background once it is done,
-see `_finish!`, and until then the progress window of its running loop, see `_show_loop!`.
+see `_finish!`, and until then the progress window of its running loop, see `_show_loop!`. Not for
+a job that another task still waits for, which shows its result itself, see `_run!`.
 """
-_poll_job!(gui::LiveView) = _poll!(gui, gui.trace.job)
+_poll_job!(gui::LiveView) = gui.trace.awaited ? nothing : _poll!(gui, gui.trace.job)
 _poll!(::LiveView, ::Nothing) = nothing
 
 function _poll!(gui::LiveView, job::_SolveJob)
@@ -434,7 +460,7 @@ function _restore_beams!(gui::LiveView)
 end
 
 """Marks the beams and detector views of the `gui` as outdated after `obj` (or a slider) changed."""
-function _mark_stale!(gui::LiveView, obj; msg = "outdated, press t to trace")
+function _mark_stale!(gui::LiveView, @nospecialize(obj); msg = "outdated, press t to trace")
     gui.trace.stale || _dim_beams!(gui)
     gui.trace.stale = true
     _note_stale!(gui, obj)
@@ -454,7 +480,7 @@ Afterwards the appearance of the beams is restored; if solving fails, the beams 
 views are kept marked as outdated. Returns `true` if the solve succeeded without continuing in
 the background.
 """
-function _solve!(gui::LiveView, obj; coarse = false, preview = false)
+function _solve!(gui::LiveView, @nospecialize(obj); coarse = false, preview = false)
     _cancel_solve!(gui)
     gui.trace.pending = false
     job = _start_job(gui, r -> _apply!(gui, r, obj; coarse), obj, gui.pairs, gui.beam_handles;
@@ -491,7 +517,7 @@ a preview of beam groups (see `_resolve!`) and a coarse preview of slow detector
 them as outdated. If solving (the preview solve, if any) is slower than the `trace_budget`, the
 solve is deferred until the movement pauses, see `_on_idle!`.
 """
-function _on_change!(gui::LiveView, obj)
+function _on_change!(gui::LiveView, @nospecialize(obj))
     gui.trace.last_change = time()
     preview = _has_preview(gui)
     if !gui.trace.auto[]

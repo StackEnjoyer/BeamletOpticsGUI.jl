@@ -16,7 +16,7 @@ update live. BeamletOptics computes the physics and draws the components; this p
 them into an interactive window.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 m = RoundPlanoMirror(25e-3, 5e-3)
 zrotate3d!(m, deg2rad(45))
@@ -40,6 +40,11 @@ Pkg.add("BeamletOpticsGUI")
 ```
 
 It needs BeamletOptics 0.14 and a Makie backend, preferably GLMakie.
+
+The order of the packages in `using` makes a difference: load GLMakie last, as above. The window
+works in any order, but with GLMakie loaded first, Julia compiles about twice as much at the first
+hover, click or drag, see "Order of loading" in the
+[documentation](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/dev/).
 
 ## Features
 

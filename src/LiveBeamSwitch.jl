@@ -64,7 +64,7 @@ function _add_overlay!(gui::LiveView, store::IdDict, beam, target; shown, kwargs
     h = live_render!(gui.ax, target; kwargs..., clip_planes = Plane3f[])
     plots = Any[p for p in _beam_plots(h) if shown(p)]
     visible = _beam_on(gui, beam)
-    foreach(p -> p.visible[] = visible && any(q -> q === p, plots), _beam_plots(h))
+    foreach(p -> p.visible[] = visible && _has(plots, p), _beam_plots(h))
     store[beam] = h
     gui.beams.shown[h] = plots
     # A new overlay of outdated beams is dimmed like them

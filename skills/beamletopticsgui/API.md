@@ -6,7 +6,7 @@ after each change. The optics itself (components, beams, `solve_system!`, detect
 conventions) is described by the `beamletoptics` skill.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie  # GLMakie last: less lag at the first actions
 
 # system and beam built as in the beamletoptics skill
 gui = live_view(system, beam; layout = :compact, labels = Dict(m1 => "Mirror 1"))
@@ -23,6 +23,7 @@ Look up the docstring of any name before use, e.g.
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `open_system`, `export_changes`, `export_script`, `retrace!` |
+| Scripting | `select!`, `spectator!`, `wait_solve` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
 | Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
@@ -70,6 +71,13 @@ gives it a marker, `remove_component!(gui, source)` removes it, also the last on
 drawn in the color of its wavelength (dark red for infrared), unless its `beam_kwargs` set a `color`
 (`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`). A view may start
 without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
+`add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)")` gives the constructor call of an
+object built in code (also of a source): add it in the pose in which `code` constructs it and move
+it afterwards (inside `retrace!(gui) do ... end`); `export_script` then writes the call and the
+moves, as for a part of the catalog. `code` is one expression that runs on its own after
+`using BeamletOptics`: write the values out, no variables of the session. A `code` that does not
+parse throws an `ArgumentError`; an object that was moved before it was added with `code` is
+exported in a wrong pose, which is not checked.
 The catalog "Components" does the same with the mouse: a movable window over the 3D view, opened
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
 the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in
@@ -96,6 +104,32 @@ that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) 
 drag elsewhere on the selection rotates around `rotation_axis` as before. In the move mode a drag on
 an arrow of the gizmo moves the component along that arrow only, a drag elsewhere on the selection
 in the plane of the view.
+
+## Scripting a window
+
+Never change an object of a window with the plain verbs (`translate3d!(lens, d)`): the window is not
+told and neither the drawing nor the beams follow. Use the verbs with the window first, which do
+what a gesture does (redraw, selection box, cards, solve like a drag, one undo entry, constraints;
+static objects throw `ArgumentError`):
+
+```julia
+translate3d!(gui, lens, [0, 1e-3, 0]);  translate_to3d!(gui, lens, [0, 0.12, 0])
+rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))   # or rotate3d!(gui, mirror, R)
+select!(gui, lens); select!(gui, nothing)       # like a click
+spectator!(gui, true)                           # like the key v
+wait_solve(gui)                                 # solve in the background shown, deferred solves done
+```
+
+Screenshots and videos: `spectator!(gui; help = false, background = :black, cards = false, view_cube = false)`
+hides all chrome but the 3D view (no cropping of status line, help or "⋯" needed; `spectator!(gui, false)`
+restores it with the selection from before, the key `v` leaves it; `help = true`, the default, keeps the
+help pill, as the key `v` does, `Shift+V` in the window is `help = false`).
+`Makie.record(gui, "x.mp4", iter; framerate, px_per_unit) do i ... end` (method for a live view) runs
+`f(i)`, waits for the solve and writes a frame offscreen, in the spectator mode without help unless
+`spectator = false`; do not record while the window is open.
+
+Call `wait_solve(gui)` before reading detectors or saving an image. Never use `BeamletOpticsGUI._x`
+internals or `gui.controls.on_change` for this.
 
 ## Rules
 

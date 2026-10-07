@@ -143,7 +143,7 @@ _refresh_selection_part!(::LiveView, ::_DockedCard, _) = nothing
 _refresh_selection_part!(::LiveView, ::_DockedCard, ::Nothing) = nothing
 _card_boxes(c::_DockedCard) = c.textboxes
 # A collapsed card shows only its actions
-_declarations(gui::LiveView, c::_DockedCard, obj) =
+_declarations(gui::LiveView, c::_DockedCard, @nospecialize(obj)) =
     (_head_actions(obj), c.collapsed ? () : _page_rows(gui, obj, c.page))
 
 # The widgets take the theme of the figure, texts and axis colors from the tokens of the app
@@ -194,7 +194,7 @@ _rows_below(gui::AppView, c::_DockedCard) = c.pinned ? Bool[] : Bool[!isempty(gu
 
 # The pages of the card of `obj`, none without an object
 _docked_pages(::LiveView, ::Nothing) = ()
-_docked_pages(gui::LiveView, obj) = _card_pages(gui, obj)
+_docked_pages(gui::LiveView, @nospecialize(obj)) = _card_pages(gui, obj)
 
 """
     _show_page!(gui::AppView, c::_DockedCard, obj)
@@ -205,7 +205,7 @@ the page, see `_DockedCard`. A collapsed card shows none of them. Without a sele
 the selection shows the keyboard step and the summary of the live view. Only changes update the
 layout.
 """
-function _show_page!(gui::AppView, c::_DockedCard, obj)
+function _show_page!(gui::AppView, c::_DockedCard, @nospecialize(obj))
     pages = _docked_pages(gui, obj)
     (isempty(pages) || c.page in pages) || (c.page = first(pages))
     open = !isnothing(obj) && !c.collapsed
@@ -271,7 +271,7 @@ function _show_step!(c::_DockedCard, part::_LayoutPart, shown::Bool)
 end
 
 # The properties of `obj` (the summary of the live view for `nothing`) while their page is shown
-function _show_list!(gui::AppView, c::_DockedCard, obj, shown::Bool)
+function _show_list!(gui::AppView, c::_DockedCard, @nospecialize(obj), shown::Bool)
     # an empty list has no height: emptied before its part is detached from the layout
     (shown || isempty(c.list.rows)) || _set_rows!(c.list, Tuple{String, String}[])
     _set_shown!(c.properties_part, shown)
@@ -297,7 +297,7 @@ first shown (see `_DetectorView`), in the state `c.view_expanded` and as wide as
 card of the selection keeps its view for the next detector. The result is shown by
 `_announce_views!`.
 """
-function _show_view!(gui::AppView, c::_DockedCard, obj, shown::Bool)
+function _show_view!(gui::AppView, c::_DockedCard, @nospecialize(obj), shown::Bool)
     _set_shown!(c.view_part, shown)
     shown || return nothing
     w = _docked_width(gui)
@@ -339,7 +339,7 @@ end
 """Removes the detector view of the docked card `c` with its listeners, see `_delete_view!`."""
 function _remove_view!(gui::AppView, c::_DockedCard)
     isnothing(c.view) && return nothing
-    filter!(l -> !any(v -> v === l, c.view_listeners), gui.controls.listeners)
+    filter!(l -> !_has(c.view_listeners, l), gui.controls.listeners)
     _delete_view!(c.view)
     empty!(c.view_listeners)
     c.view, c.view_obj, c.shown_view = nothing, nothing, nothing
@@ -487,7 +487,7 @@ chevron, see the shared parts `_card_icon!`, `_card_title!`, `_card_float!`, `_c
 the pin unpins it, see `_unpin!`; the chevron collapses it to its head. Its widgets are built by
 `_refresh_inspector!`.
 """
-function _dock_pinned!(gui::AppView, obj)
+function _dock_pinned!(gui::AppView, @nospecialize(obj))
     insp, t = gui.layout.inspector, gui.layout.theme
     g = GridLayout(insp.pinned_grid[length(insp.pinned) + 1, 1]; default_rowgap = 4, tellwidth = false)
     line = Box(g[1, 1]; height = 1, color = t.border, strokewidth = 0)
@@ -606,7 +606,7 @@ end
 
 # The card pinned to the object of the inspector opens on the page that the inspector shows, with
 # its view in the same state
-function _pin!(gui::AppView, obj)
+function _pin!(gui::AppView, @nospecialize(obj))
     insp = gui.layout.inspector
     c = _dock_pinned!(gui, obj)
     if insp.shown === obj
@@ -625,8 +625,8 @@ function _pin_view!(gui::AppView, pd; expanded::Bool = true)
     return nothing
 end
 
-_is_pinned(gui::AppView, obj) = _is_docked(gui, obj) || _is_floating(gui, obj)
-function _unpin!(gui::AppView, obj)
+_is_pinned(gui::AppView, @nospecialize(obj)) = _is_docked(gui, obj) || _is_floating(gui, obj)
+function _unpin!(gui::AppView, @nospecialize(obj))
     foreach(c -> _remove_pinned!(gui, c), _docked_cards(gui, obj))
     foreach(c -> _toggle_pinned!(gui, c), _floating_cards(gui, obj))
     _forget!(gui, obj)
@@ -635,8 +635,8 @@ function _unpin!(gui::AppView, obj)
 end
 
 """Returns the pinned cards of the app layout of the `gui` that are docked for `obj`."""
-_docked_cards(gui::AppView, obj) = filter(c -> c.obj === obj, gui.layout.inspector.pinned)
-_is_docked(gui::AppView, obj) = any(c -> c.obj === obj, gui.layout.inspector.pinned)
+_docked_cards(gui::AppView, @nospecialize(obj)) = filter(c -> c.obj === obj, gui.layout.inspector.pinned)
+_is_docked(gui::AppView, @nospecialize(obj)) = any(c -> c.obj === obj, gui.layout.inspector.pinned)
 
 """
     _float!(gui::AppView, obj)
@@ -647,7 +647,7 @@ collapsed if the docked card was, on the same page and with its detector view ex
 with the button that docks it again, see `_dock!`. The other docked cards keep their state; they
 are not expanded into the room that becomes free.
 """
-function _float!(gui::AppView, obj)
+function _float!(gui::AppView, @nospecialize(obj))
     docked = _docked_cards(gui, obj)
     isempty(docked) && return nothing
     d = first(docked)
@@ -667,7 +667,7 @@ Moves the floating card pinned to `obj` back into the sidebar of the app layout,
 pinned cards, collapsed if the floating card was (by its chevron), on the same page and with its
 detector view expanded if it was.
 """
-function _dock!(gui::AppView, obj)
+function _dock!(gui::AppView, @nospecialize(obj))
     floating = _floating_cards(gui, obj)
     isempty(floating) && return nothing
     d = _dock_pinned!(gui, obj)
@@ -734,7 +734,7 @@ function _dock_card!(::AppView, c::_DockedCard, ::Nothing)
     c.pose = nothing
     return nothing
 end
-function _dock_card!(gui::AppView, c::_DockedCard, obj)
+function _dock_card!(gui::AppView, c::_DockedCard, @nospecialize(obj))
     # A focused box of the old object would take the keyboard, and its input the new object
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
     # blocks can only be added to a part that is attached to the figure
@@ -764,7 +764,7 @@ end
 _on_pinned!(gui::AppView) = _show_pin!(gui)
 
 """Sets the icon, name and type of the header of the inspector for `obj` (`nothing`: no selection)."""
-function _show_header!(gui::AppView, obj)
+function _show_header!(gui::AppView, @nospecialize(obj))
     insp, t = gui.layout.inspector, gui.layout.theme
     _show_kind!(insp.icon, insp.icon_color, t, obj)
     name = isnothing(obj) ? "No selection" : _label(gui, obj)

@@ -234,7 +234,8 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry([_ctrl_cap(), "Y"], "redo, also $(_ctrl_cap())+Shift+Z"; combo = true)],
         "View" => [
             _HelpEntry([:mouse => "drag"], "beside the selection: camera"),
-            _HelpEntry(["V"], "spectator mode: camera only")]]
+            _HelpEntry(["V"], "spectator mode: camera only"),
+            _HelpEntry(["Shift", "V"], "spectator mode without the help"; combo = true)]]
 end
 
 """
@@ -449,6 +450,11 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     throttle::Bool
     # all input goes to the camera, toggled via v
     spectator::Observable{Bool}
+    # whether the mode shows how to leave it (the hint of the overlay, the help of `live_view`),
+    # see `_set_spectator!`
+    spectator_help::Bool
+    # the selection from before the spectator mode, selected again when it is left
+    spectator_selected::Any
     select_modifier::Any
     drag_threshold::Float64
     # locked move/rotate axes per object, see the `constraints` kwarg
@@ -550,17 +556,21 @@ function Base.show(io::IO, ctrl::KinematicController)
 end
 
 """Returns the objects of the group `obj`, or an empty vector if `obj` is not a group."""
-_children(obj) = obj isa BMO.AbstractObjectGroup ? collect(_LiveMovable, BMO.shape(obj)) :
+_children(@nospecialize(obj)) = obj isa BMO.AbstractObjectGroup ? collect(_LiveMovable, BMO.shape(obj)) :
                  _LiveMovable[]
 
 """Returns all objects of the group `obj` that are not groups themselves (recursively), or `[obj]`."""
-function _leaves(obj)
+function _leaves(@nospecialize(obj))
     obj isa BMO.AbstractObjectGroup || return _LiveMovable[obj]
-    return reduce(vcat, (_leaves(c) for c in BMO.shape(obj)); init = _LiveMovable[])
+    leaves = _LiveMovable[]
+    for c in BMO.shape(obj)
+        append!(leaves, _leaves(c))
+    end
+    return leaves
 end
 
 """Returns the `obj` and all its nested objects and subgroups (recursively)."""
-function _descendants(obj)
+function _descendants(@nospecialize(obj))
     out = _LiveMovable[obj]
     for c in _children(obj)
         append!(out, _descendants(c))
@@ -569,7 +579,7 @@ function _descendants(obj)
 end
 
 """Returns the chain `[leaf, parent of leaf, …, top-level object]` of the hierarchy of `ctrl.h`."""
-function _chain(ctrl, leaf)
+function _chain(ctrl, @nospecialize(leaf))
     chain = _LiveMovable[leaf]
     parent = render_parent(ctrl.h, leaf)
     while !isnothing(parent)
@@ -580,12 +590,12 @@ function _chain(ctrl, leaf)
 end
 
 """An object is movable if its top-level object is one of the movable objects of the `ctrl`."""
-function _is_movable(ctrl::KinematicController, obj)
+function _is_movable(ctrl::KinematicController, @nospecialize(obj))
     top = _top_level(ctrl.h, obj)
-    return any(o -> o === top, ctrl.movable)
+    return _has(ctrl.movable, top)
 end
 
-function _object_plots(h::AbstractSystemRenderHandle, obj)
+function _object_plots(h::AbstractSystemRenderHandle, @nospecialize(obj))
     plots = AbstractPlot[]
     for leaf in _leaves(obj)
         oh = _child_handle(h, leaf)
@@ -596,7 +606,7 @@ end
 
 """Returns `true` if all plots of the rendered object `leaf` are invisible, e.g. hidden via the
 component menu of `live_view`. Such objects can not be selected in the 3D view."""
-_is_hidden(ctrl::KinematicController, leaf) = _is_hidden(_object_plots(ctrl.h, leaf))
+_is_hidden(ctrl::KinematicController, @nospecialize(leaf)) = _is_hidden(_object_plots(ctrl.h, leaf))
 _is_hidden(plots::AbstractVector) = !isempty(plots) && all(p -> !p.visible[], plots)
 
 """
@@ -608,7 +618,7 @@ and its plots, see `_pickable(ctrl, leaf, plots)`: by default, objects that are 
 `_is_hidden`). Objects that are not pickable can still be selected otherwise, e.g. via the component
 menu or the object tree of `live_view`.
 """
-_pickable(ctrl::KinematicController, leaf) = _pickable(ctrl, leaf, _object_plots(ctrl.h, leaf))
+_pickable(ctrl::KinematicController, @nospecialize(leaf)) = _pickable(ctrl, leaf, _object_plots(ctrl.h, leaf))
 _pickable(::KinematicController, _, plots) = !_is_hidden(plots)
 
 """
@@ -617,10 +627,10 @@ _pickable(::KinematicController, _, plots) = !_is_hidden(plots)
 Returns the new selection after a click on the `leaf`: the top-level object of the `leaf` on the
 first click, then one level further down the hierarchy towards the `leaf` on each further click.
 """
-function _drill_select(ctrl::KinematicController, leaf)
+function _drill_select(ctrl::KinematicController, @nospecialize(leaf))
     chain = _chain(ctrl, leaf)
     sel = ctrl.selected[]
-    i = isnothing(sel) ? nothing : findfirst(o -> o === sel, chain)
+    i = isnothing(sel) ? nothing : _index(chain, sel)
     isnothing(i) && return last(chain)
     return chain[max(i - 1, 1)]
 end
@@ -631,7 +641,7 @@ end
 A click on the rendered object `leaf`: left to `click_leaf` of the `ctrl` if it takes it, otherwise
 selects the next level of the hierarchy towards `leaf` (see `_drill_select`) and calls `on_click`.
 """
-function _click_leaf!(ctrl::KinematicController, leaf)
+function _click_leaf!(ctrl::KinematicController, @nospecialize(leaf))
     ctrl.click_leaf(leaf) && return nothing
     ctrl.selected[] = _drill_select(ctrl, leaf)
     _update_selection_box!(ctrl)
@@ -649,7 +659,7 @@ therefore replaced by the axis perpendicular to the other local axis and the rot
 local x-axis of a `CollimatedSource` along +y, which points along -z, by +x. The direction of the
 replaced axis stays available as the rotation axis.
 """
-function _control_axes(ctrl::KinematicController, obj)
+function _control_axes(ctrl::KinematicController, @nospecialize(obj))
     R = _pose(obj)[2]
     y, x, v = Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), ctrl.rotation_axis
     parallel(a) = norm(cross(a, v)) < 1e-6
@@ -662,7 +672,7 @@ function _control_axes(ctrl::KinematicController, obj)
 end
 
 """Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:v`) of `obj`."""
-function _axis_vectors(ctrl::KinematicController, obj, syms)
+function _axis_vectors(ctrl::KinematicController, @nospecialize(obj), syms)
     y, x, v = _control_axes(ctrl, obj)
     lookup = (y = y, x = x, v = v)
     return [lookup[s] for s in syms]
@@ -670,11 +680,11 @@ end
 
 """Returns the constraints `NamedTuple` of `obj` (`(; move, rotate)`, either field possibly
 missing), or `(;)` if `obj` has no entry in `ctrl.constraints`."""
-_constraints_of(ctrl::KinematicController, obj) = get(ctrl.constraints, obj, (;))
+_constraints_of(ctrl::KinematicController, @nospecialize(obj)) = get(ctrl.constraints, obj, (;))
 
 """Returns the allowed axes (a tuple of `:x`, `:y`, `:v`) of `obj` for `kind` (`:move` or
 `:rotate`), all axes by default."""
-function _allowed_axes(ctrl::KinematicController, obj, kind::Symbol)
+function _allowed_axes(ctrl::KinematicController, @nospecialize(obj), kind::Symbol)
     return get(_constraints_of(ctrl, obj), kind, _GIZMO_AXES)
 end
 
@@ -698,7 +708,7 @@ end
 
 """Returns the colors of the gizmo axes `[y, x, v]` (green, red, blue) of `obj`'s `kind` controls
 (`:move` or `:rotate`), faded to indicate axes locked by the `constraints`."""
-function _gizmo_colors(ctrl::KinematicController, obj, kind::Symbol)
+function _gizmo_colors(ctrl::KinematicController, @nospecialize(obj), kind::Symbol)
     allowed = _allowed_axes(ctrl, obj, kind)
     colors = Makie.RGBAf[]
     for (sym, c) in zip(_AXES_SYMS, _AXES_COLORS)
@@ -748,7 +758,9 @@ function _update_help!(ctrl::KinematicController)
         ctrl.help_view(ctrl)
         return nothing
     end
-    ctrl.help_obs[] = ctrl.help_shown ? _help_text(_help_sections(ctrl)) : _default_hint(ctrl)
+    # The spectator mode without help shows nothing, see `_set_spectator!`
+    muted = ctrl.spectator[] && !ctrl.spectator_help
+    ctrl.help_obs[] = muted ? "" : ctrl.help_shown ? _help_text(_help_sections(ctrl)) : _default_hint(ctrl)
     return nothing
 end
 
@@ -773,7 +785,7 @@ Returns the bounding box of the `plots` of the selected `obj`. With clip planes,
 plot is clipped entirely. Such plots are skipped; if all are clipped, a box around the `position`
 of `obj` is returned, with the edge length of a source marker (8 % of the visible scene, or 1 cm).
 """
-function _selection_bbox(ctrl::KinematicController, obj, plots)
+function _selection_bbox(ctrl::KinematicController, @nospecialize(obj), plots)
     bbs = filter(_is_finite_box, [Makie.boundingbox(p) for p in plots])
     isempty(bbs) || return reduce(GeometryBasics.union, bbs)
     all_plots = render_plots(ctrl.h)
@@ -859,11 +871,18 @@ function _request_update!(ctrl::KinematicController)
     return nothing
 end
 
-function _apply_update!(ctrl::KinematicController)
+_apply_update!(ctrl::KinematicController) = _apply_update!(ctrl, ctrl.selected[])
+
+"""
+    _apply_update!(ctrl, obj)
+
+Shows the change of `obj` (by default the selection): updates the render of all objects and the
+selection box and calls `on_change` with `obj`, unless it is `nothing`.
+"""
+function _apply_update!(ctrl::KinematicController, @nospecialize(obj))
     ctrl.dirty = false
     update_render!(ctrl.h)
     _update_selection_box!(ctrl)
-    obj = ctrl.selected[]
     isnothing(obj) && return nothing
     # Errors must not propagate into the render loop
     try
@@ -887,7 +906,7 @@ solve of the [`live_view`](@ref) that traces the objects in a background task. A
 objects by the controls and the live view go through here, the callers do not stop solves
 themselves. Clip planes are not traced and change without the hook.
 """
-function _change!(f, ctrl::KinematicController, obj)
+function _change!(f, ctrl::KinematicController, @nospecialize(obj))
     ctrl.before_change()
     f()
     return nothing
@@ -901,14 +920,14 @@ _change!(f, ::KinematicController, ::LiveClipPlane) = (f(); nothing)
 Sets the pose of `obj` to position `P` and orientation `R`, by rotating around the axis-angle of
 `R * orientation(obj)'` and then translating to `P`.
 """
-function _set_pose!(obj, P, R)
+function _set_pose!(@nospecialize(obj), P, R)
     axis, angle = _axis_angle_from_rotmatrix(R * _pose(obj)[2]')
     angle > 1e-12 && rotate3d!(obj, axis, angle)
     translate_to3d!(obj, P)
     return nothing
 end
 
-function _reset_pose!(ctrl::KinematicController, obj)
+function _reset_pose!(ctrl::KinematicController, @nospecialize(obj))
     P0, R0 = ctrl.init_poses[obj]
     _change!(() -> _set_pose!(obj, P0, R0), ctrl, obj)
     return nothing
@@ -974,7 +993,7 @@ and for the rotate mode the angle of the optical axis of `obj` to the beam throu
 see `_snap_angle`; without such a beam, or with the snapping onto beams switched off, its angle to
 the direction of the grid at its position (see `ctrl.snap_grid`), if there is one.
 """
-function _start_snap!(ctrl::KinematicController, obj)
+function _start_snap!(ctrl::KinematicController, @nospecialize(obj))
     ctrl.drag_count += 1
     ctrl.drag_angle = ctrl.drag_applied = 0.0
     ctrl.drag_beam_angle = nothing
@@ -1026,7 +1045,7 @@ against it, whichever is closer; beside the beams (`nothing`), the orientation o
 drag. `nothing` if the orientation is not changed: without `:pose`, and for an object whose
 rotation is constrained.
 """
-function _snap_orientation(ctrl::KinematicController, obj, snapped)
+function _snap_orientation(ctrl::KinematicController, @nospecialize(obj), snapped)
     (ctrl.snap[] == :pose && !isnothing(ctrl.drag_start)) || return nothing
     Set(_allowed_axes(ctrl, obj, :rotate)) == Set(_GIZMO_AXES) || return nothing
     R0 = ctrl.drag_start[2]
@@ -1046,7 +1065,7 @@ Pushes a new undo entry moving `obj` from the pose `(P0, R0)` to `(P1, R1)`, unl
 changed. Starts a new gesture: clears the redo stack and drops the oldest entry once the history
 exceeds `_HISTORY_LIMIT`.
 """
-function _push_history!(ctrl::KinematicController, obj, P0, R0, P1, R1)
+function _push_history!(ctrl::KinematicController, @nospecialize(obj), P0, R0, P1, R1)
     (P0 == P1 && R0 == R1) && return nothing
     push!(ctrl.undo_stack, _HistoryEntry(obj, P0, R0, P1, R1))
     length(ctrl.undo_stack) > _HISTORY_LIMIT && popfirst!(ctrl.undo_stack)
@@ -1061,7 +1080,7 @@ Records a keyboard step of `obj` from `(P0, R0)` to `(P1, R1)` in the undo histo
 same `key` on the same `obj` as the previous one, no more than 1 s apart, is merged into the same
 entry instead of pushing a new one.
 """
-function _record_key_step!(ctrl::KinematicController, obj, key, P0, R0, P1, R1)
+function _record_key_step!(ctrl::KinematicController, @nospecialize(obj), key, P0, R0, P1, R1)
     (P0 == P1 && R0 == R1) && return nothing
     now = time()
     m = ctrl.last_key_step
@@ -1084,7 +1103,7 @@ takes it back, `redo()` does it again. Like a gesture, it clears the redo stack 
 oldest entry once the history exceeds `_HISTORY_LIMIT`. Both functions must not push entries
 themselves.
 """
-function _push_action!(ctrl::KinematicController, obj, undo, redo)
+function _push_action!(ctrl::KinematicController, @nospecialize(obj), undo, redo)
     push!(ctrl.undo_stack, _ActionEntry(obj, undo, redo))
     length(ctrl.undo_stack) > _HISTORY_LIMIT && popfirst!(ctrl.undo_stack)
     empty!(ctrl.redo_stack)
@@ -1176,7 +1195,7 @@ Moves or rotates the `obj` depending on the mode of the `ctrl`. Returns `false` 
 not a control key. If the corresponding axis is locked by the `constraints` of `obj`, the key is
 still consumed (returns `true`) but nothing moves.
 """
-function _key_step!(ctrl::KinematicController, obj, key, factor)
+function _key_step!(ctrl::KinematicController, @nospecialize(obj), key, factor)
     y, x, v = _control_axes(ctrl, obj)
     # Axis and sign of the step for each key, see _help_text
     axis_sym, axis, sign = if ctrl.mode[] == :move
@@ -1203,12 +1222,21 @@ function _key_step!(ctrl::KinematicController, obj, key, factor)
 end
 
 """
-    _set_spectator!(ctrl, on::Bool)
+    _set_spectator!(ctrl, on::Bool; help = true)
 
 Switches the spectator mode of the `ctrl` on or off. In the spectator mode, the selection is
-cleared and all mouse and keyboard input goes to the camera.
+cleared and all mouse and keyboard input goes to the camera; when it is left, the object that was
+selected before is selected again, if it is still one of the controls. With `help = false` the
+mode does not show how to leave it (the hint of the overlay, the help of `live_view`), such that
+only the scene is left, e.g. for a screenshot; the key `v` leaves it all the same. Switching on a
+mode that is on applies `help` and notifies the listeners of `ctrl.spectator` again.
 """
-function _set_spectator!(ctrl::KinematicController, on::Bool)
+function _set_spectator!(ctrl::KinematicController, on::Bool; help::Bool = true)
+    was = ctrl.spectator[]
+    if on
+        was || (ctrl.spectator_selected = ctrl.selected[])
+        ctrl.spectator_help = help
+    end
     ctrl.spectator[] = on
     if on
         ctrl.dragging = false
@@ -1218,6 +1246,14 @@ function _set_spectator!(ctrl::KinematicController, on::Bool)
         ctrl.last_key_step = nothing
         ctrl.selected[] = nothing
         _update_selection_box!(ctrl)
+    else
+        obj = ctrl.spectator_selected
+        ctrl.spectator_selected = nothing
+        ctrl.spectator_help = true
+        if was && !isnothing(obj) && isnothing(ctrl.selected[]) && haskey(ctrl.init_poses, obj)
+            ctrl.selected[] = obj
+            _update_selection_box!(ctrl)
+        end
     end
     _update_help!(ctrl)
     return nothing
@@ -1465,9 +1501,12 @@ the point of the ray closest to the source position (so that the nearest candida
 """
 function _ray_pick(ctrl::KinematicController, scene)
     origin, dir = _cursor_ray(scene)
-    leaves = reduce(vcat, (_leaves(o) for o in ctrl.movable); init = _LiveMovable[])
-    filter!(leaf -> _pickable(ctrl, leaf), leaves)
+    leaves = _LiveMovable[]
+    for obj in ctrl.movable, leaf in _leaves(obj)
+        _pickable(ctrl, leaf) && push!(leaves, leaf)
+    end
     box = function (obj)
+        @nospecialize obj
         plots = _object_plots(ctrl.h, obj)
         return isempty(plots) ? nothing : mapreduce(Makie.boundingbox, GeometryBasics.union, plots)
     end
@@ -1488,6 +1527,82 @@ function _ray_pick(ctrl::KinematicController, scene)
 end
 
 """
+    _drag_step!(ctrl, scene, obj)
+
+A move of the mouse while the controls `ctrl` drag `obj`: turns it around the ring or moves it along
+the arrow of the gizmo that was pressed, otherwise moves it in the drag plane (move mode), onto a
+beam or the grid with the snapping, or rotates it around the rotation axis (rotate mode).
+"""
+function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
+    if !isnothing(ctrl.ring)
+        ring = ctrl.ring
+        mp = _px(scene)
+        Δ = (mp[1] - ctrl.last_mouse[1], mp[2] - ctrl.last_mouse[2])
+        ctrl.last_mouse = mp
+        θ = _ring_angle(scene, ring.center, ring.axis)
+        # The cursor follows the ring, or, if its plane is seen edge-on, moves along it
+        δ = isnothing(θ) || isnothing(ring.θ) ? ctrl.rotate_speed * (Δ[1] * ring.tangent[1] + Δ[2] * ring.tangent[2]) :
+            mod(θ - ring.θ + π, 2π) - π
+        ring.θ = θ
+        δ = ring.sym == :v ? _snap_rotation!(ctrl, δ) : δ
+        if δ != 0
+            _change!(() -> rotate3d!(obj, ring.axis, δ), ctrl, obj)
+            _request_update!(ctrl)
+        end
+    elseif !isnothing(ctrl.arrow)
+        arrow = ctrl.arrow
+        ctrl.last_mouse = _px(scene)
+        # The point of the arrow under the cursor at the press stays under the cursor; on a line
+        # that is seen end-on, the cursor tells no point
+        s = _arrow_coordinate(scene, arrow.origin, arrow.axis)
+        δ = isnothing(s) || isnothing(arrow.s) ? 0.0 : s - arrow.s
+        arrow.s = s
+        if δ != 0
+            _change!(() -> translate3d!(obj, δ .* arrow.axis), ctrl, obj)
+            _request_update!(ctrl)
+        end
+    elseif ctrl.mode[] == :move
+        hit = _mouse_plane_hit(scene, ctrl)
+        if !isnothing(hit)
+            target = hit .+ ctrl.grab_offset
+            allowed = _allowed_axes(ctrl, obj, :move)
+            if !isempty(allowed)
+                snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
+                if isnothing(snapped)
+                    # beside the beams: onto the grid, e.g. the holes of the table
+                    grid = ctrl.snap_grid(obj, target)
+                    isnothing(grid) || (target = Vector{Float64}(grid.point))
+                else
+                    target = Vector{Float64}(snapped.point)
+                end
+                Δ = target .- Vector{Float64}(position(obj))
+                A = hcat(_axis_vectors(ctrl, obj, allowed)...)
+                R = _snap_orientation(ctrl, obj, snapped)
+                # Projection onto the allowed axes, which may be linearly dependent, e.g. if
+                # a local axis is almost parallel to the rotation axis
+                _change!(ctrl, obj) do
+                    translate3d!(obj, A * (pinv(A) * Δ))
+                    isnothing(R) || _set_pose!(obj, _pose(obj)[1], R)
+                end
+                _request_update!(ctrl)
+            end
+        end
+    else
+        mp = _px(scene)
+        dx = mp[1] - ctrl.last_mouse[1]
+        ctrl.last_mouse = mp
+        if dx != 0 && :v in _allowed_axes(ctrl, obj, :rotate)
+            δ = _snap_rotation!(ctrl, ctrl.rotate_speed * dx)
+            if δ != 0
+                _change!(() -> rotate3d!(obj, ctrl.rotation_axis, δ), ctrl, obj)
+                _request_update!(ctrl)
+            end
+        end
+    end
+    return nothing
+end
+
+"""
     kinematic_controls!(ax, h::AbstractSystemRenderHandle; kwargs...)
 
 Enables mouse and keyboard controls for the objects of the live-rendered system `h`, see
@@ -1503,7 +1618,9 @@ two, such that the object can be moved in all directions. In the move mode the a
 mode as rings. The key `h` shows or hides an overlay of all controls.
 
 The key `v` switches the spectator mode on or off, in which the selection is cleared and all
-mouse and keyboard input goes to the camera, such that nothing can be moved by accident.
+mouse and keyboard input goes to the camera, such that nothing can be moved by accident. Leaving
+the mode selects the object again that was selected before. `Shift+V` enters the mode without the
+hint of how to leave it, such that only the scene is shown, e.g. for a screenshot; `v` leaves it.
 
 Objects with a `Static` kinematic trait, see `BeamletOptics.kinematic_trait_of`, can not be
 selected. Sources can be moved via their marker, see [`live_view`](@ref).
@@ -1635,6 +1752,8 @@ function kinematic_controls!(
         source_pick_radius = 15,
         ignore_keys = () -> false
     )
+    # One compiled method for all axes, handles and keyword arguments, e.g. the closure `on_change`
+    @nospecialize
     mode in (:move, :rotate) || throw(ArgumentError("mode must be :move or :rotate, got :$mode"))
     # Objects are compared by identity
     constraints_dict = IdDict{Any, NamedTuple}(constraints)
@@ -1646,7 +1765,7 @@ function kinematic_controls!(
         for oh in render_children(h)
             top = _top_level(h, rendered(oh))
             BMO.is_static(top) && continue
-            any(o -> o === top, movable) || push!(movable, top)
+            _has(movable, top) || push!(movable, top)
         end
     else
         append!(movable, objects)
@@ -1697,7 +1816,7 @@ function kinematic_controls!(
         mode_obs, on_change, isnothing(plane_normal) ? nothing : normalize(Float64.(plane_normal)),
         normalize(Float64.(rotation_axis)),
         Float64(rotate_speed), Float64(fine_step), Float64(fine_angle), throttle,
-        Observable(spectator), select_modifier, Float64(drag_threshold),
+        Observable(spectator), true, nothing, select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
         nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing,
@@ -1768,7 +1887,7 @@ function kinematic_controls!(
             end
             ctrl.press_leaf = leaf
             sel = ctrl.selected[]
-            if !isnothing(sel) && any(o -> o === sel, _chain(ctrl, leaf))
+            if !isnothing(sel) && _has(_chain(ctrl, leaf), sel)
                 # Dragging the already selected object: block the camera immediately
                 ctrl.press_kind = :pending_drag
                 ctrl.last_mouse = ctrl.press_pos
@@ -1853,72 +1972,7 @@ function kinematic_controls!(
             # The snapping to beams is of the rotation around the rotation axis
             !isnothing(ctrl.ring) && ctrl.ring.sym != :v && (ctrl.drag_beam_angle = nothing)
         end
-        obj = ctrl.selected[]
-        if !isnothing(ctrl.ring)
-            ring = ctrl.ring
-            mp = _px(scene)
-            Δ = (mp[1] - ctrl.last_mouse[1], mp[2] - ctrl.last_mouse[2])
-            ctrl.last_mouse = mp
-            θ = _ring_angle(scene, ring.center, ring.axis)
-            # The cursor follows the ring, or, if its plane is seen edge-on, moves along it
-            δ = isnothing(θ) || isnothing(ring.θ) ? ctrl.rotate_speed * (Δ[1] * ring.tangent[1] + Δ[2] * ring.tangent[2]) :
-                mod(θ - ring.θ + π, 2π) - π
-            ring.θ = θ
-            δ = ring.sym == :v ? _snap_rotation!(ctrl, δ) : δ
-            if δ != 0
-                _change!(() -> rotate3d!(obj, ring.axis, δ), ctrl, obj)
-                _request_update!(ctrl)
-            end
-        elseif !isnothing(ctrl.arrow)
-            arrow = ctrl.arrow
-            ctrl.last_mouse = _px(scene)
-            # The point of the arrow under the cursor at the press stays under the cursor; on a line
-            # that is seen end-on, the cursor tells no point
-            s = _arrow_coordinate(scene, arrow.origin, arrow.axis)
-            δ = isnothing(s) || isnothing(arrow.s) ? 0.0 : s - arrow.s
-            arrow.s = s
-            if δ != 0
-                _change!(() -> translate3d!(obj, δ .* arrow.axis), ctrl, obj)
-                _request_update!(ctrl)
-            end
-        elseif ctrl.mode[] == :move
-            hit = _mouse_plane_hit(scene, ctrl)
-            if !isnothing(hit)
-                target = hit .+ ctrl.grab_offset
-                allowed = _allowed_axes(ctrl, obj, :move)
-                if !isempty(allowed)
-                    snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
-                    if isnothing(snapped)
-                        # beside the beams: onto the grid, e.g. the holes of the table
-                        grid = ctrl.snap_grid(obj, target)
-                        isnothing(grid) || (target = Vector{Float64}(grid.point))
-                    else
-                        target = Vector{Float64}(snapped.point)
-                    end
-                    Δ = target .- Vector{Float64}(position(obj))
-                    A = hcat(_axis_vectors(ctrl, obj, allowed)...)
-                    R = _snap_orientation(ctrl, obj, snapped)
-                    # Projection onto the allowed axes, which may be linearly dependent, e.g. if
-                    # a local axis is almost parallel to the rotation axis
-                    _change!(ctrl, obj) do
-                        translate3d!(obj, A * (pinv(A) * Δ))
-                        isnothing(R) || _set_pose!(obj, _pose(obj)[1], R)
-                    end
-                    _request_update!(ctrl)
-                end
-            end
-        else
-            mp = _px(scene)
-            dx = mp[1] - ctrl.last_mouse[1]
-            ctrl.last_mouse = mp
-            if dx != 0 && :v in _allowed_axes(ctrl, obj, :rotate)
-                δ = _snap_rotation!(ctrl, ctrl.rotate_speed * dx)
-                if δ != 0
-                    _change!(() -> rotate3d!(obj, ctrl.rotation_axis, δ), ctrl, obj)
-                    _request_update!(ctrl)
-                end
-            end
-        end
+        _drag_step!(ctrl, scene, ctrl.selected[])
         return Consume(true)
     end
 
@@ -1926,7 +1980,8 @@ function kinematic_controls!(
         ctrl.ignore_keys() && return Consume(false)
         event.action in (Keyboard.press, Keyboard.repeat) || return Consume(false)
         if event.action == Keyboard.press && event.key == Keyboard.v
-            _set_spectator!(ctrl, !ctrl.spectator[])
+            # Shift+V enters the mode without its help, v leaves any variant of it
+            _set_spectator!(ctrl, !ctrl.spectator[]; help = !_shift_pressed(scene))
             return Consume(true)
         end
         # Only the overlay can be toggled in the spectator mode

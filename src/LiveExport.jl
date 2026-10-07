@@ -24,7 +24,7 @@ function _rotation_axis_angle(R::AbstractMatrix)
 end
 
 """Sets the pose of `obj` like `_set_pose!`, but with the accurate `_rotation_axis_angle`."""
-function _set_pose_exact!(obj, P, R)
+function _set_pose_exact!(@nospecialize(obj), P, R)
     axis, angle = _rotation_axis_angle(R * _pose(obj)[2]')
     angle > 0 && rotate3d!(obj, axis, angle)
     translate_to3d!(obj, P)
@@ -38,19 +38,41 @@ catch
     false
 end
 
+# The names of Base that the exported code calls
+const _CODE_BASE_NAMES = ("Dict", "push!", "delete!")
+
+"""
+    _is_taken_name(s) -> Bool
+
+Returns `true` if the exported code can not use `s` as the variable of an object, since it uses
+the name otherwise: a name exported by BeamletOptics or this package, e.g. `Detector` or
+`live_view`, a name of Base that it calls (`Dict`, `push!`, `delete!`), or one of its own variables,
+`system`, `system1`, … and `gui`. Other names of Base, e.g. `first`, are free: the variable hides
+the function of Base in the script, which does not call it.
+"""
+function _is_taken_name(s::AbstractString)
+    (s == "gui" || occursin(r"^system\d*$", s) || s in _CODE_BASE_NAMES) && return true
+    sym = Symbol(s)
+    return Base.isexported(BMO, sym) || Base.isexported(@__MODULE__, sym)
+end
+
 """
     _export_names(gui, objects)
 
 Returns the variable names of the `objects` in the code of `export_changes`: the label of an
-object if it is a valid, unique variable name, otherwise `obj1`, `obj2`, … by the position `k`
-of the object in `objects`, i.e. in the component menu.
+object if it is a valid, unique variable name that the code does not take otherwise (see
+`_is_taken_name`), else the label in lowercase if that is one, e.g. `detector` for the label
+`Detector`, otherwise `obj1`, `obj2`, … by the position `k` of the object in `objects`, i.e. in
+the component menu.
 """
 function _export_names(gui::LiveView, objects)
     names = IdDict{Any, String}()
     used = Set{String}()
     for (k, obj) in enumerate(objects)
         label = get(gui.labels, obj, "")
-        name = _is_variable_name(label) && !(label in used) ? label : "obj$k"
+        candidates = (label, lowercase(label))
+        i = findfirst(c -> _is_variable_name(c) && !_is_taken_name(c) && !(c in used), candidates)
+        name = isnothing(i) ? "obj$k" : candidates[i]
         while name in used
             name *= "_"
         end
@@ -81,7 +103,8 @@ end
     _export_system_names(gui, used) -> IdDict
 
 Returns the variable names of the systems of the `gui` in the code of `export_changes`: the label
-of a system if it is a valid variable name that is not among the `used` names (of the objects),
+of a system if it is a valid variable name that is not among the `used` names (of the objects)
+and not taken otherwise (see `_is_taken_name`),
 otherwise `system`, or `system1`, `system2`, … by the position of the system if the view shows
 several systems.
 """
@@ -92,7 +115,8 @@ function _export_system_names(gui::LiveView, used)
     for (i, h) in enumerate(gui.system_handles)
         sys = rendered(h)
         label = get(gui.labels, sys, "")
-        name = _is_variable_name(label) && !(label in used) ? label : several ? "system$i" : "system"
+        free = _is_variable_name(label) && !_is_taken_name(label) && !(label in used)
+        name = free ? label : several ? "system$i" : "system"
         while name in used
             name *= "_"
         end
@@ -152,7 +176,7 @@ at runtime: a component is a `delete!` from its system (named by `systems`, see
 `_export_system_names`), or a comment if its label is no variable name or one of the `used` names;
 a source is a comment, since the script that traces it is not known.
 """
-function _export_removed_lines!(lines, gui::LiveView, systems, used, obj)
+function _export_removed_lines!(lines, gui::LiveView, systems, used, @nospecialize(obj))
     type = string(nameof(typeof(obj)))
     label = _label(gui, obj)
     system = systems[gui.components.system[obj]]
@@ -180,7 +204,7 @@ Appends the lines of `export_changes` that follow the constructor of `obj`, whic
 to its `system` (the name of its variable) and moved from its pose `base` as constructed to its
 current pose, see `_export_pose_lines!`; a source is moved and then traced through the `system`.
 """
-function _export_added_lines!(lines, gui::LiveView, names, system, obj, base)
+function _export_added_lines!(lines, gui::LiveView, names, system, @nospecialize(obj), base)
     push!(lines, "push!($system, $(names[obj]))")
     return _export_pose_lines!(lines, gui, names, obj; base, heading = false)
 end
@@ -283,7 +307,8 @@ exported.
 Components that were removed and added at runtime (see [`remove_component!`](@ref) and
 [`add_component!`](@ref)) come first. A removed component is a `delete!(system, name)`, or a comment
 if its label is no valid variable name. An added component is its constructor call (for a component
-of the catalog, see [`component_catalog`](@ref); otherwise a comment marks where to construct it),
+of the catalog, see [`component_catalog`](@ref), and for one added with its `code`, see
+[`add_component!`](@ref); otherwise a comment marks where to construct it),
 a `push!(system, name)` and the `rotate3d!` and `translate_to3d!` from its pose as constructed
 (otherwise: from its pose when it was added) to its current pose. The system is named after its
 label if that is a valid variable name, otherwise `system`, or `system1`, `system2`, … if the view
@@ -291,8 +316,10 @@ shows several systems. An added source is its constructor call, its `rotate3d!` 
 `translate_to3d!` and the `solve_system!(system, name)` that traces it; a removed source that the
 view started with is a comment, since the script that traces it is not known.
 
-The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
-otherwise `obj1`, `obj2`, … by the position of the object in the component menu. A comment above
+The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
+that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as
+`Detector` or `live_view`, and not `system` or `gui`; then after the label in lowercase if that is
+free, e.g. `detector`, otherwise `obj1`, `obj2`, … by the position of the object in the component menu. A comment above
 each change names the label and the type of the object.
 
 ```julia
@@ -369,7 +396,7 @@ since it was constructed, see `_export_pose_lines!`. Without one, the constructo
 comment with its type and position marks where to construct it, and the change of its pose since
 the view got it is commented out.
 """
-function _export_construct_lines!(lines, gui::LiveView, names, obj)
+function _export_construct_lines!(lines, gui::LiveView, names, @nospecialize(obj))
     type = string(nameof(typeof(obj)))
     label = get(gui.labels, obj, nothing)
     name = names[obj]
@@ -471,7 +498,7 @@ function _export_script_code(gui::LiveView)
         push!(lines, sys in defined && src in defined ? line : _commented(line))
     end
 
-    push!(lines, "", _SCRIPT_VIEW_HEADING, "using GLMakie, BeamletOpticsGUI")
+    push!(lines, "", _SCRIPT_VIEW_HEADING, "using BeamletOpticsGUI, GLMakie")
     args = Pair{String, Bool}[]
     for sys in systems
         name = system_names[sys]
@@ -510,11 +537,12 @@ The script consists of, in this order:
 2. per system its top-level objects, then the system itself, e.g. `system = System([lens, m1])`
 3. the sources
 4. a `solve_system!(system, source)` per pair of the view
-5. after the comment line `# Live view`: `using GLMakie, BeamletOpticsGUI` and the call
+5. after the comment line `# Live view`: `using BeamletOpticsGUI, GLMakie` and the call
    `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
    `labels`. The lines above it run without a window.
 
-An object or source of the catalog (see [`component_catalog`](@ref)) is its constructor call
+An object or source of the catalog (see [`component_catalog`](@ref)), or one that was added with
+its `code` (see [`add_component!`](@ref)), is its constructor call
 followed by the `rotate3d!` about its position and the `translate_to3d!` from its pose as
 constructed to its current pose, with the full precision of `Float64`. The constructor of any other object, e.g. of one that the view started
 with, is not known: a comment with its variable, type and position [m] marks where to construct it,
@@ -522,15 +550,17 @@ in its pose when the view got it, and the lines that use its variable are commen
 of its pose since then, its `push!` to its system, its `solve_system!`, its entries in `live_view`).
 A `StaticSystem` with such an object is a comment as a whole.
 
-The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names,
-otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
+The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
+that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as
+`Detector` or `live_view`, and not `system` or `gui`; then after the label in lowercase if that is
+free, e.g. `detector`, otherwise `obj1`, `obj2`, …, and the systems `system`, or `system1`, `system2`, … if the view shows
 several. Components that were removed are not part of the script. Neither are the looks (colors,
 opacity, hidden objects), the clip planes, the extras and the other keyword arguments of
 `live_view`.
 
 ```julia
 gui = live_view(System())
-# add components and sources from the catalog, move them, then
+# add components and sources from the catalog, or with `add_component!(...; code)`, move them, then
 code = export_script(gui)
 ```
 """

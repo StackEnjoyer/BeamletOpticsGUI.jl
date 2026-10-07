@@ -232,7 +232,7 @@ Extends the table of the `gui` to the position of the component or source `obj`,
 added, with `_TABLE_MARGIN` holes around it, while the table is shown.
 """
 _table_include!(::LiveView, _) = nothing
-function _table_include!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source})
+function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.AbstractObject, _Source}))
     t = gui.components.table
     (isnothing(t) || !t.shown) && return nothing
     range = _union_range(t.range,
@@ -256,7 +256,7 @@ direction `e1` of the rows of the holes, to which its rotation snaps in steps of
 `_snap_angle`). `nothing` while the table is hidden or does not snap, while the snapping of the
 controls is switched off (see `_set_snap!`), which switches all snapping, and for a clip plane.
 """
-function _table_snap(gui::LiveView, obj, point)
+function _table_snap(gui::LiveView, @nospecialize(obj), point)
     t = gui.components.table
     (isnothing(t) || !t.shown || !t.snap || !_grid_snaps(obj)) && return nothing
     gui.controls.snap[] == :off && return nothing
@@ -276,7 +276,10 @@ function _build_table!(gui::LiveView, spec)
     gui.components.table = t
     t.toggle = add_tool!(_set_table!, gui, "Table"; icon = :table, toggle = true,
         tooltip = "Optical table: with the snapping on, components snap onto its holes")
-    gui.controls.snap_grid = (obj, point) -> _table_snap(gui, obj, point)
+    gui.controls.snap_grid = function (obj, point)
+        @nospecialize obj
+        return _table_snap(gui, obj, point)
+    end
     if spec.shown
         status = gui.status.text[]
         t.toggle.active[] = true

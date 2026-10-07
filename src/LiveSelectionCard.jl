@@ -175,7 +175,7 @@ end
 The text of the entry `(kind, obj)`: "Select <label>", "‹ <label>", "More ›" (the small menu, see
 `_open_menu!`) or the label, " ›" for parts with parts.
 """
-_entry_text(gui::LiveView, kind::Symbol, obj) = kind === :select ? "Select $(_label(gui, obj))" :
+_entry_text(gui::LiveView, kind::Symbol, @nospecialize(obj)) = kind === :select ? "Select $(_label(gui, obj))" :
     kind === :parent ? "‹ $(_label(gui, obj))" : kind === :more ? _BROWSE_MORE :
     _label(gui, obj) * (isempty(_part_children(obj)) ? "" : " ›")
 
@@ -495,7 +495,7 @@ end
 Opens the selection card of the object that `obj` is a part of, from the button "‹" in the head of
 the card of `obj`; nothing for a top-level object.
 """
-function _browse_parent!(gui::LiveView, obj)
+function _browse_parent!(gui::LiveView, @nospecialize(obj))
     parent = isnothing(obj) ? nothing : _part_parent(gui, obj)
     isnothing(parent) || _browse!(gui, parent)
     return nothing
@@ -516,7 +516,7 @@ function _choose_entry!(gui::LiveView, i::Integer)
     1 <= i <= length(entries) || throw(ArgumentError("no entry $i on the selection card"))
     return _run_entry!(gui, entries[i]...)
 end
-function _choose_entry!(gui::LiveView, obj)
+function _choose_entry!(gui::LiveView, @nospecialize(obj))
     entries = _open_entries(gui)
     i = findfirst(e -> e[2] === obj, entries)
     isnothing(i) && throw(ArgumentError("$(_label(gui, obj)) is no entry of the selection card"))
@@ -528,7 +528,7 @@ function _open_entries(gui::LiveView)
     return gui.cards.browse.entries
 end
 
-function _run_entry!(gui::LiveView, kind::Symbol, obj)
+function _run_entry!(gui::LiveView, kind::Symbol, @nospecialize(obj))
     if kind in (:parent, :more) || (kind === :part && !isempty(_part_children(obj)))
         _browse!(gui, obj)
     else
@@ -538,7 +538,7 @@ function _run_entry!(gui::LiveView, kind::Symbol, obj)
 end
 
 """Closes the selection card and selects `obj`, or inspects it if it is not movable, see `_choose_entry!`."""
-function _take_part!(gui::LiveView, obj)
+function _take_part!(gui::LiveView, @nospecialize(obj))
     _end_browse!(gui)
     if _is_movable(gui.controls, obj)
         _select!(gui, obj)
@@ -651,7 +651,7 @@ keeps it, since a short click on the selection is usually a drag that did not mo
 for the controls to select as before: an object that is not in a group, and any click while
 measuring.
 """
-function _on_leaf_click!(gui::LiveView, leaf)
+function _on_leaf_click!(gui::LiveView, @nospecialize(leaf))
     try
         if !isnothing(gui.objects.browsed)
             if gui.cards.browse.compact
@@ -665,7 +665,7 @@ function _on_leaf_click!(gui::LiveView, leaf)
         chain = _chain(gui.controls, leaf)
         length(chain) > 1 || return false
         sel = gui.controls.selected[]
-        (!isnothing(sel) && any(o -> o === sel, chain)) && return true
+        (!isnothing(sel) && _has(chain, sel)) && return true
         _release_info!(gui, _SolveError)
         _release_info!(gui, _BackgroundItem)
         _clear_inspection!(gui)
@@ -682,12 +682,12 @@ Returns the part of the browsed object of the `gui` under the cursor after a cli
 object `leaf`: the part whose plots were picked (see `_part_under_cursor`), else the part among the
 entries that contains `leaf` (see `_chain`), else `nothing`.
 """
-function _browsed_part(gui::LiveView, leaf)
+function _browsed_part(gui::LiveView, @nospecialize(leaf))
     parts = _browse_parts(gui.cards.browse)
     p = _part_under_cursor(gui, parts)
     isnothing(p) || return p
     chain = _chain(gui.controls, leaf)
-    i = findfirst(q -> any(o -> o === q, chain), parts)
+    i = findfirst(q -> _has(chain, q), parts)
     return isnothing(i) ? nothing : parts[i]
 end
 
@@ -711,7 +711,10 @@ function _connect_browse!(gui::LiveView)
     c = _BrowseCard(gui.fig, gui.layout.theme)
     gui.cards.browse = c
     ctrl = gui.controls
-    ctrl.click_leaf = leaf -> _on_leaf_click!(gui, leaf)
+    ctrl.click_leaf = function (leaf)
+        @nospecialize leaf
+        return _on_leaf_click!(gui, leaf)
+    end
     ctrl.click_help = _BROWSE_CLICK_HELP
     push!(ctrl.help_extra, "Select" => [
         _HelpEntry(["Enter"], "in the menu of a group: choose the marked entry"),

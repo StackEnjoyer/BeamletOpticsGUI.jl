@@ -152,28 +152,48 @@ _set_spectator_ui!(::LiveView, ::Bool) = nothing
 """
     _on_spectator!(gui, on::Bool)
 
-Hides the UI of the `gui` when the spectator mode of its controls is switched `on` (the key `v`),
-and shows it again when it is switched off: the parts that all layouts share, i.e. the view cube
-(see `_set_visible!`), the floating cards (see `_update_cards!`), the markers of the sources (see
-`_update_source_markers!`, they come back if their toggle is on), the bounding spheres of the debug
-mode (see `_show_debug!`), the selection card and open
-menus, then the parts of the layout, see `_set_spectator_ui!`. The help pill with the chip of the
-mode and the progress window of a running solve stay, such that the mode can be left and a long
-trace cancelled.
+Hides the UI of the `gui` when the spectator mode of its controls is switched `on` (the key `v`,
+[`spectator!`](@ref)), and shows it again when it is switched off: the parts that all layouts
+share, i.e. the view cube (see `_set_visible!`), the floating cards (see `_update_cards!`), the
+markers of the sources (see `_update_source_markers!`, they come back if their toggle is on), the
+bounding spheres of the debug mode (see `_show_debug!`), the selection card and open menus, then
+the parts of the layout, see `_set_spectator_ui!`. The help pill with the chip of the mode and the
+progress window of a running solve stay, such that the mode can be left and a long trace cancelled.
+
+The options of the mode (see `_SpectatorState` and `_set_spectator!`) keep the pinned cards or the
+view cube, hide the help as well and set the color of the background. Called again while the mode
+is on, it applies changed options; the colors of the background from before are kept once and
+come back when the mode is left, which resets the options.
 """
 function _on_spectator!(gui::LiveView, on::Bool)
+    s = gui.spectator
     if on
         _end_browse!(gui)
         for m in (gui.widgets.menu, gui.widgets.views_menu)
             (isnothing(m) || !m.is_open[]) || (m.is_open[] = false)
         end
+        isnothing(s.saved) && (s.saved = (; ax = gui.ax.scene.backgroundcolor[],
+            fig = gui.fig.scene.backgroundcolor[]))
+        _set_background!(gui, something(s.background, s.saved.ax), something(s.background, s.saved.fig))
+    else
+        isnothing(s.saved) || _set_background!(gui, s.saved.ax, s.saved.fig)
+        s.cards, s.view_cube, s.background, s.saved = false, false, nothing, nothing
     end
-    _set_visible!(gui.widgets.view_cube, !on)
+    _set_visible!(gui.widgets.view_cube, !on || s.view_cube)
+    _help_ui(gui).muted = on && !gui.controls.spectator_help
     _update_source_markers!(gui)
     _show_debug!(gui)
     _set_spectator_ui!(gui, on)
     _update_cards!(gui)
     _arrange_help!(gui)
+    return nothing
+end
+
+# Sets the colors of the background of the 3D view and of the window of the `gui`
+function _set_background!(gui::LiveView, ax_color, fig_color)
+    for (scene, color) in ((gui.ax.scene, ax_color), (gui.fig.scene, fig_color))
+        scene.backgroundcolor[] == color || (scene.backgroundcolor[] = color)
+    end
     return nothing
 end
 

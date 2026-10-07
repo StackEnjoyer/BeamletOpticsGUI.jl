@@ -13,13 +13,15 @@ import BeamletOptics: live_render!, update_render!, remove_render!, pick_object,
                       render_settings!,
                       look_colors, AbstractRenderHandle, AbstractObjectRenderHandle,
                       AbstractSystemRenderHandle, AbstractBeamRenderHandle
+import BeamletOptics: translate3d!, translate_to3d!, rotate3d!
 
 const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
        pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
        add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
-       CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses
+       CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!,
+       spectator!, wait_solve
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -90,6 +92,8 @@ include("LiveDebug.jl")
 include("LiveAlign.jl")
 include("LiveAim.jl")
 include("LiveLinks.jl")
+include("LiveScripting.jl")
+include("LiveRecord.jl")
 include("LiveGlasses.jl")
 include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")

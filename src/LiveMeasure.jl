@@ -246,7 +246,7 @@ Adds the `point` [m] of the component `obj` (or `nothing` for a point of a beam)
 of the `gui`. The second point shows the distance, and the angle between two components, in the
 status line with a dashed line between the points; a third point starts a new measurement.
 """
-function _add_measure_point!(gui::LiveView, point, obj)
+function _add_measure_point!(gui::LiveView, point, @nospecialize(obj))
     length(gui.measure.points) >= 2 && _clear_measurement!(gui)
     foreach(p -> delete!(gui.ax, p), gui.measure.plots)
     empty!(gui.measure.plots)
@@ -294,7 +294,7 @@ background. While the selection card is open (see `_browse!`), a click on no par
 browsed object only closes it, see `_click_while_browsing!`. Returns `true` if a beam was clicked
 or the selection card was closed, then the selection is kept.
 """
-function _on_click!(gui::LiveView, obj)
+function _on_click!(gui::LiveView, @nospecialize(obj))
     if !isnothing(gui.objects.browsed)
         _click_while_browsing!(gui, nothing)
         return true
@@ -326,6 +326,7 @@ end
 function _connect_inspection!(gui::LiveView)
     listeners = gui.controls.listeners
     gui.controls.on_click = function (obj)
+        @nospecialize obj
         try
             return _on_click!(gui, obj)
         catch e

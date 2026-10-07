@@ -1,6 +1,6 @@
 # Live view
 
-All examples on this page assume `using GLMakie, BeamletOptics, BeamletOpticsGUI` and a `system` and `beam` (or beam group `source`) built with BeamletOptics.
+All examples on this page assume `using BeamletOptics, BeamletOpticsGUI, GLMakie` (GLMakie last, see [Order of loading](@ref)) and a `system` and `beam` (or beam group `source`) built with BeamletOptics.
 
 [`live_view`](@ref) combines `live_render!`, [`kinematic_controls!`](@ref), cards with detector
 views and optional sliders into a single ready-to-use window. It is the fastest way to explore
@@ -8,7 +8,7 @@ the sensitivity of a system in the REPL: grab a mirror, watch the beam path and 
 views update live.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 gui = live_view(system, beam)
 display(gui)
@@ -46,8 +46,9 @@ demand over the 3D view:
   the view cube, the cards (and with them the detector views), the markers of the sources and the panels of [`add_panel!`](@ref) are hidden, in the app layout also the toolbar,
   the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
   progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
-  as it was, e.g. a sidebar that was collapsed stays collapsed. A view can start in it with
-  `spectator = true`.
+  as it was, e.g. a sidebar that was collapsed stays collapsed, and selects the object again that
+  was selected before. `Shift+V` enters the mode without this help, such that only the 3D view is
+  left, e.g. for a screenshot; `v` leaves it. A view can start in the mode with `spectator = true`.
 - the button "⋯" at the bottom left opens the tool rail: Trace (`t`), Auto trace, Sources (`1`),
   Clip beams, Measure, Show all, the component menu ("select component"), Export, then the tools
   of [`add_tool!`](@ref), one entry per section of [`add_controls!`](@ref) and the entry "Sliders"
@@ -344,6 +345,49 @@ end
 ref = lines!(gui.ax, [Point3f(0, 0, 0), Point3f(0, 0.3, 0)]; color = :gray, visible = false)
 add_tool!(gui, "Optical axis"; toggle = true, key = Keyboard._3) do gui, active
     ref.visible[] = active
+end
+```
+
+## Scripting the live view
+
+Demos, tutorials and tests drive a window from code. Changing an object directly, e.g.
+`translate3d!(lens, offset)`, leaves the window unaware: neither the drawing nor the beams follow.
+The verbs of BeamletOptics with the window as first argument do what a gesture of the user does:
+the drawing, the selection box and the cards follow, the systems are solved like after a drag
+(respecting `trace_budget` and `auto_trace`), the `constraints` apply, static objects throw an
+`ArgumentError`, and each call is one entry of the undo history. [`select!`](@ref) and
+[`spectator!`](@ref) act like a click and the keys `v` and `Shift+V`, and [`wait_solve`](@ref)
+waits until the solve in the background is shown.
+
+```julia
+gui = live_view(system, beam)
+display(gui)
+select!(gui, lens)
+for Δ in range(0, 5e-3, 20)
+    translate_to3d!(gui, lens, [0, 0.1 + Δ, 0])
+    wait_solve(gui)
+end
+rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))
+spectator!(gui, true)
+```
+
+## Screenshots and recording
+
+For screenshots and videos, [`spectator!`](@ref) with `help = false` hides everything but the 3D
+view (tools, status line, help, cards, view cube, selection box and the sidebars of the app
+layout), optionally with another `background` and with the pinned cards or the view cube kept, and
+restores the window when switched off. `Makie.record` with a live view renders a video offscreen,
+in this mode: `f(i)` changes the window for each element of `iter`, then the solve is awaited and a
+frame is written.
+
+```julia
+spectator!(gui; help = false, background = :black, cards = true)  # keep the pinned detector cards
+wait_solve(gui)
+save("setup.png", gui.fig; px_per_unit = 2)
+spectator!(gui, false)
+
+Makie.record(gui, "move.mp4", range(0, 5e-3, 60); framerate = 30, px_per_unit = 2) do d
+    translate_to3d!(gui, lens, [0, 0.1 + d, 0])
 end
 ```
 

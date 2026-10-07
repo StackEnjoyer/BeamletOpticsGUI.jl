@@ -20,7 +20,7 @@ _pose_box(k::Int) = CardWidget(Textbox; name = _CARD_POSE_NAMES[k], placeholder 
     width = 76, value = (gui, obj) -> k <= 3 ? string(round(1e3 * position(obj)[k], digits = 6)) : "",
     on = (gui, obj, s) -> _apply_pose_input!(gui, obj, k, s))
 
-function pose_card_rows(obj)
+function pose_card_rows(@nospecialize(obj))
     cells(ks, unit) = (Iterators.flatten((_pose_label(k), _pose_box(k)) for k in ks)..., unit)
     return (CardRow(cells(1:3, "mm")...), CardRow(cells(4:6, "mrad")...))
 end
@@ -36,36 +36,36 @@ Rows of the component families, below the pose rows
 =#
 
 # Clip planes and any other movable object: the pose
-card_rows(obj) = pose_card_rows(obj)
+card_rows(@nospecialize(obj)) = pose_card_rows(obj)
 # Optical components and groups: the pose and the beams that hit them, see `_beam_text`
-card_rows(obj::BMO.AbstractObject) = (pose_card_rows(obj)..., _beam_row())
+card_rows(@nospecialize(obj::BMO.AbstractObject)) = (pose_card_rows(obj)..., _beam_row())
 # Lenses and prisms: the refractive index at the wavelength of the beam and the center thickness
-card_rows(l::BMO.AbstractRefractiveOptic) = (pose_card_rows(l)..., _beam_row(),
+card_rows(@nospecialize(l::BMO.AbstractRefractiveOptic)) = (pose_card_rows(l)..., _beam_row(),
     _text_row("n", :index, _index_text), _thickness_rows(l)...)
 # Beamsplitters: the splitting ratio of the coating
-card_rows(bs::BMO.AbstractBeamsplitter) = (pose_card_rows(bs)..., _beam_row(),
+card_rows(@nospecialize(bs::BMO.AbstractBeamsplitter)) = (pose_card_rows(bs)..., _beam_row(),
     _text_row("split", :split, (gui, bs) -> _split_text(_coating(bs))))
 # Polarizers: the transmission axis
-card_rows(p::Union{BMO.LinearPolarizer, BMO.PolarizationFilter}) =
+card_rows(@nospecialize(p::Union{BMO.LinearPolarizer, BMO.PolarizationFilter})) =
     (pose_card_rows(p)..., _beam_row(), _text_row("axis", :axis, _axis_text))
 # Detectors: the hits of the last solve, the power, or the number of rays, of the view of the
 # detector; the view itself is on the page "Results" of the card, see `_has_view`
-card_rows(pd::BMO.Detector) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _signal_text))
+card_rows(@nospecialize(pd::BMO.Detector)) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _signal_text))
 # Beams and beam groups: switched on and off, their polarization, see `beam_card_rows`
-card_rows(b::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}) = (pose_card_rows(b)..., beam_card_rows(b)...)
+card_rows(@nospecialize(b::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})) = (pose_card_rows(b)..., beam_card_rows(b)...)
 # Sources whose rays can be regenerated: wavelength, size and a slider for the number of rays
-card_rows(src::Union{BMO.CollimatedSource, BMO.PointSource}) = (pose_card_rows(src)...,
+card_rows(@nospecialize(src::Union{BMO.CollimatedSource, BMO.PointSource})) = (pose_card_rows(src)...,
     _text_row("λ", :source, _source_text), beam_card_rows(src)...,
     _ray_rows(BMO.min_num_rays(src), length(src))...)
 # Gaussian beamlets: wavelength, waist and Rayleigh range
-card_rows(g::BMO.GaussianBeamlet) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
+card_rows(@nospecialize(g::BMO.GaussianBeamlet)) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
     beam_card_rows(g)...)
 # Systems (inspected, see `_inspect!`): no pose, the number of objects, the rays of their sources and
 # the duration of the last solve
 card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text; width = 48),
     _text_row("rays", :rays, _rays_text; width = 48), _text_row("solve", :solve, _solve_text; width = 48))
 
-card_actions(obj) = (CardWidget(Button; name = :hide, label = "hide",
+card_actions(@nospecialize(obj)) = (CardWidget(Button; name = :hide, label = "hide",
     value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
 
 # The button "remove" of a component or a source, in the last row of its card (see `_card_rows`):
@@ -93,18 +93,20 @@ The rays of all beams of the `gui` that hit the object `obj` in the last solve: 
 (the leaves of a group) and their parts (e.g. the prisms and the coating of a cube beamsplitter),
 see `intersection`. Of Gaussian beamlets, the chief rays.
 """
-function _hits(gui::LiveView, obj)
+function _hits(gui::LiveView, @nospecialize(obj))
     targets = Base.IdSet{Any}()
-    foreach(leaf -> foreach(p -> push!(targets, p), _parts(leaf, BMO.shape_trait_of(leaf))), _leaves(obj))
+    for leaf in _leaves(obj), p in _parts(leaf, BMO.shape_trait_of(leaf))
+        push!(targets, p)
+    end
     rs = BMO.AbstractRay[]
     foreach(((_, beam),) -> _collect_hits!(rs, beam, targets), gui.pairs)
     return rs
 end
 
 # An object and the objects it consists of, which the intersections may name
-_parts(obj, ::BMO.SingleShape) = (obj,)
-_parts(obj, ::BMO.MultiShape) = (obj, BMO.shape(obj)...)
-_parts(obj, _) = (obj,)
+_parts(@nospecialize(obj), ::BMO.SingleShape) = (obj,)
+_parts(@nospecialize(obj), ::BMO.MultiShape) = (obj, BMO.shape(obj)...)
+_parts(@nospecialize(obj), _) = (obj,)
 
 # All branches of a beam, e.g. behind a beamsplitter (the children of the beam tree)
 _collect_hits!(rs, bg::BMO.AbstractBeamGroup, targets) = foreach(b -> _collect_hits!(rs, b, targets), BMO.beams(bg))
@@ -138,14 +140,20 @@ function _wavelength_string(λ)
     return isinteger(x) ? "$(Int(x)) nm" : "$x nm"
 end
 
+# What a row of a result of the last solve shows while a solve in the background traces the beams
+# and fills the detectors, which are not read until then, see `_tracing`. The cards are refreshed
+# once the solve is done (see `_apply!`), cancelled or failed
+const _TRACING_VALUE = "tracing…"
+
 """
     _beam_text(gui, obj)
 
 The rays that hit `obj` in the last solve and the angle of incidence of the first one, i.e. the
 center ray of a ring source, with the range of all of them, e.g. `12 rays, AOI 45.0° (44.1–45.9°)`,
-or "not hit".
+or "not hit". While a solve runs in the background, `_TRACING_VALUE`.
 """
-function _beam_text(gui::LiveView, obj)
+function _beam_text(gui::LiveView, @nospecialize(obj))
+    _tracing(gui) && return _TRACING_VALUE
     rs = _hits(gui, obj)
     isempty(rs) && return "not hit"
     θ = map(_incidence, rs)
@@ -170,18 +178,20 @@ _first_ray(beam::BMO.Beam) = first(BMO.rays(beam))
 The wavelength of the first ray hitting `obj`, or of the first beam of the `gui` [m]; 1000 nm, the
 default of BeamletOptics, in a view without a source.
 """
-function _live_wavelength(gui::LiveView, obj)
+function _live_wavelength(gui::LiveView, @nospecialize(obj))
     rs = _hits(gui, obj)
     isempty(rs) || return BMO.wavelength(first(rs))
     return isempty(gui.pairs) ? 1.0e-6 : BMO.wavelength(_first_ray(last(first(gui.pairs))))
 end
 
-function _index_text(gui::LiveView, l)
+function _index_text(gui::LiveView, @nospecialize(l))
+    # The wavelength is the one of the rays that hit the lens
+    _tracing(gui) && return _TRACING_VALUE
     λ = _live_wavelength(gui, l)
     return "$(round(BMO.refractive_index(l, λ); digits = 4)) at $(_wavelength_string(λ))"
 end
 
-_thickness_rows(l::BMO.Lens) = (_text_row("d", :thickness, (gui, l) -> _length_string(BMO.thickness(l))),)
+_thickness_rows(@nospecialize(l::BMO.Lens)) = (_text_row("d", :thickness, (gui, l) -> _length_string(BMO.thickness(l))),)
 _thickness_rows(_) = ()
 
 _coating(bs::BMO.ThinBeamsplitter) = bs
@@ -207,9 +217,11 @@ end
 """
 The signal of the detector `pd` on its card: the power of a field view or the number of rays of a
 spot view, from the metrics of its view if it was computed for the hits of the last solve (i.e.
-while a view of `pd` is shown, see `_shown_views`), otherwise the number of its hits.
+while a view of `pd` is shown, see `_shown_views`), otherwise the number of its hits. While a solve
+runs in the background, `_TRACING_VALUE`.
 """
 function _signal_text(gui::LiveView, pd)
+    _tracing(gui) && return _TRACING_VALUE
     state = get(gui.detectors.states, pd, nothing)
     (isnothing(state) || state.stale || isnothing(state.result)) && return _hits_text(pd)
     return _signal_metric(state.result.metrics, pd)
@@ -314,13 +326,20 @@ group, a doublet or a cube beamsplitter, the elements of `BeamletOptics.shape(x)
 in their order (beams and bare shapes are left out); none of a `SingleShape` object or of anything
 else, e.g. a beam or a clip plane.
 """
-_part_children(x::BMO.AbstractObject) = _part_children(x, BMO.shape_trait_of(x))
+_part_children(@nospecialize(x::BMO.AbstractObject)) = _part_children(x, BMO.shape_trait_of(x))
 _part_children(_) = ()
-_part_children(x, ::BMO.MultiShape) = Tuple(c for c in BMO.shape(x) if c isa BMO.AbstractObject)
+function _part_children(@nospecialize(x), ::BMO.MultiShape)
+    # a loop: a generator over the shapes is compiled for each type of `x`
+    parts = Any[]
+    for c in BMO.shape(x)
+        c isa BMO.AbstractObject && push!(parts, c)
+    end
+    return Tuple(parts)
+end
 _part_children(_, ::BMO.AbstractShapeTrait) = ()
 
 """Returns the object whose part `x` is in the `gui` (see `_map_parts!`), `nothing` at the top level."""
-_part_parent(gui::LiveView, x) = get(gui.objects.parents, x, nothing)
+_part_parent(gui::LiveView, @nospecialize(x)) = get(gui.objects.parents, x, nothing)
 
 """
     _map_parts!(gui)
@@ -333,7 +352,7 @@ entries, once made, are kept.
 """
 function _map_parts!(gui::LiveView)
     state = gui.objects
-    function walk!(x)
+    function walk!(@nospecialize(x))
         for c in _part_children(x)
             state.parents[c] = x
             if !haskey(gui.labels, c) && !haskey(state.names, c)
