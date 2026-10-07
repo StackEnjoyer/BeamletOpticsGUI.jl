@@ -75,7 +75,7 @@ const GUI = BeamletOpticsGUI
     _mains(sys::BMO.AbstractSystem) = reduce(vcat, (_mains(obj) for obj in sys.objects); init = Any[])
     _spheres(x) = vcat(_parts(x), _mains(x))
     # Those with a bounding sphere, which BeamletOptics decides, not a list of types
-    _has_sphere(x) = BMO.bounding_sphere_of(x) isa BMO.SingleBoundingSphere
+    _has_sphere(x) = !(BMO.bounding_sphere_of(x) isa BMO.NoBoundingSphere)
     _with_sphere(x) = filter(_has_sphere, _spheres(x))
 
     _debug(gui) = gui.components.debug
