@@ -13,7 +13,7 @@ BeamletOpticsGUI = {path = ".."}
 
 [compat]
 Aqua = "0.8"
-BeamletOptics = "0.13.12"
+BeamletOptics = "0.14"
 GLMakie = "0.13"
 GeometryBasics = "0.5"
 LinearAlgebra = "1"
