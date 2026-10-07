@@ -78,6 +78,8 @@ _forget_detector!(::LiveView, _) = nothing
 function add_component!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject); system = nothing,
         select::Bool = true, label = nothing, code = nothing, origin = _code_origin(obj, code))
     ctrl = gui.controls
+    # Selecting it would be taken as a click of a pick of members, see `_pick_member!`
+    select && _end_member_pick!(gui)
     # An object that the view shows becomes a member of a further system
     if system isa BMO.AbstractSystem && _shown_top(gui, obj)
         _add_member!(gui, obj, _add_system(gui, system))

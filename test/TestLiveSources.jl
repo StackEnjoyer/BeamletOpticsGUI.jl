@@ -434,22 +434,21 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "target of the catalog" begin
-        # a source is traced through any system, a component needs a `System`: a view without one
-        # only offers the sources
+        # a source is traced through any system, also a `StaticSystem`; a component needs a
+        # `System` or is placed without a system, see `TestLiveCatalog.jl`
         m = _mirror()
         gui = _live_view(StaticSystem([m]))
         w = GUI._catalog_widget(GUI._catalog_window(gui))
-        @test !isempty(gui.components.catalog) && all(e -> e.source, gui.components.catalog)
-        @test all(e -> e.source, w.entries)
+        @test !isempty(gui.components.catalog) && any(e -> !e.source, w.entries)
         @test GUI._catalog_entry(w).source
-        @test w.target.text[] == "into: System 1"
+        @test w.target.text[] == "into" && w.target_menu.selection[] == "System 1"
         src = GUI._place_catalog!(gui, GUI._catalog_entry(w), ["632.8"])
         GUI._drop_placement!(gui)
         @test only(gui.pairs).second === src
         close(gui)
-        # no catalog without sources among its entries
+        # a catalog without sources: its components are placed without a system
         gui = _live_view(StaticSystem([m]); catalog = [e for e in component_catalog() if !e.source])
-        @test isnothing(GUI._catalog_window(gui))
+        @test !isnothing(GUI._catalog_window(gui))
         close(gui)
         # the second of two systems: the source follows the selection like a component
         a, b = System([_mirror()]), System([_mirror(0.2; x = 0.1)])
@@ -472,7 +471,7 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(a, static)
         w = GUI._catalog_widget(GUI._catalog_window(gui))
         menu = w.target_menu
-        @test GUI._catalog_entry(w).source && menu.options[] == ["System 1", "System 2"]
+        @test GUI._catalog_entry(w).source && menu.options[][1:2] == ["System 1", "System 2"]
         menu.i_selected[] = 2
         @test GUI._catalog_target(gui, GUI._catalog_entry(w)) === static
         src = GUI._place_catalog!(gui, GUI._catalog_entry(w), ["632.8"])
@@ -480,7 +479,8 @@ const GUI = BeamletOpticsGUI
         @test only(gui.pairs).first === static
         gui.controls.selected[] = nothing
         GUI._select_catalog_entry!(gui, w, findfirst(e -> !e.source, w.entries))
-        @test menu.options[] == ["System 1"] && menu.selection[] == "System 1"
+        @test first(menu.options[]) == "System 1" && !("System 2" in menu.options[])
+        @test menu.selection[] == "System 1"
         @test GUI._catalog_target(gui, GUI._catalog_entry(w)) === a
         close(gui)
     end

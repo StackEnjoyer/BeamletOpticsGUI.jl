@@ -139,6 +139,7 @@ end
 function add_component!(gui::LiveView, src::_Source; system = nothing, select::Bool = true,
         label = nothing, beam_kwargs = (;), code = nothing, origin = _code_origin(src, code))
     ctrl = gui.controls
+    select && _end_member_pick!(gui)
     sys = _source_system(gui, system)
     if any(p -> p.second === src, gui.pairs)
         # A source of the view is traced through another system, or through none
