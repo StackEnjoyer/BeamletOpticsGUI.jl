@@ -83,25 +83,37 @@ for what follows and for the errors.
 
 The `constraints` of `obj` apply as for the mouse: if some rotation axes are locked, `axis` must be
 parallel to an allowed one (the local x or y axis of `obj` or the rotation axis of the controls),
-otherwise an `ArgumentError` is thrown.
+otherwise an `ArgumentError` is thrown. For `R`, this is its rotation axis.
 """
 function rotate3d!(gui::LiveView, @nospecialize(obj), axis::AbstractVector, θ::Real)
-    _scriptable(gui, obj)
-    ctrl = gui.controls
-    allowed = _allowed_axes(ctrl, obj, :rotate)
-    if length(allowed) < length(_GIZMO_AXES)
-        n = normalize(Vector{Float64}(axis))
-        free = _axis_vectors(ctrl, obj, allowed)
-        any(a -> norm(cross(a, n)) < 1e-6, free) ||
-            throw(ArgumentError("the rotation of $(typeof(obj)) is constrained to the axes " *
-                                "$(join(allowed, ", ")), not about $(axis)"))
-    end
+    _scriptable_rotation(gui, obj, axis)
     _gesture!(() -> rotate3d!(obj, axis, θ), gui, obj)
 end
 
 function rotate3d!(gui::LiveView, @nospecialize(obj), R::AbstractMatrix)
-    axis, θ = _axis_angle_from_rotmatrix(R)
-    return rotate3d!(gui, obj, axis, θ)
+    axis, θ = _rotation_axis_angle(R)
+    # The identity has no axis that could be locked
+    iszero(θ) ? _scriptable(gui, obj) : _scriptable_rotation(gui, obj, axis)
+    _gesture!(() -> rotate3d!(obj, R), gui, obj)
+end
+
+"""
+    _scriptable_rotation(gui, obj, axis)
+
+Throws an `ArgumentError` unless `obj` can be rotated about `axis` from code: see `_scriptable`,
+and with locked rotation axes, `axis` must be parallel to one that is allowed.
+"""
+function _scriptable_rotation(gui::LiveView, @nospecialize(obj), axis::AbstractVector)
+    _scriptable(gui, obj)
+    ctrl = gui.controls
+    allowed = _allowed_axes(ctrl, obj, :rotate)
+    length(allowed) < length(_GIZMO_AXES) || return nothing
+    n = normalize(Vector{Float64}(axis))
+    free = _axis_vectors(ctrl, obj, allowed)
+    any(a -> norm(cross(a, n)) < 1e-6, free) ||
+        throw(ArgumentError("the rotation of $(typeof(obj)) is constrained to the axes " *
+                            "$(join(allowed, ", ")), not about $(axis)"))
+    return nothing
 end
 
 """
@@ -119,8 +131,7 @@ function select!(gui::LiveView, @nospecialize(obj))
     haskey(ctrl.init_poses, obj) ||
         throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))
     ctrl.spectator[] && throw(ArgumentError("nothing can be selected in the spectator mode"))
-    ctrl.selected[] === obj || (ctrl.selected[] = obj)
-    _update_selection_box!(ctrl)
+    _select!(gui, obj)
     return nothing
 end
 
@@ -189,26 +200,48 @@ views are done at once instead of when the movement pauses. Returns `true` when 
 `false` after `timeout` [s], with the solve still running. With auto tracing off, the beams stay
 outdated, see [`retrace!`](@ref). Call it after moves from code before reading detectors or
 saving an image.
+
+The windows that show a system of the `gui` (see [`open_system`](@ref)) are waited for as well: a
+solve of one of them traces the beams of the `gui`, which follows when it is done.
 """
 function wait_solve(gui::LiveView; timeout::Real = Inf)
     t0 = time()
-    trace = gui.trace
+    views = _solve_views(gui)
+    unsettled(v) = v.trace.pending || v.trace.preview || v.trace.coarse
+    settled() = all(v -> isnothing(v.trace.job), views)
     # A deferred solve may start a solve in the background in turn
     for _ in 1:4
-        job = trace.job
-        if !isnothing(job)
-            _wait(job.done, timeout - (time() - t0))
-            # `done` is notified by the task before it ends
-            while !istaskdone(job.task)
-                time() - t0 < timeout || return false
-                sleep(1e-3)
-            end
-            _poll_job!(gui)
+        all(v -> _await_job!(v, t0, timeout), views) || return false
+        any(unsettled, views) || return settled()
+        for v in views
+            unsettled(v) || continue
+            # Not before the movement pauses, as on the tick of the window
+            v.trace.last_change = -Inf
+            _on_idle!(v)
         end
-        (trace.pending || trace.preview || trace.coarse) || return isnothing(trace.job)
-        # Not before the movement pauses, as on the tick of the window
-        trace.last_change = -Inf
-        _on_idle!(gui)
     end
-    return isnothing(trace.job)
+    return settled()
+end
+
+# The `gui` and the views that are linked with it and show one of its systems, see `_tracing`
+_solve_views(gui::LiveView) =
+    LiveView[gui; [v for v in gui.links.views if v !== gui && _shares_system(v, gui)]]
+
+"""
+    _await_job!(gui, t0, timeout) -> Bool
+
+Waits for the job of the `gui` that runs in the background, if any, and shows its result, see
+`_poll_job!`. Returns `false` if it still runs `timeout` [s] after the time `t0`.
+"""
+function _await_job!(gui::LiveView, t0::Real, timeout::Real)
+    job = gui.trace.job
+    isnothing(job) && return true
+    _wait(job.done, timeout - (time() - t0))
+    # `done` is notified by the task before it ends
+    while !istaskdone(job.task)
+        time() - t0 < timeout || return false
+        sleep(1e-3)
+    end
+    _poll_job!(gui)
+    return true
 end

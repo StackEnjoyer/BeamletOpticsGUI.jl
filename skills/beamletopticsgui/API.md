@@ -116,7 +116,7 @@ translate3d!(gui, lens, [0, 1e-3, 0]);  translate_to3d!(gui, lens, [0, 0.12, 0])
 rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))   # or rotate3d!(gui, mirror, R)
 select!(gui, lens); select!(gui, nothing)       # like a click
 spectator!(gui, true)                           # like the key v
-wait_solve(gui)                                 # solve in the background shown, deferred solves done
+wait_solve(gui)                                 # solve in the background shown, deferred solves done, also of linked windows
 ```
 
 Screenshots and videos: `spectator!(gui; help = false, background = :black, cards = false, view_cube = false)`
