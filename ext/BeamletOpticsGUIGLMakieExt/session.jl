@@ -291,6 +291,27 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
     step(() -> (_key!(gui, Keyboard.t); settle!()), "key t (trace)")
     step(() -> (_key!(gui, Keyboard.h); frame!(); _key!(gui, Keyboard.h); frame!()), "key h (help)")
 
+    # The members of a system are picked with the mouse: "+" on its card, a click on a component, Esc
+    step("system: + on its card, click mirror (pick), escape") do
+        GUI._inspect!(gui, fx.system)
+        frame!()
+        i = findfirst(c -> !isnothing(GUI._card_widget(c, :member_add)), GUI._edit_cards(gui))
+        _check(!isnothing(i), "the card of the system has no button +")
+        _click!(gui, _rect_center(GUI._card_widget(GUI._edit_cards(gui)[i], :member_add)))
+        frame!()
+        _check(!isnothing(GUI._member_pick(gui)), "+ did not start the pick")
+        _click!(gui, _px(gui, _pos(fx.mirror)))
+        frame!()
+        _check(isnothing(gui.controls.selected[]) && occursin("already in", gui.status.text[]),
+            "the click did not pick the mirror")
+        _key!(gui, Keyboard.escape)
+        frame!()
+        _check(isnothing(GUI._member_pick(gui)), "Esc did not end the pick")
+        _key!(gui, Keyboard.escape)
+        frame!()
+        _check(isnothing(gui.objects.inspected), "Esc did not close the card of the system")
+    end
+
     step(() -> (_move!(gui, _center(gui)); _key!(gui, Keyboard.insert); frame!()), "catalog: Insert")
     step(() -> (_key!(gui, Keyboard.escape); frame!()), "catalog: escape")
     # a component of the catalog, which can be copied
