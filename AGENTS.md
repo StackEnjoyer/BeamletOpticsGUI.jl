@@ -39,6 +39,12 @@ describe it as available in docs or the skill.
   `Base.get_extension(BeamletOptics, ...)`. If something is missing, add it to BMO first.
 - **Physics stays in BMO.** Solving is `solve_system!`; the GUI never computes rays, intersections
   or detector fields itself.
+- **A solve in the background owns the beams and detectors**, from its start until its result is
+  shown or it is cancelled. Nothing else changes or reads them meanwhile: changes of objects go
+  through `_change!`, which cancels the solve first, and code that reads the beams or the hits
+  returns early or shows a placeholder while `_running(gui)` or `_tracing(gui)` (e.g.
+  `_inspect_beam`, `_beam_text` of the cards). This also holds while the task that started the
+  solve waits for it (`_run!`): the render loop of the window runs meanwhile if a script started it.
 - **Per-type behavior is dispatch**, never `isa` chains: a new BMO type gets its card via a
   `card_rows` method, not a branch in the card code.
 - **Layout-independent code does not know the layouts.** Shared logic calls the hooks of
@@ -102,6 +108,11 @@ describe it as available in docs or the skill.
   (`_sync_links!` after a solve and when the beams become outdated, `_sync_structure!` after adding
   and removing, which `_attach!` and `_detach!` do for a view without changing the system).
 - `src/LiveMarkers.jl`: clip planes and source markers.
+- `src/LivePrecompile.jl`: the precompile workload of the package, without a Makie backend.
+  `ext/BeamletOpticsGUIGLMakieExt/`: the extension for GLMakie, whose workload replays the sessions
+  of simulated mouse and key actions of `session.jl` in an invisible window (`_session` per layout,
+  `_catalog_session` for every entry of the catalog). `benchmark/`: scripts that measure what a
+  session still compiles, see "Precompilation".
 - `docs/`: Documenter site. `skills/beamletopticsgui/`: the agent skill.
 
 ## Running Julia and tests
@@ -116,7 +127,45 @@ describe it as available in docs or the skill.
   `julia --project=test test/<file>.jl`.
 - Full suite: `julia --project=test test/runtests.jl`.
 - New test files are `module TestXyz ... end` and are included in `test/runtests.jl`.
+- `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
+
+## Precompilation
+
+The first use of an action of the mouse or the keys must not compile: a lag at the first hover,
+click or drag is what a user notices most. Two workloads provide for that. The one of the package
+(`src/LivePrecompile.jl`) runs without a backend. It can not compile the drawing of GLMakie, and
+loading GLMakie invalidates a part of what it compiled. The one of the GLMakie extension
+(`ext/BeamletOpticsGUIGLMakieExt/`) therefore replays whole sessions in an invisible window.
+
+- **A patch that adds an action adds it to the session in the same patch**: a key, a mouse gesture,
+  a tool, a widget or page of a card, a part of a layout. It is a step of `_session` in
+  `ext/BeamletOpticsGUIGLMakieExt/session.jl`, made of the events that GLFW sends (`_move!`,
+  `_click!`, `_drag!`, `_key!`), followed by `_frame!` or `_settle!`, such that what it shows is
+  drawn. An entry of the catalog needs no step: `_catalog_session` places, drags and removes every
+  entry of `component_catalog()`.
+- **A step checks what it did** (`_check`, `_selected`) and does not depend on the time it takes:
+  while precompiling, every step is slow, animations end and solves go to the background. Wait with
+  `_settle!`, click on the background at `_free_px`. A step that fails is swallowed by the workload
+  and compiles nothing; `test/TestPrecompileSession.jl` runs the sessions with their errors.
+- **The GUI is not compiled per component type.** A function of the GUI takes a component as
+  `@nospecialize(obj)`, a closure that is called with one starts with `@nospecialize obj`, and a
+  search by identity is `_has(xs, x)` or `_index(xs, x)` instead of a closure like `o -> o === x`.
+  A script of a user holds types that no workload has seen, e.g. a lens with its own glass. The
+  behavior per type stays dispatch (`card_rows` etc.). `live_view` and `kinematic_controls!` are
+  not specialized on their arguments either.
+- **Measure** with `benchmark/jit_probe.jl` (see its header): it replays a session step by step and
+  prints the compile time of each step; `benchmark/jit_trace_summary.jl` lists the methods of a
+  trace. The scene `other` holds types that no workload has seen. A step of a new action that
+  compiles more than a few 10 ms in the scene `same` is not covered by the workload.
+- The workload of the extension is built with GLMakie loaded after the package. Code that Julia
+  cached is checked against the methods of the session when it is loaded, and in a session that
+  loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as
+  much as with GLMakie loaded last (`JIT_PROBE_ORDER` of the probe). The README, the docs, the
+  skill and the script of `export_script` therefore load GLMakie last
+  (`using BeamletOptics, BeamletOpticsGUI, GLMakie`) and say that the order makes a difference, see
+  "Order of loading" in `docs/src/index.md`; new examples do the same. Nothing in the package may
+  depend on the order.
 
 ## Agent skill
 

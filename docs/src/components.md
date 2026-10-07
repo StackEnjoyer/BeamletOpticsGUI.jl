@@ -6,7 +6,7 @@ the example from code, describes the catalog and how to extend it with own compo
 user-facing description of the window is in the section "Adding and removing components" of
 [`live_view`](@ref).
 
-All code blocks assume `using GLMakie, BeamletOptics, BeamletOpticsGUI`, need a `Makie` backend with
+All code blocks assume `using BeamletOptics, BeamletOpticsGUI, GLMakie`, need a `Makie` backend with
 a window (`GLMakie`) and are therefore not run when the docs are built.
 
 ## From code

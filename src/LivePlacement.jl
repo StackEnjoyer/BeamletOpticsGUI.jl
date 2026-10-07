@@ -193,7 +193,7 @@ Renders `obj` while it is being placed in the `gui`, i.e. while it is not part o
 component for the `system` as its objects are rendered and in the look of `_ghost_style!`, a source
 as its marker (see `_live_render_source!`), whose beam is drawn when it is dropped.
 """
-function _ghost!(gui::LiveView, obj::BMO.AbstractObject, system)
+function _ghost!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), system)
     ghost = live_render!(gui.ax, obj; gui.components.render_kwargs...)
     _ghost_style!(gui, system, ghost)
     return ghost
@@ -221,7 +221,7 @@ click drops it, such that e.g. the beam of a source starts at the origin along +
 follow the mouse and is added where it is. A source is placed by its marker, hence the markers of
 the sources are shown if they were hidden.
 """
-function _start_placement!(gui::LiveView, obj::Union{BMO.AbstractObject, _Source};
+function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.AbstractObject, _Source});
         origin = nothing, system = _placement_system(gui, obj), kwargs::NamedTuple = (;))
     ctrl = gui.controls
     _check_placement_system(obj, system)

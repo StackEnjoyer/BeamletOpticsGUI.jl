@@ -1,6 +1,6 @@
 # Kinematic controls
 
-All examples on this page assume `using GLMakie, BeamletOptics, BeamletOpticsGUI` and a live-rendered system `hsys` in an `LScene` `ax`, see `live_render!` in BeamletOptics.
+All examples on this page assume `using BeamletOptics, BeamletOpticsGUI, GLMakie` and a live-rendered system `hsys` in an `LScene` `ax`, see `live_render!` in BeamletOptics.
 
 With [`kinematic_controls!`](@ref), the components of a live-rendered system can be grabbed and
 moved with the mouse. The `on_change` callback is invoked (at most once per frame) after every

@@ -24,7 +24,10 @@ When this Skill is active:
 - Use only documented API. **Do not invent functions or keywords.** Print the docstring before use:
   `julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc live_view)'`, or list the exports with
   `names(BeamletOpticsGUI)`.
-- Every script starts with `using GLMakie, BeamletOptics, BeamletOpticsGUI`.
+- Every script starts with `using BeamletOptics, BeamletOpticsGUI, GLMakie`. The order makes a
+  difference: GLMakie is loaded last. The window works in any order, but with GLMakie loaded before
+  BeamletOpticsGUI, Julia rejects a part of the precompiled code of the GUI and compiles about twice
+  as much at the first hover, click or drag.
 - The window needs GLMakie and a display. It is not for headless scripts; on headless Linux run under
   `xvfb-run -a`. Say so to the user when you cannot open it, and do not claim that the window works
   when you did not run it.

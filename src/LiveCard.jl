@@ -336,7 +336,7 @@ end
 Shows the icon of the kind of `obj` (see `_tree_kind`) in its color of the tokens `t`, the icon of
 a system in the muted color for `nothing`.
 """
-function _show_kind!(icon::Observable, color::Observable, t::NamedTuple, obj)
+function _show_kind!(icon::Observable, color::Observable, t::NamedTuple, @nospecialize(obj))
     kind = _tree_kind(obj)
     _update!(icon, _icon(kind))
     _update!(color, RGBAf(Makie.to_color(_tree_marker_color(t, kind))))
@@ -347,7 +347,7 @@ function _show_kind!(icon::Observable, color::Observable, t::NamedTuple, ::Nothi
     _update!(color, RGBAf(Makie.to_color(t.muted)))
     return nothing
 end
-_show_kind!(c::_ComponentCard, obj) = _show_kind!(c.icon, c.icon_color, c.theme, obj)
+_show_kind!(c::_ComponentCard, @nospecialize(obj)) = _show_kind!(c.icon, c.icon_color, c.theme, obj)
 
 """
     _show_head!(pin, collapse, pinned, collapsed)
@@ -660,7 +660,7 @@ function _arrange_card!(c::_ComponentCard, p::Point2f)
     y -= line
     lower = _lower_parts(c)
     for part in _page_parts(c)
-        any(l -> l === part, lower) || _park!(part)
+        _has(lower, part) || _park!(part)
     end
     for part in lower
         y -= _CARD_PADDING
@@ -753,7 +753,7 @@ bounding box of the object `obj`) in the 3D `scene`. Points behind the camera ar
 point remains, e.g. for an object behind the camera, the rectangle is the point at the edge of the
 view towards `obj` (see `_card_anchor`), see `_screen_anchor`.
 """
-function _screen_rect(scene::Scene, pts, obj)
+function _screen_rect(scene::Scene, pts, @nospecialize(obj))
     o = Point2f(minimum(Makie.viewport(scene)[]))
     qs = Point2f[]
     for p in pts
@@ -769,7 +769,7 @@ end
 
 # The point of `obj` towards which a card points if the corners `pts` of its bounding box are behind
 # the camera: its position, the center of the box for a system, which has no position
-_card_anchor(obj, _) = position(obj)
+_card_anchor(@nospecialize(obj), _) = position(obj)
 _card_anchor(::BMO.AbstractSystem, pts) = (reduce((a, b) -> min.(a, b), pts) + reduce((a, b) -> max.(a, b), pts)) / 2
 
 """
@@ -779,7 +779,7 @@ End of the line of a card at its object [figure px]: the projection of the cente
 `pts` (the corners of the bounding box of `obj`), or the point at the edge of the view towards it,
 see `_screen_anchor`, if it is behind the camera.
 """
-function _link_anchor(scene::Scene, pts, obj)
+function _link_anchor(scene::Scene, pts, @nospecialize(obj))
     p = isempty(pts) ? Point3f(position(obj)) :
         (reduce((a, b) -> min.(a, b), pts) + reduce((a, b) -> max.(a, b), pts)) / 2
     o = Point2f(minimum(Makie.viewport(scene)[]))

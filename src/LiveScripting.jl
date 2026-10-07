@@ -8,7 +8,7 @@ Driving a live view from code: the gestures of the user as functions, see `trans
 Throws an `ArgumentError` unless `obj` is an object of the live view `gui` that can be moved, i.e.
 not static (see `kinematic_trait_of`). Static objects can not be selected in the window either.
 """
-function _scriptable(gui::LiveView, obj)
+function _scriptable(gui::LiveView, @nospecialize(obj))
     BMO.is_static(obj) && throw(ArgumentError("$(typeof(obj)) is static and can not be moved"))
     haskey(gui.controls.init_poses, obj) ||
         throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))
@@ -23,7 +23,7 @@ cancelled (see `_change!`), the render of the objects, the selection box and the
 `on_change` of the controls solves the systems like after a drag (see `_on_moved!`) and one entry of
 the undo history is recorded, unless the pose did not change.
 """
-function _gesture!(f, gui::LiveView, obj)
+function _gesture!(f, gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     P0, R0 = _pose(obj)
     _change!(f, ctrl, obj)
@@ -56,7 +56,7 @@ translate_to3d!(gui, lens, [0, 0.12, 0])
 wait_solve(gui)
 ```
 """
-function translate3d!(gui::LiveView, obj, offset::AbstractVector)
+function translate3d!(gui::LiveView, @nospecialize(obj), offset::AbstractVector)
     _scriptable(gui, obj)
     ctrl = gui.controls
     allowed = _allowed_axes(ctrl, obj, :move)
@@ -69,7 +69,7 @@ function translate3d!(gui::LiveView, obj, offset::AbstractVector)
     _gesture!(() -> translate3d!(obj, Δ), gui, obj)
 end
 
-translate_to3d!(gui::LiveView, obj, target::AbstractVector) =
+translate_to3d!(gui::LiveView, @nospecialize(obj), target::AbstractVector) =
     translate3d!(gui, obj, Vector{Float64}(target) - Vector{Float64}(position(obj)))
 
 """
@@ -85,7 +85,7 @@ The `constraints` of `obj` apply as for the mouse: if some rotation axes are loc
 parallel to an allowed one (the local x or y axis of `obj` or the rotation axis of the controls),
 otherwise an `ArgumentError` is thrown.
 """
-function rotate3d!(gui::LiveView, obj, axis::AbstractVector, θ::Real)
+function rotate3d!(gui::LiveView, @nospecialize(obj), axis::AbstractVector, θ::Real)
     _scriptable(gui, obj)
     ctrl = gui.controls
     allowed = _allowed_axes(ctrl, obj, :rotate)
@@ -99,7 +99,7 @@ function rotate3d!(gui::LiveView, obj, axis::AbstractVector, θ::Real)
     _gesture!(() -> rotate3d!(obj, axis, θ), gui, obj)
 end
 
-function rotate3d!(gui::LiveView, obj, R::AbstractMatrix)
+function rotate3d!(gui::LiveView, @nospecialize(obj), R::AbstractMatrix)
     axis, θ = _axis_angle_from_rotmatrix(R)
     return rotate3d!(gui, obj, axis, θ)
 end
@@ -114,7 +114,7 @@ selection, like a click on the background. A group is selected as a whole. Throw
 `ArgumentError` if `obj` is not part of the view or the spectator mode is on, see
 [`spectator!`](@ref), in which nothing can be selected.
 """
-function select!(gui::LiveView, obj)
+function select!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
     haskey(ctrl.init_poses, obj) ||
         throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))

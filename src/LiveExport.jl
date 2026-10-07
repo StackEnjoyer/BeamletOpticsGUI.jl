@@ -24,7 +24,7 @@ function _rotation_axis_angle(R::AbstractMatrix)
 end
 
 """Sets the pose of `obj` like `_set_pose!`, but with the accurate `_rotation_axis_angle`."""
-function _set_pose_exact!(obj, P, R)
+function _set_pose_exact!(@nospecialize(obj), P, R)
     axis, angle = _rotation_axis_angle(R * _pose(obj)[2]')
     angle > 0 && rotate3d!(obj, axis, angle)
     translate_to3d!(obj, P)
@@ -176,7 +176,7 @@ at runtime: a component is a `delete!` from its system (named by `systems`, see
 `_export_system_names`), or a comment if its label is no variable name or one of the `used` names;
 a source is a comment, since the script that traces it is not known.
 """
-function _export_removed_lines!(lines, gui::LiveView, systems, used, obj)
+function _export_removed_lines!(lines, gui::LiveView, systems, used, @nospecialize(obj))
     type = string(nameof(typeof(obj)))
     label = _label(gui, obj)
     system = systems[gui.components.system[obj]]
@@ -204,7 +204,7 @@ Appends the lines of `export_changes` that follow the constructor of `obj`, whic
 to its `system` (the name of its variable) and moved from its pose `base` as constructed to its
 current pose, see `_export_pose_lines!`; a source is moved and then traced through the `system`.
 """
-function _export_added_lines!(lines, gui::LiveView, names, system, obj, base)
+function _export_added_lines!(lines, gui::LiveView, names, system, @nospecialize(obj), base)
     push!(lines, "push!($system, $(names[obj]))")
     return _export_pose_lines!(lines, gui, names, obj; base, heading = false)
 end
@@ -396,7 +396,7 @@ since it was constructed, see `_export_pose_lines!`. Without one, the constructo
 comment with its type and position marks where to construct it, and the change of its pose since
 the view got it is commented out.
 """
-function _export_construct_lines!(lines, gui::LiveView, names, obj)
+function _export_construct_lines!(lines, gui::LiveView, names, @nospecialize(obj))
     type = string(nameof(typeof(obj)))
     label = get(gui.labels, obj, nothing)
     name = names[obj]
@@ -498,7 +498,7 @@ function _export_script_code(gui::LiveView)
         push!(lines, sys in defined && src in defined ? line : _commented(line))
     end
 
-    push!(lines, "", _SCRIPT_VIEW_HEADING, "using GLMakie, BeamletOpticsGUI")
+    push!(lines, "", _SCRIPT_VIEW_HEADING, "using BeamletOpticsGUI, GLMakie")
     args = Pair{String, Bool}[]
     for sys in systems
         name = system_names[sys]
@@ -537,7 +537,7 @@ The script consists of, in this order:
 2. per system its top-level objects, then the system itself, e.g. `system = System([lens, m1])`
 3. the sources
 4. a `solve_system!(system, source)` per pair of the view
-5. after the comment line `# Live view`: `using GLMakie, BeamletOpticsGUI` and the call
+5. after the comment line `# Live view`: `using BeamletOpticsGUI, GLMakie` and the call
    `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
    `labels`. The lines above it run without a window.
 

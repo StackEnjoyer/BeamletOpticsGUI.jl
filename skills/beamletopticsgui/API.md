@@ -6,7 +6,7 @@ after each change. The optics itself (components, beams, `solve_system!`, detect
 conventions) is described by the `beamletoptics` skill.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie  # GLMakie last: less lag at the first actions
 
 # system and beam built as in the beamletoptics skill
 gui = live_view(system, beam; layout = :compact, labels = Dict(m1 => "Mirror 1"))

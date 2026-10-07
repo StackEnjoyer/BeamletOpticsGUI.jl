@@ -1,6 +1,6 @@
 # Live view
 
-All examples on this page assume `using GLMakie, BeamletOptics, BeamletOpticsGUI` and a `system` and `beam` (or beam group `source`) built with BeamletOptics.
+All examples on this page assume `using BeamletOptics, BeamletOpticsGUI, GLMakie` (GLMakie last, see [Order of loading](@ref)) and a `system` and `beam` (or beam group `source`) built with BeamletOptics.
 
 [`live_view`](@ref) combines `live_render!`, [`kinematic_controls!`](@ref), cards with detector
 views and optional sliders into a single ready-to-use window. It is the fastest way to explore
@@ -8,7 +8,7 @@ the sensitivity of a system in the REPL: grab a mirror, watch the beam path and 
 views update live.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 gui = live_view(system, beam)
 display(gui)

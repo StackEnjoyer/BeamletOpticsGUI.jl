@@ -7,7 +7,7 @@ while the point the camera looks at and its distance are kept. The region under 
 highlighted.
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 fig = Figure()
 ax = LScene(fig[1, 1])

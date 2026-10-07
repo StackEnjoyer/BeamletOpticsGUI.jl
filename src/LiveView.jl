@@ -205,7 +205,8 @@ coarse grid.
 While moving, beam groups are solved only for their rendered beams if `preview_enabled`; `preview`
 is `true` from such a solve (of the moved `preview_obj`) until the full solve. A solve that takes
 longer than `budget` continues in the background as `job`, the `progress` window shows its loops
-after `progress_delay` [s]. The duration fields are named by `_SolveJob.timing`. `error` holds
+after `progress_delay` [s]; `job` is set from its start, and `awaited` until then, see `_run!`. The
+duration fields are named by `_SolveJob.timing`. `error` holds
 the rows of the message of the last failed solve until a solve succeeds, see `_show_solve_error!`.
 `link_stale` is `true` while the view is `stale` only because a linked view changed a system that
 both show, see `_follow!`: the solve of that view makes it up to date again. Otherwise the
@@ -231,6 +232,7 @@ Base.@kwdef mutable struct _TraceState
     preview::Bool = false
     preview_obj::Any = nothing
     job::Union{Nothing, _SolveJob} = nothing
+    awaited::Bool = false
     error::Union{Nothing, Vector{Pair{String, String}}} = nothing
     link_stale::Bool = false
     stale_systems::Vector{Any} = Any[]
@@ -809,7 +811,8 @@ solves.
 
 A solve, or the computation of the detector views, that takes longer than `progress_delay` runs
 in the background: the camera can still be moved, the beams are dimmed and the status line shows
-"tracing". The loops that show a progress bar in the terminal, i.e. the tracing of a beam group
+"tracing". The rows of the cards that show a result of the solve ("beam", "n", "signal") show
+"tracing…" until it is done, since the beams and detectors are being changed. The loops that show a progress bar in the terminal, i.e. the tracing of a beam group
 and the field of a detector view, show a small progress window in the 3D view next to their source
 or detector once they have run for `progress_delay`, with the remaining time and a button "Cancel",
 connected to the source or detector by a line with a dot at its end, also when the window is kept
@@ -1232,6 +1235,8 @@ function live_view(
         table = false,
         kwargs...
     )
+    # One compiled method for all systems, sources and keyword arguments
+    @nospecialize
     isempty(args) &&
         throw(ArgumentError("live_view requires at least one system or system => beam pair"))
     ps = Pair{BMO.AbstractSystem, Any}[p for p in args if p isa Pair]
@@ -1308,6 +1313,7 @@ function live_view(
     gui_ref = Ref{LiveView}()
     # Moving a clip plane or an extra does not solve the systems, see `_on_moved!`
     change = function (obj)
+        @nospecialize obj
         gui = gui_ref[]
         _on_moved!(gui, obj)
         # The table grows with the setup, see `_Table`

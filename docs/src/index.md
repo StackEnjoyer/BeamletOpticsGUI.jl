@@ -6,7 +6,7 @@ system and its beams are drawn, the components are moved and rotated with the mo
 the beams and the detector views on the cards of the detectors are updated after each change:
 
 ```julia
-using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOptics, BeamletOpticsGUI, GLMakie
 
 gui = live_view(system, beam)
 display(gui)
@@ -28,6 +28,23 @@ Pkg.add("GLMakie")
 ```
 
 On a headless Linux machine, run scripts under a virtual display, e.g. `xvfb-run -a julia --project=. script.jl`.
+
+### Order of loading
+
+The order of the packages in `using` makes a difference. Load GLMakie last:
+
+```julia
+using BeamletOptics, BeamletOpticsGUI, GLMakie
+```
+
+The window works in any order; the difference is the lag of the first hover, click or drag.
+BeamletOpticsGUI is precompiled for GLMakie with sessions of mouse and key actions, such that
+these actions compile little when they are used for the first time. Julia checks
+precompiled code against the packages that are already loaded, and that code is built with GLMakie
+loaded after BeamletOpticsGUI. In a session that loads GLMakie first, Julia rejects a part of it and
+compiles it again at the first use: about twice as much as with GLMakie loaded last (over a whole
+session of either layout, about 1.5 s instead of 0.8 s of compilation). The same holds for separate
+`using` lines and for a startup file that loads GLMakie.
 
 ## What is in the package
 

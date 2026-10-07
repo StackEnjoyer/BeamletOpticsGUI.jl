@@ -27,7 +27,7 @@ function _target_system(gui::LiveView)
     isnothing(obj) && return first(systems)
     top = _top_level(gui.controls.h, obj)
     for sys in systems
-        (sys === obj || any(o -> o === top, sys.objects)) && return sys
+        (sys === obj || _has(sys.objects, top)) && return sys
     end
     for (sys, beam) in gui.pairs
         beam === obj && sys isa BMO.System && return sys
@@ -71,7 +71,7 @@ _forget_detector!(::LiveView, _) = nothing
 # `origin` is `nothing` or `(; code, pose0)`: the constructor call of `obj` as Julia code and its
 # pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`.
 # The public keyword `code` gives one with the pose of `obj` when it is added, see `_code_origin`
-function add_component!(gui::LiveView, obj::BMO.AbstractObject; system = nothing,
+function add_component!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject); system = nothing,
         select::Bool = true, label = nothing, code = nothing, origin = _code_origin(obj, code))
     ctrl = gui.controls
     sys = _add_system(gui, system)
@@ -105,11 +105,11 @@ The `origin` of the component or source `x` for the keyword `code` of [`add_comp
 `code`, the constructor call of `x`, with the pose of `x` now, in which `code` constructs it; `nothing`
 without `code`. Throws an `ArgumentError` unless `code` is one Julia expression, see `_check_code`.
 """
-function _code_origin(x, code::AbstractString)
+function _code_origin(@nospecialize(x), code::AbstractString)
     _check_code(code)
     return (; code = String(code), pose0 = _pose(x))
 end
-_code_origin(x, ::Nothing) = nothing
+_code_origin(@nospecialize(x), ::Nothing) = nothing
 
 """
     _check_code(code)
@@ -137,7 +137,7 @@ that does not change the system, i.e. its plots, the controls, its name and what
 of it (see `_ComponentState`). Also for a view that follows a linked one, in which `obj` was added,
 see `_follow_structure!`. Throws what `live_render!` throws, before the view changes.
 """
-function _attach!(gui::LiveView, obj::BMO.AbstractObject, sys::BMO.System; label = nothing,
+function _attach!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), sys::BMO.System; label = nothing,
         origin = nothing)
     ctrl = gui.controls
     comp = gui.components
@@ -155,9 +155,9 @@ function _attach!(gui::LiveView, obj::BMO.AbstractObject, sys::BMO.System; label
     _name_objects!(gui)
     _map_parts!(gui)
     # A component the view started with, removed and added again, is no change
-    i = findfirst(o -> o === obj, comp.removed)
+    i = _index(comp.removed, obj)
     if isnothing(i)
-        any(o -> o === obj, comp.added) || push!(comp.added, obj)
+        _has(comp.added, obj) || push!(comp.added, obj)
         comp.system[obj] = sys
         comp.origin[obj] = origin
     else
@@ -197,7 +197,7 @@ What the `gui` knows of the component or source `obj` and forgets when it is rem
 `_restore!` adds it again as it was: its system, its label and the names of its parts, its `origin`
 and the initial poses of the controls, from which [`export_changes`](@ref) counts.
 """
-function _snapshot(gui::LiveView, obj::BMO.AbstractObject)
+function _snapshot(gui::LiveView, @nospecialize(obj::BMO.AbstractObject))
     ctrl = gui.controls
     parts = _component_parts(obj)
     return (; system = _component_system(gui, obj), label = get(gui.labels, obj, nothing),
@@ -212,7 +212,7 @@ end
 Adds the component or source `obj` to the `gui` again as its `snap` describes it, see `_snapshot`,
 without recording it in the undo history.
 """
-function _restore!(gui::LiveView, obj::BMO.AbstractObject, snap)
+function _restore!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), snap)
     _unrecorded(gui) do
         add_component!(gui, obj; system = snap.system, label = snap.label, origin = snap.origin)
     end
@@ -236,7 +236,7 @@ function _restore_names!(gui::LiveView, snap)
 end
 
 # Removes `obj` from the `gui` without recording it and returns its snapshot
-function _remove_unrecorded!(gui::LiveView, obj)
+function _remove_unrecorded!(gui::LiveView, @nospecialize(obj))
     snap = _snapshot(gui, obj)
     _unrecorded(() -> remove_component!(gui, obj), gui)
     return snap
@@ -246,7 +246,7 @@ end
 Records that `obj` was added to the `gui` in the undo history, unless the history itself added it,
 see `_unrecorded`: undo removes it, redo adds it again as it was.
 """
-function _record_added!(gui::LiveView, obj)
+function _record_added!(gui::LiveView, @nospecialize(obj))
     gui.components.recording || return nothing
     snap = Ref{Any}(nothing)
     _push_action!(gui.controls, obj, () -> (snap[] = _remove_unrecorded!(gui, obj)),
@@ -258,7 +258,7 @@ end
 Records that `obj`, which had the snapshot `snap`, was removed from the `gui` in the undo history,
 unless the history itself removed it: undo adds it again as it was, redo removes it.
 """
-function _record_removed!(gui::LiveView, obj, snap)
+function _record_removed!(gui::LiveView, @nospecialize(obj), snap)
     gui.components.recording || return nothing
     state = Ref{Any}(snap)
     _push_action!(gui.controls, obj, () -> _restore!(gui, obj, state[]),
@@ -272,9 +272,9 @@ end
 The `System` of the `gui` that holds `obj` at its top level, i.e. from which `remove_component!` can
 remove it, or `nothing`.
 """
-function _component_system(gui::LiveView, obj)
+function _component_system(gui::LiveView, @nospecialize(obj))
     for sys in _mutable_systems(gui)
-        any(o -> o === obj, sys.objects) && return sys
+        _has(sys.objects, obj) && return sys
     end
     return nothing
 end
@@ -283,7 +283,7 @@ end
 Returns the top-level object that `obj` belongs to in the `gui`: the outermost group, or the object
 that it is a part of, see `_part_parent`.
 """
-function _component_top(gui::LiveView, obj)
+function _component_top(gui::LiveView, @nospecialize(obj))
     top = _top_level(gui.controls.h, obj)
     parent = _part_parent(gui, top)
     while !isnothing(parent)
@@ -305,21 +305,21 @@ _removal_reason(gui::LiveView, src::Union{BMO.AbstractBeam, BMO.AbstractBeamGrou
     any(p -> p.second === src, gui.pairs) ? nothing :
     "the $(nameof(typeof(src))) is not a source of the live view"
 _removal_reason(::LiveView, ::BMO.AbstractSystem) = "a system can not be removed"
-function _removal_reason(gui::LiveView, obj)
+function _removal_reason(gui::LiveView, @nospecialize(obj))
     isnothing(_component_system(gui, obj)) || return nothing
     name = _label(gui, obj)
     _is_extra(gui, obj) && return "$name is an extra, not a component of a system"
     top = _component_top(gui, obj)
     top === obj || return "$name is part of $(_label(gui, top)), remove $(_label(gui, top)) instead"
     for h in gui.system_handles
-        any(o -> o === obj, rendered(h).objects) &&
+        _has(rendered(h).objects, obj) &&
             return "$name is an object of a $(nameof(typeof(rendered(h)))), which can not be changed"
     end
     return "$name is not a component of the live view"
 end
 
 """Returns `obj`, the objects of its groups and their parts (recursively), see `_part_children`."""
-function _component_parts(obj)
+function _component_parts(@nospecialize(obj))
     parts = Base.IdSet{Any}()
     function walk!(x)
         x in parts && return nothing
@@ -374,7 +374,7 @@ function _release!(gui::LiveView, top, parts; keep_name::Bool = false)
     return nothing
 end
 
-function remove_component!(gui::LiveView, obj)
+function remove_component!(gui::LiveView, @nospecialize(obj))
     reason = _removal_reason(gui, obj)
     isnothing(reason) || throw(ArgumentError(reason))
     sys = _component_system(gui, obj)
@@ -399,14 +399,14 @@ of [`remove_component!`](@ref) that does not change the system, i.e. its plots, 
 name and what the `gui` records of it (see `_release!` and `_ComponentState`). Also for a view that
 follows a linked one, in which `obj` was removed, see `_follow_structure!`.
 """
-function _detach!(gui::LiveView, obj::BMO.AbstractObject, sys::BMO.System)
+function _detach!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), sys::BMO.System)
     ctrl = gui.controls
     comp = gui.components
     h_sys = _system_handle(gui, sys)
     parts = _component_parts(obj)
     leaves = _leaves(obj)
     # A component the view started with is listed by `export_changes` as removed, under its name
-    added = findfirst(o -> o === obj, comp.added)
+    added = _index(comp.added, obj)
     _release!(gui, obj, parts; keep_name = isnothing(added))
     # The handles in the combined handle of the controls, before the system handle forgets them
     ohs = filter(!isnothing, [_child_handle(ctrl.h, leaf) for leaf in leaves])
@@ -433,7 +433,7 @@ Removes `obj` from the `gui` like `remove_component!`, after "remove" on its car
 `Delete`. An object that can not be removed is kept, and the status line names the reason, see
 `_removal_reason`. Returns whether `obj` was removed.
 """
-function _remove_selected!(gui::LiveView, obj)
+function _remove_selected!(gui::LiveView, @nospecialize(obj))
     reason = _removal_reason(gui, obj)
     if !isnothing(reason)
         gui.status.text[] = reason

@@ -10,7 +10,7 @@ const _Mechanics = Union{BMO.NonInteractableObject, BMO.IntersectableObject}
 Extras, see the `extras` kwarg of `live_view`
 =#
 
-_extra_spec(obj::BMO.AbstractObject) = (obj, (;))
+_extra_spec(@nospecialize(obj::BMO.AbstractObject)) = (obj, (;))
 _extra_spec(p::Pair{<:BMO.AbstractObject, <:NamedTuple}) = (p.first, p.second)
 function _extra_spec(x)
     throw(ArgumentError("invalid extra $(repr(x)), use `obj` or `obj => (; kwargs...)` with an `AbstractObject` `obj`"))
@@ -48,9 +48,9 @@ function _live_render_extras!(ax::_Axis, specs)
 end
 
 """Returns `true` if `obj` is an extra of the `gui` or belongs to one, see `_live_render_extras!`."""
-function _is_extra(gui::LiveView, obj)
+function _is_extra(gui::LiveView, @nospecialize(obj))
     top = _top_level(gui.extras, obj)
-    return any(o -> o === top, rendered(gui.extras).objects)
+    return _has(rendered(gui.extras).objects, top)
 end
 
 """
@@ -61,7 +61,7 @@ Called after `obj` was moved (or changed via its card with `solve = true`): solv
 not part of any system.
 """
 _on_moved!(gui::LiveView, plane::LiveClipPlane) = _on_clip_change!(gui, plane)
-function _on_moved!(gui::LiveView, obj)
+function _on_moved!(gui::LiveView, @nospecialize(obj))
     _is_extra(gui, obj) || return _on_change!(gui, obj)
     gui.status.text[] = _pose_string(gui, obj)
     return nothing
@@ -116,8 +116,8 @@ _plot_base(p::AbstractPlot) =
 _rendered_opacity(plots) = isempty(plots) ? 1.0 : Float64(maximum(_plot_opacity, plots))
 
 """Returns the opacity of `obj` in the `gui` (0 to 1), see `_set_opacity!`."""
-_opacity(gui::LiveView, obj) = _opacity(gui, obj, get(gui.objects.opacity, obj, nothing))
-_opacity(gui::LiveView, obj, ::Nothing) = _rendered_opacity(_object_plots(gui.controls.h, obj))
+_opacity(gui::LiveView, @nospecialize(obj)) = _opacity(gui, obj, get(gui.objects.opacity, obj, nothing))
+_opacity(gui::LiveView, @nospecialize(obj), ::Nothing) = _rendered_opacity(_object_plots(gui.controls.h, obj))
 _opacity(::LiveView, _, o::_Opacity) = o.value
 
 """
@@ -131,7 +131,7 @@ plots that are not opaque become `transparency = true` (order independent transp
 an opaque object keeps the cheaper opaque rendering, see `_set_transparency!`. At 0 the object is
 hidden like via the "hide" action, a larger opacity shows it again.
 """
-function _set_opacity!(gui::LiveView, obj, o::Real)
+function _set_opacity!(gui::LiveView, @nospecialize(obj), o::Real)
     o = clamp(Float64(o), 0.0, 1.0)
     plots = _object_plots(gui.controls.h, obj)
     rec = get!(() -> _Opacity(o, _rendered_opacity(plots), IdDict{AbstractPlot, _PlotBase}()),
@@ -205,7 +205,7 @@ _pickable(::KinematicController, ::_Mechanics, plots) =
 
 """Gives an object of the `gui` shown again at opacity 0 its initial opacity, see `_set_hidden!`."""
 _restore_opacity!(::LiveView, _, ::Nothing) = nothing
-function _restore_opacity!(gui::LiveView, leaf, o::_Opacity)
+function _restore_opacity!(gui::LiveView, @nospecialize(leaf), o::_Opacity)
     o.value > 0 && return nothing
     _set_opacity!(gui, leaf, o.initial > 0 ? o.initial : 1.0)
     return nothing
@@ -215,7 +215,7 @@ end
 Card rows of the mechanics
 =#
 
-_opacity_percent(gui::LiveView, obj) = round(Int, 100 * _opacity(gui, obj))
+_opacity_percent(gui::LiveView, @nospecialize(obj)) = round(Int, 100 * _opacity(gui, obj))
 
 """The row of the opacity of an object on its card: a slider 0-100 %, see `_set_opacity!`."""
 _opacity_row() = CardRow("opacity",
@@ -225,4 +225,4 @@ _opacity_row() = CardRow("opacity",
         value = (gui, obj) -> "$(_opacity_percent(gui, obj)) %"))
 
 # Mechanics, e.g. a housing: the pose and the opacity, which does not change the optics
-card_rows(obj::_Mechanics) = (pose_card_rows(obj)..., _opacity_row())
+card_rows(@nospecialize(obj::_Mechanics)) = (pose_card_rows(obj)..., _opacity_row())

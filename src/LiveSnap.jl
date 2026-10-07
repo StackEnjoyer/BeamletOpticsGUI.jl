@@ -79,9 +79,9 @@ switched on, the central beam (of a beam group, see `_central_beam`; of a Gaussi
 chief ray) as far as it does not depend on `obj`, see `_snap_lines!`. As for a component that is
 being placed, which is not traced, the lines do not move with the component.
 """
-function _snap_lines(gui::LiveView, obj)
+function _snap_lines(gui::LiveView, @nospecialize(obj))
     parts = _descendants(obj)
-    hits = o -> any(p -> p === o, parts)
+    hits = o -> _has(parts, o)
     lines = _SnapLine[]
     for (p, h) in zip(gui.pairs, gui.beam_handles)
         _beam_on(gui, p.second) || continue
@@ -162,6 +162,7 @@ function _connect_snap!(gui::LiveView)
     # The lines of the current drag: its number, its object and the lines
     cache = Ref{Any}(nothing)
     ctrl.snap_beam = function (obj, point)
+        @nospecialize obj
         _snaps(obj) || return nothing
         if isnothing(cache[]) || cache[][1] != ctrl.drag_count || cache[][2] !== obj
             # The beams are being traced by a solve in the background
