@@ -47,8 +47,9 @@ end
 # The systems of the `gui` that `obj` belongs to: those it is traced through, or those that hold it
 _systems_of(::LiveView, ::Nothing) = BMO.AbstractSystem[]
 function _systems_of(gui::LiveView, @nospecialize(obj))
-    systems = BMO.AbstractSystem[p.first for p in gui.pairs if p.second === obj]
-    isempty(systems) || return systems
+    # none for a source without a system, see `_set_source_system!`
+    _is_source(obj) && return BMO.AbstractSystem[p.first for p in gui.pairs
+                                                 if p.second === obj && !(obj in gui.beams.unassigned)]
     top = _component_top(gui, obj)
     return BMO.AbstractSystem[rendered(h) for h in gui.system_handles
                               if _has(rendered(h).objects, top)]
@@ -392,10 +393,9 @@ function _follow_structure!(gui::LiveView, from::LiveView, systems = _shared_sys
         shown = _top_levels(h)
         for obj in sys.objects
             _has(shown, obj) && continue
-            leaves = _leaves(obj)
-            # nothing to show, or shown elsewhere, e.g. as an extra
-            (isempty(leaves) || any(leaf -> !isnothing(_child_handle(gui.controls.h, leaf)), leaves)) &&
-                continue
+            # nothing to show; an object that the `gui` shows already, e.g. as an object of another
+            # system, becomes a member of `sys` as well
+            isempty(_leaves(obj)) && continue
             _attach!(gui, obj, sys; origin = origin(obj))
             append!(changed, _component_parts(obj))
         end

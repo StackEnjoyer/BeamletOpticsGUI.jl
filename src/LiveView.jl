@@ -237,6 +237,10 @@ Base.@kwdef mutable struct _TraceState
     link_stale::Bool = false
     stale_systems::Vector{Any} = Any[]
     stale_all::Bool = false
+    # the systems whose auto tracing is switched off on their own, see `_system_auto`
+    manual::Base.IdSet{Any} = Base.IdSet{Any}()
+    # `true` while the switch `auto` is set to follow the systems, see `_set_system_auto!`
+    auto_sync::Bool = false
 end
 
 """
@@ -364,6 +368,8 @@ Base.@kwdef struct _BeamState
     overlay_kwargs::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
     shown::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
     pol_view::IdDict{Any, NamedTuple} = IdDict{Any, NamedTuple}()
+    # the sources without a system: neither traced nor drawn, see `_set_source_system!`
+    unassigned::Base.IdSet{Any} = Base.IdSet{Any}()
     marker_size::Base.RefValue{Float64} = Ref(0.01)
 end
 
@@ -393,6 +399,13 @@ Base.@kwdef mutable struct _ComponentState
     const system::IdDict{Any, Any} = IdDict{Any, Any}()
     const origin::IdDict{Any, Any} = IdDict{Any, Any}()
     const source_systems::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the systems of each top-level object and source that the view started with (none for an
+    # extra), from which `export_changes` counts the changes of the memberships
+    const start_systems::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the systems that the view started with, see `add_system!` and `remove_system!`
+    const systems0::Vector{Any} = Any[]
+    # the system whose members are picked with the mouse (a `_MemberPick`), see `_set_member_pick!`
+    pick::Any = nothing
     # the system chosen in the menu "into" of the catalog and the object that was shown then
     target::Any = nothing
     target_shown::Any = nothing
@@ -520,6 +533,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     ax::LScene
     pairs::Vector{Pair{BMO.AbstractSystem, Any}}
     system_handles::Vector{AbstractSystemRenderHandle}
+    # renders every object of the view once, see `_render_pool`
+    pool::AbstractSystemRenderHandle
     beam_handles::Vector{AbstractBeamRenderHandle}
     controls::KinematicController
     status::Label
@@ -1256,6 +1271,11 @@ function live_view(
         get(kw, :show_beams, false) === true && !_has_generating_beams(b) &&
             throw(ArgumentError("beam_kwargs: show_beams = true for $(typeof(b)), which is no Gaussian beamlet"))
     end
+    # A source is traced through one system: a second solve would overwrite its rays
+    for (i, p) in enumerate(ps)
+        any(q -> q.second === p.second, @view ps[1:(i - 1)]) && throw(ArgumentError(
+            "the $(nameof(typeof(p.second))) is given for several pairs, a source belongs to one system"))
+    end
     # several beams may share a system, which is rendered once; a system without a source gets
     # its sources at runtime, see `add_component!`
     systems = unique(objectid, BMO.AbstractSystem[_view_system(a) for a in args])
@@ -1277,7 +1297,10 @@ function live_view(
     # `edges` is only passed if given, i.e. custom `render!` methods of user objects do not need to
     # accept it
     sys_kw = isnothing(edges) ? system_kwargs : (; edges, system_kwargs...)
-    system_handles = AbstractSystemRenderHandle[live_render!(ax, sys; sys_kw...) for sys in systems]
+    # Every object is rendered once, also one of several systems: the pool draws, the handle of a
+    # system holds the handles of its members, see `_render_pool`
+    pool = _render_pool(ax)
+    system_handles = AbstractSystemRenderHandle[_render_members!(pool, sys, sys_kw) for sys in systems]
     beam_handles = AbstractBeamRenderHandle[]
     beam_state = _BeamState()
     for beam in last.(ps)
@@ -1292,7 +1315,7 @@ function live_view(
     end
 
     # The extras are moved and selected like the objects of the systems, but never traced
-    extras_handle = _live_render_extras!(ax, extra_specs)
+    extras_handle = _live_render_extras!(pool, extra_specs)
     # Size of the scene (the systems and the visible extras), before any clip plane shrinks the
     # bounding boxes
     extent = _scene_extent((system_handles..., extras_handle))
@@ -1309,10 +1332,11 @@ function live_view(
     # A single controller for all systems, otherwise several controllers would compete for events,
     # hence one handle of the objects of all systems, the source markers and the extras; the clip
     # planes are added later
-    combined = LiveSystemHandle(first(systems), AbstractObjectRenderHandle[
-            (c for h in system_handles for c in render_children(h))..., markers...,
-            render_children(extras_handle)...],
-        AbstractSystemRenderHandle[system_handles..., extras_handle])
+    # an object of several systems has one handle
+    members = unique(objectid, AbstractObjectRenderHandle[c for h in system_handles for c in render_children(h)])
+    combined = LiveSystemHandle(rendered(pool), AbstractObjectRenderHandle[
+            members..., markers..., render_children(extras_handle)...],
+        AbstractSystemRenderHandle[pool])
     # Colors of the render look that the theme of the layout replaces, e.g. of dark detectors
     _theme_render!(lay, combined)
     gui_ref = Ref{LiveView}()
@@ -1339,7 +1363,7 @@ function live_view(
         menus.views_menu, view_cube = w.cube, w.info)
     trace = _TraceState(; auto = w.auto_trace_toggle.active, budget = trace_budget, idle_delay,
         preview_enabled = preview, progress = _ProgressOverlay(ax, lay.theme), progress_delay)
-    gui = LiveView(; fig, ax, pairs = ps, system_handles, beam_handles, controls,
+    gui = LiveView(; fig, ax, pairs = ps, system_handles, pool, beam_handles, controls,
         w.status, w.sliders, on_change, labels = labels_dict, extras = extras_handle, trace,
         clip = _ClipState(; size = 1.2 * extent, beams = clip_beams),
         camera = _CameraState(; views = view_specs), cards = _CardState(; selection = card),
@@ -1352,6 +1376,7 @@ function live_view(
     _name_objects!(gui)
     # The parents of the parts of groups and multi-shape objects, for the selection card
     _map_parts!(gui)
+    _record_start_systems!(gui)
     # Objects must not change while a solve in the background traces them, also one of a linked
     # view; a view that follows a linked one stops none, see `_follow!`
     controls.before_change = () -> gui.links.following || _cancel_solve!(gui)
@@ -1379,6 +1404,9 @@ function live_view(
     # layout as it is built: a tool of a view that starts in the spectator mode hides the UI
     add_tool!(_export_script!, gui, "Script"; icon = :script,
         tooltip = "Export the whole setup as a script")
+    # Systems are added in the window, and their members are picked with the mouse, see
+    # `add_system!` and `_set_member_pick!`
+    _connect_systems!(gui)
     _connect_placement!(gui)
     # Copying and pasting of the components of the catalog, see `_copy_selected!`
     _connect_copy!(gui)

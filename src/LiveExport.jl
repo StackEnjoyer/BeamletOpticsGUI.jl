@@ -177,13 +177,19 @@ at runtime: a component is a `delete!` from its system (named by `systems`, see
 a source is a comment, since the script that traces it is not known.
 """
 function _export_removed_lines!(lines, gui::LiveView, systems, used, @nospecialize(obj))
+    comp = gui.components
     type = string(nameof(typeof(obj)))
     label = _label(gui, obj)
-    system = systems[gui.components.system[obj]]
     push!(lines, "", "# $label ($type), removed")
     named = haskey(gui.labels, obj) && _is_variable_name(label) && !(label in used)
-    push!(lines, named ? "delete!($system, $label)" :
-        "# delete!($system, …) with the variable of $label")
+    # the systems that held it at the start, an object of several systems is deleted from each
+    held = Any[s for s in get(comp.start_systems, obj, Any[get(comp.system, obj, nothing)])
+               if haskey(systems, s)]
+    isempty(held) && push!(lines, "# $label was in no system")
+    for s in held
+        push!(lines, named ? "delete!($(systems[s]), $label)" :
+            "# delete!($(systems[s]), …) with the variable of $label")
+    end
     return nothing
 end
 
@@ -191,8 +197,9 @@ function _export_removed_lines!(lines, gui::LiveView, systems, used,
         src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})
     type = string(nameof(typeof(src)))
     label = _label(gui, src)
-    traced = join((systems[sys] for sys in gui.components.source_systems[src]), ", ")
-    push!(lines, "", "# $label ($type), removed", "# do not trace $label through $traced any more")
+    traced = join((systems[sys] for sys in gui.components.source_systems[src] if haskey(systems, sys)), ", ")
+    push!(lines, "", "# $label ($type), removed",
+        isempty(traced) ? "# $label was not traced" : "# do not trace $label through $traced any more")
     return nothing
 end
 
@@ -204,15 +211,74 @@ Appends the lines of `export_changes` that follow the constructor of `obj`, whic
 to its `system` (the name of its variable) and moved from its pose `base` as constructed to its
 current pose, see `_export_pose_lines!`; a source is moved and then traced through the `system`.
 """
-function _export_added_lines!(lines, gui::LiveView, names, system, @nospecialize(obj), base)
-    push!(lines, "push!($system, $(names[obj]))")
+function _export_added_lines!(lines, gui::LiveView, names, systems, @nospecialize(obj), base)
+    # an object of several systems is pushed to each, one without a system is not traced
+    held = String[systems[s] for s in _member_systems(gui, obj) if haskey(systems, s)]
+    isempty(held) && push!(lines, "# $(names[obj]) is in no system, i.e. not traced")
+    foreach(system -> push!(lines, "push!($system, $(names[obj]))"), held)
     return _export_pose_lines!(lines, gui, names, obj; base, heading = false)
 end
 
-function _export_added_lines!(lines, gui::LiveView, names, system,
+function _export_added_lines!(lines, gui::LiveView, names, systems,
         src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}, base)
     n = _export_pose_lines!(lines, gui, names, src; base, heading = false)
-    push!(lines, "solve_system!($system, $(names[src]))")
+    sys = _system_of_source(gui, src)
+    push!(lines, haskey(systems, sys) ? "solve_system!($(systems[sys]), $(names[src]))" :
+        "# $(names[src]) has no system, i.e. it is not traced")
+    return n
+end
+
+"""
+    _export_member_lines!(lines, gui, names, systems) -> n
+
+Appends the lines of `export_changes` for the systems that were added to and removed from the `gui`
+at runtime (see `add_system!` and `remove_system!`) and for the objects and sources that the view
+started with and that changed their systems since (see `_add_member!` and `_set_source_system!`):
+a `push!` to or a `delete!` from a system per object, a comment per source. Returns the number `n`
+of changes.
+"""
+function _export_member_lines!(lines, gui::LiveView, names, systems)
+    comp = gui.components
+    n = 0
+    shown = _systems(gui)
+    for sys in shown
+        _has(comp.systems0, sys) && continue
+        push!(lines, "", "# $(_label(gui, sys)), added", "$(systems[sys]) = System()")
+        n += 1
+    end
+    for sys in comp.systems0
+        _has(shown, sys) && continue
+        push!(lines, "", "# $(_label(gui, sys)), removed from the view")
+        n += 1
+    end
+    tops = unique(objectid, Any[(obj for sys in shown for obj in sys.objects)..., rendered(gui.extras).objects...])
+    for obj in tops
+        (haskey(comp.start_systems, obj) && !_has(comp.added, obj)) || continue
+        start = comp.start_systems[obj]
+        now = _member_systems(gui, obj)
+        joined = Any[s for s in now if !_has(start, s) && haskey(systems, s)]
+        left = Any[s for s in start if !_has(now, s) && haskey(systems, s)]
+        (isempty(joined) && isempty(left)) && continue
+        label = _label(gui, obj)
+        name = get(names, obj, nothing)
+        push!(lines, "", "# $label ($(nameof(typeof(obj)))), systems changed")
+        for (verb, list) in (("push!", joined), ("delete!", left)), s in list
+            push!(lines, isnothing(name) ? "# $verb($(systems[s]), …) with the variable of $label" :
+                "$verb($(systems[s]), $name)")
+        end
+        n += 1
+    end
+    for src in _sources(gui)
+        (haskey(comp.start_systems, src) && !_has(comp.added, src)) || continue
+        start = only(comp.start_systems[src])
+        now = _system_of_source(gui, src)
+        start === now && continue
+        label = _label(gui, src)
+        push!(lines, "", "# $label ($(nameof(typeof(src)))), system changed",
+            haskey(systems, now) ? "# trace $label through $(systems[now]) instead" :
+            "# do not trace $label any more, it has no system")
+        n += 1
+    end
     return n
 end
 
@@ -268,8 +334,9 @@ function _export_code(gui::LiveView)
         push!(lines, isnothing(origin) ? "# construct `$name` here, in its pose when it was added" :
             "$name = $(origin.code)")
         base = isnothing(origin) ? nothing : origin.pose0
-        n += 1 + _export_added_lines!(lines, gui, names, systems[comp.system[obj]], obj, base)
+        n += 1 + _export_added_lines!(lines, gui, names, systems, obj, base)
     end
+    n += _export_member_lines!(lines, gui, names, systems)
     for top in ctrl.movable
         (top isa LiveClipPlane || top in added) && continue
         n += _export_pose_lines!(lines, gui, names, top)
@@ -455,7 +522,11 @@ labels of `live_view` with it.
 function _export_script_code(gui::LiveView)
     systems = _systems(gui)
     sources = _sources(gui)
-    tops = unique(objectid, Any[(obj for sys in systems for obj in sys.objects)..., sources...])
+    # The components that were added without a system or taken out of their last one; the extras
+    # of the `extras` kwarg are not part of the script
+    start = gui.components.start_systems
+    free = Any[obj for obj in rendered(gui.extras).objects if !isempty(get(start, obj, Any[nothing]))]
+    tops = unique(objectid, Any[(obj for sys in systems for obj in sys.objects)..., free..., sources...])
     names = _export_script_names(gui, tops)
     system_names = _export_system_names(gui, Set{String}(values(names)))
     defined = Base.IdSet{Any}()
@@ -489,11 +560,16 @@ function _export_script_code(gui::LiveView)
             push!(lines, "# $name = $type([$(join((names[obj] for obj in sys.objects), ", "))])")
         end
     end
+    for obj in free
+        _export_construct_lines!(lines, gui, names, obj) && push!(defined, obj)
+    end
     for src in sources
         _export_construct_lines!(lines, gui, names, src) && push!(defined, src)
     end
-    isempty(gui.pairs) || push!(lines, "")
-    for (sys, src) in gui.pairs
+    # A source without a system is not traced
+    traced = Pair{BMO.AbstractSystem, Any}[p for p in gui.pairs if !(p.second in gui.beams.unassigned)]
+    isempty(traced) || push!(lines, "")
+    for (sys, src) in traced
         line = "solve_system!($(system_names[sys]), $(names[src]))"
         push!(lines, sys in defined && src in defined ? line : _commented(line))
     end
@@ -502,7 +578,7 @@ function _export_script_code(gui::LiveView)
     args = Pair{String, Bool}[]
     for sys in systems
         name = system_names[sys]
-        mine = Any[p.second for p in gui.pairs if p.first === sys]
+        mine = Any[p.second for p in traced if p.first === sys]
         for src in mine
             push!(args, "$name => $(names[src])" => sys in defined && src in defined)
         end
@@ -520,6 +596,13 @@ function _export_script_code(gui::LiveView)
     end
     unique!(first, labels)
     _export_view_lines!(lines, args, labels)
+    # What belongs to no system is added to the view afterwards: it is shown, but not traced
+    loose = Any[free..., (src for src in sources if src in gui.beams.unassigned)...]
+    isempty(loose) || push!(lines, "")
+    for obj in loose
+        line = "add_component!(gui, $(names[obj]); system = :none)"
+        push!(lines, obj in defined ? line : _commented(line))
+    end
     return join(lines, "\n") * "\n"
 end
 

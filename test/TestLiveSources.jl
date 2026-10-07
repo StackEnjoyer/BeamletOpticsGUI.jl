@@ -298,14 +298,16 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a source of several systems" begin
+    @testset "a source belongs to one system" begin
         a, b = System([_mirror()]), System([_mirror(0.2)])
         beam = _beam()
-        gui = _live_view(a => beam, b => beam)
+        # a second solve would overwrite its rays
+        @test_throws ArgumentError _live_view(a => beam, b => beam)
+        gui = _live_view(a => beam, b)
         remove_component!(gui, beam)
         @test isempty(gui.pairs) && isempty(gui.beam_handles)
-        @test gui.components.source_systems[beam] == [a, b]
-        # added to one of them: a change
+        @test gui.components.source_systems[beam] == [a]
+        # added to the other one: a change
         add_component!(gui, beam; system = b)
         @test gui.components.removed == [beam] && gui.components.added == [beam]
         @test gui.components.system[beam] === b

@@ -383,10 +383,18 @@ tracing. Place `obj` before adding it, e.g. via `translate_to3d!`.
 
 `system` is the `System` of the `gui` that gets `obj`: by default the system of the selected or
 inspected object (or the inspected system itself), otherwise the first `System` of the view. All
-beams paired with that system are traced through `obj`. A `StaticSystem` can not be changed: it
-throws an `ArgumentError`, like a `system` that is not shown in the `gui` and an `obj` that the
-`gui` shows already. `select = true` selects `obj` afterwards (or shows its card if it is not
-movable), `label` names it like an entry of the `labels` kwarg of `live_view`.
+beams paired with that system are traced through `obj`. `system = :none` adds `obj` without a
+system: it is shown, moved and exported like any component, but not traced, until it becomes a
+member of a system. A `StaticSystem` can not be changed: it throws an `ArgumentError`, like a
+`system` that is not shown in the `gui` and, without a `system`, an `obj` that the `gui` shows
+already. `select = true` selects `obj` afterwards (or shows its card if it is not movable), `label`
+names it like an entry of the `labels` kwarg of `live_view`.
+
+An object belongs to any number of systems of the view: for an `obj` that the `gui` shows already
+(at its top level, i.e. not an object of a group), `add_component!(gui, obj; system = sys2)` makes it a
+member of `sys2` as well, like "+" of that system in the window. It stays one object, with one
+pose, one card and one set of plots, and the beams of all its systems are traced through it, e.g.
+a mirror that the transmitter and the receiver of a lidar share.
 
 `code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, 1.5)"`,
 which constructs `obj` in the pose that it has when it is added. [`export_script`](@ref) then writes
@@ -418,9 +426,11 @@ another color) and gets a marker, with
 which it is selected and moved like the sources the view started with, also in a view with
 `movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
 source does not change; by default the system that gets a component, otherwise the first system of
-the view. It throws an `ArgumentError` for a `source` that the `gui` shows already. A view may start
-without a source, see `live_view(system)`. `code` is the constructor call of the `source` in its
-current pose, as for a component.
+the view. A source belongs to at most one system: `system = :none` adds it without one, which
+shows its marker, but neither traces nor draws it. For a `source` that the `gui` shows already,
+a `system` moves it to that system (or to none), and without a `system` it throws an
+`ArgumentError`. A view may start without a source, see `live_view(system)`. `code` is the
+constructor call of the `source` in its current pose, as for a component.
 
 ```julia
 gui = live_view(System())
@@ -433,26 +443,62 @@ add_component!(gui, lens; label = "lens")
 function add_component! end
 
 """
-    remove_component!(gui, obj) -> obj
+    remove_component!(gui, obj; system = nothing) -> obj
 
-Removes the object `obj` from its system in the [`live_view`](@ref) window `gui`, like "remove" on
-its card or the key `Delete` while it is selected: `obj` is deleted from the system, its plots and
-its cards are removed, and the systems are solved again, or the beams are marked as outdated without
+Removes the object `obj` from the [`live_view`](@ref) window `gui`, like "remove" on its card or
+the key `Delete` while it is selected: `obj` is deleted from all its systems, its plots and its
+cards are removed, and the systems are solved again, or the beams are marked as outdated without
 auto tracing. Adding and removing are entries of the undo history of the controls: `Ctrl+Z` in the
 window brings a removed object back, as does [`add_component!`](@ref).
 
-`obj` is a top-level object (or object group) of a `System` of the `gui`. An object of a group can
-not be removed on its own, remove the group instead. It throws an `ArgumentError`, like an object
-of a `StaticSystem`, an extra and an object that is not shown in the `gui`.
+With a `system`, `obj` is only taken out of that `System`, like "−" of the system in the window: it
+stays in the view, as a member of its other systems or, after its last one, without a system, i.e.
+shown but not traced.
 
-    remove_component!(gui, source) -> source
+`obj` is a top-level object (or object group) of the `gui`: of its `System`s, or one without a
+system, e.g. an extra. An object of a group can not be removed on its own, remove the group
+instead. It throws an `ArgumentError`, like an object of a `StaticSystem` and an object that is not
+shown in the `gui`.
 
-Removes the `source` (a beam or a beam group) from the `gui`: it is no longer traced through any
-system, and its beam, its marker and its cards are removed. Every source can be removed, also the
+    remove_component!(gui, source; system = nothing) -> source
+
+Removes the `source` (a beam or a beam group) from the `gui`: it is no longer traced, and its
+beam, its marker and its cards are removed. Every source can be removed, also the
 last one, which leaves a view without a source; it throws an `ArgumentError` for a beam that is no
-source of the `gui`.
+source of the `gui`. With the `system` that it is traced through, the source only loses its
+system: it keeps its marker, but is neither traced nor drawn.
 """
 function remove_component! end
+
+"""
+    add_system!(gui; label = nothing, select = true) -> System
+
+Adds a new, empty `System` to the [`live_view`](@ref) window `gui` at runtime, like "System" among
+its tools, and returns it. `label` names it, by default "System n". With `select`, its card is
+shown and it gets the next component of the catalog. Its components and sources are added with
+[`add_component!`](@ref), e.g. an object that another system holds already:
+
+```julia
+rx = add_system!(gui; label = "Receiver")
+add_component!(gui, mirror; system = rx)    # the mirror of the transmitter, in both systems
+add_component!(gui, Beam([0.0, 0.1, 0], [0.0, -1, 0], 905e-9); system = rx)
+```
+
+Each system is traced on its own, see "Tracing per system" of [`live_view`](@ref).
+[`remove_system!`](@ref) removes a system again; both are entries of the undo history.
+"""
+function add_system! end
+
+"""
+    remove_system!(gui, system) -> system
+
+Removes the `system` from the [`live_view`](@ref) window `gui`, like "remove" on its card. Nothing
+is deleted: its sources and its objects that are in no other system of the view stay in the view
+without a system, i.e. shown but not traced, and the objects of the `system` itself are not
+changed. It throws an `ArgumentError` for the last system of the view, for a system that the `gui`
+does not show and for one that is open in another window, see [`open_system`](@ref).
+"""
+function remove_system! end
 
 """
     open_system(gui, system; display = true, kwargs...) -> LiveView

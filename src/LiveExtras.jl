@@ -36,15 +36,21 @@ end
 _extra_specs(extras, _) = throw(ArgumentError("extras must be a vector of `obj` or `obj => (; kwargs...)`, got $(repr(extras))"))
 
 """
-    _live_render_extras!(ax, specs) -> LiveSystemHandle
+    _live_render_extras!(pool, specs) -> LiveSystemHandle
 
-Live-renders the extras `specs` (see `_extra_specs`), each object with its own kwargs, like the
-objects of a system (groups per object, see `live_render!`). The handle holds a `System` of the
-extras, which is never solved, and is listed in the object tree of the app layout as "Extras".
+Live-renders the extras `specs` (see `_extra_specs`) in the `pool` of the view (see `_render_pool`),
+each object with its own kwargs, like the objects of a system (groups per object, see
+`live_render!`). The handle holds a `System` of the objects of the view that belong to no system:
+the extras, and the components that were added without a system or taken out of their last one,
+see `_detach!`. It is never solved and is listed in the object tree of the app layout.
 """
-function _live_render_extras!(ax::_Axis, specs)
-    handles = [live_render!(ax, BMO.System(obj); kw...) for (obj, kw) in specs]
-    return LiveSystemHandle(BMO.System(BMO.AbstractObject[first.(specs)...]), handles)
+function _live_render_extras!(pool::AbstractSystemRenderHandle, specs)
+    children = AbstractObjectRenderHandle[]
+    for (obj, kw) in specs
+        append!(children, _pool_handles!(pool, obj, kw))
+    end
+    return LiveSystemHandle(BMO.System(BMO.AbstractObject[first.(specs)...]), children,
+        AbstractSystemRenderHandle[pool])
 end
 
 """Returns `true` if `obj` is an extra of the `gui` or belongs to one, see `_live_render_extras!`."""
@@ -62,7 +68,8 @@ not part of any system.
 """
 _on_moved!(gui::LiveView, plane::LiveClipPlane) = _on_clip_change!(gui, plane)
 function _on_moved!(gui::LiveView, @nospecialize(obj))
-    _is_extra(gui, obj) || return _on_change!(gui, obj)
+    # nor is a source without a system traced, see `_set_source_system!`
+    (_is_extra(gui, obj) || obj in gui.beams.unassigned) || return _on_change!(gui, obj)
     gui.status.text[] = _pose_string(gui, obj)
     return nothing
 end
