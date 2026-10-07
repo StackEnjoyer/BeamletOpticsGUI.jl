@@ -84,6 +84,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # nothing changed: no entry
         translate3d!(gui, m, zeros(3))
         @test length(gui.controls.undo_stack) == 3
+        # a rotation matrix is applied as it is, also for a small angle
+        R = BMO.rotate3d([0.0, 0, 1], 1e-6)
+        rotate3d!(gui, m, R)
+        @test BMO.orientation(m) ≈ R * R0 atol = 1e-14
         close(gui)
     end
 
@@ -91,6 +95,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         gui, m, _ = _fixture()
         select!(gui, m)
         @test gui.controls.selected[] === m
+        # like a click: the status line shows the pose
+        @test gui.status.text[] == GUI._pose_string(gui, m)
         box0 = copy(gui.controls.box_obs[])
         translate3d!(gui, m, [0.0, 0.01, 0.0])
         @test gui.controls.box_obs[] ≈ box0 .+ Ref(Point3f(0, 0.01, 0))
@@ -109,6 +115,12 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test position(m) ≈ P0 + dot(x, [0.01, 0.02, 0.03]) * x
         rotate3d!(gui, m, [0.0, 0, 1], 0.1)
         @test_throws ArgumentError rotate3d!(gui, m, [1.0, 0, 0], 0.1)
+        # the same for a rotation matrix, by its axis
+        rotate3d!(gui, m, BMO.rotate3d([0.0, 0, 1], -0.1))
+        @test_throws ArgumentError rotate3d!(gui, m, BMO.rotate3d([1.0, 0, 0], 0.1))
+        n = length(gui.controls.undo_stack)
+        rotate3d!(gui, m, Matrix{Float64}(I, 3, 3))
+        @test length(gui.controls.undo_stack) == n
         close(gui)
 
         m2 = RoundPlanoMirror(25e-3, 5e-3)
@@ -163,6 +175,15 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         translate3d!(gui, m, [-0.05, 0, 0])
         @test wait_solve(gui)
         @test _nhits(pd) > 0
+
+        # a window on the same system: its solve in the background is waited for as well
+        new = open_system(gui, first(gui.pairs).first; display = false)
+        translate3d!(new, m, [0.05, 0, 0])
+        @test !isnothing(new.trace.job) && gui.trace.stale
+        @test wait_solve(gui; timeout = 60)
+        @test isnothing(new.trace.job) && !gui.trace.stale && !new.trace.stale
+        @test _nhits(pd) == 0
+        close(new)
         close(gui)
     end
 end
