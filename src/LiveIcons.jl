@@ -291,8 +291,9 @@ const _TOOLTIP_COLOR = RGBAf(0.17, 0.18, 0.21, 0.96)
 const _TOOLTIP_TEXT_COLOR = RGBAf(0.97, 0.97, 0.97, 1)
 const _TRANSPARENT = RGBAf(0, 0, 0, 0)
 # GLMakie draws the plots in the order of their z translation (clip range ±10000 of the pixel
-# camera): the tooltip comes after the 3D view and the progress window (`_PROGRESS_Z`)
-const _TOOLTIP_Z = 9000.0f0
+# camera): a tooltip comes last, over the 3D view, the cards, the progress window (`_PROGRESS_Z`)
+# and the help with its pill and chips (`_HELP_Z`)
+const _TOOLTIP_Z = 9990.0f0
 # Room right of the label of an icon button with a label [px]
 const _ICON_LABEL_PADDING = 8
 
