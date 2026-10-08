@@ -77,7 +77,7 @@ const GUI = BeamletOpticsGUI
         @test housing in gui.objects.hidden
         @test all(p -> !p.visible[], plots)
         @test ctrl.selected[] === housing
-        @test GUI._card_widget(gui.cards.selection, :hide).label[] == "show"
+        @test GUI._card_widget(gui.cards.selection, :hide).active[]
         # raising the slider shows it again
         Makie.set_close_to!(slider, 60)
         @test !(housing in gui.objects.hidden)

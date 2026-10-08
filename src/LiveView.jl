@@ -716,9 +716,9 @@ object, independent of the selection, e.g. to watch or type the poses of several
 selection then gets a new card. "unpin" closes a pinned card. The head shows the label of the
 object and its actions:
 
-- "hide" makes the plots of the object invisible and clears the selection. On a hidden object
-  selected in the menu, the button reads "show" and shows it again. Hidden objects can not be
-  selected in the 3D view, but are still traced.
+- The eye (tooltip "Hide") makes the plots of the object invisible and clears the selection. On a
+  hidden object selected in the menu, the eye is crossed out (tooltip "Show") and shows it again.
+  Hidden objects can not be selected in the 3D view, but are still traced.
 - For a clip plane, "flip" and "remove" instead, like `Shift+c` and `Delete`.
 
 Below its head, a card has pages, chosen by a page bar: "Pose" with the rows of the object,
@@ -1010,8 +1010,8 @@ actions in the 3D view are unchanged:
   same way. Objects without a `labels` entry are named by their type and a running index, e.g.
   "Lens 2", also in the status line.
 - right sidebar ("Properties"): the card of the selected object, docked instead of floating next
-  to it: its name and type, the actions of the card (e.g. "hide", or "flip" and "remove" for a
-  clip plane) and a pin, which pins a card to the object; below, the rows of the card (see
+  to it: its name and type, the actions of the card (e.g. the eye that hides it, or "flip" and
+  "remove" for a clip plane) and a pin, which pins a card to the object; below, the rows of the card (see
   [`card_rows`](@ref), e.g. the pose or the ray slider of a source) on the pages of the card, like
   on a floating card: "Pose" with the rows, the step box and the mode, "Results" with the view of
   a detector, "Properties" with the properties of the object (see [`properties`](@ref)); without a
@@ -1193,22 +1193,38 @@ that is given for two pairs of `live_view` throws an `ArgumentError`.
 
 The card of a system is the system widget, floating next to the system in the compact layout and
 docked in the inspector in the app layout. It is shown by the system entry of the component menu or
-a click on the row of the system in the object tree. Its rows:
+a click on the row of the system in the object tree. It has one page, without a page bar and
+without the step and the mode of the controls:
 
-- "name": a box that renames the system in the menus, the object tree, the catalog and on the cards
-- "trace": the toggle "auto" for its auto tracing, the button "Trace", which traces this system
-  only, and the text "outdated" while its beams are, see "Tracing per system"
-- "members": the buttons "+" and "−", which pick members with the mouse (see below), and a hint
-  while one of them is pressed
-- the list of the members: first its sources, then its objects, each with its name and a button
-  "−" that takes it out of the system: a source then has no system, an object stays in the view.
-  At most 10 members are listed, then "… n more". The objects of a `StaticSystem` have no "−"
-- "objects", "rays" and "solve": the number of its objects, of the rays of its sources that are on
-  and the duration of the last solve
-- "remove": removes the system
+- the head: the name of the system and, below it, the number of its objects and sources (e.g.
+  "System · 3 objects · 1 source"). The pencil next to the name replaces it by a textbox: `Enter`
+  renames the system in the menus, the object tree, the catalog and on the cards, `Esc` and a
+  click elsewhere keep its name. At the right, as icons: the eye, which hides the system, the two
+  windows, which open it in a window of its own (see "Several windows"), and the pin
+- "TRACE": a chip with the state of its beams ("up to date" with the duration of the last solve,
+  "outdated", or "no source"), the toggle "auto" for its auto tracing and the button "Trace",
+  which traces this system only and is filled with the accent color while its beams are outdated,
+  see "Tracing per system"
+- "MEMBERS": their number and the buttons "+" and "−", which pick members with the mouse (see
+  below); while one of them is pressed, a line below them says what a click does
+- the list of the members: first its sources, then its objects, each with the icon of its kind,
+  its name, the number of its systems if it is a member of several, and "×", which takes it out
+  of the system: a source then has no system, an object stays in the view. A click on a row
+  selects the member like a click on its row of the object tree; the row under the mouse is
+  highlighted. At most 10 members are listed, then "… n more". The objects of a `StaticSystem`
+  have no "×". An empty system says how it gets members
+- the rows of a method of [`card_rows`](@ref) for an own system type, none by default
+- at the bottom: the rays of its sources per solve and "Remove system", which removes the system
+  only: its members stay in the view
 
-The list follows the system while the card is shown, e.g. after a component is added or picked. The
-head of the card also has "hide" and "new window" (see "Several windows").
+The list follows the system while the card is shown, e.g. after a component is added or picked.
+
+While the card of a system is shown, e.g. after a click on its row of the object tree or on its
+entry of the component menu, the 3D view shows what belongs to it: its objects and the markers of
+its sources are drawn as they are, all other components and source markers slightly see-through.
+A click on the empty space of the 3D view, `Esc` or the selection of a component closes the card,
+and everything is drawn as before. The row "No system" shows the objects and sources without a
+system in the same way. The spectator mode draws the view as it is.
 
 "+" and "−" pick the members of a system with the mouse. They are on the card of the system and,
 in the app layout, on its row in the object tree. While a pick is on, a click on a component or on
@@ -1216,7 +1232,7 @@ a source marker in the 3D view, on a row of the object tree or on an entry of th
 adds it to the system ("+") or takes it out ("−"), instead of selecting it; a click on a part of
 a group picks the group. What can not be done, e.g. adding an object that is a member already, only
 shows a message in the status line. The members of the system are drawn as they are and everything
-else see-through, a chip next to the help pill and the status line name the pick (e.g. "+ Transmitter:
+else more see-through than for a system that is only shown, a chip next to the help pill and the status line name the pick (e.g. "+ Transmitter:
 click components, Esc ends"), and the pressed button is highlighted. A drag still moves the camera.
 `Esc`, a click on the pressed button, the spectator mode, the inspection of another system and the
 removal of the system end the pick.
@@ -1296,7 +1312,7 @@ locked axes (see `constraints`) stay locked.
 
 # Several windows
 
-The button "new window" in the head of the card of a system (shown after a click on the system in
+The icon of the two windows in the head of the card of a system (shown after a click on the system in
 the object tree or in the component menu) opens the system with its components and sources in a
 window of its own, e.g. one of several systems of the view, see [`open_system`](@ref). Both windows
 show the same objects and follow each other: what is moved, added, removed or edited in one of

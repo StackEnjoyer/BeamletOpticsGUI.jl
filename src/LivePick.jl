@@ -29,9 +29,9 @@ Starts picking the members of the system `sys` of the `gui` with the mouse (`add
 "−"), or ends it if exactly this is going on, like a second click on the button. While picking, a
 click on a component or a source marker in the 3D view, in the component menu or in the object tree
 adds it to `sys` or takes it out instead of selecting it, see `_pick_member!`; the members of `sys`
-are shown as they are and everything else see-through, see `_pick_highlight!`. `sys` is inspected,
-such that its card, the system widget, is shown. `Esc`, the spectator mode, the inspection of
-another system and removing `sys` end the pick, see `_end_member_pick!`.
+are shown as they are and everything else see-through, see `_update_system_highlight!`. `sys` is
+inspected, such that its card, the system widget, is shown. `Esc`, the spectator mode, the
+inspection of another system and removing `sys` end the pick, see `_end_member_pick!`.
 """
 function _set_member_pick!(gui::LiveView, sys::BMO.AbstractSystem, add::Bool)
     pick = _member_pick(gui)
@@ -77,7 +77,7 @@ end
     _show_member_pick!(gui)
 
 Shows the pick of the `gui`, after it started, ended or its system was renamed: the chip of the
-help (see `_show_pick_chip!`), the highlight of the members (see `_update_pick_highlight!`), the
+help (see `_show_pick_chip!`), the highlight of the members (see `_update_system_highlight!`), the
 buttons "+" and "−" of the cards of the system and, via the hook of the layout, of its row in the
 object tree.
 """
@@ -86,8 +86,10 @@ function _show_member_pick!(gui::LiveView)
     _show_pick_chip!(gui, isnothing(pick) ? nothing : (pick.add ? "+ " : "− ") * _label(gui, pick.sys))
     # the highlight of a browsed group would be restored to what the pick shows, see `_Highlight`
     _end_browse!(gui)
-    _update_pick_highlight!(gui)
+    _update_system_highlight!(gui)
     _on_components_changed!(gui)
+    # the cards of the system say what a click does while it is picked, see `_system_rows`
+    _sync_system_cards!(gui)
     _update_inspector!(gui)
     _update_cards!(gui)
     return nothing
@@ -225,7 +227,8 @@ end
 """
 Connects the picking of members with the mouse of the `gui`: the clicks on the components and the
 source markers while a pick is active, `Esc`, the spectator mode and the closed window, which end
-it, and the cards of the systems, which follow their members every frame, see `_sync_system_cards!`.
+it, and the cards of the systems and the highlight of the members of a system, which follow the
+members every frame, see `_sync_system_cards!` and `_update_system_highlight!`.
 """
 function _connect_member_pick!(gui::LiveView)
     ctrl = gui.controls
@@ -256,11 +259,13 @@ function _connect_member_pick!(gui::LiveView)
         return Consume(true)
     end)
     push!(listeners, on(v -> v && _end_member_pick!(gui), ctrl.spectator))
+    # The spectator mode shows the view as it is, see `_highlighted_system`
+    push!(listeners, on(_ -> _update_system_highlight!(gui), ctrl.spectator))
     push!(listeners, on(open -> open || _end_member_pick!(gui), ev.window_open))
     push!(listeners, on(ev.tick) do _
         try
             _sync_system_cards!(gui)
-            isnothing(_member_pick(gui)) || _update_pick_highlight!(gui)
+            _update_system_highlight!(gui)
         catch e
             gui.last_error = _log_once(e, gui.last_error, "system cards")
         end

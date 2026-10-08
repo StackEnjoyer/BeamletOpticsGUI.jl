@@ -180,7 +180,9 @@ end
 
 Shows the object of the card of the selection (see `_shown_object`) in the component menu, on the
 cards, in the inspector and in the object tree, after the selection or the inspection changed. A
-selected or inspected object closes the selection card, see `_end_browse!`.
+selected or inspected object closes the selection card, see `_end_browse!`. An inspected system
+shows its members: everything else is see-through until the inspection ends, see
+`_update_system_highlight!`.
 """
 function _on_shown!(gui::LiveView)
     obj = _shown_object(gui)
@@ -192,6 +194,8 @@ function _on_shown!(gui::LiveView)
     _update_cards!(gui)
     _on_selected!(gui)
     _show_inspected!(gui, gui.objects.inspected)
+    # The members of an inspected system, see `_highlighted_system`
+    _update_system_highlight!(gui)
     # The system that gets the next component of the catalog, see `_target_system`
     _refresh_catalog!(gui)
     return nothing

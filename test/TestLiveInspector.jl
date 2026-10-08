@@ -107,7 +107,7 @@ const GUI = BeamletOpticsGUI
         @test [b.label[] for b in card.bar.buttons] == ["Pose", "Properties"]
         @test _parts(card) == [:bar_part, :rows_part, :step_part]
         @test _w(gui, :y).displayed_string[] == "40.0"
-        @test _w(gui, :hide) isa Button && _w(gui, :hide).label[] == "hide"
+        @test _w(gui, :hide) isa BeamletOpticsGUI._IconToggle && !_w(gui, :hide).active[]
         @test all(k -> _w(gui, k) isa Textbox, (:x, :y, :z, :rx, :ry, :rv))
         @test insp.pin.box.visible[] && !insp.pin.active[]
         # the properties are on their own page: the list is empty and has no height
@@ -182,19 +182,21 @@ const GUI = BeamletOpticsGUI
         @test length(card.bars) == 3
         ctrl.selected[] = o.l1
         @test length(card.bars) == 3 && card.bar.keys == [:pose, :properties]
-        # an inspected system has no pose, its rows are on the page "Pose"
+        # an inspected system has no pose: its card is the system widget, on one page, without
+        # the step and the mode
         GUI._inspect!(gui, gui.system_handles[1])
         @test insp.name.text[] == "System 1" && card.page == :pose
-        @test GUI._card_widget(card, :objects).text[] == "6"
-        _page!(card, :properties)
-        @test ("Sources", "1") in _rows(gui)
+        @test insp.type.text[] == "System · 5 objects · 1 source"
+        @test GUI._card_widget(card, :member_count).label.text[] == "6"
+        @test _parts(card) == [:rows_part]
         # deselected: the summary again, the widgets of the card are removed
         ctrl.selected[] = o.pd
         blocks = copy(card.blocks)
         ctrl.selected[] = nothing
         @test insp.name.text[] == "No selection"
         @test isempty(card.blocks) && isempty(card.widgets)
-        @test all(b -> b.parent === nothing, blocks)
+        # the eye in the head is no block, but is drawn by one
+        @test all(b -> (b isa Makie.Block ? b : b.box).parent === nothing, blocks)
         @test _parts(card) == [:step_part, :properties_part] && _value(gui, "Systems") == "1"
         @test _visible(insp.step_box) && !any(_visible, card.bar.buttons)
         close(gui)
@@ -386,7 +388,7 @@ const GUI = BeamletOpticsGUI
         @test !any(c -> c.scene.visible[], gui.cards.all)
         @test insp.name.text[] == "Mirror 1"
         # the actions of the card: hide shows the hint of the tree and clears the selection
-        notify(_w(gui, :hide).clicks)
+        (eye = _w(gui, :hide); eye.active[] = !eye.active[])
         @test o.m in gui.objects.hidden && isnothing(ctrl.selected[])
         @test occursin("eye", gui.status.text[])
         GUI._toggle_hidden!(gui, o.m)
@@ -436,7 +438,7 @@ const GUI = BeamletOpticsGUI
         @test c.pinned && c.obj === o.m && GUI._is_pinned(gui, o.m) && length(gui.cards.all) == n
         _tick!(gui)
         @test !any(c -> c.scene.visible[], gui.cards.all)
-        @test GUI._card_widget(c, :hide) isa Button && GUI._card_widget(c, :x) isa Textbox
+        @test GUI._card_widget(c, :hide) isa BeamletOpticsGUI._IconToggle && GUI._card_widget(c, :x) isa Textbox
         @test c.head.title.text[] == "Mirror 1" && c.head.icon[] === GUI._icon(:mirror)
         @test c.head.pin.active[]
         # with the pages of its object, like the inspector, but without the step
@@ -464,7 +466,7 @@ const GUI = BeamletOpticsGUI
         GUI._card_widget(c, :y).focused[] = false
         # collapsed to the head and the actions, expanded again
         notify(c.head.collapse.clicks)
-        @test c.collapsed && isempty(c.rows.content) && GUI._card_widget(c, :hide) isa Button
+        @test c.collapsed && isempty(c.rows.content) && GUI._card_widget(c, :hide) isa BeamletOpticsGUI._IconToggle
         @test c.head.collapse.icon[] === GUI._icon(:expand) && isempty(_parts(c))
         notify(c.head.collapse.clicks)
         @test !c.collapsed && GUI._card_widget(c, :x) isa Textbox && _parts(c) == [:bar_part, :rows_part]
@@ -775,10 +777,10 @@ const GUI = BeamletOpticsGUI
         box.focused[] = false
         @test !GUI._typing(gui)
         # hidden and shown again: the card stays floating, like in the compact layout
-        notify(GUI._card_widget(c, :hide).clicks)
+        (eye = GUI._card_widget(c, :hide); eye.active[] = !eye.active[])
         _tick!(gui)
         @test o.m in gui.objects.hidden && GUI._is_floating(gui, o.m) && c.scene.visible[]
-        notify(GUI._card_widget(c, :hide).clicks)
+        (eye = GUI._card_widget(c, :hide); eye.active[] = !eye.active[])
         @test !(o.m in gui.objects.hidden) && only(_floating(o.m)) === c
         # docked again: at the end of the pinned cards, in its collapsed state
         GUI._toggle_pin!(gui, o.pd)

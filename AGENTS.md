@@ -89,7 +89,8 @@ describe it as available in docs or the skill.
   that share a `Detector` are traced together, the outdated beams of a system). `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
 - `src/LiveSelectionCard.jl`: the small menu of a click on a group ("Select", "More") and the selection card of groups (browsing their parts level by level).
-  `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts).
+  `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts) and of the
+  members of a system that is inspected or whose members are picked (everything else see-through).
   `src/LiveBackground.jl`: the background card. `src/LiveOverlay.jl`: the overlay of the compact layout. `src/LiveHelp.jl`: the help of both layouts (pill, chips of mode and step, help card), built from the entries of `_help_sections` in `src/LiveInteraction.jl`.
 - `src/LiveInteraction.jl`: `kinematic_controls!`. `src/ViewCube.jl`: `view_cube!`.
 - `src/LiveScripting.jl`: driving a window from code: the verbs of BMO with the window as first
@@ -103,7 +104,8 @@ describe it as available in docs or the skill.
   methods for sources (beams and beam groups), which belong to at most one system or to none
   (`_set_source_system!`) and may also leave a view without a source. `src/LiveSystems.jl`:
   `add_system!`, `remove_system!` and the tool "System". `src/LiveSystemCard.jl`: the card of a
-  system, the system widget (name, tracing, "+" and "−", the list of its members, "remove").
+  system, the system widget (its name with the pencil that renames it, the chip of its tracing,
+  "+" and "−", the list of its members (`_MemberList`), "Remove system").
   `src/LivePick.jl`: picking the members of a system with the mouse (`_set_member_pick!`,
   `_pick_member!`), whose highlight is in `src/LiveHighlight.jl`. `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
   `component_catalog`) and its widgets (groups, tiles, form), `src/LiveCatalogWindow.jl`: its

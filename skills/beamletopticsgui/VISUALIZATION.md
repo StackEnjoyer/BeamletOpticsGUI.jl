@@ -19,7 +19,8 @@ the mouse and keyboard (`kinematic_controls!`, `h` shows all controls), the syst
 after each change and the detector views update live. `export_changes(gui)` prints the changed poses
 as Julia code. Needs an interactive display; not for headless scripts. A selected component opens a
 card next to it in the 3D view: exact position `x`, `y`, `z` [mm], rotations `rx`, `ry`, `rv`
-[mrad] about the gizmo axes and "hide". The pin keeps a card
+[mrad] about the gizmo axes and an eye icon in its head that hides it (crossed out on a hidden
+object: shows it again). The pin keeps a card
 with its component, so several components can be edited side by side. Dragging the head of a card
 moves it to a fixed place in the view (kept when pinned; double click on the head: back next to
 its component). Every card has pages, chosen by a page bar below its head: "Pose" (the pose
@@ -45,8 +46,9 @@ The card of the selected object also has, on its page "Pose", the keyboard step 
 "Move"/"Rotate" control (in sync with the key `m`); the page "Properties" lists the properties of
 the object (the same rows as the inspector of the app). Objects without a `labels` entry
 get automatic names ("Mirror 1", "Clip plane 2") in the cards, menus and tree. The card of a system
-(the system widget: name, "auto" and "Trace", "+" and "−" for its members, the list of its
-members, number of objects, rays, solve time, "remove") opens from its entry in the component menu of the tool rail (compact) or its
+(the system widget: name with a pencil to rename, eye, own-window icon and pin, a status chip with
+the solve time, "auto" and "Trace", "+" and "−" for its members, the list of its members with
+"×", rays per solve, "Remove system") opens from its entry in the component menu of the tool rail (compact) or its
 row in the tree (app), without a selection; non-movable objects are shown the same way (pose
 inputs are rejected). A click on an object of a group opens a small menu under the cursor ("Select <group>" under
 the cursor, so a second click selects the top-level group, and "More ›"); "More ›" opens the

@@ -153,6 +153,13 @@ const _ICON_SVG = Dict{Symbol, String}(
     :polarization_filter => "M120-840L840-840L840-120L120-120ZM440-920L520-920L520-40L440-40ZM200-760L200-200L760-200L760-760Z",
     # own design: disc in section made of three layers, the optical axis on both sides
     :linear_polarizer => "M240-880L720-880L720-80L240-80ZM40-520L180-520L180-440L40-440ZM780-520L920-520L920-440L780-440ZM320-800L320-160L410-160L410-800ZM550-800L550-160L640-160L640-800Z",
+    # own design: two overlapping windows, the front one with its title bar, i.e. a system that is
+    # opened in a window of its own
+    :window => "M120-640L680-640L680-120L120-120ZM200-200L600-200L600-480L200-480ZM280-840L840-840L840-280L760-280L760-760L360-760L360-720L280-720Z",
+    # own design: a pencil with its tip at the bottom left, i.e. renaming
+    :pencil => "M120-120L170-330L610-770L770-610L330-170ZM226-226L290-242L657-610L610-657L242-290ZM667-827L727-887L887-727L827-667Z",
+    # own design: a bin with its lid and its handle, i.e. removing
+    :trash => "M160-760L360-760L360-840L600-840L600-760L800-760L800-680L160-680ZM220-640L740-640L740-120L220-120ZM300-200L660-200L660-560L300-560ZM400-520L440-520L440-240L400-240ZM520-520L560-520L560-240L520-240Z",
     # own design: the brackets of code, for the export of the setup as a script
     :script => "M360-700L140-480L360-260L416-316L252-480L416-644ZM600-700L820-480L600-260L544-316L708-480L544-644Z",
     # own design: an optical table, a plate with holes
@@ -283,6 +290,8 @@ const _TRANSPARENT = RGBAf(0, 0, 0, 0)
 # GLMakie draws the plots in the order of their z translation (clip range ±10000 of the pixel
 # camera): the tooltip comes after the 3D view and the progress window (`_PROGRESS_Z`)
 const _TOOLTIP_Z = 9000.0f0
+# Room right of the label of an icon button with a label [px]
+const _ICON_LABEL_PADDING = 8
 
 """
     _IconButton(parent; icon::Union{Symbol, BezierPath}, tooltip::String = "", size = 28, kwargs...)
@@ -296,6 +305,8 @@ gets a rounded background while the mouse is over it. A left click increments `c
 # Keyword arguments
 
 - `icon_size = round(0.72 * size)`: size of the icon in pixels
+- `label = ""`: a text right of the icon in its color, e.g. "Remove system", which widens the
+  button; `fontsize = 12` is its size
 - `icon_color`, `hover_color`, `active_color`, `active_icon_color`: colors of the theme, see
   `_ICON_COLOR` etc.; `active_*` are used by [`_IconToggle`](@ref) only
 - `tooltip_color`, `tooltip_text_color`, `tooltip_placement = :below` (`:above`, `:left`,
@@ -333,7 +344,9 @@ A flat icon toggle of the app layout of the live view, see [`_IconButton`](@ref)
 the keyword arguments. A left click flips `active`, which can also be set from code, like
 `Makie.Toggle.active`; `active` may be passed as an `Observable{Bool}`, which the toggle then uses.
 While active, the toggle shows `icon` in `active_icon_color` on an `active_color` background,
-otherwise `icon_off` in `icon_color`.
+otherwise `icon_off` in `icon_color`. With `tooltip_active`, its tooltip is this text while active
+and `tooltip` otherwise, e.g. "Show" and "Hide" of the eye of a card. An `active_color` without
+opacity leaves the background to the hover.
 
 # Fields
 
@@ -359,11 +372,15 @@ function _IconButton(parent; icon::Union{Symbol, BezierPath}, tooltip::String = 
 end
 
 function _IconToggle(parent; icon::Union{Symbol, BezierPath}, icon_off::Union{Symbol, BezierPath} = icon,
-        tooltip::String = "", active = false, kwargs...)
+        tooltip::String = "", tooltip_active::Union{Nothing, String} = nothing, active = false,
+        kwargs...)
     active = convert(Observable{Bool}, active)
     on_icon, off_icon = _icon(icon), _icon(icon_off)
     marker = lift(a -> a ? on_icon : off_icon, active)
     w = _icon_widget(parent, marker, active, tooltip, () -> (active[] = !active[]); kwargs...)
+    if !isnothing(tooltip_active)
+        on(a -> (w.tooltip[] = a ? tooltip_active : tooltip), w.box.blockscene, active; update = true)
+    end
     return _IconToggle(w.box, active, w.hovered, w.tooltip, w.icon, w.icon_color, w.background,
         w.plots)
 end
@@ -382,7 +399,8 @@ function _icon_widget(parent, icon::Observable{BezierPath}, active::Observable{B
         icon_color = _ICON_COLOR, hover_color = _ICON_HOVER_COLOR,
         active_color = _ICON_ACTIVE_COLOR, active_icon_color = _ICON_ACTIVE_ICON_COLOR,
         tooltip_color = _TOOLTIP_COLOR, tooltip_text_color = _TOOLTIP_TEXT_COLOR,
-        tooltip_placement::Symbol = :below, tooltip_delay::Real = 0.5, layout_kwargs...)
+        tooltip_placement::Symbol = :below, tooltip_delay::Real = 0.5,
+        label::String = "", fontsize::Real = 12, layout_kwargs...)
     c_icon, c_hover = RGBAf(Makie.to_color(icon_color)), RGBAf(Makie.to_color(hover_color))
     c_active = RGBAf(Makie.to_color(active_color))
     c_active_icon = RGBAf(Makie.to_color(active_icon_color))
@@ -396,7 +414,8 @@ function _icon_widget(parent, icon::Observable{BezierPath}, active::Observable{B
     bbox = box.layoutobservables.computedbbox
     # Only on changes of the state, not per mouse move
     function update_look!(_...)
-        b = active[] ? c_active : hovered[] ? c_hover : _TRANSPARENT
+        # an active color without opacity leaves the background to the hover, e.g. the eye of a card
+        b = (active[] && c_active.alpha > 0) ? c_active : hovered[] ? c_hover : _TRANSPARENT
         f = active[] ? c_active_icon : c_icon
         background[] == b || (background[] = b)
         fg[] == f || (fg[] = f)
@@ -404,10 +423,24 @@ function _icon_widget(parent, icon::Observable{BezierPath}, active::Observable{B
     end
     onany(update_look!, scene, hovered, active)
     update_look!()
-    center = lift(r -> Point2f(Makie.origin(r) .+ Makie.widths(r) ./ 2), scene, bbox)
+    # The icon in the middle of the square at the left edge, the label right of it
+    center = lift(r -> Point2f(Makie.origin(r)[1] + (isempty(label) ? Makie.widths(r)[1] : size) / 2,
+            Makie.origin(r)[2] + Makie.widths(r)[2] / 2), scene, bbox)
     marker = scatter!(scene, center; marker = icon, markersize = icon_size, color = fg,
         markerspace = :pixel, visible = box.visible, inspectable = false)
     translate!(marker, 0, 0, 1)
+    plots = Makie.AbstractPlot[bg, marker]
+    if !isempty(label)
+        font = _tree_font(scene, :regular)
+        box.width[] = size + Float32(Makie.widths(Makie.text_bb(label, font, fontsize))[1]) +
+                      _ICON_LABEL_PADDING
+        at = lift(r -> Point2f(Makie.origin(r)[1] + size, Makie.origin(r)[2] + Makie.widths(r)[2] / 2),
+            scene, bbox)
+        caption = text!(scene, at; text = label, font, fontsize, color = fg, align = (:left, :center),
+            visible = box.visible, inspectable = false)
+        translate!(caption, 0, 0, 1)
+        push!(plots, caption)
+    end
 
     # Tooltip, placed when shown
     tip_text = Observable(tooltip)
@@ -465,6 +498,6 @@ function _icon_widget(parent, icon::Observable{BezierPath}, active::Observable{B
         end
         return Consume(false)
     end
-    plots = Makie.AbstractPlot[bg, marker, tip]
+    push!(plots, tip)
     return (; box, hovered, tooltip = tip_text, icon, icon_color = fg, background, plots)
 end

@@ -267,11 +267,11 @@ sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length o
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 its signal (the power or the number of rays of its detector view while a view is shown, else the
 number of hits), mechanics (`NonInteractableObject`, e.g. a
-`MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
-(`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
-shows the number of its objects, the number of rays of its sources that are on and the duration of
-the last solve; the window adds the rows of the system widget to these (its name, its tracing, its
-members and "remove", see "Systems" of [`live_view`](@ref)), which are not part of this method. Add a method for an own type to show its properties or controls on its card, e.g.
+`MeshDummy`, and `IntersectableObject`) a slider for their opacity. A system (`AbstractSystem`)
+has no rows by default: its card (shown after a click on its entry in the component menu or the
+object tree) is the system widget of the window (its tracing, its members and "Remove system", see
+"Systems" of [`live_view`](@ref)), which is not part of this method; the rows of a method for an
+own system type are shown below the list of its members. Add a method for an own type to show its properties or controls on its card, e.g.
 
 ```julia
 BeamletOpticsGUI.card_rows(l::MyLens) = (pose_card_rows(l)...,
@@ -335,11 +335,16 @@ function beam_card_rows end
 """
     card_actions(obj)
 
-Buttons in the head of the card of `obj` in [`live_view`](@ref), a tuple of
-[`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default "hide"
-(or "show" for a hidden object), for clip planes "flip" and "remove", for systems "hide" and "new
-window" (see [`open_system`](@ref)). The card of an object with parts (a group or a `MultiShape`
-object) gets the button "parts ›" after them, which opens its selection card.
+Widgets in the head of the card of `obj` in [`live_view`](@ref), a tuple of
+[`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default the action
+named `:hide`, an eye icon that hides the object and, crossed out for a hidden object, shows it
+again (tooltips "Hide" and "Show"); for clip planes the buttons "flip" and "remove"; for systems
+the eye and `:open`, an icon of two windows that opens the system in a window of its own (see
+[`open_system`](@ref)). The card of an object with parts (a group or a `MultiShape` object) gets
+the button "parts ›" after them, which opens its selection card.
+
+A method for an own type extends the default ones, e.g.
+`(invoke(card_actions, Tuple{Any}, obj)..., CardWidget(Button; label = "block", on = ...))`.
 """
 function card_actions end
 
@@ -501,7 +506,7 @@ function add_system! end
 """
     remove_system!(gui, system) -> system
 
-Removes the `system` from the [`live_view`](@ref) window `gui`, like "remove" on its card. Nothing
+Removes the `system` from the [`live_view`](@ref) window `gui`, like "Remove system" on its card. Nothing
 is deleted: its sources and its objects that are in no other system of the view stay in the view
 without a system, i.e. shown but not traced, and the objects of the `system` itself are not
 changed. It throws an `ArgumentError` for the last system of the view, for a system that the `gui`
@@ -513,7 +518,7 @@ function remove_system! end
     open_system(gui, system; display = true, kwargs...) -> LiveView
 
 Opens the `system` of the [`live_view`](@ref) window `gui` in a new window with its components and
-the sources that are traced through it, like the button "new window" on the card of the system
+the sources that are traced through it, like the icon of the two windows in the head of the card of the system
 (shown after a click on the system in the object tree or in the component menu). Useful for a view
 of several systems, one of which is worked on in a window of its own. Returns the new live view,
 which is shown unless `display` is `false`.

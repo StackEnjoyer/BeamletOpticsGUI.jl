@@ -109,9 +109,15 @@ takes it out of the receiver only, without `system` it is removed from the view 
 systems. The tool "System" of the tool rail (compact layout) or the toolbar (app layout) adds an
 empty system as well.
 
-In the window, the card of a system is the system widget. It has the name of the system in a box,
-the toggle "auto" and the button "Trace" of its tracing, the buttons "+" and "−" for its members,
-the list of its members and the button "remove". "+" starts a pick: a click on a component or on
+In the window, the card of a system is the system widget. Its head has the name of the system
+with a pencil, which renames it (`Enter` renames, `Esc` keeps the name), the number of its objects
+and sources, and three icons: the eye, which hides it, two windows, which open it in a window of
+its own, and the pin. Below, the section "TRACE" has a chip with the state of its beams ("up to
+date" with the duration of the last solve, "outdated" or "no source"), the toggle "auto" and the
+button "Trace", which is filled while the system is outdated. The section "MEMBERS" has their
+number, the buttons "+" and "−" and the list of the members, each with the icon of its kind, its
+name, the number of its systems if it is in several, and "×", which takes it out; a click on a row
+selects the member. At the bottom are the rays per solve and "Remove system". "+" starts a pick: a click on a component or on
 the marker of a source, in the 3D view, in the object tree (app layout) or in the component menu
 (compact layout), adds it to the system; "−" takes it out. Meanwhile everything that is not a member
 is see-through, and a chip next to the help pill names the pick. `Esc` ends it. In the app layout,
@@ -120,11 +126,16 @@ sources and objects. An object of several systems is listed under each of them w
 its systems; the row "No system" lists the sources and objects without a system and is shown only
 if there are any.
 
+A system whose card is shown, e.g. after a click on its row of the object tree, also shows its
+members in the 3D view: its objects and the markers of its sources are drawn as they are,
+everything else slightly see-through. A click on the empty space of the 3D view, `Esc` or the
+selection of a component ends this, and all objects are drawn as before.
+
 An object without a system is what an extra is: shown, selected, moved, hidden and exported, but
 never traced. A component that is taken out of its last system, or added with
 `add_component!(gui, obj; system = :none)`, is in this state, and so is a source that is left
 without a system, except that a source without a system is not drawn either and keeps its marker.
-Removing a system with "remove" on its card or [`remove_system!`](@ref) deletes nothing: its sources
+Removing a system with "Remove system" on its card or [`remove_system!`](@ref) deletes nothing: its sources
 and the objects that are in no other system stay in the view without a system. The last system of a
 view can not be removed.
 
@@ -515,10 +526,10 @@ the compact layout as well as in the app layout. Objects without an entry in `la
 their type and a running index, e.g. "Mirror 1" or "Clip plane 2", in the card, the status line and
 the menus, like in the object tree of the app layout:
 
-- The head shows the icon of the kind of the component, its label and "hide", which hides it, e.g. a mirror in front of
+- The head shows the icon of the kind of the component, its label and an eye, which hides it, e.g. a mirror in front of
   the component of interest, and clears the selection. A hidden component can not be selected in
-  the 3D view, but stays in the systems, i.e. it is still traced. Selected in the menu, its card
-  reads "show", which shows it again. For a clip plane, the head holds "flip" and "remove".
+  the 3D view, but stays in the systems, i.e. it is still traced. Selected in the menu, the eye of
+  its card is crossed out and shows it again. For a clip plane, the head holds "flip" and "remove".
 - `x`, `y`, `z` [mm] show the position of the component. Typing a value and pressing `Enter`
   moves the component to this absolute coordinate. The boxes `rx`, `ry` and `rv` [mrad] rotate it
   by the typed angle about the red, green and blue axis of the controls, like the arrow keys in the
@@ -680,7 +691,7 @@ gui = live_view(system, beam;
 
 In a view of several systems, one of them can be opened in a second window with its components
 and its sources: click the system in the object tree (or choose it in the component menu) and
-press "new window" in the head of its card, or call [`open_system`](@ref).
+press the icon of the two windows in the head of its card, or call [`open_system`](@ref).
 
 ```julia
 gui = live_view(interferometer => laser, telescope => star; layout = :app)

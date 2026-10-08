@@ -55,7 +55,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
 `open_system(gui, system; display = true, kwargs...)` opens a system of the view with its components
-and sources in a second window and returns its `LiveView` (in the window: the button "new window" on
+and sources in a second window and returns its `LiveView` (in the window: the icon of two windows in the head of
 the card of the system). Both windows show the same objects and are linked: moving, adding, removing
 and editing in one of them shows in the other one, only the window that changed solves. `kwargs`
 are those of `live_view` and override what the new window takes over (layout, theme, catalog, names,
@@ -81,11 +81,17 @@ belongs to at most one system: `live_view(sys1 => beam, sys2 => beam)` throws an
 (`live_view(sys1 => b1, sys1 => b2)` is fine), `add_component!(gui, source; system = other)` moves a
 shown source, `system = :none` or `remove_component!(gui, source; system = sys)` leaves it without a
 system (marker only, neither traced nor drawn). In the window: the tool "System" adds a system; the
-card of a system has a box for its name, the toggle "auto" and the button "Trace" (that system
-only), the buttons "+" and "−" (also on its row of the tree in the app layout), the list of its
-members each with "−", and "remove". "+" or "−" starts a pick: a click on a component or source
+card of a system (one page, no step/mode) has its name with a pencil that renames it (`Enter`
+renames, `Esc` keeps), the icons eye (hide), two windows (own window) and pin, a status chip
+("up to date · 14 ms", "outdated", "no source"), the toggle "auto" and the button "Trace" (that
+system only, filled while outdated), the buttons "+" and "−" (also on its row of the tree in the app
+layout), the list of its members each with its icon, the number of its systems if several and "×"
+(takes it out; a click on the row selects the member), the rays per solve and "Remove system"
+(its members stay in the view). "+" or "−" starts a pick: a click on a component or source
 marker in the 3D view, the tree or the component menu adds it to or takes it out of the system,
-everything else is see-through, `Esc` ends it. Each system is traced on its own: "auto" per system;
+everything else is see-through, `Esc` ends it. A system whose card is shown (a click on its row of
+the tree or its entry of the component menu) shows its members the same way, less see-through,
+until a click on the empty 3D view, `Esc` or a selected component closes the card. Each system is traced on its own: "auto" per system;
 the "Auto trace" switch of the view is on while any system is traced automatically and switches all;
 a change traces the affected systems that have auto tracing, the other affected ones are outdated
 (beams dimmed); the trace button and `t` trace all systems; systems that share a `Detector` are
