@@ -441,12 +441,6 @@ const GUI = BeamletOpticsGUI
     @testset "renaming a system in the title, $layout" for layout in (:compact, :app)
         f = _fixture(layout; auto_trace = false)
         gui = f.gui
-        # the card of a component has no pencil
-        select!(gui, f.m1)
-        e = _card(gui).name
-        @test !e.renamable && !e.editing
-        e.pencil.clicks[] += 1
-        @test !e.editing
         GUI._inspect!(gui, f.tx)
         e = _card(gui).name
         @test e.renamable && !e.editing && !GUI._typing(gui)
@@ -502,6 +496,60 @@ const GUI = BeamletOpticsGUI
         @test e.editing
         select!(gui, f.m1)
         @test !e.editing && !GUI._typing(gui) && GUI._label(gui, f.tx) == "TX2"
+        close(gui)
+    end
+
+    @testset "renaming a component and a source in the title, $layout" for layout in (:compact, :app)
+        f = _fixture(layout)
+        gui = f.gui
+        for (obj, old, new) in ((f.m1, "M1", "Fold mirror"), (f.b1, "Beam 1", "Laser"))
+            GUI._select!(gui, obj)
+            e = _card(gui).name
+            @test e.renamable && !e.editing && e.title.text[] == old
+            e.pencil.clicks[] += 1
+            @test e.editing && e.box.focused[] && e.box.displayed_string[] == old
+            @test occursin("Enter renames", _subtitle(gui))
+            e.box.displayed_string[] = new
+            _key!(gui, Keyboard.enter)
+            @test !e.editing && !GUI._typing(gui)
+            @test GUI._label(gui, obj) == new && gui.labels[obj] == new && e.title.text[] == new
+            @test occursin("$old renamed to $new", gui.status.text[])
+            @test GUI._shown_object(gui) === obj
+            if !isnothing(gui.widgets.menu)
+                # the entries of the members of a system are indented
+                @test new in strip.(first.(gui.widgets.menu.options[]))
+            end
+            # Esc keeps the name, an empty name only shows a message
+            e.pencil.clicks[] += 1
+            e.box.displayed_string[] = "Other"
+            _key!(gui, Keyboard.escape)
+            @test !e.editing && GUI._label(gui, obj) == new
+            e.pencil.clicks[] += 1
+            e.box.displayed_string[] = " "
+            _key!(gui, Keyboard.enter)
+            @test GUI._label(gui, obj) == new && occursin("enter a name", gui.status.text[])
+        end
+        # the names are those of the tree, of the members of a system and of the exported code
+        if layout === :app
+            @test "Fold mirror" in [r.label for r in gui.layout.tree.rows]
+            @test "Laser" in [r.label for r in gui.layout.tree.rows]
+        end
+        @test occursin("Fold mirror", export_script(gui; io = devnull))
+        close(gui)
+    end
+
+    @testset "the icons of a floating card are next to its tools" begin
+        f = _fixture(:compact)
+        gui = f.gui
+        GUI._select!(gui, f.m1)
+        _tick!(gui)
+        c = gui.cards.selection
+        rect(x) = GUI._part_rect(x)
+        actions, tools = rect(c.actions), rect(c.tools)
+        # right of the head, and their right edge at the tools, also on a card whose rows are wider
+        @test minimum(actions)[1] >= maximum(rect(c.head))[1]
+        @test maximum(actions)[1] ≈ minimum(tools)[1] - GUI._CARD_PADDING
+        @test minimum(actions)[1] - maximum(rect(c.head))[1] > 2 * GUI._CARD_PADDING
         close(gui)
     end
 

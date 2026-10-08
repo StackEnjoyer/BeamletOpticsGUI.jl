@@ -337,3 +337,41 @@ function _detach!(gui::LiveView, src::_Source)
     _update_info!(gui)
     return nothing
 end
+
+#=
+The name of a component or a source
+=#
+
+# Components, groups and sources are renamed in the title of their cards, like a system
+_renamable(::BMO.AbstractObject) = true
+_renamable(::BMO.AbstractObjectGroup) = true
+_renamable(::_Source) = true
+_rename!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), name) = _rename_object!(gui, obj, name)
+_rename!(gui::LiveView, obj::BMO.AbstractObjectGroup, name) = _rename_object!(gui, obj, name)
+_rename!(gui::LiveView, src::_Source, name) = _rename_object!(gui, src, name)
+
+"""
+    _rename_object!(gui, obj, name)
+
+Names the component, the group or the source `obj` of the `gui` `name`, the input of the textbox of
+the title of its card: in the component menu, the object tree, on the cards, in the status line and
+in the exported code, like an entry of the `labels` kwarg of `live_view`. An empty name only shows
+a message in the status line. The name is not part of the undo history.
+"""
+function _rename_object!(gui::LiveView, @nospecialize(obj), name)
+    name = strip(something(name, ""))
+    old = _label(gui, obj)
+    if isempty(name)
+        gui.status.text[] = "enter a name for $old"
+    elseif name != old
+        gui.labels[obj] = gui.objects.names[obj] = String(name)
+        _refresh_menu_options!(gui, gui.widgets.menu)
+        _on_components_changed!(gui)
+        # The linked views share the names, see `_ViewLinks`
+        _refresh_links!(gui)
+        gui.status.text[] = "$old renamed to $name"
+    end
+    _update_inspector!(gui; force = true)
+    _update_cards!(gui)
+    return nothing
+end

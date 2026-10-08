@@ -321,6 +321,26 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         deselect!()
     end
 
+    # The pencil in the head of the card of a component: a typed name and Enter
+    step("card: rename a component in the title") do
+        _click!(gui, _px(gui, _pos(fx.mirror)))
+        frame!()
+        _selected(gui, fx.mirror)
+        c = card_of(fx.mirror, :hide)
+        name = GUI._label(gui, fx.mirror)
+        _click!(gui, _rect_center(c.name.pencil))
+        frame!()
+        _check(c.name.editing && GUI._typing(gui), "the pencil did not start the renaming")
+        foreach(char -> (_events(gui).unicode_input[] = char), "t1")
+        frame!()
+        _key!(gui, Keyboard.enter)
+        frame!()
+        _check(!c.name.editing && GUI._label(gui, fx.mirror) != name, "Enter did not rename the mirror")
+        GUI._rename_object!(gui, fx.mirror, name)
+        frame!()
+        deselect!()
+    end
+
     # The card of a system: its pencil with a typed name and Enter, "×" of a row of its members
     # and a click on a row
     step("system: rename in the title, × and click on a row of the members") do

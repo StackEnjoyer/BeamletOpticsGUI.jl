@@ -531,6 +531,9 @@ the menus, like in the object tree of the app layout:
   the component of interest, and clears the selection. A hidden component can not be selected in
   the 3D view, but stays in the systems, i.e. it is still traced. Selected in the menu, the eye of
   its card is crossed out and shows it again. For a clip plane, the head holds "flip" and "remove".
+  The pencil next to the label renames a component, a group, a source or a system: `Enter` takes
+  the typed name, `Esc` keeps the old one. The name is used like an entry of `labels`, also in the
+  exported code.
 - `x`, `y`, `z` [mm] show the position of the component. Typing a value and pressing `Enter`
   moves the component to this absolute coordinate. The boxes `rx`, `ry` and `rv` [mrad] rotate it
   by the typed angle about the red, green and blue axis of the controls, like the arrow keys in the

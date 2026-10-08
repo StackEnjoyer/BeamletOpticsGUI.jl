@@ -714,8 +714,12 @@ there is no room, always inside the view and never over the view cube or another
 hidden without a selection and while a menu is open. "pin" in its head keeps the card with its
 object, independent of the selection, e.g. to watch or type the poses of several objects; the
 selection then gets a new card. "unpin" closes a pinned card. The head shows the label of the
-object and its actions:
+object and its actions, which are icons at its right end, next to the pin:
 
+- The pencil next to the label of a component, a group, a source or a system replaces it by a
+  textbox: `Enter` renames the object, `Esc` and a click elsewhere keep its name. The name is the
+  one of the `labels` kwarg: in the menu, the object tree, the status line and the exported code.
+  It is not part of the undo history.
 - The eye (tooltip "Hide") makes the plots of the object invisible and clears the selection. On a
   hidden object selected in the menu, the eye is crossed out (tooltip "Show") and shows it again.
   Hidden objects can not be selected in the 3D view, but are still traced.

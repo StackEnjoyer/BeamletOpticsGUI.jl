@@ -762,12 +762,15 @@ function _arrange_card!(c::_ComponentCard, p::Point2f)
     x, y = p[1] + _CARD_PADDING, p[2] - _CARD_PADDING
     h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     line = max(h[2], a[2], t[2])
-    # The head, the actions and the tools (at the right end) are centered vertically in the first line
+    # The head, the actions and the tools are centered vertically in the first line: the head at the
+    # left, the tools at the right end and the actions next to them, such that the icons of a card
+    # form one group, however wide the rows below make it
     bw = _back_width(c)
+    right = p[1] + size[1] - _CARD_PADDING - t[1]
     c.back_shown ? _place!(c.back, Point2f(x, y - (line - _card_size(c.back)[2]) / 2)) : _park!(c.back)
     _place!(c.head, Point2f(x + bw, y - (line - _card_size(c.head)[2]) / 2))
-    _place!(c.actions, Point2f(x + h[1] + _CARD_PADDING, y - (line - a[2]) / 2))
-    _place!(c.tools, Point2f(p[1] + size[1] - _CARD_PADDING - t[1], y - (line - t[2]) / 2))
+    _place!(c.actions, Point2f(right - _CARD_PADDING - a[1], y - (line - a[2]) / 2))
+    _place!(c.tools, Point2f(right, y - (line - t[2]) / 2))
     y -= line
     lower = _lower_parts(c)
     for part in _page_parts(c)
