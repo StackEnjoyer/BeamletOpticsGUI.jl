@@ -441,6 +441,15 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             tree.eye_clicked[] = fx.detector
             frame!()
         end
+        step("tree: tooltip of + of the system") do
+            i = findfirst(r -> !isnothing(r.buttons), tree.rows)
+            o = minimum(tree.scene.viewport[])
+            _move!(gui, (Float64(o[1] + GUI._button_columns(tree).add), Float64(o[2] + GUI._row_y(tree, i))))
+            # without its delay, which a step does not wait for
+            GUI._show_tree_tip!(gui)
+            frame!()
+            _check(GUI._TREE_TIPS[gui].visible[], "the tooltip of the tree is not shown")
+        end
         step("tree: + of the system (pick its members)") do
             i = findfirst(r -> !isnothing(r.buttons), tree.rows)
             # the pixel of the button "+" of the row of the system

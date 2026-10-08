@@ -124,7 +124,8 @@ is see-through, and a chip next to the help pill names the pick. `Esc` ends it. 
 "+" and "−" are also on the row of the system in the object tree, which lists each system with its
 sources and objects. An object of several systems is listed under each of them with the number of
 its systems; the row "No system" lists the sources and objects without a system and is shown only
-if there are any.
+if there are any. The eyes, the buttons and the counters of the tree have tooltips like the icons of
+the toolbar, which appear when the mouse rests on them.
 
 A system whose card is shown, e.g. after a click on its row of the object tree, also shows its
 members in the 3D view: its objects and the markers of its sources are drawn as they are,

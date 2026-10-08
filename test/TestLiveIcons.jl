@@ -28,7 +28,9 @@ const GUI = BeamletOpticsGUI
             # the tool that exports the whole setup, see `export_script`, and the optical table
             :script, :table,
             # the card of a system: its own window, renaming and removing
-            :window, :pencil, :trash)
+            :window, :pencil, :trash,
+            # the tool that adds a system
+            :add_system)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)

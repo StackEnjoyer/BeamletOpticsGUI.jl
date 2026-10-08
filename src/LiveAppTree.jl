@@ -241,3 +241,132 @@ function _listing_handles(gui::AppView, src::Union{BMO.AbstractBeam, BMO.Abstrac
     h = isnothing(sys) ? gui.extras : _system_handle(gui, sys)
     return isnothing(h) ? AbstractSystemRenderHandle[] : AbstractSystemRenderHandle[h]
 end
+
+#=
+Tooltips of the object tree
+=#
+
+# Seconds that the mouse rests on an eye, a button or a counter of the object tree before its
+# tooltip is shown, like on the icons of the toolbar, see `_icon_widget`
+const _TREE_TIP_DELAY = 0.5
+
+"""
+    _TreeTip
+
+The tooltip of the object tree of a live view in the app layout, see `_connect_tree_tips!`: its
+`text`, its position `pos` [figure px] and whether it is `visible`, the row and the part under the
+mouse that it is for (`hovered`, `nothing`: none) and the `timer` of its delay.
+"""
+mutable struct _TreeTip
+    const text::Observable{String}
+    const pos::Observable{Point2f}
+    const visible::Observable{Bool}
+    hovered::Any
+    timer::Union{Nothing, Timer}
+end
+
+# The tooltips of the object trees; `AppLayout` has no field for it, the keys are weak
+const _TREE_TIPS = WeakKeyDict{LiveView, _TreeTip}()
+
+"""
+    _tree_tip(gui) -> Union{Nothing, NamedTuple}
+
+What the part of the object tree of the `gui` under the mouse does, for its tooltip: `(; key, text,
+pos)` with the row and the part (`key`), the `text` and the point below the part [figure px]. The
+eye of a row hides or shows its object, "+" and "−" of a system pick its members with the mouse
+(see `_set_member_pick!`) and the counter is the number of systems of an object. `nothing` for a
+label, an expander and beside the rows.
+"""
+function _tree_tip(gui::AppView)
+    tree = gui.layout.tree
+    _mouse_in_tree(tree) || return nothing
+    hit = _hit(tree)
+    isnothing(hit) && return nothing
+    i, part = hit
+    row = tree.rows[i]
+    origin = Point2f(Makie.origin(tree.scene.viewport[]))
+    buttons = _button_columns(tree)
+    x = events(tree.scene).mouseposition[][1] - origin[1]
+    counter = isnothing(row.buttons) && row.count > 0
+    (part === :label && counter && abs(x - buttons.counter) <= _TREE_BUTTON / 2) && (part = :counter)
+    text = part === :eye ? (row.visible === false ? "Show" : "Hide") :
+           part === :add ? "Add members: click components" :
+           part === :remove ? "Take members out: click components" :
+           part === :counter ? "In $(row.count) systems" : return nothing
+    column = part === :eye ? _row_columns(tree, row).eye : getproperty(buttons, part)
+    return (; key = (i, part), text, pos = origin + Point2f(column, _row_y(tree, i) - tree.row_height / 2))
+end
+
+"""Hides the tooltip of the object tree of the `gui` and forgets what it was for."""
+function _hide_tree_tip!(gui::AppView)
+    tip = get(_TREE_TIPS, gui, nothing)
+    isnothing(tip) && return nothing
+    isnothing(tip.timer) || (close(tip.timer); tip.timer = nothing)
+    tip.visible[] && (tip.visible[] = false)
+    tip.hovered = nothing
+    return nothing
+end
+
+"""
+Shows the tooltip of the part of the object tree of the `gui` under the mouse (see `_tree_tip`),
+if the mouse still rests on the part that the tooltip waits for.
+"""
+function _show_tree_tip!(gui::AppView)
+    tip = get(_TREE_TIPS, gui, nothing)
+    isnothing(tip) && return nothing
+    info = _tree_tip(gui)
+    (isnothing(info) || info.key != tip.hovered) && return nothing
+    tip.text[] = info.text
+    tip.pos[] = info.pos
+    tip.visible[] = true
+    return nothing
+end
+
+"""
+The mouse moved in the window of the `gui`: the tooltip of the object tree waits for
+`_TREE_TIP_DELAY` on another eye, button or counter, and is hidden elsewhere.
+"""
+function _on_tree_hover!(gui::AppView)
+    tip = get(_TREE_TIPS, gui, nothing)
+    isnothing(tip) && return nothing
+    info = _tree_tip(gui)
+    key = isnothing(info) ? nothing : info.key
+    key == tip.hovered && return nothing
+    _hide_tree_tip!(gui)
+    isnothing(key) && return nothing
+    tip.hovered = key
+    tip.timer = Timer(_TREE_TIP_DELAY) do _
+        try
+            _show_tree_tip!(gui)
+        catch e
+            gui.last_error = _log_once(e, gui.last_error, "tooltip of the object tree")
+        end
+    end
+    return nothing
+end
+
+"""
+    _connect_tree_tips!(gui::AppView)
+
+Gives the eyes, the buttons "+" and "−" and the counters of the object tree of the `gui` tooltips
+like those of the icons of the toolbar: the tree draws them as markers of one plot, which have no
+tooltip of their own. A click, scrolling and the closed window hide the tooltip.
+"""
+function _connect_tree_tips!(gui::AppView)
+    scene = gui.fig.scene
+    t = gui.layout.theme
+    tip = _TreeTip(Observable(""), Observable(Point2f(0)), Observable(false), nothing, nothing)
+    _TREE_TIPS[gui] = tip
+    plot = Makie.tooltip!(scene, tip.pos, tip.text; placement = :below, visible = tip.visible,
+        backgroundcolor = t.tooltip, textcolor = t.tooltip_text, outline_linewidth = 0,
+        triangle_size = 6, offset = 4, fontsize = 13, textpadding = (6, 6, 4, 4), overdraw = true,
+        inspectable = false)
+    translate!(plot, 0, 0, _TOOLTIP_Z)
+    ev = events(scene)
+    listeners = gui.controls.listeners
+    push!(listeners, on(_ -> (_on_tree_hover!(gui); Consume(false)), ev.mouseposition))
+    push!(listeners, on(_ -> (_hide_tree_tip!(gui); Consume(false)), ev.mousebutton; priority = 300))
+    push!(listeners, on(_ -> (_hide_tree_tip!(gui); Consume(false)), ev.scroll; priority = 300))
+    push!(listeners, on(open -> open || _hide_tree_tip!(gui), ev.window_open))
+    return nothing
+end

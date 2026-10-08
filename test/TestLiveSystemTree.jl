@@ -257,6 +257,68 @@ const GUI = BeamletOpticsGUI
         @test _same(_keys(gui), Any[h2, o.b2, o.m, o.pd, gui.extras, o.b1, o.l])
         close(gui)
     end
+
+    @testset "tooltips of the eyes, the buttons and the counters" begin
+        gui, o = _fixture()
+        tree = gui.layout.tree
+        tip = GUI._TREE_TIPS[gui]
+        ev = events(gui.fig.scene)
+        origin = minimum(tree.scene.viewport[])
+        # Moves the mouse to the pixel `x` (from the left edge of the tree) of the row `i`
+        hover!(i, x) = (ev.mouseposition[] = (Float64(origin[1] + x), Float64(origin[2] + GUI._row_y(tree, i))))
+        buttons = GUI._button_columns(tree)
+        i_tx = _index(gui, _handle(gui, o.tx))
+        # the first row of the shared mirror, which has the counter
+        i_m = findfirst(r -> r.key === o.m, _rows(gui))
+        @test !tip.visible[] && isnothing(GUI._tree_tip(gui))
+
+        # the tooltip waits for the mouse to rest; shown here without the delay
+        hover!(i_tx, buttons.add)
+        @test tip.hovered == (i_tx, :add) && !tip.visible[] && !isnothing(tip.timer)
+        GUI._show_tree_tip!(gui)
+        @test tip.visible[] && tip.text[] == "Add members: click components"
+        @test tip.pos[][1] ≈ origin[1] + buttons.add
+        @test tip.pos[][2] ≈ origin[2] + GUI._row_y(tree, i_tx) - tree.row_height / 2
+        # another part of the row: hidden, and it waits again
+        hover!(i_tx, buttons.remove)
+        @test !tip.visible[] && tip.hovered == (i_tx, :remove)
+        GUI._show_tree_tip!(gui)
+        @test tip.visible[] && tip.text[] == "Take members out: click components"
+        # the eye names what a click does
+        hover!(i_m, GUI._row_columns(tree, tree.rows[i_m]).eye)
+        GUI._show_tree_tip!(gui)
+        @test tip.visible[] && tip.text[] == "Hide"
+        GUI._toggle_hidden!(gui, o.m)
+        hover!(i_m, GUI._row_columns(tree, tree.rows[i_m]).eye + 1)
+        @test GUI._tree_tip(gui).text == "Show"
+        GUI._toggle_hidden!(gui, o.m)
+        # the counter of an object of several systems
+        hover!(i_m, buttons.counter)
+        GUI._show_tree_tip!(gui)
+        @test tip.visible[] && tip.text[] == "In 2 systems"
+        # a label has none, and a tooltip that waits for another part is not shown
+        hover!(i_m, GUI._row_columns(tree, tree.rows[i_m]).label + 5)
+        @test !tip.visible[] && isnothing(tip.hovered) && isnothing(tip.timer)
+        GUI._show_tree_tip!(gui)
+        @test !tip.visible[]
+        # the real delay
+        hover!(i_tx, buttons.add)
+        t0 = time()
+        while !tip.visible[] && time() - t0 < 5
+            sleep(0.05)
+        end
+        @test tip.visible[] && time() - t0 >= GUI._TREE_TIP_DELAY - 0.1
+        # a click hides it
+        ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test !tip.visible[]
+        GUI._end_member_pick!(gui)
+        # beside the tree
+        hover!(i_tx, buttons.add)
+        ev.mouseposition[] = (Float64(origin[1] + 600), Float64(origin[2] + 100))
+        @test isnothing(tip.hovered) && isnothing(tip.timer)
+        close(gui)
+    end
 end
 
 end

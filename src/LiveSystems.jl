@@ -10,7 +10,7 @@ which adds an empty system (see `add_system!`), and the picking of members with 
 `_connect_member_pick!`.
 """
 function _connect_systems!(gui::LiveView)
-    add_tool!(g -> (add_system!(g); nothing), gui, "System"; icon = :system,
+    add_tool!(g -> (add_system!(g); nothing), gui, "System"; icon = :add_system,
         tooltip = "Add an empty system")
     _connect_member_pick!(gui)
     return nothing

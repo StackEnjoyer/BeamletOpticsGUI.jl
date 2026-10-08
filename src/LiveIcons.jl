@@ -156,6 +156,9 @@ const _ICON_SVG = Dict{Symbol, String}(
     # own design: two overlapping windows, the front one with its title bar, i.e. a system that is
     # opened in a window of its own
     :window => "M120-640L680-640L680-120L120-120ZM200-200L600-200L600-480L200-480ZM280-840L840-840L840-280L760-280L760-760L360-760L360-720L280-720Z",
+    # own design: the frame of `:system` with a plus instead of its holes, i.e. the tool that adds a
+    # system; the holes would read as the optical table, see `:table`
+    :add_system => "M80-760H880V-200H80ZM160-680V-280H800V-680ZM320-520H640V-440H320ZM440-640H520V-320H440Z",
     # own design: a pencil with its tip at the bottom left, i.e. renaming
     :pencil => "M120-120L170-330L610-770L770-610L330-170ZM226-226L290-242L657-610L610-657L242-290ZM667-827L727-887L887-727L827-667Z",
     # own design: a bin with its lid and its handle, i.e. removing
