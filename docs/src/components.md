@@ -4,7 +4,8 @@ The components of a `System` in [`live_view`](@ref) and its sources can be added
 runtime, from the window and from code, e.g. to build a setup from an empty `System()`. This page shows
 the example from code, describes the catalog and how to extend it with own components. The
 user-facing description of the window is in the section "Adding and removing components" of
-[`live_view`](@ref).
+[`live_view`](@ref). The example [Building a setup on an empty table](@ref) builds a beam expander
+this way, in the window and from code.
 
 All code blocks assume `using BeamletOptics, BeamletOpticsGUI, GLMakie`, need a `Makie` backend with
 a window (`GLMakie`) and are therefore not run when the docs are built.

@@ -62,7 +62,7 @@ full_area = (; x_min = -pd_size / 2, x_max = pd_size / 2, z_min = -pd_size / 2, 
 power = Point2f[]
 
 function record_power!(gui, obj)
-    P = isnothing(BMO.hits(pd)) ? 0.0 : optical_power(pd; n = 100, full_area...)
+    P = BMO.hit_count(pd) == 0 ? 0.0 : optical_power(pd; n = 100, full_area...)
     n = isempty(power) ? 1 : last(power)[1] + 1
     push!(power, Point2f(n, 1e3 * P))
     length(power) > 300 && popfirst!(power)
@@ -74,11 +74,13 @@ Errors in the callback are logged once and do not interrupt the interaction.
 
 ## Opening the interactive window
 
-A single call of [`live_view`](@ref) opens a complete interactive window for the system and the beam: the 3D view and a status line. The card of every `Detector` has a page "Results" with its detector view, the intensity for Gaussian beamlets or the spot diagram and PSF for rays, together with the optical power or the number of rays. With `detectors = [pd => (:intensity, full_area)]`, the card of the photodiode starts pinned with the expanded intensity view. By default, the intensity is cropped around the beam, here the full detector area is evaluated instead, which is also the area that "fit" shows. The optical power is plotted by an own panel, added via [`add_panel!`](@ref): the `do` block builds an axis into the layout of the panel and returns the function that updates the plot after each full solve:
+A single call of [`live_view`](@ref) opens a complete interactive window for the system and the beam: the 3D view and a status line. The card of every `Detector` has a page "Results" with its detector view, the intensity for Gaussian beamlets or the spot diagram and PSF for rays, together with the optical power or the number of rays. With `detectors = [pd => (:intensity, full_area)]`, the card of the photodiode starts pinned with the expanded intensity view. By default, the intensity is cropped around the beam, here the full detector area is evaluated instead, which is also the area that "fit" shows. A pinned card that finds no room in the 3D view shows only its head, so the window is large enough for the detector view next to the card of a selected mirror. The `labels` are the names of the components on the cards and in the status line. The optical power is plotted by an own panel, added via [`add_panel!`](@ref): the `do` block builds an axis into the layout of the panel and returns the function that updates the plot after each full solve:
 
 ```julia
-gui = live_view(system, beam; size = (1200, 700), detectors = [pd => (:intensity, full_area)],
-    on_change = record_power!, layout = :compact)
+labels = Dict(rpm => "Prism mirror", cbs => "Beamsplitter", m1 => "Mirror 1", m2 => "Mirror 2",
+    pd => "Photodiode")
+gui = live_view(system, beam; size = (1600, 900), detectors = [pd => (:intensity, full_area)],
+    on_change = record_power!, labels, layout = :compact)
 add_panel!(gui, "Optical power") do layout
     ax = Axis(layout[1, 1]; xlabel = "Update", ylabel = "P [mW]")
     pts = Observable(copy(power))
@@ -93,12 +95,37 @@ The panel is placed by the layout of the window: in a column right of the 3D vie
 updated while its tab is shown, which is why the power is recorded by `on_change`, which runs after
 every full solve.
 
-After each change, `live_view` empties all detectors, solves the system again and updates the beam and the shown detector views. There is no need to call `solve_system!` or `update_render!` manually. The figure, the 3D view and the controls are available as `gui.fig`, `gui.ax` and `gui.controls`, e.g. to add static context via `render!(gui.ax, ...)`. Several systems can be shown in the same view via `live_view(system1 => beam1, system2 => beam2)`, and sliders for custom parameters can be added via the `sliders` keyword argument.
+After each change, `live_view` empties all detectors, solves the system again and updates the beam and the shown detector views. There is no need to call `solve_system!` or `update_render!` manually. The figure, the 3D view and the controls are available as `gui.fig`, `gui.ax` and `gui.controls`, e.g. to add static context via `render!(gui.ax, ...)`. Several systems can be shown in the same view via `live_view(system1 => beam1, system2 => beam2)` or added in the window, see [Several systems](@ref), and sliders for custom parameters can be added via the `sliders` keyword argument.
 
 ## Controls
 
 The components are moved via [`kinematic_controls!`](@ref), see [Kinematic controls](@ref) for all controls. A click selects a component, a drag on the selected component moves it in the horizontal plane, and every other drag rotates the camera. The arrow keys and `Page Up`/`Page Down` move the selected component along the green, red and blue arrow above it, or rotate it around the rings after switching to the rotate mode with `m`. The step size is changed with `+` and `-`, `Backspace` resets the component and `h` shows an overlay of all controls. The laser can be moved and tilted as well, via the orange marker at its start point. The key `v` switches to the spectator mode, in which the system can be viewed without moving anything by accident. Keyword arguments such as the initial `fine_step` or the `rotation_axis` are passed from `live_view` to [`kinematic_controls!`](@ref).
 
-Since the interferometer is sensitive to changes in the order of the wavelength, the keyboard controls are best suited for alignment. Rotating the mirror `m1` by 1 mrad generates the fringes shown above. Moving the mirror `m2` by ``\lambda/2`` changes the optical path length by ``\lambda``, which corresponds to one period of the optical power:
+Since the interferometer is sensitive to changes in the order of the wavelength, the keyboard controls are best suited for alignment. Rotating the mirror `m1` by 1 mrad generates the fringes shown above.
+
+## Moving the components from code
+
+The figures of this page are made by a [script](https://github.com/StackEnjoyer/BeamletOpticsGUI.jl/blob/main/docs/src/assets/examples/live_michelson_showcase.jl) that drives the window instead of a user, see [Scripting the live view](@ref scripting_live_view). The verbs of BeamletOptics with the window as first argument act like a gesture: the drawing follows, the system is solved again and `on_change` is called. `rotate3d!(m1, ...)` without the window would change the mirror only. [`wait_solve`](@ref) waits for the solve of each step, such that every step is recorded:
+
+```julia
+select!(gui, m1)
+for _ in 1:10
+    rotate3d!(gui, m1, [0, 0, 1], 1e-4)   # 1 mrad in total, about the z axis
+    wait_solve(gui)
+end
+save("live_michelson_fringes.png", gui.fig; px_per_unit = 2)
+```
+
+Moving the mirror `m2` by ``\lambda/2`` changes the optical path length by ``\lambda``, which corresponds to one period of the optical power:
+
+```julia
+rotate3d!(gui, m1, [0, 0, 1], -1e-3)   # undo the tilt
+wait_solve(gui)
+empty!(power)
+for _ in 1:40
+    translate3d!(gui, m2, [0, λ / 80, 0])
+    wait_solve(gui)
+end
+```
 
 ![Optical power](live_michelson_power.png)

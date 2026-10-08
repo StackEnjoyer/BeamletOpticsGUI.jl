@@ -415,7 +415,7 @@ add_tool!(gui, "Optical axis"; toggle = true, key = Keyboard._3) do gui, active
 end
 ```
 
-## Scripting the live view
+## [Scripting the live view](@id scripting_live_view)
 
 Demos, tutorials and tests drive a window from code. Changing an object directly, e.g.
 `translate3d!(lens, offset)`, leaves the window unaware: neither the drawing nor the beams follow.
