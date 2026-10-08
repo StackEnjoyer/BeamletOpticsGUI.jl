@@ -19,8 +19,14 @@ function kinematic_controls! end
 Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
 without a source, e.g. an empty table `live_view(System())` that gets its sources in the window: a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
-sliders. After each change, all detectors are emptied, all systems are solved again and the beams
+sliders. After each change, the detectors are emptied, the systems are solved again and the beams
 and the shown detector views are updated. Returns a `LiveView`, which can be shown via `display`.
+
+A source is given once: `live_view(sys1 => beam, sys2 => beam)` throws an `ArgumentError`, since a
+source belongs to at most one system. Systems are added and removed in the window
+([`add_system!`](@ref), [`remove_system!`](@ref)), an object may belong to several systems or to
+none, and each system is traced on its own; see "Systems" and "Tracing per system" in the method
+below.
 
 The card of a `Detector` has a page "Results" with its detector view (spot diagram, PSF or
 intensity, with metrics such as centroid, RMS or 1/e² radius and power), which collapses to a
@@ -36,9 +42,11 @@ these detectors at start, with `kind` one of `:auto`, `:spot`, `:psf` and `:inte
 options `n`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
-`edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects that are rendered,
-selected, moved and hidden like the components, but never traced, e.g. a housing from an STL file
-(`MeshDummy`); the card of such mechanics has an opacity slider. `background_card = obj` (or
+`edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects without a system that are
+rendered, selected, moved and hidden like the components, but never traced, e.g. a housing from an
+STL file (`MeshDummy`); the card of such mechanics has an opacity slider. `auto_trace` is the start
+value of the auto tracing of every system. `sidebar_width` and `dock_height` set the start sizes
+of the sidebars and the dock of `layout = :app`, which are resized with the mouse. `background_card = obj` (or
 `gui -> obj`, `nothing` for none) shows the card of an object without a place in the scene, e.g.
 an environment, after a click on the empty background while nothing is selected; its
 [`card_rows`](@ref) get `obj` itself. `layout = :app` arranges the window like an application, with a toolbar,
@@ -259,10 +267,11 @@ sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length o
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 its signal (the power or the number of rays of its detector view while a view is shown, else the
 number of hits), mechanics (`NonInteractableObject`, e.g. a
-`MeshDummy`, and `IntersectableObject`) a slider for their opacity. The card of a system
-(`AbstractSystem`, shown after a click on its entry in the component menu or the object tree)
-shows the number of its objects, the number of rays of its sources that are on and the duration of
-the last solve. Add a method for an own type to show its properties or controls on its card, e.g.
+`MeshDummy`, and `IntersectableObject`) a slider for their opacity. A system (`AbstractSystem`)
+has no rows by default: its card (shown after a click on its entry in the component menu or the
+object tree) is the system widget of the window (its tracing, its members and "Remove system", see
+"Systems" of [`live_view`](@ref)), which is not part of this method; the rows of a method for an
+own system type are shown below the list of its members. Add a method for an own type to show its properties or controls on its card, e.g.
 
 ```julia
 BeamletOpticsGUI.card_rows(l::MyLens) = (pose_card_rows(l)...,
@@ -326,11 +335,16 @@ function beam_card_rows end
 """
     card_actions(obj)
 
-Buttons in the head of the card of `obj` in [`live_view`](@ref), a tuple of
-[`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default "hide"
-(or "show" for a hidden object), for clip planes "flip" and "remove", for systems "hide" and "new
-window" (see [`open_system`](@ref)). The card of an object with parts (a group or a `MultiShape`
-object) gets the button "parts ›" after them, which opens its selection card.
+Widgets in the head of the card of `obj` in [`live_view`](@ref), a tuple of
+[`CardWidget`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref): by default the action
+named `:hide`, an eye icon that hides the object and, crossed out for a hidden object, shows it
+again (tooltips "Hide" and "Show"); for clip planes the buttons "flip" and "remove"; for systems
+the eye and `:open`, an icon of two windows that opens the system in a window of its own (see
+[`open_system`](@ref)). The card of an object with parts (a group or a `MultiShape` object) gets
+the button "parts ›" after them, which opens its selection card.
+
+A method for an own type extends the default ones, e.g.
+`(invoke(card_actions, Tuple{Any}, obj)..., CardWidget(Button; label = "block", on = ...))`.
 """
 function card_actions end
 
@@ -383,10 +397,18 @@ tracing. Place `obj` before adding it, e.g. via `translate_to3d!`.
 
 `system` is the `System` of the `gui` that gets `obj`: by default the system of the selected or
 inspected object (or the inspected system itself), otherwise the first `System` of the view. All
-beams paired with that system are traced through `obj`. A `StaticSystem` can not be changed: it
-throws an `ArgumentError`, like a `system` that is not shown in the `gui` and an `obj` that the
-`gui` shows already. `select = true` selects `obj` afterwards (or shows its card if it is not
-movable), `label` names it like an entry of the `labels` kwarg of `live_view`.
+beams paired with that system are traced through `obj`. `system = :none` adds `obj` without a
+system: it is shown, moved and exported like any component, but not traced, until it becomes a
+member of a system. A `StaticSystem` can not be changed: it throws an `ArgumentError`, like a
+`system` that is not shown in the `gui` and, without a `system`, an `obj` that the `gui` shows
+already. `select = true` selects `obj` afterwards (or shows its card if it is not movable), `label`
+names it like an entry of the `labels` kwarg of `live_view`.
+
+An object belongs to any number of systems of the view: for an `obj` that the `gui` shows already
+(at its top level, i.e. not an object of a group), `add_component!(gui, obj; system = sys2)` makes it a
+member of `sys2` as well, like "+" of that system in the window. It stays one object, with one
+pose, one card and one set of plots, and the beams of all its systems are traced through it, e.g.
+a mirror that the transmitter and the receiver of a lidar share.
 
 `code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, 1.5)"`,
 which constructs `obj` in the pose that it has when it is added. [`export_script`](@ref) then writes
@@ -418,9 +440,11 @@ another color) and gets a marker, with
 which it is selected and moved like the sources the view started with, also in a view with
 `movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
 source does not change; by default the system that gets a component, otherwise the first system of
-the view. It throws an `ArgumentError` for a `source` that the `gui` shows already. A view may start
-without a source, see `live_view(system)`. `code` is the constructor call of the `source` in its
-current pose, as for a component.
+the view. A source belongs to at most one system: `system = :none` adds it without one, which
+shows its marker, but neither traces nor draws it. For a `source` that the `gui` shows already,
+a `system` moves it to that system (or to none), and without a `system` it throws an
+`ArgumentError`. A view may start without a source, see `live_view(system)`. `code` is the
+constructor call of the `source` in its current pose, as for a component.
 
 ```julia
 gui = live_view(System())
@@ -433,32 +457,68 @@ add_component!(gui, lens; label = "lens")
 function add_component! end
 
 """
-    remove_component!(gui, obj) -> obj
+    remove_component!(gui, obj; system = nothing) -> obj
 
-Removes the object `obj` from its system in the [`live_view`](@ref) window `gui`, like "remove" on
-its card or the key `Delete` while it is selected: `obj` is deleted from the system, its plots and
-its cards are removed, and the systems are solved again, or the beams are marked as outdated without
+Removes the object `obj` from the [`live_view`](@ref) window `gui`, like "remove" on its card or
+the key `Delete` while it is selected: `obj` is deleted from all its systems, its plots and its
+cards are removed, and the systems are solved again, or the beams are marked as outdated without
 auto tracing. Adding and removing are entries of the undo history of the controls: `Ctrl+Z` in the
 window brings a removed object back, as does [`add_component!`](@ref).
 
-`obj` is a top-level object (or object group) of a `System` of the `gui`. An object of a group can
-not be removed on its own, remove the group instead. It throws an `ArgumentError`, like an object
-of a `StaticSystem`, an extra and an object that is not shown in the `gui`.
+With a `system`, `obj` is only taken out of that `System`, like "−" of the system in the window: it
+stays in the view, as a member of its other systems or, after its last one, without a system, i.e.
+shown but not traced.
 
-    remove_component!(gui, source) -> source
+`obj` is a top-level object (or object group) of the `gui`: of its `System`s, or one without a
+system, e.g. an extra. An object of a group can not be removed on its own, remove the group
+instead. It throws an `ArgumentError`, like an object of a `StaticSystem` and an object that is not
+shown in the `gui`.
 
-Removes the `source` (a beam or a beam group) from the `gui`: it is no longer traced through any
-system, and its beam, its marker and its cards are removed. Every source can be removed, also the
+    remove_component!(gui, source; system = nothing) -> source
+
+Removes the `source` (a beam or a beam group) from the `gui`: it is no longer traced, and its
+beam, its marker and its cards are removed. Every source can be removed, also the
 last one, which leaves a view without a source; it throws an `ArgumentError` for a beam that is no
-source of the `gui`.
+source of the `gui`. With the `system` that it is traced through, the source only loses its
+system: it keeps its marker, but is neither traced nor drawn.
 """
 function remove_component! end
+
+"""
+    add_system!(gui; label = nothing, select = true) -> System
+
+Adds a new, empty `System` to the [`live_view`](@ref) window `gui` at runtime, like "System" among
+its tools, and returns it. `label` names it, by default "System n". With `select`, its card is
+shown and it gets the next component of the catalog. Its components and sources are added with
+[`add_component!`](@ref), e.g. an object that another system holds already:
+
+```julia
+rx = add_system!(gui; label = "Receiver")
+add_component!(gui, mirror; system = rx)    # the mirror of the transmitter, in both systems
+add_component!(gui, Beam([0.0, 0.1, 0], [0.0, -1, 0], 905e-9); system = rx)
+```
+
+Each system is traced on its own, see "Tracing per system" of [`live_view`](@ref).
+[`remove_system!`](@ref) removes a system again; both are entries of the undo history.
+"""
+function add_system! end
+
+"""
+    remove_system!(gui, system) -> system
+
+Removes the `system` from the [`live_view`](@ref) window `gui`, like "Remove system" on its card. Nothing
+is deleted: its sources and its objects that are in no other system of the view stay in the view
+without a system, i.e. shown but not traced, and the objects of the `system` itself are not
+changed. It throws an `ArgumentError` for the last system of the view, for a system that the `gui`
+does not show and for one that is open in another window, see [`open_system`](@ref).
+"""
+function remove_system! end
 
 """
     open_system(gui, system; display = true, kwargs...) -> LiveView
 
 Opens the `system` of the [`live_view`](@ref) window `gui` in a new window with its components and
-the sources that are traced through it, like the button "new window" on the card of the system
+the sources that are traced through it, like the icon of the two windows in the head of the card of the system
 (shown after a click on the system in the object tree or in the component menu). Useful for a view
 of several systems, one of which is worked on in a window of its own. Returns the new live view,
 which is shown unless `display` is `false`.

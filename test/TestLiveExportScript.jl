@@ -350,15 +350,16 @@ const GUI = BeamletOpticsGUI
         _run(code)
         close(gui)
 
-        # a source that is traced through two systems is constructed once and solved per pair
+        # a source belongs to one system, the other one is shown alone
         a, b = System(), System()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
-        gui = _live_view(a => beam, b => beam; labels = Dict(beam => "beam"))
+        gui = _live_view(a => beam, b; labels = Dict(beam => "beam"))
         code = _script(gui)
         @test count("# beam = … (Beam)", code) == 1
-        @test occursin("\n# solve_system!(system1, beam)\n# solve_system!(system2, beam)\n", code)
+        @test occursin("\n# solve_system!(system1, beam)\n", code)
+        @test !occursin("solve_system!(system2, beam)", code)
         @test occursin("gui = live_view(\n    # system1 => beam,\n    system1,\n" *
-            "    # system2 => beam,\n    system2;\n    labels = Dict(\n        # beam => \"beam\",\n    )\n)\n", code)
+            "    system2;\n    labels = Dict(\n        # beam => \"beam\",\n    )\n)\n", code)
         mod = _run(_setup(code))
         @test isempty(_value(mod, :system1).objects) && isempty(_value(mod, :system2).objects)
         close(gui)

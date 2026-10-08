@@ -77,7 +77,7 @@ const GUI = BeamletOpticsGUI
         @test housing in gui.objects.hidden
         @test all(p -> !p.visible[], plots)
         @test ctrl.selected[] === housing
-        @test GUI._card_widget(gui.cards.selection, :hide).label[] == "show"
+        @test GUI._card_widget(gui.cards.selection, :hide).active[]
         # raising the slider shows it again
         Makie.set_close_to!(slider, 60)
         @test !(housing in gui.objects.hidden)
@@ -319,11 +319,13 @@ const GUI = BeamletOpticsGUI
         tree = gui.layout.tree
         rows = tree.rows
         labels = [r.label for r in rows]
-        @test labels[1:4] == ["System 1", "Mirror 1", "Detector 1", "Extras"]
-        extras_row = rows[4]
+        # the source of the system, its objects, then what has no system
+        k = findfirst(==("No system"), labels)
+        @test labels[1] == "System 1" && labels[(k - 2):(k - 1)] == ["Mirror 1", "Detector 1"]
+        extras_row = rows[k]
         @test extras_row.key === gui.extras
         @test extras_row.kind == :group && extras_row.depth == 0 && extras_row.expanded
-        @test [(r.label, r.depth) for r in rows[5:6]] == [("NonInteractableObject 1", 1), ("ObjectGroup 1", 1)]
+        @test [(r.label, r.depth) for r in rows[(k + 1):(k + 2)]] == [("NonInteractableObject 1", 1), ("ObjectGroup 1", 1)]
         # a click in the tree selects the extra, its card is docked in the inspector
         tree.clicked[] = housing
         @test gui.controls.selected[] === housing
@@ -339,7 +341,7 @@ const GUI = BeamletOpticsGUI
         @test !(housing in gui.objects.hidden)
         @test row(housing).visible === true
         @test GUI._opacity(gui, housing) == 1
-        # the eye of "Extras" hides all extras
+        # the eye of "No system" hides all extras
         tree.eye_clicked[] = gui.extras
         @test all(leaf -> leaf in gui.objects.hidden, GUI._leaves(gui.extras))
         @test row(gui.extras).visible === false

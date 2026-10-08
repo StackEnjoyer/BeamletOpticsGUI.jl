@@ -193,12 +193,15 @@ const GUI = BeamletOpticsGUI
         @test other_sys.objects == [new] && length(sys.objects) == 1
         close(other)
 
-        # a view without a `System` takes no component, but a source
+        # a view without a `System` places a component without a system, and a source
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         static = _live_view(StaticSystem([m]) => _beam())
         _ctrl!(static, Keyboard.v)
-        @test !GUI._placing(static) && occursin("not pasted", static.status.text[])
+        @test GUI._placing(static) && static.components.placement.system === :none
+        pasted = static.components.placement.obj
+        GUI._drop_placement!(static)
+        @test GUI._is_extra(static, pasted)
         _select!(gui, s.obj)
         _ctrl!(gui, Keyboard.c)
         _ctrl!(static, Keyboard.v)

@@ -24,7 +24,7 @@ Look up the docstring of any name before use, e.g.
 |----------|-------|
 | Window | `live_view`, `open_system`, `export_changes`, `export_script`, `retrace!` |
 | Scripting | `select!`, `spectator!`, `wait_solve` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
-| Components at runtime | `add_component!`, `remove_component!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
+| Components and systems at runtime | `add_component!`, `remove_component!`, `add_system!`, `remove_system!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
 | Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
@@ -37,14 +37,15 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 |---------|---------|
 | `layout = :compact` or `:app` | the window layout (compact: 3D view fills the window, tools on demand in a tool rail over it; app: a tree, an inspector, a dock and a toolbar) |
 | `theme = :light` or `:dark` | colors of the whole window |
+| `sidebar_width = (240, 300)`, `dock_height = nothing` | app layout only (compact ignores them): start widths [px] of the left and right sidebar (a number sets both, each within 160 and 600) and start height [px] of the dock (within 80 and 70 % of the figure height; `nothing`: 36 % of the window); outside the limits throws `ArgumentError`. In the window: drag the edge of a sidebar or the upper edge of the dock, a double click restores the start size |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
 | `constraints = Dict(obj => (; move = (), rotate = (:x, :v)))` | lock axes of components |
 | `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; n, colorscale, colorrange, colorbar, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries go to `BeamletOptics.intensity`; `history` throws `ArgumentError`) |
 | `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units); compact: entry "Sliders" of the tool rail, app: "Parameters" |
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
-| `extras = [housing => (; color = ...)]` | shown, movable, but never traced |
+| `extras = [housing => (; color = ...)]` | objects without a system: shown, movable, but never traced (listed under "No system" in the tree; removable; can become a member of a system later) |
 | `clip_planes`, `clip_beams` | clip planes (`point => normal`) |
-| `auto_trace`, `trace_budget`, `idle_delay`, `preview`, `progress_delay` | when and how the systems are solved (`auto_trace = false` also starts untraced, `t` traces) |
+| `auto_trace`, `trace_budget`, `idle_delay`, `preview`, `progress_delay` | when and how the systems are solved (`auto_trace = false` also starts untraced, `t` traces all systems; `auto_trace` is the start value of the auto tracing of every system, see "Systems" below) |
 | `beam_kwargs = Dict(source => (; render_every = 50))` | `render!` keywords per source; `show_polarization`, `show_beams`, `pol_λ`, `pol_amplitude`, `pol_scale` set the start state of the card toggles and sliders |
 | `beams_off = [src]` | beams that start off (not solved, not drawn; the card toggle "on" switches them) |
 | `background_card = obj` or `gui -> obj_or_nothing` (or `obj => point`) | the card of an object without a place in the scene, shown on a click on the empty background while nothing is selected; `obj => point` attaches it to `point` [m] |
@@ -54,7 +55,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
 `open_system(gui, system; display = true, kwargs...)` opens a system of the view with its components
-and sources in a second window and returns its `LiveView` (in the window: the button "new window" on
+and sources in a second window and returns its `LiveView` (in the window: the icon of two windows in the head of
 the card of the system). Both windows show the same objects and are linked: moving, adding, removing
 and editing in one of them shows in the other one, only the window that changed solves. `kwargs`
 are those of `live_view` and override what the new window takes over (layout, theme, catalog, names,
@@ -63,7 +64,41 @@ linked windows, the selection, camera, colors, hidden objects, clip planes and t
 per window. Closing a window ends the link.
 
 `add_component!(gui, obj; system, select, label)` adds a component (placed beforehand, e.g. with
-`translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it.
+`translate_to3d!`) to a `System` of the view at runtime, `remove_component!(gui, obj)` removes it
+from the view and from all its systems (also an extra). `add_system!(gui; label, select)` adds an
+empty `System` to the view and returns it, `remove_system!(gui, system)` removes one (nothing is
+deleted: its sources and its objects that are in no other system stay in the view without a system;
+the last system of a view, and one that is open in another window, throw `ArgumentError`).
+
+**Systems.** An object belongs to any number of the systems of the view, or to none, and is drawn
+once (one pose, one card, one set of plots; the beams of all its systems are traced through it).
+`add_component!(gui, obj; system = sys2)` for an `obj` that the view shows already (top level, not an
+object of a group) makes it a member of `sys2` as well, `remove_component!(gui, obj; system = sys)`
+takes it out of `sys` only, `add_component!(gui, obj; system = :none)` adds it without a system. An
+object without a system is shown, selected, moved, hidden and exported, but never traced; it is what
+an extra is (tree row "No system"). The objects of a `StaticSystem` can not be changed. A source
+belongs to at most one system: `live_view(sys1 => beam, sys2 => beam)` throws an `ArgumentError`
+(`live_view(sys1 => b1, sys1 => b2)` is fine), `add_component!(gui, source; system = other)` moves a
+shown source, `system = :none` or `remove_component!(gui, source; system = sys)` leaves it without a
+system (marker only, neither traced nor drawn). In the window: the tool "System" adds a system; the
+card of a system (one page, no step/mode) has its name with a pencil that renames it (`Enter`
+renames, `Esc` keeps), the icons eye (hide), two windows (own window) and pin, a status chip
+("up to date · 14 ms", "outdated", "no source"), the toggle "auto" and the button "Trace" (that
+system only, filled while outdated), the buttons "+" and "−" (also on its row of the tree in the app
+layout), the list of its members each with its icon, the number of its systems if several and "×"
+(takes it out; a click on the row selects the member), the rays per solve and "Remove system"
+(its members stay in the view). "+" or "−" starts a pick: a click on a component or source
+marker in the 3D view, the tree or the component menu adds it to or takes it out of the system,
+everything else is see-through, `Esc` ends it. A system whose card is shown (a click on its row of
+the tree or its entry of the component menu) shows its members the same way, less see-through,
+until a click on the empty 3D view, `Esc` or a selected component closes the card. Each system is traced on its own: "auto" per system;
+the "Auto trace" switch of the view is on while any system is traced automatically and switches all;
+a change traces the affected systems that have auto tracing, the other affected ones are outdated
+(beams dimmed); the trace button and `t` trace all systems; systems that share a `Detector` are
+always traced together. `export_changes`/`export_script` write the memberships (`push!`/`delete!`
+per system, `systemN = System()`, and `add_component!(gui, x; system = :none)` for what has no
+system).
+
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and
 gives it a marker, `remove_component!(gui, source)` removes it, also the last one. Every source is
@@ -82,7 +117,7 @@ at the mouse with the key `Insert` or with the toggle "Components" among the too
 the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in
 the left sidebar (section "Components"), from where its buttons move it into the window and back. Its
 line "into" names the system that gets the entry (of the selection, else the first one) and is a menu
-of the systems in a view with several systems. Its icons select a
+of the systems that can get it, then "no system" and "New system…". Its icons select a
 group (sources, lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
 component (all components of BeamletOptics with a constructor of numbers and glasses) or a source
 (`Beam`, `GaussianBeamlet`, `CollimatedSource`, `UniformDiscSource`, `PointSource`,

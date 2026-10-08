@@ -253,9 +253,9 @@ The widgets of the catalog of a `LiveView` in a `layout`, e.g. the body of its w
 dock (see `_catalog_widget!`), laid out by the `style` (see `_catalog_style`) in the colors of the
 theme tokens `theme`, from top to bottom:
 
-- `target`: the label of the system that gets the component, "into: <system>"; in a view with
-  several systems only "into", next to the menu `target_menu` of the systems, see
-  `_show_catalog_target!` (`showing` is `true` while the menu is set to the system that it shows)
+- `target`: the label "into", next to the menu `target_menu` of the systems that get the
+  component, then "no system" and "New system…", see `_show_catalog_target!` (`showing` is `true`
+  while the menu is set to the target that it shows)
 - `group_buttons`: an icon per group of the `entries` (`groups`, in the order of their first
   entries), of which the one with the index `group` is chosen; `group_label` names it, or the one
   under the mouse
@@ -272,15 +272,16 @@ The tiles are built again when another group is chosen (see `_build_catalog_tile
 when another entry is chosen (see `_build_catalog_form!`) and, at the next frame while `dirty`,
 after a menu of a glass changed to or from "constant", see `_flush_catalog_form!`. `settle` holds
 the grids of a new form and its time until its boxes were moved once, see `_settle_catalog_form!`.
+The `style` changes when the place of the widgets gets another width, see `_restyle_catalog!`.
 """
 mutable struct _CatalogWidget
     const layout::GridLayout
     const theme::NamedTuple
-    const style::NamedTuple
+    style::NamedTuple
     const entries::Vector{CatalogEntry}
     const groups::Vector{String}
     const target::Label
-    const target_menu::Union{Nothing, Menu}
+    const target_menu::Menu
     showing::Bool
     const group_buttons::Vector{_OverlayItem}
     const group_label::Label
@@ -318,22 +319,20 @@ _catalog_strings(w::_CatalogWidget) =
     _catalog_widget!(gui, body, style) -> _CatalogWidget
 
 Builds the widgets of the catalog of the `gui` (`gui.components.catalog`) in the layout `body`,
-laid out by the `style` (see `_catalog_style`): the line "into: <system>" with the system that gets
-the component (see `_catalog_target`), which is a menu of the systems in a view with several
-systems, the icons of the groups, the tiles of the entries of the
-chosen group, the form of the chosen entry and the button "Place", see `_CatalogWidget` and
+laid out by the `style` (see `_catalog_style`): the line "into" with the menu of the system that
+gets the component (see `_catalog_target`), i.e. the systems, "no system" and "New system…", the
+icons of the groups, the tiles of the entries of the chosen group, the form of the chosen entry and the button "Place", see `_CatalogWidget` and
 `_place_catalog!`. The first group and its first entry are chosen.
 """
 function _catalog_widget!(gui::LiveView, body::GridLayout, style::NamedTuple)
     entries = gui.components.catalog
     t = gui.layout.theme
     label = (; _card_style(t, Label)..., halign = :left)
-    # With several systems, the system is chosen in a menu next to the label
+    # The system is chosen in a menu next to the label, also in a view that gets systems later
     line = GridLayout(body[1, 1]; halign = :left, default_colgap = _CATALOG_GAP)
-    target = Label(line[1, 1], ""; label..., color = t.muted)
-    target_menu = length(gui.system_handles) > 1 ?
-                  Menu(line[1, 2]; options = [""], _card_style(t, Menu)...,
-        width = _CATALOG_GLASS_WIDTH, halign = :left) : nothing
+    target = Label(line[1, 1], "into"; label..., color = t.muted)
+    target_menu = Menu(line[1, 2]; options = [""], _card_style(t, Menu)...,
+        width = _CATALOG_GLASS_WIDTH, halign = :left)
     groups = unique(e.group for e in entries)
     rows = GridLayout(body[2, 1]; halign = :left, default_colgap = _CATALOG_GROUP_GAP,
         default_rowgap = _CATALOG_GROUP_GAP)
@@ -350,11 +349,9 @@ function _catalog_widget!(gui::LiveView, body::GridLayout, style::NamedTuple)
         entry_label, place, 0, 0, tiles, Pair{Int, _OverlayItem}[], form, Any[], Textbox[], Menu[], false,
         nothing)
     listeners = gui.controls.listeners
-    if !isnothing(target_menu)
-        # its search takes the keyboard like the menus of the form
-        _register_widget!(gui, target_menu)
-        push!(listeners, on(i -> _choose_catalog_target!(gui, widget, i), target_menu.i_selected))
-    end
+    # its search takes the keyboard like the menus of the form
+    _register_widget!(gui, target_menu)
+    push!(listeners, on(i -> _choose_catalog_target!(gui, widget, i), target_menu.i_selected))
     for (k, button) in enumerate(group_buttons)
         push!(listeners, on(_ -> _select_catalog_group!(gui, widget, k), button.clicks))
         push!(listeners, on(_ -> _show_catalog_group!(widget), button.hovered))
@@ -378,12 +375,11 @@ the widgets of the catalog, see `_catalog_widget!`. Without a dock, the window i
 with one, the catalog starts docked. The toggle "Components" among the tools of the layout (see
 [`add_tool!`](@ref)) shows and hides it, the key `Insert` shows the window at the mouse, see
 `_connect_catalog_window!`. Both are listed in the help with the mouse while placing
-(`_CATALOG_HELP`). A view without a `System`, to which components can be added, only offers the
-sources of the catalog, which are traced through any system. Nothing is built for an empty catalog.
+(`_CATALOG_HELP`). A view without a `System` offers the components as well, into "no system" or a
+new system. Nothing is built for an empty catalog.
 """
 function _build_catalog!(gui::LiveView)
     entries = gui.components.catalog
-    isempty(_mutable_systems(gui)) && filter!(e -> e.source, entries)
     isempty(entries) && return nothing
     w = _CatalogWindow(gui, _catalog_dock_slot!(gui, _CATALOG_TITLE))
     gui.components.window = w
@@ -422,32 +418,40 @@ _catalog_systems(gui::LiveView, entry::CatalogEntry) =
     entry.source ? _systems(gui) : BMO.AbstractSystem[_mutable_systems(gui)...]
 
 """
-    _catalog_target(gui, entry) -> Union{AbstractSystem, Nothing}
+    _catalog_target(gui, entry) -> Union{AbstractSystem, Symbol}
 
-The system that gets the `entry` of the catalog of the `gui` when it is placed: the system of the
-selected or inspected object, otherwise the first one (of a component the `_target_system`, of a
-source the system it is traced through, see `_source_system`), unless another one was chosen in
-the menu "into" of the catalog since that object is shown, see `_choose_catalog_target!`. `nothing`
-without a system that can get it.
+The system that gets the `entry` of the catalog of the `gui` when it is placed, or `:none` for no
+system: the system of the selected or inspected object, otherwise the first one (of a component
+the `_target_system`, of a source the system it is traced through, see `_source_system`), unless
+another one was chosen in the menu "into" of the catalog since that object is shown, see
+`_choose_catalog_target!`. A view without a `System` places a component into `:none`.
 """
 function _catalog_target(gui::LiveView, entry::CatalogEntry)
     comp = gui.components
     if !isnothing(comp.target) && comp.target_shown === _shown_object(gui) &&
-       any(sys -> sys === comp.target, _catalog_systems(gui, entry))
+       (comp.target === :none || any(sys -> sys === comp.target, _catalog_systems(gui, entry)))
         return comp.target
     end
-    return entry.source ? _source_system(gui, nothing) : _target_system(gui)
+    sys = entry.source ? _source_system(gui, nothing) : _target_system(gui)
+    return isnothing(sys) ? :none : sys
 end
 
 """
-The menu "into" of the catalog widget `w` of the `gui` chose its option `i`: that system gets the
-entries of the catalog until another object is selected or inspected, see `_catalog_target`.
+The menu "into" of the catalog widget `w` of the `gui` chose its option `i`: that system, or no
+system, gets the entries of the catalog until another object is selected or inspected, see
+`_catalog_target`. The last option adds a system, which gets them.
 """
 function _choose_catalog_target!(gui::LiveView, w::_CatalogWidget, i::Integer)
     (w.showing || w.entry == 0) && return nothing
     systems = _catalog_systems(gui, _catalog_entry(w))
-    i in eachindex(systems) || return nothing
-    gui.components.target = systems[i]
+    n = length(systems)
+    if i == n + 2
+        # makes the new system the target and shows it in the menus, see `add_system!`
+        add_system!(gui)
+        return nothing
+    end
+    i == n + 1 || i in eachindex(systems) || return nothing
+    gui.components.target = i == n + 1 ? :none : systems[i]
     gui.components.target_shown = _shown_object(gui)
     # also in the other widget of the catalog, e.g. its window
     _refresh_catalog!(gui)
@@ -455,21 +459,17 @@ function _choose_catalog_target!(gui::LiveView, w::_CatalogWidget, i::Integer)
 end
 
 """
-Shows the system that gets the chosen entry of the catalog widget `w`, see `_catalog_target`: in
-its label, or, in a view with several systems, in its menu of the systems that can get the entry.
+Shows the system that gets the chosen entry of the catalog widget `w`, see `_catalog_target`, in its
+menu: the systems that can get the entry, "no system" and "New system…".
 """
 function _show_catalog_target!(gui::LiveView, w::_CatalogWidget)
     entry = w.entry == 0 ? nothing : _catalog_entry(w)
     sys = isnothing(entry) ? _target_system(gui) : _catalog_target(gui, entry)
     menu = w.target_menu
-    if isnothing(menu)
-        _update!(w.target.text, isnothing(sys) ? "into: no system" : "into: $(_label(gui, sys))")
-        return nothing
-    end
-    _update!(w.target.text, "into")
     systems = isnothing(entry) ? _systems(gui) : _catalog_systems(gui, entry)
-    names = isempty(systems) ? ["no system"] : String[_label(gui, s) for s in systems]
-    i = something(_index(systems, sys), 1)
+    names = String[String[_label(gui, s) for s in systems]..., "no system", "New system…"]
+    i = isnothing(sys) || sys === :none ? length(systems) + 1 :
+        something(_index(systems, sys), length(systems) + 1)
     # Showing the system is no choice of the user, see `_choose_catalog_target!`
     w.showing = true
     try
@@ -601,6 +601,41 @@ function _select_catalog_entry!(gui::LiveView, w::_CatalogWidget, i::Integer)
     _show_catalog_entry!(w)
     _show_catalog_target!(gui, w)
     _build_catalog_form!(gui, w, String[_catalog_string(p) for p in w.entries[i].params])
+    return nothing
+end
+
+"""
+    _regrid!(grid::GridLayout, old::Int, new::Int)
+
+Arranges the content of the `grid`, which fills its rows with `old` cells each, in rows of `new`
+cells, in the same order, e.g. the tiles of the catalog. The blocks are moved, not built again:
+they keep their state and their listeners.
+"""
+function _regrid!(grid::GridLayout, old::Int, new::Int)
+    old == new && return nothing
+    for gc in copy(grid.content)
+        row, col = gc.span.rows.start, gc.span.cols.start
+        k = row == 1 ? col : (row - 1) * old + col
+        grid[fldmod1(k, new)...] = gc.content
+    end
+    _GLB.trim!(grid)
+    return nothing
+end
+
+"""
+    _restyle_catalog!(w, style)
+
+Lays out the catalog widget `w` by another `style` of the same kind (see `_catalog_style`), e.g.
+after its place got another width: the icons of the groups and the tiles of the entries are
+arranged in the rows of the `style`. The chosen group and entry, the form and the texts of its
+inputs are kept.
+"""
+function _restyle_catalog!(w::_CatalogWidget, style::NamedTuple)
+    old = w.style
+    w.style = style
+    groups = _GLB.gridcontent(first(w.group_buttons).box).parent
+    _regrid!(groups, old.groups_per_row, style.groups_per_row)
+    _regrid!(w.tiles, old.tiles_per_row, style.tiles_per_row)
     return nothing
 end
 

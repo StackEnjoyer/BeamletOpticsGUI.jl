@@ -357,7 +357,13 @@ const GUI = BeamletOpticsGUI
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf)
-        @test_throws ArgumentError GUI._start_placement!(gui, _lens())
+        # a component is placed without a system
+        lens = _lens()
+        GUI._start_placement!(gui, lens)
+        @test GUI._placing(gui) && gui.components.placement.system === :none
+        GUI._drop_placement!(gui)
+        @test GUI._is_extra(gui, lens)
+        @test_throws ArgumentError GUI._start_placement!(gui, _lens(); system = :first)
         @test !GUI._placing(gui)
         # a source does not change its system
         src = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)

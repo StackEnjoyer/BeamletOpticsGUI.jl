@@ -48,7 +48,7 @@ function BeamletOptics.interact3d(::BeamletOptics.AbstractSystem, a::MyAttenuato
 end
 
 # The card: the pose, a slider for the transmission with its value in %, and an action "block"
-# next to the default ones ("hide")
+# next to the default ones (the eye)
 BeamletOpticsGUI.card_rows(a::MyAttenuator) = (pose_card_rows(a)...,
     CardRow("T",
         CardWidget(Slider; name = :transmission, range = 0:0.01:1, width = 150,
@@ -74,7 +74,7 @@ end
 
 BeamletOptics.objects(b::MyBench) = b.objects
 
-# The default rows of a system (objects, rays, solve) and the name of the bench
+# The name of the bench, below the list of its members (a system has no rows by default)
 BeamletOpticsGUI.card_rows(b::MyBench) = (
     invoke(BeamletOpticsGUI.card_rows, Tuple{BeamletOptics.AbstractSystem}, b)...,
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))
@@ -233,7 +233,7 @@ _widget(gui, name) = GUI._card_widget(_card(gui), name)
         @test _widget(gui, :percent).text[] == "80 %"
         @test solves[] == n + 1
         # the extra action next to the default ones
-        @test _widget(gui, :hide) isa Button
+        @test _widget(gui, :hide) isa BeamletOpticsGUI._IconToggle
         notify(_widget(gui, :block).clicks)
         @test a.transmission == 0
         @test slider.value[] == 0
@@ -251,9 +251,10 @@ _widget(gui, name) = GUI._card_widget(_card(gui), name)
         layout == :compact ? (gui.widgets.menu.i_selected[] = 1) : (gui.layout.tree.clicked[] = h)
         @test gui.objects.inspected === bench
         @test isnothing(gui.controls.selected[])
+        # the row of the bench, between the list of its members and the last row of the system widget
         @test _widget(gui, :bench).text[] == "Fold"
-        @test _widget(gui, :objects).text[] == "2"
-        @test _widget(gui, :rays).text[] == "1"
+        @test length(_widget(gui, :members).rows) == 3
+        @test _widget(gui, :rays).text[] == "1 ray per solve"
         close(gui)
     end
 

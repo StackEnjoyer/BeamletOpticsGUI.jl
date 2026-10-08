@@ -47,11 +47,22 @@ end
 # The systems of the `gui` that `obj` belongs to: those it is traced through, or those that hold it
 _systems_of(::LiveView, ::Nothing) = BMO.AbstractSystem[]
 function _systems_of(gui::LiveView, @nospecialize(obj))
-    systems = BMO.AbstractSystem[p.first for p in gui.pairs if p.second === obj]
-    isempty(systems) || return systems
+    # none for a source without a system, see `_set_source_system!`
+    _is_source(obj) && return BMO.AbstractSystem[p.first for p in gui.pairs
+                                                 if p.second === obj && !(obj in gui.beams.unassigned)]
     top = _component_top(gui, obj)
     return BMO.AbstractSystem[rendered(h) for h in gui.system_handles
                               if _has(rendered(h).objects, top)]
+end
+
+# Records that the `systems` of the `gui` are outdated, see `_note_stale!`
+function _note_stale_systems!(gui::LiveView, systems)
+    trace = gui.trace
+    trace.link_stale = false
+    for sys in systems
+        _has(trace.stale_systems, sys) || push!(trace.stale_systems, sys)
+    end
+    return nothing
 end
 
 """The beams of the `gui` are up to date, after its solve or that of a linked view."""
@@ -59,6 +70,33 @@ function _set_fresh!(gui::LiveView)
     trace = gui.trace
     trace.stale = trace.link_stale = trace.stale_all = false
     empty!(trace.stale_systems)
+    return nothing
+end
+
+"""
+    _set_fresh!(gui, traced)
+
+The beams of the systems `traced` of the `gui` are up to date after its solve, all of them for
+`nothing`: their plots are shown as rendered again, those of the systems that are still outdated
+stay dimmed, see `_dim_beams!`.
+"""
+function _set_fresh!(gui::LiveView, traced)
+    trace = gui.trace
+    if !isnothing(traced) && trace.stale
+        # What was not traced is still outdated
+        rest = (trace.stale_all || trace.link_stale) ?
+               Any[s for s in _systems(gui) if !_has(traced, s)] :
+               Any[s for s in trace.stale_systems if !_has(traced, s)]
+        if !isempty(rest)
+            trace.stale_all = trace.link_stale = false
+            empty!(trace.stale_systems)
+            append!(trace.stale_systems, rest)
+            _dim_beams!(gui)
+            return nothing
+        end
+    end
+    _restore_beams!(gui)
+    _set_fresh!(gui)
     return nothing
 end
 
@@ -90,6 +128,8 @@ function _open_kwargs(gui::LiveView, system, sources)
         orthographic = gui.widgets.orthographic_toggle.active[],
         view_cube = !isnothing(gui.widgets.view_cube), snap = ctrl.snap[],
         table = _table_kwarg(gui.components.table),
+        # the sizes of the sidebars and the dock, see `_part_size_kwargs`
+        _part_size_kwargs(gui)...,
         # the controls
         ctrl.rotation_axis, ctrl.plane_normal, ctrl.rotate_speed, ctrl.fine_step, ctrl.fine_angle,
         ctrl.throttle, ctrl.select_modifier, ctrl.drag_threshold, ctrl.constraints,
@@ -275,8 +315,8 @@ Called by the `gui` after it solved (`stale = false`; `preview` after a preview 
 `_apply!`) and when its beams become outdated (`stale = true`), after `obj` changed (or `nothing`):
 the views that are linked with it follow, see `_follow!`.
 """
-_sync_links!(gui::LiveView, @nospecialize(obj); stale::Bool, preview::Bool = false) =
-    _each_linked(view -> _follow!(view, gui, obj; stale, preview), gui)
+_sync_links!(gui::LiveView, @nospecialize(obj); stale::Bool, preview::Bool = false, traced = nothing) =
+    _each_linked(view -> _follow!(view, gui, obj; stale, preview, traced), gui)
 
 """
     _sync_structure!(gui)
@@ -330,8 +370,11 @@ runs in the background, which traces them), the poses of the objects, and then e
 not solve. A change of an object that the `gui` does not show, e.g. of another system of `from`,
 changes nothing for it, unless the solve of `from` brings its outdated beams up to date.
 """
-function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool, preview::Bool)
+function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool, preview::Bool,
+        traced = nothing)
     systems = _shared_systems(gui, from)
+    # `from` traced only some of its systems, see `_trace_set`
+    (stale || isnothing(traced)) || filter!(sys -> _has(traced, sys), systems)
     isempty(systems) && return nothing
     foreign = !isnothing(obj) && !_shows(gui, obj)
     (foreign && (stale || !gui.trace.stale)) && return nothing
@@ -392,10 +435,9 @@ function _follow_structure!(gui::LiveView, from::LiveView, systems = _shared_sys
         shown = _top_levels(h)
         for obj in sys.objects
             _has(shown, obj) && continue
-            leaves = _leaves(obj)
-            # nothing to show, or shown elsewhere, e.g. as an extra
-            (isempty(leaves) || any(leaf -> !isnothing(_child_handle(gui.controls.h, leaf)), leaves)) &&
-                continue
+            # nothing to show; an object that the `gui` shows already, e.g. as an object of another
+            # system, becomes a member of `sys` as well
+            isempty(_leaves(obj)) && continue
             _attach!(gui, obj, sys; origin = origin(obj))
             append!(changed, _component_parts(obj))
         end
@@ -427,9 +469,9 @@ end
 # The beams of the `gui` are outdated because of a linked view, until that view has solved
 function _follow_stale!(gui::LiveView)
     gui.trace.stale && return nothing
-    _dim_beams!(gui)
     gui.trace.stale = true
     gui.trace.link_stale = true
+    _dim_beams!(gui)
     gui.status.text[] = _LINK_STALE
     return nothing
 end

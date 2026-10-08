@@ -70,7 +70,7 @@ function BeamletOptics.interact3d(::BeamletOptics.AbstractSystem, a::MyAttenuato
 end
 
 # The card: the pose, a slider for the transmission with its value in %, and an action "block"
-# next to the default ones ("hide")
+# next to the default ones (the eye)
 BeamletOpticsGUI.card_rows(a::MyAttenuator) = (pose_card_rows(a)...,
     CardRow("T",
         CardWidget(Slider; name = :transmission, range = 0:0.01:1, width = 150,
@@ -89,9 +89,11 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
 
 A system (subtype of `AbstractSystem`) has a card too: shown, without gizmo and without a selection
 (`gui.controls.selected[]` stays `nothing`), by its entry in the component menu (compact) or its row in
-the tree (app); `Esc`, a click on empty space or selecting an object closes it. Default rows: number
-of objects, number of rays, duration of the last solve. Same steps as above, but no pose. Extend the
-default via `invoke`. Objects that are not movable are shown the same way (pose inputs rejected).
+the tree (app); `Esc`, a click on empty space or selecting an object closes it. It is the system
+widget of the window (name with a pencil, status chip, "auto" and "Trace", "+" and "−", the list of
+the members, "Remove system"); a system has no rows of its own by default (`card_rows` returns `()`),
+the rows of your `card_rows` method for the system type are shown below the list of the members.
+Same steps as above, but no pose. Objects that are not movable are shown the same way (pose inputs rejected).
 
 ```julia
 # A system with a name, traced like a `System`
@@ -102,7 +104,7 @@ end
 
 BeamletOptics.objects(b::MyBench) = b.objects
 
-# The default rows of a system (objects, rays, solve) and the name of the bench
+# The name of the bench, below the list of its members (a system has no rows by default)
 BeamletOpticsGUI.card_rows(b::MyBench) = (
     invoke(BeamletOpticsGUI.card_rows, Tuple{BeamletOptics.AbstractSystem}, b)...,
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))

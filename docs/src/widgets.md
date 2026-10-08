@@ -67,7 +67,7 @@ and the page "Properties", which the live view adds. The rows are the page "Pose
    changes the optics: a running solve is cancelled first and the systems are solved again after
    the input.
 5. Give a widget a `name` to find it in tests. Extra actions in the head of the card are added by a
-   method of [`card_actions`](@ref), which extends the default ones ("hide").
+   method of [`card_actions`](@ref), which extends the default ones (the eye that hides the object).
 6. Keep no state in the widgets and capture no `gui`: the card may be rebuilt at any time and
    shows other objects with the same declarations. `value` and `on` get the `gui` and the object.
 7. Test it: create a `live_view` with the object, select it with `gui.controls.selected[] = obj`,
@@ -76,7 +76,7 @@ and the page "Properties", which the live view adds. The rows are the page "Pose
    `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI.
 
 The example is a filter with a transmission, whose card has a slider (its value is shown in %) and an
-action "block" next to "hide":
+action "block" next to the eye:
 
 ```julia
 # A filter that passes the rays and attenuates their power by `transmission` (0-1)
@@ -99,7 +99,7 @@ function BeamletOptics.interact3d(::BeamletOptics.AbstractSystem, a::MyAttenuato
 end
 
 # The card: the pose, a slider for the transmission with its value in %, and an action "block"
-# next to the default ones ("hide")
+# next to the default ones (the eye)
 BeamletOpticsGUI.card_rows(a::MyAttenuator) = (pose_card_rows(a)...,
     CardRow("T",
         CardWidget(Slider; name = :transmission, range = 0:0.01:1, width = 150,
@@ -122,9 +122,11 @@ signal of a `Detector`.
 A system (a subtype of `AbstractSystem`) has a card as well: it is shown, without a gizmo and
 without a selection (`gui.controls.selected[]` stays `nothing`), when its entry in the component menu
 (`layout = :compact`) or its row in the object tree (`layout = :app`) is clicked, and closed by
-`Esc`, a click on empty space or the selection of an object. By default, it shows the number of its
-objects, the number of rays and the duration of the last solve. The steps are those of the card of a
-type, except that a system has no pose. Extend the default rows via `invoke`:
+`Esc`, a click on empty space or the selection of an object. It is the system widget of the window
+(its name with a pencil, its tracing, "+" and "−", the list of its members and "Remove system",
+see [Several systems](@ref)); a system has no rows of its own by default. The rows of your
+`card_rows` method are shown below the list of the members. The steps are those of the
+card of a type, except that a system has no pose:
 
 ```julia
 # A system with a name, traced like a `System`
@@ -135,7 +137,7 @@ end
 
 BeamletOptics.objects(b::MyBench) = b.objects
 
-# The default rows of a system (objects, rays, solve) and the name of the bench
+# The name of the bench, below the list of its members (a system has no rows by default)
 BeamletOpticsGUI.card_rows(b::MyBench) = (
     invoke(BeamletOpticsGUI.card_rows, Tuple{BeamletOptics.AbstractSystem}, b)...,
     CardRow("bench", CardWidget(Label; name = :bench, value = (gui, b) -> b.name)))

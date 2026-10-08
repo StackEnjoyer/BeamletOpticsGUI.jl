@@ -4,7 +4,8 @@ The components of a `System` in [`live_view`](@ref) and its sources can be added
 runtime, from the window and from code, e.g. to build a setup from an empty `System()`. This page shows
 the example from code, describes the catalog and how to extend it with own components. The
 user-facing description of the window is in the section "Adding and removing components" of
-[`live_view`](@ref).
+[`live_view`](@ref). The example [Building a setup on an empty table](@ref) builds a beam expander
+this way, in the window and from code.
 
 All code blocks assume `using BeamletOptics, BeamletOpticsGUI, GLMakie`, need a `Makie` backend with
 a window (`GLMakie`) and are therefore not run when the docs are built.
@@ -27,7 +28,27 @@ remove_component!(gui, lens)
 ```
 
 All beams that are paired with the target system are traced through the new component. With several
-systems, the keyword `system` of [`add_component!`](@ref) selects the target.
+systems, the keyword `system` of [`add_component!`](@ref) selects the target. `system = :none` adds
+the component without a system: it is shown, moved and exported, but not traced.
+
+An object belongs to any number of systems. For a component that the view shows already,
+`add_component!` with another `system` makes it a member of that system as well, and
+`remove_component!` with a `system` takes it out of that system only; without one it removes the
+component from the view and from all its systems. [`add_system!`](@ref) and
+[`remove_system!`](@ref) add and remove systems. The example is a transmitter and a receiver that
+share a mirror:
+
+```julia
+gui = live_view(tx => beam_tx)
+rx = add_system!(gui; label = "Receiver")
+add_component!(gui, mirror; system = rx)    # the mirror of tx, now in both systems
+add_component!(gui, beam_rx; system = rx)   # a source of the receiver
+
+remove_component!(gui, mirror; system = tx) # the mirror stays in rx
+```
+
+The mirror is one object: it has one pose, one card and one set of plots, and moving it traces both
+systems. See [Several systems](@ref) for the window.
 
 Sources are added and removed with the same two functions. A view may start without one, as an
 empty table, and every source can be removed, also the last one:
@@ -42,8 +63,10 @@ add_component!(gui, lens)
 remove_component!(gui, laser)
 ```
 
-A source is traced through one system of the view (keyword `system`, also a `StaticSystem`) and
-gets a marker, with which it is selected and moved like the sources the view started with. It is
+A source is traced through at most one system of the view (keyword `system`, also a `StaticSystem`).
+`add_component!` with another `system` moves a source that the view shows already, and `system =
+:none`, or `remove_component!` with a `system`, leaves it without a system: it keeps its marker, but
+is neither traced nor drawn. A source gets a marker, with which it is selected and moved like the sources the view started with. It is
 drawn in the color of its wavelength: violet to red between 380 nm and 780 nm, a dark violet for
 ultraviolet and a dark red for infrared light, like the sources that the view started with. The
 keyword `beam_kwargs` takes the keywords of its rendering, e.g. `(; render_every = 10)` or another
@@ -86,11 +109,12 @@ form take its numbers; the other arguments of the constructor keep their default
 of glasses instead of a number: N-BK7, fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2,
 N-BAF10 and N-LAK22 with their dispersion (see [`catalog_glasses`](@ref)), and "constant" with a box
 for a constant refractive index. The line "into" at the top names the system that gets the
-component or source: the system of the selected or inspected object, else the first one. In a view
-with several systems it is a menu, which chooses another system; the choice holds until another
-object is selected, which sets the system again. A source can be traced through any system, a
-component is added to a `System` only, hence the menu lists the systems that can get the chosen
-entry. "Place" attaches the component
+component or source: the system of the selected or inspected object, else the first one. It is a
+menu, which chooses another system; the choice holds until another object is selected, which sets
+the system again. A source can be traced through any system, a component is added to a `System`
+only, hence the menu lists the systems that can get the chosen entry. Its last two options are "no
+system", which places the entry without a system, and "New system…", which adds a system that gets
+the entry. "Place" attaches the component
 to the mouse, which moves it in the plane of the table (perpendicular to the rotation axis) through
 the first source of its system: beside the beams it lies at the height of the beam, also in an
 oblique view; seen from the front or the side, it moves in the plane of the view at the depth of
@@ -111,7 +135,8 @@ cone [°], and the number of rings or rays. If the markers of the sources are hi
 source shows them.
 
 The button "remove" at the end of the page "Pose" of the card of a component or a source and the
-key `Delete` remove it again. The added and removed
+key `Delete` remove it again, from the view and from all its systems; a component without a system,
+e.g. an extra, can be removed the same way. The added and removed
 components are part of the code of [`export_changes`](@ref), which writes a glass as its
 `SellmeierEquation` and a constant refractive index as `λ -> n`, such that the code runs without
 BeamletOpticsGUI. An added source is its constructor at the origin along +y, the `rotate3d!` and
@@ -198,13 +223,15 @@ object in the pose in which it is added is not checked.
 
 Limits of this version:
 
-- A `StaticSystem` can not be changed: a view without a `System` only offers the sources of the
-  catalog. Objects inside a group can not be added or removed, remove the group instead.
+- The objects of a `StaticSystem` can not be changed; a source can be traced through it. A view
+  without a `System` offers the components of the catalog as well, into "no system" or into a new
+  system. Objects inside a group can not be added or removed, remove the group instead.
 - Only components and sources from the catalog can be changed on the page "Edit" and copied.
   [`export_script`](@ref) writes the constructors of those and of the objects added with `code`;
   an object that the view started with is a comment.
-- The script does not contain how the sources are drawn, the extras, the clip planes and the other
-  keywords of `live_view`.
+- The script does not contain how the sources are drawn, the objects of the `extras` keyword, the
+  clip planes and the other keywords of `live_view`. A component or source without a system is
+  added after the call of `live_view` by `add_component!(gui, x; system = :none)`.
 
 ## Own catalog entries
 
@@ -243,6 +270,8 @@ gui = live_view(System() => beam; catalog = entries)
 ```@docs; canonical=false
 add_component!
 remove_component!
+add_system!
+remove_system!
 CatalogEntry
 CatalogParam
 CatalogGlass

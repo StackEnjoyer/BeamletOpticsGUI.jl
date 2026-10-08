@@ -36,6 +36,7 @@ makedocs(;
         "Cards and widgets" => "widgets.md",
         "Examples" => Any[
             "Interactive Michelson" => joinpath("examples", "live_michelson.md"),
+            "Empty table" => joinpath("examples", "live_empty_table.md"),
         ],
         "API" => "api.md",
     ],

@@ -49,7 +49,8 @@ The bar and the content of the pages are collapsible parts (`_LayoutPart`s) in t
 The rows of the parts that are not shown have neither a height nor a gap (`gap` between the shown
 ones), see `_set_rowgaps!`. `header` and `parent` hold the layouts of the head and of the card: the
 actions are placed in the rows `actions_rows` of column 3 of the `header`. The fields `widgets` to
-`pose` are those of `_ComponentCard`.
+`pose` are those of `_ComponentCard`. `name` is the line of its title, with the pencil and the
+textbox that rename its object, see `_TitleEdit`.
 """
 mutable struct _DockedCard <: _AbstractCard
     const header::GridLayout
@@ -90,6 +91,7 @@ mutable struct _DockedCard <: _AbstractCard
     view_obj::Any
     shown_view::Any
     view_listeners::Vector{Any}
+    const name::_TitleEdit
 end
 
 # Positions of the actions in the header and of the rows in their part of the card
@@ -109,7 +111,7 @@ function _docked_part(parent::GridLayout, row::Int; kwargs...)
     return _LayoutPart(parent, (row, 1), s -> rowsize!(parent, row, s), Auto(), box, grid, true)
 end
 
-function _DockedCard(header::GridLayout, parent::GridLayout, theme::NamedTuple;
+function _DockedCard(header::GridLayout, parent::GridLayout, theme::NamedTuple, name::_TitleEdit;
         actions_rows::UnitRange{Int} = 1:2, first_row::Int = 2, gap::Real = 4, selection::Bool = true)
     t = theme
     row = Ref(first_row - 1)
@@ -126,7 +128,7 @@ function _DockedCard(header::GridLayout, parent::GridLayout, theme::NamedTuple;
         _docked_actions(header, actions_rows), _docked_rows_layout(rows_part),
         Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing, false, nothing, false, nothing,
         false, nothing, :pose, (), Dict{Any, _Segmented}(), nothing, bar_part, rows_part, step_part,
-        view_part, properties_part, step, list, nothing, true, nothing, nothing, Any[])
+        view_part, properties_part, step, list, nothing, true, nothing, nothing, Any[], name)
 end
 
 function _new_parts!(c::_DockedCard)
@@ -141,7 +143,7 @@ _card_object(gui::LiveView, c::_DockedCard) = c.pinned ? c.obj : _shown_object(g
 # The properties of a docked card are on its page "Properties", see `_show_page!`
 _refresh_selection_part!(::LiveView, ::_DockedCard, _) = nothing
 _refresh_selection_part!(::LiveView, ::_DockedCard, ::Nothing) = nothing
-_card_boxes(c::_DockedCard) = c.textboxes
+_card_boxes(c::_DockedCard) = (c.name.box, c.textboxes...)
 # A collapsed card shows only its actions
 _declarations(gui::LiveView, c::_DockedCard, @nospecialize(obj)) =
     (_head_actions(obj), c.collapsed ? () : _page_rows(gui, obj, c.page))
@@ -151,6 +153,10 @@ _card_style(c::_DockedCard, ::Type{Label}) = (; color = c.theme.text, fontsize =
 _card_style(::_DockedCard, ::Type{Textbox}) = (; fontsize = 12, textpadding = (5, 5, 4, 4))
 _card_style(::_DockedCard, ::Type{Button}) = (; fontsize = 12, padding = (7, 7, 4, 4))
 _card_style(::_DockedCard, ::Type) = (;)
+# The icon buttons of a declaration, e.g. the eye in the head: the sidebar is at the edge of the
+# window, hence their tooltips are left of them
+_card_style(c::_DockedCard, ::Type{<:Union{_IconButton, _IconToggle}}) =
+    (; _card_icons(c.theme)..., tooltip_placement = :left)
 _card_value(c::_DockedCard, a::_AxisColor) = c.theme.gizmo[a.k]
 _row_attributes(::_DockedCard) = (; default_colgap = 6, tellwidth = false, halign = :left)
 
@@ -211,7 +217,7 @@ function _show_page!(gui::AppView, c::_DockedCard, @nospecialize(obj))
     open = !isnothing(obj) && !c.collapsed
     _show_bar!(gui, c, pages, open)
     _set_shown!(c.rows_part, open && _shows_rows(c.page) && !isempty(c.rows.content))
-    _show_step!(c, c.step_part, isnothing(obj) || c.page === :pose)
+    _show_step!(c, c.step_part, isnothing(obj) || (c.page === :pose && _has_step(obj)))
     _show_view!(gui, c, obj, open && c.page === :results)
     _show_list!(gui, c, obj, isnothing(obj) ? !c.pinned : (open && c.page === :properties))
     _set_card_gaps!(gui, c)
@@ -321,6 +327,36 @@ function _build_view!(gui::AppView, c::_DockedCard, w::Real)
         on_expanded = expanded -> _set_view_expanded!(gui, c, expanded))
     append!(gui.controls.listeners, c.view_listeners)
     return view
+end
+
+"""
+    _resize_docked_views!(gui::AppView)
+
+The detector views of the docked cards of the `gui` take the width of the inspector, e.g. while the
+right sidebar is resized: those that are shown, the others when their page is shown, see
+`_show_view!`. Their kind, their options and the limits that the mouse set are kept.
+"""
+function _resize_docked_views!(gui::AppView)
+    w = _docked_width(gui)
+    for c in _docked_cards(gui)
+        (c.view_part.shown && !isnothing(c.view)) && _resize_view!(c.view, w, w)
+    end
+    return nothing
+end
+
+"""
+    _on_inspector_resized!(gui::AppView)
+
+Fits the inspector of the `gui` to the width of the right sidebar after it was resized: the
+detector views (see `_resize_docked_views!`) and the texts of the header and of the heads of the
+pinned cards, which are shortened to their room. Typed inputs are kept.
+"""
+function _on_inspector_resized!(gui::AppView)
+    gui.layout.right.shown || return nothing
+    _resize_docked_views!(gui)
+    _show_header!(gui, gui.layout.inspector.shown)
+    _refresh_inspector!(gui)
+    return nothing
 end
 
 """
@@ -451,7 +487,9 @@ function _build_inspector!(layout::AppLayout)
     header = GridLayout(g[1, 1]; default_colgap = 6, tellwidth = false)
     icon, icon_color = _card_icon!(header[1:2, 1]; size = 22, box = 24)
     _show_kind!(icon, icon_color, t, nothing)
-    name = _card_title!(header[1, 2], t; fontsize = 14, tellwidth = false)
+    # The name with the pencil of an object that is renamed here, see `_TitleEdit`
+    title = _card_name!(header[1, 2], t; fontsize = 14, tellwidth = false)
+    name = title.title
     name.text[] = "No selection"
     type = Label(header[2, 2], " "; halign = :left, color = t.muted, fontsize = 12,
         tellwidth = false)
@@ -462,7 +500,7 @@ function _build_inspector!(layout::AppLayout)
     rowgap!(header, 0)
     colsize!(header, 2, Auto(false))
     # The card of the selection with its pages below the header, see `_DockedCard`
-    card = _DockedCard(header, g, t; first_row = 2, gap = 10)
+    card = _DockedCard(header, g, t, title; first_row = 2, gap = 10)
     # Pinned cards, see `_dock_pinned!`; there are none yet
     pinned_grid = GridLayout(g[_PINNED_ROW, 1]; default_rowgap = 10, tellwidth = false)
     rowsize!(g, _PINNED_ROW, Fixed(0))
@@ -493,7 +531,8 @@ function _dock_pinned!(gui::AppView, @nospecialize(obj))
     line = Box(g[1, 1]; height = 1, color = t.border, strokewidth = 0)
     header = GridLayout(g[2, 1]; default_colgap = 6, tellwidth = false)
     icon, icon_color = _card_icon!(header[1, 1])
-    title = _card_title!(header[1, 2], t; tellwidth = false)
+    name = _card_name!(header[1, 2], t; tellwidth = false)
+    title = name.title
     float = _card_float!(header[1, 4], t; tooltip_placement = :left)
     pin = _card_pin!(header[1, 5], t; active = true, tooltip_placement = :left)
     collapse = _card_collapse!(header[1, 6], t; tooltip_placement = :left)
@@ -501,12 +540,13 @@ function _dock_pinned!(gui::AppView, @nospecialize(obj))
     colgap!(header, 5, 2)
     colsize!(header, 2, Auto(false))
     # The page bar and the parts of the pages below the head, which a collapsed card does not show
-    c = _DockedCard(header, g, t; actions_rows = 1:1, first_row = 3, selection = false)
+    c = _DockedCard(header, g, t, name; actions_rows = 1:1, first_row = 3, selection = false)
     c.pinned, c.obj, c.page = true, obj, _default_page(obj)
     listeners = Any[
         on(_ -> _float!(gui, obj), float.clicks),
         on(v -> v || _unpin!(gui, obj), pin.active),
-        on(_ -> _toggle_collapsed!(gui, c), collapse.clicks)]
+        on(_ -> _toggle_collapsed!(gui, c), collapse.clicks),
+        _connect_rename!(gui, c)...]
     c.head = (; icon, icon_color, title, float, pin, collapse, line, listeners,
         widths = Dict{String, Float32}())
     _show_kind!(icon, icon_color, t, obj)
@@ -525,6 +565,7 @@ function _over_free(c::_DockedCard, p::Point2f)
     p in Rect2f(c.parent.layoutobservables.computedbbox[]) || return false
     buttons = (c.head.float, c.head.pin, c.head.collapse)
     any(b -> p in Rect2f(b.box.layoutobservables.computedbbox[]), buttons) && return false
+    _over_name_widget(c.name, p) && return false
     (_over_bar(c.bar, p) || _over_docked_view(c.view, p)) && return false
     return !_over_widget(c.blocks, p)
 end
@@ -536,12 +577,14 @@ _over_docked_view(view::_DetectorView, p::Point2f) = _over_view(view, p)
 """Removes the pinned card `c` of the app layout of the `gui` with its widgets and listeners."""
 function _remove_pinned!(gui::AppView, c::_DockedCard)
     insp = gui.layout.inspector
-    foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
+    foreach(tb -> tb.focused[] && Makie.defocus!(tb), _card_boxes(c))
     _clear_content!(c)
     foreach(off, c.head.listeners)
     _remove_view!(gui, c)
     # the line and the blocks of the head: icon, title, pin and chevron
     delete!(c.head.line)
+    # the line of the title, whose parts are not all in the layout, see `_TitleEdit`
+    foreach(delete!, (c.name.title, c.name.pencil, c.name.box))
     foreach(delete!, [gc.content for gc in copy(c.header.content) if gc.content isa Makie.Block])
     # the page bars and the parts of the pages, which are detached from the card while they are not
     # shown
@@ -596,8 +639,10 @@ function _refresh_pinned!(gui::AppView, c::_DockedCard; force::Bool = false)
     end
     _show_page!(gui, c, c.obj)
     title = c.head.title
+    renamable = _renamable(c.obj)
+    _show_pencil!(c.name, renamable)
     w = Makie.widths(gui.layout.inspector.grid.layoutobservables.computedbbox[])[1] -
-        _CARD_ICON - 3 * _CARD_TOOL - 22 - _actions_width(c)
+        _CARD_ICON - 3 * _CARD_TOOL - 22 - _actions_width(c) - (renamable ? _CARD_PENCIL + 2 : 0)
     _set_text!(title, _fit_text(c.head.widths, _tree_font(title.blockscene, title.font[]),
         _CARD_TITLE_FONTSIZE, _label(gui, c.obj), w))
     _refresh_card!(gui, c; force)
@@ -711,8 +756,9 @@ function _refresh_inspector!(gui::AppView; force::Bool = false)
         insp.fresh = false
         insp.shown = obj
         _dock_card!(gui, insp.card, obj)
-        _show_header!(gui, obj)
     end
+    # also the name and the line below it, which follow the object, e.g. a system that is renamed
+    _show_header!(gui, obj)
     _show_page!(gui, insp.card, obj)
     _refresh_card!(gui, insp.card; force)
     _show_pin!(gui)
@@ -729,13 +775,15 @@ Builds the widgets of the docked card `c` for its new object `obj`, see `_build_
 removes them without a selection; the card opens on the page `_default_page(obj)`, which
 `_show_page!` shows.
 """
-function _dock_card!(::AppView, c::_DockedCard, ::Nothing)
+function _dock_card!(gui::AppView, c::_DockedCard, ::Nothing)
+    _end_rename!(gui, c; refresh = false)
     _clear_content!(c)
     c.pose = nothing
     return nothing
 end
 function _dock_card!(gui::AppView, c::_DockedCard, @nospecialize(obj))
     # A focused box of the old object would take the keyboard, and its input the new object
+    _end_rename!(gui, c; refresh = false)
     foreach(tb -> tb.focused[] && Makie.defocus!(tb), c.textboxes)
     # blocks can only be added to a part that is attached to the figure
     _set_shown!(c.rows_part, true)
@@ -768,13 +816,19 @@ function _show_header!(gui::AppView, @nospecialize(obj))
     insp, t = gui.layout.inspector, gui.layout.theme
     _show_kind!(insp.icon, insp.icon_color, t, obj)
     name = isnothing(obj) ? "No selection" : _label(gui, obj)
-    type = isnothing(obj) ? "click an object to inspect it" : string(nameof(typeof(obj)))
+    # the line below the name: the subtitle of the object, e.g. of a system, else its type
+    type = isnothing(obj) ? "click an object to inspect it" :
+           something(_subtitle(gui, insp.card, obj), string(nameof(typeof(obj))))
+    # the pencil of an object that is renamed here, see `_TitleEdit`
+    renamable = !isnothing(obj) && _renamable(obj)
+    _show_pencil!(insp.card.name, renamable)
     # Labels do not ellipsize: the room for the texts is the column of the name, between the icon
     # and the actions of the card
     w = Makie.widths(insp.grid.layoutobservables.computedbbox[])[1] - 32 - 30 -
         _actions_width(insp.card)
     font(label) = _tree_font(label.blockscene, label.font[])
-    _set_text!(insp.name, _fit_text(insp.widths[1], font(insp.name), 14, name, w))
+    _set_text!(insp.name, _fit_text(insp.widths[1], font(insp.name), 14, name,
+        w - (renamable ? _CARD_PENCIL + 2 : 0)))
     _set_text!(insp.type, _fit_text(insp.widths[2], font(insp.type), 12, type, w))
     return nothing
 end
@@ -795,6 +849,7 @@ function _connect_inspector!(gui::AppView)
     ctrl = gui.controls
     listeners = ctrl.listeners
     _connect_selection_part!(gui, insp)
+    append!(listeners, _connect_rename!(gui, insp.card))
     push!(listeners, on(insp.pin.active) do v
         obj = _shown_object(gui)
         (isnothing(obj) || v == _is_pinned(gui, obj)) || _toggle_pin!(gui, obj)
@@ -830,6 +885,9 @@ end
 # cards, see `_typing`
 _layout_boxes(gui::AppView) = (gui.layout.inspector.step_box, _card_boxes(gui.layout.inspector.card)...,
     (tb for c in gui.layout.inspector.pinned for tb in _card_boxes(c))...)
+
+# The name and the line below it follow the editing of the name on a docked card
+_on_rename!(gui::AppView, ::_DockedCard) = _refresh_inspector!(gui)
 
 # The card of the selection is docked in the inspector, only pinned cards float in the 3D view
 _selection_card_shown(::AppView) = false

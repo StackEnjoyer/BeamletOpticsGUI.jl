@@ -28,12 +28,11 @@ mutable struct _Highlight
     hovered::Any
 end
 
-# The highlights of the live views while a group is browsed; `LiveView` has no field for it, the keys
-# are weak, such that a live view that is closed while browsing is freed
-const _HIGHLIGHTS = WeakKeyDict{LiveView, _Highlight}()
-
+# The highlight is a field of the `gui` (`gui.objects.highlight`) and not an entry of a global
+# registry: it holds plots, which lead back to the `gui` via their scene, and a `WeakKeyDict` never
+# frees a key that its value refers to, i.e. no closed window of a session
 """Returns the highlight of the `gui` (see `_Highlight`), `nothing` while no group is browsed."""
-_highlight(gui::LiveView) = get(_HIGHLIGHTS, gui, nothing)
+_highlight(gui::LiveView) = gui.objects.highlight::Union{Nothing, _Highlight}
 
 """
     _browse_highlight!(gui, group, parts)
@@ -62,7 +61,7 @@ function _browse_highlight!(gui::LiveView, group, parts::Vector)
         _end_highlight!(gui)
         hl = _Highlight(group, IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}(),
             Pair{Any, AbstractPlot}[], nothing)
-        _HIGHLIGHTS[gui] = hl
+        gui.objects.highlight = hl
     end
     for p in plots
         haskey(hl.base, p) && continue
@@ -151,13 +150,129 @@ without a highlight.
 function _end_highlight!(gui::LiveView)
     hl = _highlight(gui)
     isnothing(hl) && return nothing
-    delete!(_HIGHLIGHTS, gui)
+    gui.objects.highlight = nothing
     for (p, base) in hl.base
         _restore_plot!(p, base...)
     end
     for (_, box) in hl.boxes
         delete!(gui.ax, box)
     end
+    return nothing
+end
+
+#=
+Highlight of the members of a system: of the inspected system, and while its members are picked,
+see `_inspect!` and `_set_member_pick!`
+=#
+
+# Opacity of what is not a member of the inspected system, relative to its opacity before, and
+# while the members of a system are picked, where a click on the rest is what is asked for
+const _SYSTEM_OPACITY = 0.4
+const _PICK_OPACITY = 0.25
+
+"""
+    _SystemHighlight
+
+The highlight of the members of a system of a `LiveView`, see `_update_system_highlight!`: the
+`opacity` of the plots that are no members, relative to their opacity before, and these plots in
+`dimmed` with their attributes before (`alpha`, `transparency` and the image marker of a scatter,
+like `base` of `_Highlight`).
+"""
+mutable struct _SystemHighlight
+    opacity::Float64
+    dimmed::IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}
+end
+
+"""
+Returns the highlight of the members of a system of the `gui` (see `_SystemHighlight`), `nothing`
+without one. A field of the `gui` like `_highlight`.
+"""
+_system_highlight(gui::LiveView) = gui.objects.system_highlight::Union{Nothing, _SystemHighlight}
+
+"""
+    _system_dimmed(gui) -> IdDict
+
+The plots of the `gui` that are see-through because they are no members of the highlighted system,
+with their attributes before, see `_update_system_highlight!`; empty without such a system.
+"""
+function _system_dimmed(gui::LiveView)
+    hl = _system_highlight(gui)
+    return isnothing(hl) ? IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}() : hl.dimmed
+end
+
+"""
+    _highlighted_system(gui) -> Union{Nothing, Tuple}
+
+The system of the `gui` whose members are highlighted and the opacity of everything else: the
+system of the pick of members (see `_set_member_pick!`) with `_PICK_OPACITY`, else the inspected
+system (see `_inspect!`), e.g. the one whose row of the object tree was clicked, with
+`_SYSTEM_OPACITY`; also the objects without a system, which the row "No system" inspects. `nothing`
+without one and in the spectator mode, which shows the view as it is.
+"""
+function _highlighted_system(gui::LiveView)
+    pick = _member_pick(gui)
+    isnothing(pick) || return (pick.sys, _PICK_OPACITY)
+    sys = gui.objects.inspected
+    (sys isa BMO.AbstractSystem && !gui.controls.spectator[]) || return nothing
+    return (sys, _SYSTEM_OPACITY)
+end
+
+"""
+    _update_system_highlight!(gui)
+
+Shows the members of the highlighted system of the `gui` (see `_highlighted_system`) in its 3D view:
+its objects and the markers of its sources are shown as they are, and the plots of all other
+components and source markers see-through, at the opacity of the highlight relative to their own,
+like a browsed group (see `_browse_highlight!`); clip planes and beams are not changed. Without such
+a system, e.g. after a click on the empty space of the 3D view, which ends the inspection, all
+plots get their attributes back. Only the plots whose state changes are touched, hence it is called
+after every change of the selection and of the members, and every frame, e.g. for a component that
+is added meanwhile.
+"""
+function _update_system_highlight!(gui::LiveView)
+    target = _highlighted_system(gui)
+    hl = _system_highlight(gui)
+    isnothing(target) && isnothing(hl) && return nothing
+    # the plots of the components and source markers of the view, and those that are to be see-through
+    shown, wanted = Base.IdSet{AbstractPlot}(), Base.IdSet{AbstractPlot}()
+    members = Base.IdSet{Any}()
+    if !isnothing(target)
+        sys, opacity = target
+        foreach(obj -> foreach(leaf -> push!(members, leaf), _leaves(obj)), sys.objects)
+        foreach(src -> push!(members, src), _sources_of(gui, sys))
+        if isnothing(hl)
+            hl = gui.objects.system_highlight = _SystemHighlight(opacity,
+                IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}())
+        elseif hl.opacity != opacity
+            # e.g. a pick that starts or ends on the inspected system: dimmed again from the
+            # attributes before
+            for (p, base) in hl.dimmed
+                _restore_plot!(p, base...)
+            end
+            empty!(hl.dimmed)
+            hl.opacity = opacity
+        end
+    end
+    for oh in render_children(gui.controls.h)
+        x = rendered(oh)
+        _pick_candidate(x) || continue
+        for p in _pickable_plots(oh)
+            push!(shown, p)
+            (isnothing(target) || x in members) || push!(wanted, p)
+        end
+    end
+    for (p, base) in collect(hl.dimmed)
+        p in wanted && continue
+        # the plots of a component that was removed meanwhile are deleted, not restored
+        p in shown && _restore_plot!(p, base...)
+        delete!(hl.dimmed, p)
+    end
+    for p in wanted
+        haskey(hl.dimmed, p) && continue
+        hl.dimmed[p] = (_plot_alpha(p), Bool(p.transparency[]), _image_marker(p))
+        _dim_plot!(p, hl.opacity)
+    end
+    isnothing(target) && (gui.objects.system_highlight = nothing)
     return nothing
 end
 

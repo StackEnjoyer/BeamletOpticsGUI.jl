@@ -16,9 +16,10 @@ const _TREE_RIGHT = 10.0f0         # right padding of the labels (room for the s
 const _TREE_SCROLLBAR = 4.0f0      # width of the scroll bar
 const _TREE_SCROLL_ROWS = 3        # rows per step of the mouse wheel
 const _TREE_ACCENT = 3.0f0         # width of the accent stripe of the selected row
+const _TREE_BUTTON = 18.0f0        # width of a button ("+", "−") and of the counter of a row
 
 """
-    _TreeRow(key, label, depth, kind, expandable, expanded, visible)
+    _TreeRow(key, label, depth, kind, expandable, expanded, visible; count = 0, buttons = nothing)
 
 A row of an [`_ObjectTree`](@ref), plain data without any reference to the tree.
 
@@ -26,7 +27,8 @@ A row of an [`_ObjectTree`](@ref), plain data without any reference to the tree.
 
 - `key`: any value that identifies the row, e.g. the object it stands for. It is passed to the
   `clicked`, `eye_clicked` and `expand_clicked` observables of the tree and compared with
-  `isequal` by [`_set_selected!`](@ref)
+  `isequal` by [`_set_selected!`](@ref). Several rows may have the same key, e.g. an object that
+  is listed in several places; they are all highlighted while the key is selected
 - `label`: the displayed name, ellipsized if it does not fit
 - `depth`: the indentation level, `0` for top-level rows
 - `kind`: the type of the row, mapped to a marker and its color by the tree, e.g. `:lens`
@@ -34,6 +36,11 @@ A row of an [`_ObjectTree`](@ref), plain data without any reference to the tree.
 - `expanded`: the state of the expander
 - `visible`: the state of the eye, `nothing` shows no eye (e.g. for rows that cannot be hidden).
   Rows with `visible == false` are drawn muted.
+- `count`: a small number at the right edge of the row, e.g. in how many places the row is listed;
+  `0` shows none
+- `buttons`: `nothing`, or the state of the two small buttons "+" and "−" at the right edge of the
+  row: `:none`, or the button that is drawn in the accent color, `:add` ("+") or `:remove` ("−"),
+  e.g. while the members of a system are picked. The buttons take the place of the counter.
 """
 struct _TreeRow
     key::Any
@@ -43,7 +50,13 @@ struct _TreeRow
     expandable::Bool
     expanded::Bool
     visible::Union{Bool, Nothing}
+    count::Int
+    buttons::Union{Symbol, Nothing}
 end
+
+_TreeRow(key, label, depth, kind, expandable, expanded, visible; count::Integer = 0,
+    buttons::Union{Symbol, Nothing} = nothing) =
+    _TreeRow(key, label, depth, kind, expandable, expanded, visible, count, buttons)
 
 """
     _ObjectTree(parent; kwargs...)
@@ -59,7 +72,8 @@ object and setting the rows again. [`_set_selected!`](@ref) highlights a row.
 
 Each row shows, from left to right: the indentation by depth, an expander (if `expandable`), an
 eye (if `visible !== nothing`), the type marker of its `kind` and the label, which is ellipsized
-to the width of the tree. The mouse wheel scrolls the rows while the mouse is over the tree and the
+to the width of the tree, and at its right edge the buttons "+" and "−" (if `buttons !== nothing`)
+or its counter (if `count > 0`). The mouse wheel scrolls the rows while the mouse is over the tree and the
 rows do not fit; the scroll events are then consumed, so that nothing else scrolls or zooms. A thin
 scroll bar shows the position if the rows do not fit.
 
@@ -88,6 +102,8 @@ mouse move listeners.
 - `clicked`, `eye_clicked`, `expand_clicked`: `Observable{Any}`, set to the key of the row whose
   label (or type marker), eye or expander was clicked. A click fires on the release of the left
   mouse button over the same part of the same row as the press.
+- `button_clicked`: `Observable{Any}`, set to `(key, button)` of the row whose button "+"
+  (`button == :add`) or "−" (`:remove`) was clicked
 - `scene`: the child scene that holds the plots, its viewport is the layout cell
 - `box`: the invisible `Box` that holds the place of the tree in the layout
 - `rows`: the rows set by [`_set_rows!`](@ref)
@@ -101,10 +117,11 @@ mutable struct _ObjectTree
     const clicked::Observable{Any}
     const eye_clicked::Observable{Any}
     const expand_clicked::Observable{Any}
+    const button_clicked::Observable{Any}
     rows::Vector{_TreeRow}
     selected::Any
     offset::Float32
-    # Row and part (:label, :eye, :expander) of the last press of the left mouse button
+    # Row and part (:label, :eye, :expander, :add, :remove) of the last press of the left mouse button
     pressed::Union{Nothing, Tuple{Int, Symbol}}
     const plots::NamedTuple
     const listeners::Vector{Observables.ObserverFunction}
@@ -122,6 +139,8 @@ mutable struct _ObjectTree
     const icon_color::RGBAf
     const expander_color::RGBAf
     const guide_color::RGBAf
+    const selection_color::RGBAf
+    const accent_color::RGBAf
     # Widths of labels in pixels, see `_label_width`
     const label_widths::Dict{String, Float32}
 end
@@ -150,9 +169,12 @@ function _ObjectTree(parent::Makie.GridPosition;
     scene = Makie.Scene(topscene, viewport; camera = Makie.campixel!, clear = true,
         backgroundcolor = RGBAf(Makie.to_color(background)))
     common = (; inspectable = false, space = :pixel)
+    selection_color = RGBAf(Makie.to_color(selection_color))
+    accent_color = RGBAf(Makie.to_color(accent_color))
+    # A background and an accent stripe per selected row, see `_redraw!`
     rects = [Rect2f(0, 0, 0, 0), Rect2f(0, 0, 0, 0)]
     selection = poly!(scene, rects; common..., visible = false, strokewidth = 0,
-        color = [RGBAf(Makie.to_color(selection_color)), RGBAf(Makie.to_color(accent_color))])
+        color = [selection_color, accent_color])
     guide = linesegments!(scene, Point2f[]; common..., color = guide_color, linewidth = 1)
     expanders = scatter!(scene, Point2f[]; common..., marker = :rtriangle,
         markersize = expand_size, color = expander_color, strokewidth = 0)
@@ -162,16 +184,21 @@ function _ObjectTree(parent::Makie.GridPosition;
         color = RGBAf[], strokewidth = 0)
     labels = text!(scene, Point2f[]; common..., text = String[], color = RGBAf[], font,
         fontsize, align = (:left, :center), markerspace = :pixel)
+    # The buttons "+" and "−" and the counters at the right edge of the rows
+    buttons = text!(scene, Point2f[]; common..., text = String[], color = RGBAf[], font = :bold,
+        fontsize = fontsize + 3, align = (:center, :center), markerspace = :pixel)
+    counters = text!(scene, Point2f[]; common..., text = String[], color = RGBAf[], font,
+        fontsize = fontsize - 2, align = (:center, :center), markerspace = :pixel)
     scrollbar = lines!(scene, [Point2f(0), Point2f(0)]; common..., visible = false,
         color = scrollbar_color, linewidth = _TREE_SCROLLBAR, linecap = :round)
-    plots = (; selection, guide, expanders, eyes, markers, labels, scrollbar)
+    plots = (; selection, guide, expanders, eyes, markers, labels, buttons, counters, scrollbar)
     tree = _ObjectTree(box, scene, Observable{Any}(nothing), Observable{Any}(nothing),
-        Observable{Any}(nothing), _TreeRow[], nothing, 0.0f0, nothing, plots,
+        Observable{Any}(nothing), Observable{Any}(nothing), _TreeRow[], nothing, 0.0f0, nothing, plots,
         Observables.ObserverFunction[], marker, marker_color, eye_marker, expand_marker,
         Float32(row_height), Float32(fontsize), _tree_font(scene, font), guides,
         RGBAf(Makie.to_color(text_color)), RGBAf(Makie.to_color(muted_color)),
         RGBAf(Makie.to_color(icon_color)), RGBAf(Makie.to_color(expander_color)),
-        RGBAf(Makie.to_color(guide_color)), Dict{String, Float32}())
+        RGBAf(Makie.to_color(guide_color)), selection_color, accent_color, Dict{String, Float32}())
     push!(tree.listeners, on(_ -> _redraw!(tree), viewport))
     ev = events(scene)
     # Before the camera and the kinematic controls of a 3D scene (priority 200)
@@ -196,7 +223,8 @@ function _ObjectTree(parent::Makie.GridPosition;
             i, part = hit
             key = tree.rows[i].key
             part === :eye ? (tree.eye_clicked[] = key) :
-            part === :expander ? (tree.expand_clicked[] = key) : (tree.clicked[] = key)
+            part === :expander ? (tree.expand_clicked[] = key) :
+            part === :label ? (tree.clicked[] = key) : (tree.button_clicked[] = (key, part))
             return Consume(true)
         end
         return Consume(false)
@@ -224,8 +252,8 @@ end
 """
     _set_selected!(tree::_ObjectTree, key)
 
-Highlights the row with the key `key` (compared with `isequal`) and scrolls it into view;
-`nothing` clears the selection. A key that is not among the rows of the tree (e.g. an object in a
+Highlights the rows with the key `key` (compared with `isequal`) and scrolls the first of them
+into view; `nothing` clears the selection. A key that is not among the rows of the tree (e.g. an object in a
 collapsed group) highlights no row, but is kept, such that the row is highlighted once it is
 shown by [`_set_rows!`](@ref).
 """
@@ -283,6 +311,31 @@ function _row_columns(::_ObjectTree, row::_TreeRow)
     return (; expander, eye, marker, label)
 end
 
+"""
+    _row_right(tree)
+
+Returns the right edge of the rows of `tree` in pixels, i.e. of their labels, buttons and counters,
+which leaves room for the scroll bar if the rows do not fit.
+"""
+_row_right(tree::_ObjectTree) =
+    _tree_size(tree)[1] - (_max_offset(tree) > 0 ? _TREE_RIGHT : _TREE_RIGHT / 2)
+
+"""
+    _button_columns(tree)
+
+Returns the horizontal centers of the buttons "+" (`add`) and "−" (`remove`) of a row with buttons
+and of the `counter` of a row with one, in pixels, see `_TreeRow`.
+"""
+function _button_columns(tree::_ObjectTree)
+    right = _row_right(tree)
+    return (; add = right - 1.5f0 * _TREE_BUTTON, remove = right - 0.5f0 * _TREE_BUTTON,
+        counter = right - 0.5f0 * _TREE_BUTTON)
+end
+
+# The width at the right edge of the `row` that its label leaves free
+_row_reserved(row::_TreeRow) =
+    !isnothing(row.buttons) ? 2 * _TREE_BUTTON + 2 : row.count > 0 ? _TREE_BUTTON : 0.0f0
+
 function _mouse_in_tree(tree::_ObjectTree)
     vp = tree.scene.viewport[]
     return Point2f(events(tree.scene).mouseposition[]) in Rect2f(vp)
@@ -291,8 +344,9 @@ end
 """
     _hit(tree)
 
-Returns the row index and the part (`:expander`, `:eye` or `:label`) under the mouse, `nothing`
-if the mouse is not over a row. A row without an expander or an eye has only a label part.
+Returns the row index and the part (`:expander`, `:eye`, `:add`, `:remove` or `:label`) under the
+mouse, `nothing` if the mouse is not over a row. A row without an expander, an eye or buttons has
+only a label part.
 """
 function _hit(tree::_ObjectTree)
     vp = tree.scene.viewport[]
@@ -306,6 +360,10 @@ function _hit(tree::_ObjectTree)
         return (i, :expander)
     elseif !isnothing(row.visible) && abs(p[1] - c.eye) <= _TREE_EYE / 2
         return (i, :eye)
+    elseif !isnothing(row.buttons)
+        b = _button_columns(tree)
+        abs(p[1] - b.add) <= _TREE_BUTTON / 2 && return (i, :add)
+        abs(p[1] - b.remove) <= _TREE_BUTTON / 2 && return (i, :remove)
     end
     return (i, :label)
 end
@@ -389,17 +447,21 @@ function _redraw!(tree::_ObjectTree)
     marker_color = Vector{RGBAf}(undef, n)
     expander_pos, expander_shape = Point2f[], Any[]
     eye_pos, eye_shape, eye_color = Point2f[], Any[], RGBAf[]
+    button_pos, button_text, button_color = Point2f[], String[], RGBAf[]
+    counter_pos, counter_text, counter_color = Point2f[], String[], RGBAf[]
     guides = Point2f[]
     scrollbar = _max_offset(tree) > 0
-    label_right = w - (scrollbar ? _TREE_RIGHT : _TREE_RIGHT / 2)
-    selected = nothing
+    label_right = _row_right(tree)
+    columns = _button_columns(tree)
+    # A background and an accent stripe per row of the selected key
+    selection, selection_color = Rect2f[], RGBAf[]
     for (k, i) in enumerate(in_view)
         row = rows[i]
         y = _row_y(tree, i)
         c = _row_columns(tree, row)
         muted = row.visible === false
         label_pos[k] = Point2f(c.label, y)
-        label_text[k] = _fit_label(tree, row.label, label_right - c.label)
+        label_text[k] = _fit_label(tree, row.label, label_right - _row_reserved(row) - c.label)
         label_color[k] = muted ? tree.muted_color : tree.text_color
         marker_pos[k] = Point2f(c.marker, y)
         marker_shape[k] = tree.marker(row.kind)
@@ -420,7 +482,23 @@ function _redraw!(tree::_ObjectTree)
                 push!(guides, Point2f(x, y + rh / 2), Point2f(x, y - rh / 2))
             end
         end
-        !isnothing(tree.selected) && isequal(row.key, tree.selected) && (selected = y)
+        if !isnothing(row.buttons)
+            for (name, glyph) in ((:add, "+"), (:remove, "−"))
+                push!(button_pos, Point2f(getfield(columns, name), y))
+                push!(button_text, glyph)
+                push!(button_color, row.buttons === name ? tree.accent_color :
+                                    muted ? tree.muted_color : tree.icon_color)
+            end
+        elseif row.count > 0
+            push!(counter_pos, Point2f(columns.counter, y))
+            push!(counter_text, string(row.count))
+            push!(counter_color, muted ? tree.muted_color : tree.icon_color)
+        end
+        if !isnothing(tree.selected) && isequal(row.key, tree.selected)
+            bottom = y - rh / 2
+            push!(selection, Rect2f(0, bottom, w, rh), Rect2f(0, bottom, _TREE_ACCENT, rh))
+            push!(selection_color, tree.selection_color, tree.accent_color)
+        end
     end
     _tree_placeholder!(expander_pos, expander_shape)
     _tree_placeholder!(eye_pos, eye_shape, eye_color => tree.icon_color)
@@ -429,13 +507,13 @@ function _redraw!(tree::_ObjectTree)
     Makie.update!(p.markers; arg1 = marker_pos, marker = _tree_markers(marker_shape), color = marker_color)
     Makie.update!(p.expanders; arg1 = expander_pos, marker = _tree_markers(expander_shape))
     Makie.update!(p.eyes; arg1 = eye_pos, marker = _tree_markers(eye_shape), color = eye_color)
+    Makie.update!(p.buttons; arg1 = button_pos, text = button_text, color = button_color)
+    Makie.update!(p.counters; arg1 = counter_pos, text = counter_text, color = counter_color)
     Makie.update!(p.guide; arg1 = guides)
-    if isnothing(selected)
+    if isempty(selection)
         p.selection.visible = false
     else
-        bottom = selected - rh / 2
-        Makie.update!(p.selection; visible = true,
-            arg1 = [Rect2f(0, bottom, w, rh), Rect2f(0, bottom, _TREE_ACCENT, rh)])
+        Makie.update!(p.selection; visible = true, arg1 = selection, color = selection_color)
     end
     if scrollbar
         content = _content_height(tree)

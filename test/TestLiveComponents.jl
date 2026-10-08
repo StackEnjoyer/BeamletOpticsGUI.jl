@@ -225,14 +225,19 @@ const GUI = BeamletOpticsGUI
         sys = System([m])
         gui = _live_view(sys => _beam(); layout, extras = [housing])
         @test_throws ArgumentError add_component!(gui, housing)
-        @test_throws ArgumentError remove_component!(gui, housing)
-        @test occursin("extra", _message(() -> remove_component!(gui, housing)))
-        @test _rendered(gui, housing) && sys.objects == [m]
-        # "remove" on the card of the extra only names the reason
+        @test GUI._is_extra(gui, housing) && sys.objects == [m]
+        # an extra is an object without a system: it becomes a member of one and is taken out again
+        add_component!(gui, housing; system = sys, select = false)
+        @test sys.objects == [m, housing] && !GUI._is_extra(gui, housing)
+        @test count(oh -> rendered(oh) === housing, render_children(gui.controls.h)) == 1
+        remove_component!(gui, housing; system = sys)
+        @test sys.objects == [m] && GUI._is_extra(gui, housing) && _rendered(gui, housing)
+        @test occursin("no system", gui.status.text[])
+        # "remove" on its card removes it from the view, like any component
         remove = only(w for row in GUI._card_rows(housing) for w in row.cells
                       if w isa CardWidget && w.name === :remove)
         remove.on(gui, housing, nothing)
-        @test _rendered(gui, housing) && occursin("extra", gui.status.text[])
+        @test !_rendered(gui, housing) && sys.objects == [m] && !GUI._is_extra(gui, housing)
         close(gui)
     end
 
@@ -253,9 +258,20 @@ const GUI = BeamletOpticsGUI
         c = _mirror(0.25)
         add_component!(gui, c; system = sys1)
         @test _in(c, sys1.objects)
+        # an object of the view becomes a member of a second system and stays one object
+        add_component!(gui, c; system = sys2)
+        @test _in(c, sys1.objects) && _in(c, sys2.objects)
+        @test count(oh -> rendered(oh) === c, render_children(gui.controls.h)) == 1
         @test_throws ArgumentError add_component!(gui, c; system = sys2)
+        @test_throws ArgumentError add_component!(gui, c)
+        remove_component!(gui, c; system = sys1)
+        @test !_in(c, sys1.objects) && _in(c, sys2.objects) && _rendered(gui, c)
         remove_component!(gui, b)
-        @test sys2.objects == [m2] && length(sys1.objects) == 3
+        @test sys2.objects == [m2, c] && length(sys1.objects) == 2
+        # removed from the view: out of all its systems
+        add_component!(gui, c; system = sys1)
+        remove_component!(gui, c)
+        @test !_in(c, sys1.objects) && !_in(c, sys2.objects) && !_rendered(gui, c)
         close(gui)
     end
 

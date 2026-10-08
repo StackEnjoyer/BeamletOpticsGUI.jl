@@ -23,8 +23,67 @@ function _source_system(gui::LiveView, sys::BMO.AbstractSystem)
         throw(ArgumentError("the system is not shown in the live view"))
     return sys
 end
+# `:none`: the source belongs to no system, i.e. it shows its marker, but is not traced
+_source_system(::LiveView, s::Symbol) = s === :none ? nothing :
+                                       throw(ArgumentError("`system` must be a system of the live view or `:none`, got :$s"))
 _source_system(::LiveView, x) =
     throw(ArgumentError("`system` must be a system of the live view, got a $(typeof(x))"))
+
+"""
+The system that the source `src` of the `gui` is traced through, or `nothing` for a source without
+a system, which is paired with the system of the extras, see `_set_source_system!`.
+"""
+function _system_of_source(gui::LiveView, src)
+    i = findfirst(p -> p.second === src, gui.pairs)
+    (isnothing(i) || src in gui.beams.unassigned) && return nothing
+    return gui.pairs[i].first
+end
+
+"""The sources of the `gui` that are traced through its system `sys`, in the order of the pairs."""
+_sources_of(gui::LiveView, sys::BMO.AbstractSystem) =
+    Any[p.second for p in gui.pairs if p.first === sys && !(p.second in gui.beams.unassigned)]
+
+"""
+    _set_source_system!(gui, src, sys)
+
+The source `src` of the `gui` is traced through its system `sys` from now on, or, for `nothing`,
+through none: a source without a system keeps its marker, but it is neither traced nor drawn, like
+one that is switched off. Both systems are traced again. Recorded in the undo history. Nothing
+happens if the system does not change.
+"""
+function _set_source_system!(gui::LiveView, src::_Source, sys::Union{Nothing, BMO.AbstractSystem})
+    i = findfirst(p -> p.second === src, gui.pairs)
+    isnothing(i) && throw(ArgumentError("the $(nameof(typeof(src))) is not a source of the live view"))
+    (isnothing(sys) || !isnothing(_system_handle(gui, sys))) ||
+        throw(ArgumentError("the system is not shown in the live view"))
+    old = _system_of_source(gui, src)
+    old === sys && return nothing
+    # Stops a solve in the background, which traces the beams of the pairs
+    _change!(gui.controls, src) do
+        gui.pairs[i] = (isnothing(sys) ? rendered(gui.extras) : sys) => src
+        if isnothing(sys)
+            push!(gui.beams.unassigned, src)
+            _empty_beam!(src)
+            update_render!(gui.beam_handles[i])
+        else
+            delete!(gui.beams.unassigned, src)
+        end
+    end
+    _show_beam!(gui, src, _beam_on(gui, src))
+    _sync_structure!(gui)
+    _refresh_menu_options!(gui, gui.widgets.menu)
+    _on_components_changed!(gui)
+    _update_info!(gui)
+    gui.status.text[] = isnothing(sys) ? "$(_label(gui, src)) has no system, it is not traced" :
+                        "$(_label(gui, src)) is traced through $(_label(gui, sys))"
+    _on_systems_change!(gui, BMO.AbstractSystem[s for s in (old, sys) if !isnothing(s)])
+    if gui.components.recording
+        back() = _unrecorded(() -> _set_source_system!(gui, src, old), gui)
+        again() = _unrecorded(() -> _set_source_system!(gui, src, sys), gui)
+        _push_action!(gui.controls, src, back, again)
+    end
+    return nothing
+end
 
 """
     _wavelength_color(λ) -> RGBf
@@ -80,9 +139,15 @@ end
 function add_component!(gui::LiveView, src::_Source; system = nothing, select::Bool = true,
         label = nothing, beam_kwargs = (;), code = nothing, origin = _code_origin(src, code))
     ctrl = gui.controls
+    select && _end_member_pick!(gui)
     sys = _source_system(gui, system)
-    any(p -> p.second === src, gui.pairs) && throw(ArgumentError(
-        "the $(nameof(typeof(src))) is already a source of the live view"))
+    if any(p -> p.second === src, gui.pairs)
+        # A source of the view is traced through another system, or through none
+        isnothing(system) && throw(ArgumentError(
+            "the $(nameof(typeof(src))) is already a source of the live view"))
+        _set_source_system!(gui, src, sys)
+        return src
+    end
     kw = _attach!(gui, src, sys; label, origin, beam_kwargs)
     # The linked views show it before the solve, see `_sync_structure!`
     _sync_structure!(gui)
@@ -111,8 +176,8 @@ records of it. Also for a view that follows a linked one, in which `src` was add
 `_follow_structure!`. Returns the kwargs of the source, see `_source_kwargs`, which throws for
 kwargs that the source does not take, before the view changes.
 """
-function _attach!(gui::LiveView, src::_Source, sys::BMO.AbstractSystem; label = nothing,
-        origin = nothing, beam_kwargs = (;))
+function _attach!(gui::LiveView, src::_Source, sys::Union{Nothing, BMO.AbstractSystem};
+        label = nothing, origin = nothing, beam_kwargs = (;))
     ctrl = gui.controls
     comp = gui.components
     kw = _source_kwargs(src, beam_kwargs)
@@ -124,8 +189,13 @@ function _attach!(gui::LiveView, src::_Source, sys::BMO.AbstractSystem; label = 
         h = _live_render_beam!(gui.ax, gui.layout, src, beam_kw)
         gui.beams.kwargs[src] = beam_kw
         gui.beams.overlay_kwargs[src] = Base.structdiff(kw, NamedTuple{(:render_every,)})
-        push!(gui.pairs, sys => src)
+        # A source without a system is paired with the system of the extras and never traced
+        push!(gui.pairs, (isnothing(sys) ? rendered(gui.extras) : sys) => src)
         push!(gui.beam_handles, h)
+        if isnothing(sys)
+            push!(gui.beams.unassigned, src)
+            foreach(plot -> plot.visible[] = false, _beam_plots(h))
+        end
     end
     # The marker selects and moves the source, and removes it again: also in a view without
     # `movable_sources`
@@ -173,7 +243,7 @@ function _snapshot(gui::LiveView, src::_Source)
             Pair{Any, String}[]
     init_poses = haskey(ctrl.init_poses, src) ? Pair{Any, Any}[src => ctrl.init_poses[src]] :
                  Pair{Any, Any}[]
-    return (; systems = Any[p.first for p in gui.pairs if p.second === src],
+    return (; systems = Any[p.first for p in gui.pairs if p.second === src && !(src in beams.unassigned)],
         label = get(gui.labels, src, nothing), origin = get(gui.components.origin, src, nothing),
         names, init_poses, kwargs, on = _beam_on(gui, src),
         # a source that the view started with
@@ -181,35 +251,23 @@ function _snapshot(gui::LiveView, src::_Source)
 end
 
 function _restore!(gui::LiveView, src::_Source, snap)
-    comp = gui.components
     _unrecorded(gui) do
-        add_component!(gui, src; system = first(snap.systems), label = snap.label,
-            origin = snap.origin, beam_kwargs = snap.kwargs)
-        # A source of the start that was traced through several systems
-        for sys in snap.systems[2:end]
-            _change!(gui.controls, src) do
-                push!(gui.pairs, sys => src)
-                push!(gui.beam_handles, _live_render_beam!(gui.ax, gui.layout, src, gui.beams.kwargs[src]))
-            end
-        end
-    end
-    if snap.start && length(snap.systems) > 1
-        # no change for `export_changes`, like a source of the start with a single system
-        filter!(o -> o !== src, comp.removed)
-        filter!(o -> o !== src, comp.added)
-        delete!(comp.source_systems, src)
-        delete!(comp.system, src)
-        delete!(comp.origin, src)
-        gui.trace.stale && _dim_beams!(gui)
-        _apply_clip_planes!(gui)
-        _on_change!(gui, src)
+        add_component!(gui, src; system = isempty(snap.systems) ? :none : first(snap.systems),
+            label = snap.label, origin = snap.origin, beam_kwargs = snap.kwargs)
     end
     snap.on || _set_beam_on!(gui, src, false)
     _restore_names!(gui, snap)
     return nothing
 end
 
-function remove_component!(gui::LiveView, src::_Source)
+function remove_component!(gui::LiveView, src::_Source; system = nothing)
+    if !isnothing(system)
+        # Only out of its system, the source stays in the view
+        _system_of_source(gui, src) === system ||
+            throw(ArgumentError("$(_label(gui, src)) is not traced through this system"))
+        _set_source_system!(gui, src, nothing)
+        return src
+    end
     reason = _removal_reason(gui, src)
     isnothing(reason) || throw(ArgumentError(reason))
     name = _label(gui, src)
@@ -237,7 +295,8 @@ function _detach!(gui::LiveView, src::_Source)
     comp = gui.components
     # A source can be traced through several systems
     idx = findall(p -> p.second === src, gui.pairs)
-    systems = Any[gui.pairs[i].first for i in idx]
+    # none for a source without a system
+    systems = Any[gui.pairs[i].first for i in idx if !(src in gui.beams.unassigned)]
     # Stops a solve in the background, which traces the beams of the pairs
     _change!(ctrl, src) do
         for store in _overlay_stores(gui)
@@ -253,6 +312,7 @@ function _detach!(gui::LiveView, src::_Source)
         _empty_beam!(src)
     end
     delete!(gui.beams.off, src)
+    delete!(gui.beams.unassigned, src)
     delete!(gui.beams.kwargs, src)
     delete!(gui.beams.overlay_kwargs, src)
     delete!(gui.beams.pol_view, src)
@@ -275,5 +335,43 @@ function _detach!(gui::LiveView, src::_Source)
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
     _update_info!(gui)
+    return nothing
+end
+
+#=
+The name of a component or a source
+=#
+
+# Components, groups and sources are renamed in the title of their cards, like a system
+_renamable(::BMO.AbstractObject) = true
+_renamable(::BMO.AbstractObjectGroup) = true
+_renamable(::_Source) = true
+_rename!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), name) = _rename_object!(gui, obj, name)
+_rename!(gui::LiveView, obj::BMO.AbstractObjectGroup, name) = _rename_object!(gui, obj, name)
+_rename!(gui::LiveView, src::_Source, name) = _rename_object!(gui, src, name)
+
+"""
+    _rename_object!(gui, obj, name)
+
+Names the component, the group or the source `obj` of the `gui` `name`, the input of the textbox of
+the title of its card: in the component menu, the object tree, on the cards, in the status line and
+in the exported code, like an entry of the `labels` kwarg of `live_view`. An empty name only shows
+a message in the status line. The name is not part of the undo history.
+"""
+function _rename_object!(gui::LiveView, @nospecialize(obj), name)
+    name = strip(something(name, ""))
+    old = _label(gui, obj)
+    if isempty(name)
+        gui.status.text[] = "enter a name for $old"
+    elseif name != old
+        gui.labels[obj] = gui.objects.names[obj] = String(name)
+        _refresh_menu_options!(gui, gui.widgets.menu)
+        _on_components_changed!(gui)
+        # The linked views share the names, see `_ViewLinks`
+        _refresh_links!(gui)
+        gui.status.text[] = "$old renamed to $name"
+    end
+    _update_inspector!(gui; force = true)
+    _update_cards!(gui)
     return nothing
 end

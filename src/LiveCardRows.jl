@@ -60,23 +60,25 @@ card_rows(@nospecialize(src::Union{BMO.CollimatedSource, BMO.PointSource})) = (p
 # Gaussian beamlets: wavelength, waist and Rayleigh range
 card_rows(@nospecialize(g::BMO.GaussianBeamlet)) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
     beam_card_rows(g)...)
-# Systems (inspected, see `_inspect!`): no pose, the number of objects, the rays of their sources and
-# the duration of the last solve
-card_rows(::BMO.AbstractSystem) = (_text_row("objects", :objects, _objects_text; width = 48),
-    _text_row("rays", :rays, _rays_text; width = 48), _text_row("solve", :solve, _solve_text; width = 48))
+# Systems: see `LiveSystemCard.jl`
 
-card_actions(@nospecialize(obj)) = (CardWidget(Button; name = :hide, label = "hide",
-    value = (gui, o) -> _all_hidden(gui, o) ? "show" : "hide", on = (gui, o, _) -> _toggle_hidden!(gui, o)),)
+# The eye in the head of a card, which hides its object and shows it again: an icon toggle that is
+# active, i.e. shows the crossed-out eye, while the object is hidden
+card_actions(@nospecialize(obj)) = (_hide_action(),)
+_hide_action() = CardWidget(_IconToggle; name = :hide, icon = :eye_off, icon_off = :eye,
+    tooltip = "Hide", tooltip_active = "Show", active_color = _TRANSPARENT,
+    active_icon_color = _ThemeColor(:muted),
+    value = (gui, o) -> _shown_hidden(gui, o), on = (gui, o, _) -> _toggle_hidden!(gui, o))
+
+# Whether the eye of the card of `obj` is crossed out: all its rendered objects are hidden (see
+# `_all_hidden`); an object without any, e.g. an empty system, is not shown as hidden
+_shown_hidden(gui::LiveView, @nospecialize(obj)) = !isempty(_leaves(obj)) && _all_hidden(gui, obj)
 
 # The button "remove" of a component or a source, in the last row of its card (see `_card_rows`):
 # removes a top-level object of a `System` or a source from the view (see `remove_component!`) and
 # names the reason in the status line for any other object, e.g. an object of a group or an extra
 _remove_button() = CardWidget(Button; name = :remove, label = "remove",
     on = (gui, o, _) -> _remove_selected!(gui, o))
-
-# Systems: also "new window", which opens the system in a window of its own, see `open_system`
-card_actions(sys::BMO.AbstractSystem) = (invoke(card_actions, Tuple{Any}, sys)...,
-    CardWidget(Button; name = :open, label = "new window", on = (gui, s, _) -> _open_system!(gui, s)))
 
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),
@@ -235,14 +237,6 @@ _hits_text(pd) = (n = BMO.hit_count(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit
 _source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.wavelength(src))), $(_size_text(src))"
 _size_text(cs::BMO.CollimatedSource) = "⌀ $(_length_string(cs.diameter))"
 _size_text(ps::BMO.PointSource) = "NA $(round(BMO.numerical_aperture(ps); digits = 3))"
-
-# The rendered objects of a system, see `_leaves`
-_objects_text(::LiveView, sys) = string(length(_leaves(sys)))
-# The rays of the sources of a system (or beams of a beam group) that are switched on, as in the
-# info label, see `_on_ray_count`
-_rays_text(gui::LiveView, sys) = string(_on_ray_count(gui, filter(p -> p.first === sys, gui.pairs)))
-# The duration of the last full solve of all systems
-_solve_text(gui::LiveView, _) = gui.trace.solve_time > 0 ? _ms_string(gui.trace.solve_time) : "–"
 
 _gauss_text(gui::LiveView, g) ="$(_wavelength_string(BMO.wavelength(_first_ray(g)))), w0 " *
     "$(_length_string(BMO.beam_waist(g))), zR $(_length_string(BMO.rayleigh_range(g)))"

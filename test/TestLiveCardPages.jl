@@ -33,7 +33,9 @@ GUI._has_properties(::NoProperties) = false
               length(GUI._card_rows(beam))
         @test length(GUI._page_rows(m, :color)) == length(GUI._card_rows(m))
         @test GUI._shows_rows(:pose) && GUI._shows_rows(:color) && !GUI._shows_rows(:properties)
-        @test GUI._card_pages(System([m])) == (:pose, :properties)
+        # a system has one page, the system widget, and neither the step nor the mode
+        @test GUI._card_pages(System([m])) == (:pose,)
+        @test !GUI._has_step(System([m])) && GUI._has_step(m)
         @test GUI._card_pages(pd) == (:pose, :results, :properties)
         @test GUI._card_pages(NoProperties()) == (:pose,)
         # every card has the page of its rows

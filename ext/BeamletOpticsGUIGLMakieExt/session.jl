@@ -78,7 +78,14 @@ function _free_px(gui)
 end
 # The pixel in the middle of a block of the layout, e.g. of the title of a card
 _rect_center(block) = (r = block.layoutobservables.computedbbox[]; Tuple(Float64.(minimum(r) .+ widths(r) ./ 2)))
+# ... or of an icon button, e.g. the eye in the head of a card
+_rect_center(b::Union{GUI._IconButton, GUI._IconToggle}) = _rect_center(b.box)
 _center(gui) = Tuple(Float64.(minimum(gui.ax.scene.viewport[]) .+ widths(gui.ax.scene.viewport[]) ./ 2))
+# The pixel in the middle of the splitter of a sidebar `part`: its right (`side = 1`) or left edge
+function _splitter_px(part, side)
+    r = part.box.layoutobservables.computedbbox[]
+    return (Float64((side > 0 ? maximum(r) : minimum(r))[1]), Float64(minimum(r)[2] + widths(r)[2] / 2))
+end
 
 _move!(gui, xy) = (_events(gui).mouseposition[] = (Float64(xy[1]), Float64(xy[2])))
 _press!(gui, button = Mouse.left) = (_events(gui).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.press))
@@ -141,9 +148,10 @@ end
 
 Opens a live view of the `fixture` (see `_fixture`) in the `layout` in an invisible window and uses
 it with the mouse and the keys: hover, selection, dragging in both modes and with the gizmo, key
-steps, undo, snapping, the camera, the view cube, the inspection of a beam, clip planes, the
-catalog, placing, copy and paste, removing. Returns the live view and its screen, which the caller
-closes.
+steps, undo, snapping, the camera, the view cube, the inspection of a beam, clip planes, the eye
+of a card, the card of a system (its pencil, its "+", the rows of its members and their "×"), the
+catalog, placing, copy and paste, removing, and in the app layout the object tree (with the button
+"+" of the system, which picks its members) and the splitters of the sidebars. Returns the live view and its screen, which the caller closes.
 
 The steps do not depend on the time that they take, which is much longer while they are compiled:
 the animations of the camera are run to their end and the solves are awaited (see `_settle!`), and
@@ -286,6 +294,132 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
     step(() -> (_key!(gui, Keyboard.t); settle!()), "key t (trace)")
     step(() -> (_key!(gui, Keyboard.h); frame!(); _key!(gui, Keyboard.h); frame!()), "key h (help)")
 
+    # The card that shows `obj` with the widget `name`: floating, or docked in the app layout
+    function card_of(@nospecialize(obj), name::Symbol)
+        cards = GUI._edit_cards(gui)
+        i = findfirst(c -> GUI._card_object(gui, c) === obj && !isnothing(GUI._card_widget(c, name)), cards)
+        _check(!isnothing(i), "no card shows the $(nameof(typeof(obj))) with :$name")
+        return cards[i]
+    end
+
+    # The eye in the head of a card hides its object and shows it again
+    step("card: eye (hide, show)") do
+        _click!(gui, _px(gui, _pos(fx.mirror)))
+        frame!()
+        _selected(gui, fx.mirror)
+        _click!(gui, _rect_center(GUI._card_widget(card_of(fx.mirror, :hide), :hide)))
+        frame!()
+        _check(GUI._all_hidden(gui, fx.mirror), "the eye did not hide the mirror")
+        # a hidden object is selected by the component menu or the object tree
+        GUI._select!(gui, fx.mirror)
+        frame!()
+        eye = GUI._card_widget(card_of(fx.mirror, :hide), :hide)
+        _check(eye.active[], "the eye is not crossed out")
+        _click!(gui, _rect_center(eye))
+        frame!()
+        _check(!GUI._all_hidden(gui, fx.mirror), "the eye did not show the mirror")
+        deselect!()
+    end
+
+    # The pencil in the head of the card of a component: a typed name and Enter
+    step("card: rename a component in the title") do
+        _click!(gui, _px(gui, _pos(fx.mirror)))
+        frame!()
+        _selected(gui, fx.mirror)
+        c = card_of(fx.mirror, :hide)
+        name = GUI._label(gui, fx.mirror)
+        _click!(gui, _rect_center(c.name.pencil))
+        frame!()
+        _check(c.name.editing && GUI._typing(gui), "the pencil did not start the renaming")
+        foreach(char -> (_events(gui).unicode_input[] = char), "t1")
+        frame!()
+        _key!(gui, Keyboard.enter)
+        frame!()
+        _check(!c.name.editing && GUI._label(gui, fx.mirror) != name, "Enter did not rename the mirror")
+        GUI._rename_object!(gui, fx.mirror, name)
+        frame!()
+        deselect!()
+    end
+
+    # The card of a system: its pencil with a typed name and Enter, "×" of a row of its members
+    # and a click on a row
+    step("system: rename in the title, × and click on a row of the members") do
+        sys = fx.system
+        GUI._inspect!(gui, sys)
+        frame!()
+        c = card_of(sys, :members)
+        name = GUI._label(gui, sys)
+        _click!(gui, _rect_center(c.name.pencil))
+        frame!()
+        _check(c.name.editing && GUI._typing(gui), "the pencil did not start the renaming")
+        foreach(char -> (_events(gui).unicode_input[] = char), "t1")
+        frame!()
+        _key!(gui, Keyboard.enter)
+        frame!()
+        _check(!c.name.editing && GUI._label(gui, sys) != name, "Enter did not rename the system")
+        GUI._rename_system!(gui, sys, name)
+        frame!()
+        # the rows: the sources, then the objects
+        row(@nospecialize(obj)) = GUI._card_widget(card_of(sys, :members), :members).rows[GUI._index(GUI._members(gui, sys), obj)]
+        _click!(gui, _rect_center(row(fx.mirror).out))
+        settle!()
+        _check(!GUI._has(sys.objects, fx.mirror) && gui.objects.inspected === sys,
+            "× did not take the mirror out of the system")
+        add_component!(gui, fx.mirror; system = sys, select = false)
+        settle!()
+        _check(GUI._has(sys.objects, fx.mirror), "the mirror is not in the system again")
+        _move!(gui, _rect_center(row(fx.lens).name))
+        frame!()
+        _click!(gui)
+        frame!()
+        _selected(gui, fx.lens)
+        deselect!()
+    end
+
+    # The members of a system are picked with the mouse: "+" on its card, a click on a component, Esc
+    step("system: + on its card, click mirror (pick), escape") do
+        GUI._inspect!(gui, fx.system)
+        frame!()
+        i = findfirst(c -> !isnothing(GUI._card_widget(c, :member_add)), GUI._edit_cards(gui))
+        _check(!isnothing(i), "the card of the system has no button +")
+        _click!(gui, _rect_center(GUI._card_widget(GUI._edit_cards(gui)[i], :member_add)))
+        frame!()
+        _check(!isnothing(GUI._member_pick(gui)), "+ did not start the pick")
+        _click!(gui, _px(gui, _pos(fx.mirror)))
+        frame!()
+        _check(isnothing(gui.controls.selected[]) && occursin("already in", gui.status.text[]),
+            "the click did not pick the mirror")
+        _key!(gui, Keyboard.escape)
+        frame!()
+        _check(isnothing(GUI._member_pick(gui)), "Esc did not end the pick")
+        _key!(gui, Keyboard.escape)
+        frame!()
+        _check(isnothing(gui.objects.inspected), "Esc did not close the card of the system")
+    end
+
+    # Systems of the window: a new one, a member of both systems, tracing per system, its removal
+    step("system: add, shared mirror, auto trace off, Trace, remove") do
+        n = length(GUI._systems(gui))
+        sys = add_system!(gui)
+        frame!()
+        _check(length(GUI._systems(gui)) == n + 1 && gui.objects.inspected === sys, "no system was added")
+        add_component!(gui, fx.mirror; system = sys, select = false)
+        settle!()
+        _check(GUI._member_systems(gui, fx.mirror) == [fx.system, sys], "the mirror is not in both systems")
+        GUI._set_system_auto!(gui, sys, false)
+        GUI._inspect!(gui, sys)
+        frame!()
+        button(name) = _rect_center(GUI._card_widget(
+            only(c for c in GUI._edit_cards(gui) if !isnothing(GUI._card_widget(c, name))), name))
+        _click!(gui, button(:trace))
+        settle!()
+        _check(!GUI._system_stale(gui, sys), "Trace did not trace the system")
+        _click!(gui, button(:remove))
+        settle!()
+        _check(length(GUI._systems(gui)) == n && GUI._member_systems(gui, fx.mirror) == [fx.system],
+            "the system was not removed")
+    end
+
     step(() -> (_move!(gui, _center(gui)); _key!(gui, Keyboard.insert); frame!()), "catalog: Insert")
     step(() -> (_key!(gui, Keyboard.escape); frame!()), "catalog: escape")
     # a component of the catalog, which can be copied
@@ -327,7 +461,51 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             tree.eye_clicked[] = fx.detector
             frame!()
         end
+        step("tree: tooltip of + of the system") do
+            i = findfirst(r -> !isnothing(r.buttons), tree.rows)
+            o = minimum(tree.scene.viewport[])
+            _move!(gui, (Float64(o[1] + GUI._button_columns(tree).add), Float64(o[2] + GUI._row_y(tree, i))))
+            # without its delay, which a step does not wait for
+            GUI._show_tree_tip!(gui)
+            frame!()
+            _check(GUI._tree_tip_state(gui).visible[], "the tooltip of the tree is not shown")
+        end
+        step("tree: + of the system (pick its members)") do
+            i = findfirst(r -> !isnothing(r.buttons), tree.rows)
+            # the pixel of the button "+" of the row of the system
+            o = minimum(tree.scene.viewport[])
+            a = (Float64(o[1] + GUI._button_columns(tree).add), Float64(o[2] + GUI._row_y(tree, i)))
+            _click!(gui, a)
+            frame!()
+            pick = GUI._member_pick(gui)
+            _check(!isnothing(pick) && pick.add && pick.sys === fx.system, "the click did not start the pick")
+            # a second click ends it
+            _click!(gui, a)
+            frame!()
+            _check(isnothing(GUI._member_pick(gui)), "the second click did not end the pick")
+        end
+        # the splitters, the right one with the view of the detector in the inspector
+        step("splitter: drag the right sidebar") do
+            right = gui.layout.right
+            w = right.size.x
+            a = _splitter_px(right, -1)
+            _move!(gui, a)
+            frame!()
+            _drag!(gui, a, a .- (40, 0))
+            settle!()
+            _check(right.size.x == w + 40, "the drag did not resize the right sidebar")
+        end
         step(() -> (tree.clicked[] = fx.mirror; frame!()), "tree: click mirror")
+        step("splitter: drag the left sidebar") do
+            left = gui.layout.left
+            w = left.size.x
+            a = _splitter_px(left, 1)
+            _move!(gui, a)
+            frame!()
+            _drag!(gui, a, a .+ (50, 0))
+            settle!()
+            _check(left.size.x == w + 50, "the drag did not resize the left sidebar")
+        end
     end
 
     return gui, screen

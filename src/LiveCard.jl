@@ -27,6 +27,7 @@ const _CARD_AWAY = Rect2f(-1.0f5, -1.0f5, 0, 0)
 # into the view, and of the title
 const _CARD_FONTSIZE = 12
 const _CARD_TITLE_FONTSIZE = 13
+const _CARD_SUBTITLE_FONTSIZE = 11
 # Radius of the corners of the background [px]
 const _CARD_CORNER = 6
 # Sizes of the icon of the kind of the object and of the icon buttons in the head [px]
@@ -58,6 +59,25 @@ Optionally, by dispatch on the host: `_card_value(c, v)` (e.g. of an `_AxisColor
 abstract type _AbstractCard end
 
 """
+    _TitleEdit
+
+The line of the title of a card in its layout `grid`: the `title`, i.e. the bold label of its
+object, and, while `renamable`, i.e. for an object with a name of its own (see `_renamable`, e.g. a
+system), the `pencil` next to it. A click on the pencil replaces the title by the textbox `box`
+with the name (`editing`): Enter renames the object, Esc and a lost focus keep its name, see
+`_begin_rename!` and `_end_rename!`. The parts that are not shown are detached from the layout, see
+`_view_detach!`. Shared by the hosts of a card, see `_AbstractCard`.
+"""
+mutable struct _TitleEdit
+    const grid::GridLayout
+    const title::Label
+    const pencil::_IconButton
+    const box::Textbox
+    renamable::Bool
+    editing::Bool
+end
+
+"""
     _ComponentCard(fig::Figure, theme::NamedTuple, z = _CARD_Z)
 
 Card of the live view with the controls of an object, shown over the 3D view next to the bounding
@@ -70,11 +90,16 @@ accent color. It consists of free layouts (a `GridLayout` with a suggested bound
 a scene with a pixel camera over the whole figure:
 
 - `head`: the `icon` of the kind of the object (see `_tree_kind`) in its `icon_color` and the
-  `title`, i.e. the label of the object
+  `title`, i.e. the label of the object, in the line `name` (a `_TitleEdit`): next to the title of
+  an object with a name of its own, e.g. a system, a pencil, which replaces the title by a textbox
+  that renames the object, see `_begin_rename!`. Below the title, while `subtitle_shown`, the
+  `subtitle` of the object in the muted color, e.g. "System · 3 objects · 1 source", see
+  `_card_subtitle`
 - `back`, left of the head while `back_shown`, i.e. for a part of another object (see
   `_part_parent`): the `back_button` "‹" (an `_IconButton`), which opens the selection card of that
   object, see `_browse_parent!`
-- `actions`, right of the head: the buttons of [`card_actions`](@ref) for the object
+- `actions`, right of the head: the widgets of [`card_actions`](@ref) for the object, e.g. the
+  eye that hides it
 - `tools`, at the right end of the first line: the `pin_button` (an `_IconToggle`, active while
   pinned) and the `collapse_button` (an `_IconButton`, a chevron down, or right while collapsed);
   in a layout that docks pinned cards, e.g. the app layout, before them the `dock_button`, which
@@ -181,6 +206,11 @@ mutable struct _ComponentCard <: _AbstractCard
     view_shown::Bool
     view_switches::Int
     grip::Observable{Vector{Point2f}}
+    # the line of the title with the pencil and the textbox that rename the object, and the line
+    # below the title
+    name::_TitleEdit
+    subtitle::Label
+    subtitle_shown::Bool
 end
 
 # Size of the axis of the expanded view of a new card [px] and its smallest side, see `_view_bounds`
@@ -213,7 +243,13 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     grip = Observable(Point2f[])
     translate!(linesegments!(scene, grip; color = t.muted, linewidth = 1.5, inspectable = false), 0, 0, 6)
     icon, icon_color = _card_icon!(head[1, 1])
-    title = _card_title!(head[1, 2], t)
+    name = _card_name!(head[1, 2], t)
+    title = name.title
+    # shown for an object with a subtitle only, see `_show_subtitle!`
+    subtitle = Label(head[2, 2], " "; halign = :left, _card_style(t, Label)...,
+        fontsize = _CARD_SUBTITLE_FONTSIZE, color = t.muted)
+    _view_detach!(subtitle)
+    Makie.GridLayoutBase.trim!(head)
     pin_button = _card_pin!(tools[1, 1], t)
     collapse_button = _card_collapse!(tools[1, 2], t)
     Makie.colgap!(tools, 2)
@@ -221,15 +257,16 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     part = _selection_part!(step, properties[1, 1], t; width = _CARD_PROPERTIES_WIDTH, tellwidth = true)
     back = _card_part(scene)
     back_button = _card_back!(back[1, 1], t)
-    foreach(_fix_tooltip!, (pin_button, collapse_button, back_button))
+    foreach(_fix_tooltip!, (pin_button, collapse_button, back_button, name.pencil))
     _translate_caret!(part.step_box, z)
+    _translate_caret!(name.box, z)
     scene.visible[] = false
     return _ComponentCard(scene, t, background, head, _card_part(scene), tools, _card_part(scene), step,
         properties, icon, icon_color, title, collapse_button, pin_button, part.step_box, part.mode,
         part.list, link, Tuple{Any, CardWidget}[], Any[], Textbox[], Any[], nothing,
         false, false, false, false, nothing, Point3f[], nothing, nothing, nothing, false, nothing, back, back_button, false,
         false, :pose, (:pose,), Dict{Any, Tuple{GridLayout, _Segmented}}(), nothing, nothing,
-        nothing, _card_part(scene), true, _CARD_VIEW_SIZE, false, 0, grip)
+        nothing, _card_part(scene), true, _CARD_VIEW_SIZE, false, 0, grip, name, subtitle, false)
 end
 
 #=
@@ -258,6 +295,60 @@ end
 """Adds the title of a card, the bold label of its object, at the grid position `pos`."""
 _card_title!(pos, t::NamedTuple; fontsize::Real = _CARD_TITLE_FONTSIZE, kwargs...) =
     Label(pos, ""; font = :bold, halign = :left, _card_style(t, Label)..., fontsize, kwargs...)
+
+#=
+The line of the title of a card, with the pencil and the textbox that rename its object
+=#
+
+# Size of the pencil next to the title of a card and of its icon [px], and the width of the textbox
+# that replaces the title while its object is renamed
+const _CARD_PENCIL = 18
+const _CARD_PENCIL_ICON = 13
+const _CARD_NAME_WIDTH = 170
+
+"""
+    _card_name!(pos, t; fontsize = _CARD_TITLE_FONTSIZE, kwargs...) -> _TitleEdit
+
+Adds the line of the title of a card at the grid position `pos`, in the color tokens `t`: its title
+and, not shown yet, the pencil and the textbox that rename its object, see `_TitleEdit`. The
+`kwargs` go to the layout of the line.
+"""
+function _card_name!(pos, t::NamedTuple; fontsize::Real = _CARD_TITLE_FONTSIZE, kwargs...)
+    grid = GridLayout(pos; halign = :left, default_colgap = 2, kwargs...)
+    title = _card_title!(grid[1, 1], t; fontsize)
+    pencil = _IconButton(grid[1, 2]; icon = :pencil, tooltip = "Rename", _card_icons(t)...,
+        size = _CARD_PENCIL, icon_size = _CARD_PENCIL_ICON)
+    box = Textbox(grid[1, 1]; placeholder = " ", _card_style(t, Textbox)..., font = :bold, fontsize,
+        width = _CARD_NAME_WIDTH, halign = :left)
+    _view_detach!(box)
+    _view_detach!(pencil.box)
+    Makie.GridLayoutBase.trim!(grid)
+    return _TitleEdit(grid, title, pencil, box, false, false)
+end
+
+"""
+Shows the pencil of the line of the title `e` for an object that is `renamable`, or takes it out of
+the line. Only a change updates the layout.
+"""
+function _show_pencil!(e::_TitleEdit, renamable::Bool)
+    e.renamable == renamable && return nothing
+    e.renamable = renamable
+    # while the name is edited, the textbox stands for the title and the pencil
+    e.editing && return nothing
+    if renamable
+        _view_attach!(e.grid, 1, 2, e.pencil.box, true)
+    else
+        _view_detach!(e.pencil.box)
+        Makie.GridLayoutBase.trim!(e.grid)
+    end
+    return nothing
+end
+
+# Whether the point `p` [figure px] is over the pencil or the textbox of the line of the title `e`
+function _over_name_widget(e::_TitleEdit, p::Point2f)
+    x = e.editing ? e.box : e.renamable ? e.pencil.box : nothing
+    return !isnothing(x) && p in Rect2f(x.layoutobservables.computedbbox[])
+end
 
 # The icon buttons of the head, in the colors of the tokens `t`
 _card_icons(t::NamedTuple; size::Real = _CARD_TOOL, icon_size::Real = _CARD_TOOL_ICON) =
@@ -375,8 +466,8 @@ _pin_state(c::_ComponentCard) = c.pinned && !c.transient
 # `_CARD_TOOLTIP_DZ`
 _fix_tooltip!(b::Union{_IconButton, _IconToggle}) = translate!(last(b.plots), 0, 0, _CARD_TOOLTIP_DZ)
 
-"""Returns the textboxes of the card `c`: the step box and the declared ones."""
-_card_boxes(c::_ComponentCard) = (c.step_box, c.textboxes...)
+"""Returns the textboxes of the card `c`: the step box, the box of its name and the declared ones."""
+_card_boxes(c::_ComponentCard) = (c.step_box, c.name.box, c.textboxes...)
 
 """Returns the declared widget with the `name` on the card `c` (see [`CardWidget`](@ref)), or `nothing`."""
 function _card_widget(c::_AbstractCard, name::Symbol)
@@ -404,6 +495,8 @@ _card_sizes(::Type{Textbox}) = (; fontsize = _CARD_FONTSIZE, height = 24, textpa
 _card_sizes(::Type{Button}) = (; fontsize = _CARD_FONTSIZE, height = 22, padding = (7, 7, 3, 3))
 _card_sizes(::Type{Menu}) = (; fontsize = _CARD_FONTSIZE)
 _card_sizes(::Type) = (;)
+# The icon buttons and toggles of a declaration, e.g. the eye in the head, like those of the head
+_card_style(t::NamedTuple, ::Type{<:Union{_IconButton, _IconToggle}}) = _card_icons(t)
 
 """
     _AxisColor(k)
@@ -416,9 +509,21 @@ struct _AxisColor
     k::Int
 end
 
-# Values of the attributes of a declaration on the card `c`, see `_AxisColor`
+"""
+    _ThemeColor(name)
+
+The color token `name` of the theme of the live view (see `_APP_THEMES`) in a declaration, e.g.
+`_ThemeColor(:muted)` of the label of a section, which each host of the card resolves to the color
+of its theme, see `_card_value`.
+"""
+struct _ThemeColor
+    name::Symbol
+end
+
+# Values of the attributes of a declaration on the card `c`, see `_AxisColor` and `_ThemeColor`
 _card_value(::_AbstractCard, v) = v
 _card_value(c::_ComponentCard, a::_AxisColor) = c.theme.gizmo[a.k]
+_card_value(c::_AbstractCard, a::_ThemeColor) = getproperty(c.theme, a.name)
 
 """
     _cell_attributes(c, w::CardWidget) -> NamedTuple
@@ -447,6 +552,8 @@ end
 _translate_caret!(_, ::Real) = nothing
 # The block `b` of the card `c`, see `_AbstractCard`: only the floating card is translated
 _fix_caret!(c::_ComponentCard, b) = _translate_caret!(b, _scene_z(c))
+# The tooltip of a declared icon button likewise, see `_fix_tooltip!`
+_fix_caret!(::_ComponentCard, b::Union{_IconButton, _IconToggle}) = (_fix_tooltip!(b); nothing)
 _fix_caret!(::_AbstractCard, _) = nothing
 
 # The z translation of the scene of the card `c`
@@ -463,6 +570,9 @@ card_input(b::Toggle) = b.active
 card_input(b::Textbox) = b.stored_string
 card_input(b::Button) = b.clicks
 card_input(b::Menu) = b.selection
+# The icon buttons and toggles of the GUI, e.g. the eye in the head of a card
+card_input(b::_IconButton) = b.clicks
+card_input(b::_IconToggle) = b.active
 
 card_show!(_, _) = nothing
 card_show!(b::Label, v) = (_update!(b.text, string(v)); nothing)
@@ -470,6 +580,7 @@ card_show!(b::Button, v) = (_update!(b.label, string(v)); nothing)
 card_show!(b::Textbox, v; force::Bool = false) = ((b.focused[] && !force) || _set_box!(b, string(v)); nothing)
 card_show!(b::Slider, v) = (b.value[] == v || Makie.set_close_to!(b, v); nothing)
 card_show!(b::Toggle, v) = (_update!(b.active, Bool(v)); nothing)
+card_show!(b::_IconToggle, v) = (_update!(b.active, Bool(v)); nothing)
 # The option with the value `v` of a menu; an unknown value keeps the selection
 function card_show!(b::Menu, v)
     i = findfirst(o -> Makie.optionvalue(o) == v, b.options[])
@@ -651,12 +762,15 @@ function _arrange_card!(c::_ComponentCard, p::Point2f)
     x, y = p[1] + _CARD_PADDING, p[2] - _CARD_PADDING
     h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
     line = max(h[2], a[2], t[2])
-    # The head, the actions and the tools (at the right end) are centered vertically in the first line
+    # The head, the actions and the tools are centered vertically in the first line: the head at the
+    # left, the tools at the right end and the actions next to them, such that the icons of a card
+    # form one group, however wide the rows below make it
     bw = _back_width(c)
+    right = p[1] + size[1] - _CARD_PADDING - t[1]
     c.back_shown ? _place!(c.back, Point2f(x, y - (line - _card_size(c.back)[2]) / 2)) : _park!(c.back)
     _place!(c.head, Point2f(x + bw, y - (line - _card_size(c.head)[2]) / 2))
-    _place!(c.actions, Point2f(x + h[1] + _CARD_PADDING, y - (line - a[2]) / 2))
-    _place!(c.tools, Point2f(p[1] + size[1] - _CARD_PADDING - t[1], y - (line - t[2]) / 2))
+    _place!(c.actions, Point2f(right - _CARD_PADDING - a[1], y - (line - a[2]) / 2))
+    _place!(c.tools, Point2f(right, y - (line - t[2]) / 2))
     y -= line
     lower = _lower_parts(c)
     for part in _page_parts(c)
@@ -858,6 +972,7 @@ function _over_handle(c::_ComponentCard, events::Makie.Events)
     _over_card(c, events) || return false
     p = Point2f(events.mouseposition[])
     (c.back_shown && p in _part_rect(c.back)) && return false
+    _over_name_widget(c.name, p) && return false
     (_shows_results(c) && _over_view(c.view, p)) && return false
     _over_grip(c, events) && return false
     return !any(x -> p in _part_rect(x), (c.actions, c.tools, _page_parts(c)...))
