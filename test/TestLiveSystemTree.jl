@@ -261,7 +261,7 @@ const GUI = BeamletOpticsGUI
     @testset "tooltips of the eyes, the buttons and the counters" begin
         gui, o = _fixture()
         tree = gui.layout.tree
-        tip = GUI._TREE_TIPS[gui]
+        tip = GUI._tree_tip_state(gui)
         ev = events(gui.fig.scene)
         origin = minimum(tree.scene.viewport[])
         # Moves the mouse to the pixel `x` (from the left edge of the tree) of the row `i`
@@ -318,6 +318,32 @@ const GUI = BeamletOpticsGUI
         ev.mouseposition[] = (Float64(origin[1] + 600), Float64(origin[2] + 100))
         @test isnothing(tip.hovered) && isnothing(tip.timer)
         close(gui)
+    end
+
+    @testset "A closed window is freed" begin
+        # A window that showed the card of a component or of a system (tooltip of the tree,
+        # highlight of the members) is garbage after `close`: a global registry with the window
+        # as key whose value leads back to it would keep every window of a session alive
+        alive = Ref(0)
+        function once(layout, pick)
+            gui, f = _fixture(; layout)
+            alive[] += 1
+            finalizer(_ -> (alive[] -= 1), gui)
+            pick === :system ? GUI._inspect!(gui, f.tx) : select!(gui, f.m)
+            events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0)
+            close(gui)
+            return nothing
+        end
+        for (layout, pick) in ((:app, :component), (:app, :system), (:compact, :system))
+            alive[] = 0
+            for _ in 1:4
+                once(layout, pick)
+                GC.gc()
+                GC.gc()
+            end
+            # the last one may still be referenced from the stack
+            @test alive[] <= 1
+        end
     end
 end
 

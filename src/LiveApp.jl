@@ -70,6 +70,9 @@ mutable struct AppLayout <: AbstractLiveLayout
     inspector::Any
     # the splitters of the sidebars and the dock, see `_build_splitters!`
     splitters::_Splitters
+    # the tooltip of the eyes, buttons and counters of the object tree, a `_TreeTip`, see
+    # `_connect_tree_tips!`
+    tree_tip::Any
     AppLayout(theme::NamedTuple) = new(theme)
 end
 

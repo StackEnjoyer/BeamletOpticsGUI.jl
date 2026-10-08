@@ -265,8 +265,13 @@ mutable struct _TreeTip
     timer::Union{Nothing, Timer}
 end
 
-# The tooltips of the object trees; `AppLayout` has no field for it, the keys are weak
-const _TREE_TIPS = WeakKeyDict{LiveView, _TreeTip}()
+"""
+Returns the tooltip of the object tree of the `gui` (see `_TreeTip`), `nothing` before
+`_connect_tree_tips!`. A field of the layout and not an entry of a global registry, which would keep
+every closed window alive, see `_highlight`.
+"""
+_tree_tip_state(gui::AppView) =
+    isdefined(gui.layout, :tree_tip) ? gui.layout.tree_tip::_TreeTip : nothing
 
 """
     _tree_tip(gui) -> Union{Nothing, NamedTuple}
@@ -299,7 +304,7 @@ end
 
 """Hides the tooltip of the object tree of the `gui` and forgets what it was for."""
 function _hide_tree_tip!(gui::AppView)
-    tip = get(_TREE_TIPS, gui, nothing)
+    tip = _tree_tip_state(gui)
     isnothing(tip) && return nothing
     isnothing(tip.timer) || (close(tip.timer); tip.timer = nothing)
     tip.visible[] && (tip.visible[] = false)
@@ -312,7 +317,7 @@ Shows the tooltip of the part of the object tree of the `gui` under the mouse (s
 if the mouse still rests on the part that the tooltip waits for.
 """
 function _show_tree_tip!(gui::AppView)
-    tip = get(_TREE_TIPS, gui, nothing)
+    tip = _tree_tip_state(gui)
     isnothing(tip) && return nothing
     info = _tree_tip(gui)
     (isnothing(info) || info.key != tip.hovered) && return nothing
@@ -327,7 +332,7 @@ The mouse moved in the window of the `gui`: the tooltip of the object tree waits
 `_TREE_TIP_DELAY` on another eye, button or counter, and is hidden elsewhere.
 """
 function _on_tree_hover!(gui::AppView)
-    tip = get(_TREE_TIPS, gui, nothing)
+    tip = _tree_tip_state(gui)
     isnothing(tip) && return nothing
     info = _tree_tip(gui)
     key = isnothing(info) ? nothing : info.key
@@ -356,7 +361,7 @@ function _connect_tree_tips!(gui::AppView)
     scene = gui.fig.scene
     t = gui.layout.theme
     tip = _TreeTip(Observable(""), Observable(Point2f(0)), Observable(false), nothing, nothing)
-    _TREE_TIPS[gui] = tip
+    gui.layout.tree_tip = tip
     plot = Makie.tooltip!(scene, tip.pos, tip.text; placement = :below, visible = tip.visible,
         backgroundcolor = t.tooltip, textcolor = t.tooltip_text, outline_linewidth = 0,
         triangle_size = 6, offset = 4, fontsize = 13, textpadding = (6, 6, 4, 4), overdraw = true,

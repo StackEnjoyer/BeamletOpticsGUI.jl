@@ -370,7 +370,9 @@ movable, see `_inspect!`; it and `controls.selected[]` exclude each other. `pare
 of an object (an object of a group or of a `MultiShape` object, e.g. a lens of a doublet) to that
 object, see `_map_parts!`; the top-level objects have no entry. `browsed` is the group or
 `MultiShape` object whose parts the selection card shows, `nothing` while it is closed, see
-`_browse!`.
+`_browse!`. `highlight` is the highlight of the browsed group (a `_Highlight`) and
+`system_highlight` the one of the members of a system (a `_SystemHighlight`), `nothing` without
+one, see `LiveHighlight.jl`.
 """
 Base.@kwdef mutable struct _ObjectState
     menu::Vector{Any} = Any[]
@@ -381,6 +383,8 @@ Base.@kwdef mutable struct _ObjectState
     inspected::Any = nothing
     parents::IdDict{Any, Any} = IdDict{Any, Any}()
     browsed::Any = nothing
+    highlight::Any = nothing
+    system_highlight::Any = nothing
 end
 
 """

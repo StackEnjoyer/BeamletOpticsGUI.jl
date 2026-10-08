@@ -468,7 +468,7 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             # without its delay, which a step does not wait for
             GUI._show_tree_tip!(gui)
             frame!()
-            _check(GUI._TREE_TIPS[gui].visible[], "the tooltip of the tree is not shown")
+            _check(GUI._tree_tip_state(gui).visible[], "the tooltip of the tree is not shown")
         end
         step("tree: + of the system (pick its members)") do
             i = findfirst(r -> !isnothing(r.buttons), tree.rows)

@@ -28,12 +28,11 @@ mutable struct _Highlight
     hovered::Any
 end
 
-# The highlights of the live views while a group is browsed; `LiveView` has no field for it, the keys
-# are weak, such that a live view that is closed while browsing is freed
-const _HIGHLIGHTS = WeakKeyDict{LiveView, _Highlight}()
-
+# The highlight is a field of the `gui` (`gui.objects.highlight`) and not an entry of a global
+# registry: it holds plots, which lead back to the `gui` via their scene, and a `WeakKeyDict` never
+# frees a key that its value refers to, i.e. no closed window of a session
 """Returns the highlight of the `gui` (see `_Highlight`), `nothing` while no group is browsed."""
-_highlight(gui::LiveView) = get(_HIGHLIGHTS, gui, nothing)
+_highlight(gui::LiveView) = gui.objects.highlight::Union{Nothing, _Highlight}
 
 """
     _browse_highlight!(gui, group, parts)
@@ -62,7 +61,7 @@ function _browse_highlight!(gui::LiveView, group, parts::Vector)
         _end_highlight!(gui)
         hl = _Highlight(group, IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}(),
             Pair{Any, AbstractPlot}[], nothing)
-        _HIGHLIGHTS[gui] = hl
+        gui.objects.highlight = hl
     end
     for p in plots
         haskey(hl.base, p) && continue
@@ -151,7 +150,7 @@ without a highlight.
 function _end_highlight!(gui::LiveView)
     hl = _highlight(gui)
     isnothing(hl) && return nothing
-    delete!(_HIGHLIGHTS, gui)
+    gui.objects.highlight = nothing
     for (p, base) in hl.base
         _restore_plot!(p, base...)
     end
@@ -184,8 +183,11 @@ mutable struct _SystemHighlight
     dimmed::IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}
 end
 
-# The highlights of the live views that show the members of a system; the keys are weak
-const _SYSTEM_HIGHLIGHTS = WeakKeyDict{LiveView, _SystemHighlight}()
+"""
+Returns the highlight of the members of a system of the `gui` (see `_SystemHighlight`), `nothing`
+without one. A field of the `gui` like `_highlight`.
+"""
+_system_highlight(gui::LiveView) = gui.objects.system_highlight::Union{Nothing, _SystemHighlight}
 
 """
     _system_dimmed(gui) -> IdDict
@@ -194,7 +196,7 @@ The plots of the `gui` that are see-through because they are no members of the h
 with their attributes before, see `_update_system_highlight!`; empty without such a system.
 """
 function _system_dimmed(gui::LiveView)
-    hl = get(_SYSTEM_HIGHLIGHTS, gui, nothing)
+    hl = _system_highlight(gui)
     return isnothing(hl) ? IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}() : hl.dimmed
 end
 
@@ -229,7 +231,7 @@ is added meanwhile.
 """
 function _update_system_highlight!(gui::LiveView)
     target = _highlighted_system(gui)
-    hl = get(_SYSTEM_HIGHLIGHTS, gui, nothing)
+    hl = _system_highlight(gui)
     isnothing(target) && isnothing(hl) && return nothing
     # the plots of the components and source markers of the view, and those that are to be see-through
     shown, wanted = Base.IdSet{AbstractPlot}(), Base.IdSet{AbstractPlot}()
@@ -239,7 +241,7 @@ function _update_system_highlight!(gui::LiveView)
         foreach(obj -> foreach(leaf -> push!(members, leaf), _leaves(obj)), sys.objects)
         foreach(src -> push!(members, src), _sources_of(gui, sys))
         if isnothing(hl)
-            hl = _SYSTEM_HIGHLIGHTS[gui] = _SystemHighlight(opacity,
+            hl = gui.objects.system_highlight = _SystemHighlight(opacity,
                 IdDict{AbstractPlot, Tuple{Float32, Bool, Any}}())
         elseif hl.opacity != opacity
             # e.g. a pick that starts or ends on the inspected system: dimmed again from the
@@ -270,7 +272,7 @@ function _update_system_highlight!(gui::LiveView)
         hl.dimmed[p] = (_plot_alpha(p), Bool(p.transparency[]), _image_marker(p))
         _dim_plot!(p, hl.opacity)
     end
-    isnothing(target) && delete!(_SYSTEM_HIGHLIGHTS, gui)
+    isnothing(target) && (gui.objects.system_highlight = nothing)
     return nothing
 end
 
