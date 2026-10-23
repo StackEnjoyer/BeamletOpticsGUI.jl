@@ -34,9 +34,6 @@ const _CARD_CORNER = 6
 const _CARD_ICON = 18
 const _CARD_TOOL = 22
 const _CARD_TOOL_ICON = 16
-# z translation of the tooltips of the icon buttons relative to the card, instead of
-# `_TOOLTIP_Z`, which would put them beyond the clip range of the pixel camera
-const _CARD_TOOLTIP_DZ = 60.0f0
 
 """
     _AbstractCard
@@ -257,7 +254,6 @@ function _ComponentCard(fig::Figure, theme::NamedTuple, z::Real = _CARD_Z)
     part = _selection_part!(step, properties[1, 1], t; width = _CARD_PROPERTIES_WIDTH, tellwidth = true)
     back = _card_part(scene)
     back_button = _card_back!(back[1, 1], t)
-    foreach(_fix_tooltip!, (pin_button, collapse_button, back_button, name.pencil))
     _translate_caret!(part.step_box, z)
     _translate_caret!(name.box, z)
     scene.visible[] = false
@@ -462,10 +458,6 @@ _show_head!(c::_ComponentCard) = _show_head!(c.pin_button, c.collapse_button, _p
 # A transient card is shown like a pinned one, but its pin is off, see `_show_info!`
 _pin_state(c::_ComponentCard) = c.pinned && !c.transient
 
-# The tooltip of an icon button of a card, relative to the translation of the card, see
-# `_CARD_TOOLTIP_DZ`
-_fix_tooltip!(b::Union{_IconButton, _IconToggle}) = translate!(last(b.plots), 0, 0, _CARD_TOOLTIP_DZ)
-
 """Returns the textboxes of the card `c`: the step box, the box of its name and the declared ones."""
 _card_boxes(c::_ComponentCard) = (c.step_box, c.name.box, c.textboxes...)
 
@@ -552,8 +544,6 @@ end
 _translate_caret!(_, ::Real) = nothing
 # The block `b` of the card `c`, see `_AbstractCard`: only the floating card is translated
 _fix_caret!(c::_ComponentCard, b) = _translate_caret!(b, _scene_z(c))
-# The tooltip of a declared icon button likewise, see `_fix_tooltip!`
-_fix_caret!(::_ComponentCard, b::Union{_IconButton, _IconToggle}) = (_fix_tooltip!(b); nothing)
 _fix_caret!(::_AbstractCard, _) = nothing
 
 # The z translation of the scene of the card `c`

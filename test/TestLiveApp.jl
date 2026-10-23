@@ -110,7 +110,15 @@ const GUI = BeamletOpticsGUI
         # the floating cards in the colors of the theme, with a border
         @test dark.cards.selection.background.strokevisible[] && dark.cards.selection.background.strokecolor[] == t.border
         @test dark.cards.selection.background.color[] == t.sidebar
-        @test dark.widgets.trace_button.plots[3].backgroundcolor[] == t.tooltip
+        # the tooltips in the colors of the theme, shown after the mouse rested on the button
+        b = dark.widgets.trace_button
+        bb = b.box.layoutobservables.computedbbox[]
+        events(dark.fig.scene).mouseposition[] = Tuple(Makie.origin(bb) .+ Makie.widths(bb) ./ 2)
+        sleep(0.8)
+        tip = GUI._icon_tip_plot(dark.fig.scene)
+        @test tip.visible[] && tip.backgroundcolor[] == t.tooltip && tip.textcolor[] == t.tooltip_text
+        events(dark.fig.scene).mouseposition[] = (1.0, 1.0)
+        @test !tip.visible[]
         # the detector view of the inspector: the spots in the text color, the profiles in the red
         # and blue of the gizmo
         dark.controls.selected[] = pd

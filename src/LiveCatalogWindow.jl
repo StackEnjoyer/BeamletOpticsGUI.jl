@@ -139,7 +139,6 @@ function _CatalogWindow(gui::LiveView, slot)
     collapse_button = _card_collapse!(tools[1, 2 + docks], t)
     close_button = docks ? nothing :
                    _IconButton(tools[1, 3]; icon = :close, tooltip = "Close the catalog", _card_icons(t)...)
-    foreach(_fix_tooltip!, filter(!isnothing, (dock_button, pin_button, collapse_button, close_button)))
     # The body, which a minimized window does not show
     box = Box(part.content[2, 1]; visible = false)
     grid = GridLayout(part.content[2, 1]; halign = :left, default_rowgap = 8)

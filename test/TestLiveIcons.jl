@@ -96,13 +96,12 @@ const GUI = BeamletOpticsGUI
 
     @testset "construction" begin
         @test b.clicks[] == 0 && !b.hovered[]
-        @test length(b.plots) == 3 && all(p -> p in b.box.blockscene.plots, b.plots)
+        @test length(b.plots) == 2 && all(p -> p in b.box.blockscene.plots, b.plots)
         @test b.icon[] === GUI._icon(:trace)
         @test b.background[] == GUI._TRANSPARENT
         @test b.icon_color[] == GUI._ICON_COLOR
-        # The tooltip is hidden and drawn on top
-        @test !b.plots[3].visible[]
-        @test Makie.transformationmatrix(b.plots[3])[][3, 4] == GUI._TOOLTIP_Z
+        # The tooltip of the window is created when a button shows it first
+        @test isnothing(GUI._icon_tip_plot(scene))
         @test b.tooltip[] == "Trace (t)"
         @test (w = b.box.layoutobservables.computedbbox[].widths; w[1] == w[2] == 28)
     end
@@ -114,21 +113,36 @@ const GUI = BeamletOpticsGUI
         on(_ -> n[] += 1, b.background)
         events(scene).mouseposition[] = center(b)
         @test b.hovered[] && b.background[] == GUI._ICON_HOVER_COLOR
-        @test b.plots[3].visible[] # no delay
+        # The tooltip of the window, in its root scene and drawn on top, without delay
+        tip = GUI._icon_tip_plot(scene)
+        @test tip.visible[] && tip.text[] == "Trace (t)" && tip.parent === scene
+        @test Makie.transformationmatrix(tip)[][3, 4] == GUI._TOOLTIP_Z
+        @test tip.backgroundcolor[] == GUI._TOOLTIP_COLOR
         # Below the button, extending to the right at the left edge of the window
-        @test b.plots[3].placement[] === :below && b.plots[3].align[] == 0.15f0
-        @test b.plots[3][1][] ≈ Point2f(center(b)[1], b.box.layoutobservables.computedbbox[].origin[2])
+        @test tip.placement[] === :below && tip.align[] == 0.15f0
+        @test tip[1][] ≈ Point2f(center(b)[1], b.box.layoutobservables.computedbbox[].origin[2])
         # Moving within the button changes nothing
         events(scene).mouseposition[] = center(b) .+ 3
         @test n[] == 1
         events(scene).mouseposition[] = center(t)
         @test !b.hovered[] && t.hovered[]
-        @test b.background[] == GUI._TRANSPARENT && !b.plots[3].visible[]
+        @test b.background[] == GUI._TRANSPARENT && !tip.visible[]
         @test n[] == 2
         # The toggle waits for the default delay
-        @test !t.plots[3].visible[]
+        @test !tip.visible[]
+        # one tooltip for all buttons of the window
+        @test count(p -> p isa Makie.Tooltip, scene.plots) == 1
         events(scene).mouseposition[] = (1, 1)
         @test !t.hovered[]
+    end
+
+    @testset "offset of a scene in its root scene" begin
+        # e.g. a scrolled area: the tooltip, in the root scene, is placed at its button
+        sub = Scene(fig.scene; camera = Makie.campixel!, clear = false)
+        translate!(sub, 5, -40, 0)
+        @test GUI._root_offset(fig.scene) == Point2f(0, 0)
+        @test GUI._root_offset(sub) == Point2f(5, -40)
+        @test GUI._root_offset(Scene(sub; camera = Makie.campixel!, clear = false)) == Point2f(5, -40)
     end
 
     @testset "button clicks" begin
