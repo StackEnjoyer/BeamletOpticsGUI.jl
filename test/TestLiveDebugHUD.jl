@@ -68,7 +68,10 @@ const GUI = BeamletOpticsGUI
         _tick!(gui, 5.0)
         @test hud.refreshes == n
         GUI._set_debug!(gui, true)
-        @test hud.scene.visible[] && _rect(hud.background) ≈ r
+        # at the same place; the event "debug mode on" adds a row, which makes it higher
+        r1 = _rect(hud.background)
+        @test hud.scene.visible[]
+        @test minimum(r1)[1] ≈ minimum(r)[1] && maximum(r1)[2] ≈ maximum(r)[2]
         close(gui)
     end
 
@@ -99,7 +102,9 @@ const GUI = BeamletOpticsGUI
         # nothing of the card in the scene of the 3D view, whose plots are picked, fitted and clipped
         in3d = Makie.collect_atomic_plots(gui.ax.scene)
         @test !any(p -> any(q -> q === p, in3d), plots)
-        @test !any(p -> any(q -> q === p, plots), BMO.pickable_plots(gui.pool))
+        pickable = [p for h in BMO.render_children(gui.pool) for p in GUI._pickable_plots(h)]
+        @test !isempty(pickable)
+        @test !any(p -> any(q -> q === p, plots), pickable)
         # in front of the 3D view and below the component cards and the help card
         z = hud.scene.transformation.translation[][3]
         @test 0 < z < GUI._CARD_Z0 && z < GUI._HELP_Z
