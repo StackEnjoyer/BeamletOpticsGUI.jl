@@ -5,7 +5,7 @@ Selections of several objects: moved, rotated, hidden and removed as one, see `_
 """
     _MultiSelection(objects)
 
-The selection of several `objects` of the controls, e.g. after `Shift`+click in the 3D view or in
+The selection of several `objects` of the controls, e.g. after `Ctrl`+click (`Cmd` on macOS) in the 3D view or in
 the object tree: `ctrl.selected[]` holds it instead of a single object. The controls move and
 rotate it like one object, about `pos`, the mean of the positions of the `objects` when it was
 made, in the frame `dir`, the axes of the world when it was made: translating it translates all
@@ -147,27 +147,13 @@ function _leaves(s::_MultiSelection)
     return leaves
 end
 
-_is_movable(ctrl, s::_MultiSelection) = all(obj -> _is_movable(ctrl, obj), s.objects)
-
-# A selection of several moves along the axes that all its objects allow, see `constraints`
-function _allowed_axes(ctrl, s::_MultiSelection, kind::Symbol)
-    sets = [_allowed_axes(ctrl, obj, kind) for obj in s.objects]
-    return Tuple(a for a in _GIZMO_AXES if all(set -> a in set, sets))
-end
-
-"""
-Returns whether the mouse drags of `obj` snap onto beams and onto the grid of the table, see
-`_set_snap!`: not for a selection of several objects, whose center is no point of an object.
-"""
-_snaps(@nospecialize(obj)) = true
-_snaps(::_MultiSelection) = false
-
-_label(gui, s::_MultiSelection) = "$(length(s.objects)) objects"
+# `_is_movable`, `_allowed_axes` and the snapping of a selection of several are in
+# `LiveInteraction.jl`, its name (`_label`) in `LiveSelection.jl`, beside the methods for one object
 
 """
     _toggle_select!(gui, obj)
 
-Adds the movable `obj` to the selection of the `gui` or removes it from it, like `Shift`+click in
+Adds the movable `obj` to the selection of the `gui` or removes it from it, like `Ctrl`+click in
 the 3D view, see `_with_toggled`, and shows the pose of the selection in the status line. Nothing is
 selected in the spectator mode; while the members of a system are picked, `obj` is picked instead,
 see `_select!`.

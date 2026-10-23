@@ -124,7 +124,7 @@ end
 Selects the object `obj` of the [`live_view`](@ref) window `gui` like a click on it: its selection
 box and gizmo are shown, and its card opens or the inspector shows it. `nothing` clears the
 selection, like a click on the background. A group is selected as a whole. A vector `objs` selects
-all its objects, like `Shift`+click on each: they are moved, rotated, hidden and removed as one; a
+all its objects, like `Ctrl`+click (`Cmd` on macOS) on each: they are moved, rotated, hidden and removed as one; a
 vector of one object selects it like `obj`, an empty one clears the selection. Throws an
 `ArgumentError` if an object is not part of the view, if one of `objs` is a part of another one or
 a clip plane, or if the spectator mode is on, see [`spectator!`](@ref), in which nothing can be
