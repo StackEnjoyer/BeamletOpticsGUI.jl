@@ -142,6 +142,9 @@ const GUI = BeamletOpticsGUI
         sel = ctrl.selected[]
         @test sel isa GUI._MultiSelection && sel.objects == Any[m, pd]
         @test _top(gui, m) === m && _drawn(gui, m) == 1
+        # no longer parts of the group, e.g. for the pick of the members of a system
+        @test GUI._component_top(gui, m) === m && isnothing(GUI._part_parent(gui, m))
+        @test GUI._shown_top(gui, m) && GUI._shown_top(gui, pd)
         @test _in(m, ctrl.movable) && !_in(g, ctrl.movable)
         @test GUI._label(gui, m) == name_m && GUI._label(gui, pd) == name_pd
         @test occursin("ungrouped", gui.status.text[])

@@ -270,6 +270,10 @@ function _unshow_group!(gui, @nospecialize(g), systems)
     delete!(comp.origin, g)
     delete!(comp.system, g)
     _restore_kept_names!(gui, state)
+    # the members are top-level again, no parts of `g`, see `_component_top`
+    for m in members
+        get(gui.objects.parents, m, nothing) === g && delete!(gui.objects.parents, m)
+    end
     targets = isempty(systems) ? Any[nothing] : collect(Any, systems)
     for m in members, sys in targets
         _attach!(gui, m, sys; record = false)

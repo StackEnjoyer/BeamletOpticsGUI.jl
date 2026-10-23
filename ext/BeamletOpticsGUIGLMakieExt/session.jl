@@ -336,6 +336,11 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         settle!()
         _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
             "the redo did not ungroup")
+        # the later steps find the scene of before: grouped again, the drag and the grouping undone
+        foreach(_ -> GUI._undo!(gui.controls), 1:3)
+        settle!()
+        _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
+            "the undo did not ungroup")
     end
     step(deselect!, "click background (deselect) of the selection")
 
