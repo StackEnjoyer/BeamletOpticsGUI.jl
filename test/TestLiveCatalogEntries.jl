@@ -23,9 +23,10 @@ const GUI = BeamletOpticsGUI
         @test allunique(e.name for e in catalog)
         entries = filter(e -> !e.source, catalog)
         @test all(e -> e.group != "Sources", entries)
-        # all components of BeamletOptics with a constructor of numbers and glasses
+        # all components of BeamletOptics with a constructor of numbers and glasses; the lenses
+        # with surfaces are built by the GUI, see `TestLiveSurfaces.jl`
         @test [e.constructor for e in entries] == Any[
-            ThinLens, SphericalLens, SphericalDoubletLens, SphericalTripletLens,
+            ThinLens, GUI._surface_lens, GUI._surface_doublet, GUI._surface_triplet,
             RoundPlanoMirror, SquarePlanoMirror, RectangularPlanoMirror, SquarePlanoMirror2D,
             RightAnglePrismMirror, Retroreflector,
             SphericalMirror, ParabolicMirror, OffAxisParabolicMirror, ConicMirror, OffAxisConicMirror,
@@ -34,7 +35,9 @@ const GUI = BeamletOpticsGUI
             RoundPlateBeamsplitter, CubeBeamsplitter, RectangularCompensatorPlate,
             RightAnglePrism, PolarizationFilter, RoundPolarizationFilter, RoundLinearPolarizer,
             Detector]
-        @test all(e -> e.code_name == string(nameof(e.constructor)), catalog)
+        @test all(e -> e.code_name == string(nameof(e.constructor)), filter(e -> e.group != "Lenses", catalog))
+        @test [e.code_name for e in entries[1:4]] ==
+              ["ThinLens", "SphericalLens", "SphericalDoubletLens", "SphericalTripletLens"]
         for entry in entries
             values = _defaults(entry)
             obj = GUI._catalog_object(entry, values)
@@ -151,7 +154,7 @@ const GUI = BeamletOpticsGUI
         @test GUI._catalog_code(lens, [50e-3, -50e-3, 25.4e-3, 1.7]) == "ThinLens(0.05, -0.05, 0.0254, λ -> 1.7)"
         # the glass disperses, a constant refractive index does not
         index(obj, λ) = BMO.refractive_index(obj, λ)
-        for constructor in (ThinLens, SphericalLens, CubeBeamsplitter, RightAnglePrism)
+        for constructor in (ThinLens, GUI._surface_lens, CubeBeamsplitter, RightAnglePrism)
             entry = _entry(entries, constructor)
             values = _defaults(entry)
             obj = GUI._catalog_object(entry, values)
@@ -164,7 +167,7 @@ const GUI = BeamletOpticsGUI
             @test index(flat, 486e-9) == index(flat, 656e-9) == 1.7
         end
         # the two glasses of the achromat
-        doublet = _entry(entries, SphericalDoubletLens)
+        doublet = _entry(entries, GUI._surface_doublet)
         @test [_defaults(doublet)[i] for i in _glasses(doublet)] == ["N-BK7", "N-SF5"]
         splitter = _entry(entries, ThinBeamsplitter)
         @test GUI._catalog_code(splitter, _defaults(splitter)) ==

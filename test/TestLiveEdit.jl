@@ -208,6 +208,180 @@ const GUI = BeamletOpticsGUI
         @test new !== c.obj && gui.components.origin[new].strings[1] == "50.8"
         close(gui)
     end
+
+    # A frame: the rows of a surface follow its menu at the next one
+    _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1 / 60))
+    _widget(gui, name) = GUI._card_widget(_card(gui), name)
+    _shown(gui, name) = _widget(gui, name).displayed_string[]
+    # Chooses the entry `name` of the menu of the surface `i`
+    function _choose!(gui, i, name)
+        menu = _widget(gui, Symbol(:edit_surface_, i))
+        menu.i_selected[] = findfirst(==(name), menu.options[])
+        return nothing
+    end
+    _asphere_names(i) = [Symbol(:edit_, i, :_k); [Symbol(:edit_, i, :_A, n) for n in 4:2:16]]
+
+    @testset "surfaces of a singlet, $layout" for layout in (:compact, :app)
+        sys = System()
+        gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
+        c = _built("Singlet")
+        lens = c.obj
+        rotate3d!(lens, normalize([1.0, 2, 3]), 0.4)
+        translate_to3d!(lens, [0.01, 0.1, -0.02])
+        add_component!(gui, lens; origin = c.origin, label = "L1")
+        P, R = GUI._pose(lens)
+        spherical = copy(c.origin.strings)
+        @test spherical[1:2] == ["50", "-50"]
+        n_history = length(gui.controls.undo_stack)
+        n_listeners = length(gui.controls.listeners)
+
+        # a spherical surface: its menu and the box of its radius
+        names = _names(_show!(gui, lens, :edit))
+        @test all(in(names), (:edit_surface_1, :edit_1, :edit_surface_2, :edit_2, :edit_apply))
+        @test !any(in(names), [_asphere_names(1); _asphere_names(2)])
+        @test _widget(gui, :edit_surface_1).selection[] == "spherical"
+        @test _shown(gui, :edit_1) == "50" && _shown(gui, :edit_2) == "-50"
+
+        # "aspheric": the boxes of the asphere come with the next frame, typed texts are kept
+        _type!(_card(gui), 1, "60")
+        _choose!(gui, 2, "aspheric")
+        @test GUI._edit_strings(gui, lens) == ["60", "-50; 0; 0, 0, 0, 0, 0, 0, 0", spherical[3:end]...]
+        @test !(:edit_2_k in _names(_card(gui)))
+        _tick!(gui)
+        names = _names(_card(gui))
+        @test all(in(names), _asphere_names(2)) && !any(in(names), _asphere_names(1))
+        @test length(gui.controls.listeners) == n_listeners
+        @test _widget(gui, :edit_surface_2).selection[] == "aspheric"
+        @test _widget(gui, :edit_surface_1).selection[] == "spherical"
+        @test _shown(gui, :edit_1) == "60" && _shown(gui, :edit_2) == "-50"
+        @test _shown(gui, :edit_2_k) == "0" && _shown(gui, :edit_2_A16) == "0"
+        @test _card(gui).page === :edit && _in(lens, sys.objects)
+
+        # an invalid field changes nothing
+        _widget(gui, :edit_2_k).displayed_string[] = "1,5"
+        notify(_widget(gui, :edit_apply).clicks)
+        @test _in(lens, sys.objects) && occursin("not changed", gui.status.text[])
+        @test length(gui.controls.undo_stack) == n_history
+
+        # `k` and a coefficient, typed without Enter and applied with the button
+        _widget(gui, :edit_2_k).displayed_string[] = "-1"
+        _widget(gui, :edit_2_A4).displayed_string[] = "1e-6"
+        notify(_widget(gui, :edit_apply).clicks)
+        new = only(sys.objects)
+        @test new !== lens && new isa BMO.Lens
+        origin = gui.components.origin[new]
+        @test origin.strings == ["60", "-50; -1; 1e-6, 0, 0, 0, 0, 0, 0", spherical[3:end]...]
+        @test startswith(origin.code, "Lens(SphericalSurface(0.06, 0.0254), EvenAsphericalSurface(-0.05, 0.0254, -1.0, [0.0, 1000.0])")
+        Pn, Rn = GUI._pose(new)
+        @test norm(Pn - P) < 1e-12 && norm(Rn - R) < 1e-12
+        @test GUI._label(gui, new) == "L1" && gui.controls.selected[] === new
+        @test isnothing(gui.trace.error) && occursin("L1 changed", gui.status.text[])
+        # its card shows the page "Edit" again, with the boxes of the asphere
+        @test _card(gui).page === :edit
+        @test _widget(gui, :edit_surface_2).selection[] == "aspheric"
+        @test _shown(gui, :edit_2_k) == "-1" && _shown(gui, :edit_2_A4) == "1e-6"
+        # unchanged inputs: nothing to apply
+        notify(_widget(gui, :edit_apply).clicks)
+        @test only(sys.objects) === new && occursin("nothing to apply", gui.status.text[])
+
+        # undo brings the spherical lens back, redo the asphere
+        @test length(gui.controls.undo_stack) == n_history + 1
+        @test GUI._undo!(gui.controls)
+        @test only(sys.objects) === lens && gui.components.origin[lens].strings == spherical
+        @test GUI._pose(lens) == (P, R)
+        @test !(:edit_2_k in _names(_card(gui))) && _shown(gui, :edit_1) == "50"
+        @test _widget(gui, :edit_surface_2).selection[] == "spherical"
+        @test GUI._redo!(gui.controls)
+        @test only(sys.objects) === new && :edit_2_k in _names(_card(gui))
+
+        # Enter in a box of the asphere applies
+        _show!(gui, new, :edit)
+        _widget(gui, :edit_2_A6).stored_string[] = "2e-9"
+        newer = only(sys.objects)
+        @test newer !== new
+        @test gui.components.origin[newer].strings[2] == "-50; -1; 1e-6, 2e-9, 0, 0, 0, 0, 0"
+
+        # back to "spherical": the boxes go, the radius stays
+        _show!(gui, newer, :edit)
+        _type!(_card(gui), 2, "-70")
+        _choose!(gui, 2, "spherical")
+        _tick!(gui)
+        @test !any(in(_names(_card(gui))), _asphere_names(2))
+        @test GUI._edit_strings(gui, newer)[2] == "-70" && _shown(gui, :edit_2) == "-70"
+        notify(_widget(gui, :edit_apply).clicks)
+        final = only(sys.objects)
+        @test final !== newer
+        @test startswith(gui.components.origin[final].code, "SphericalLens(0.06, -0.07, ")
+        close(gui)
+    end
+
+    @testset "an asphere with a short text" begin
+        sys = System()
+        gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9))
+        strings = _defaults(_entry("Singlet"))
+        strings[2] = "-50;-1;1e-6"
+        c = _built("Singlet", strings)
+        add_component!(gui, c.obj; origin = c.origin)
+        names = _names(_show!(gui, c.obj, :edit))
+        @test all(in(names), _asphere_names(2))
+        @test _shown(gui, :edit_2_k) == "-1" && _shown(gui, :edit_2_A4) == "1e-6" && _shown(gui, :edit_2_A6) == "0"
+        # the boxes as they are shown are the inputs of the lens: nothing to apply
+        notify(_widget(gui, :edit_apply).clicks)
+        @test only(sys.objects) === c.obj && occursin("nothing to apply", gui.status.text[])
+        @test GUI._edit_strings(gui, c.obj) == strings
+
+        # its copy has the same inputs
+        GUI._CLIPBOARD[] = nothing
+        @test !isnothing(GUI._copy_selected!(gui))
+        pasted = GUI._paste!(gui)
+        @test pasted isa BMO.Lens && pasted !== c.obj
+        @test gui.components.placement.origin.strings == strings
+        GUI._drop_placement!(gui)
+        @test sys.objects[end] === pasted && gui.components.origin[pasted].strings == strings
+        @test gui.components.origin[pasted].code == c.origin.code
+        GUI._CLIPBOARD[] = nothing
+        close(gui)
+    end
+
+    @testset "surfaces of a doublet, $layout" for layout in (:compact, :app)
+        sys = System()
+        gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
+        c = _built("Doublet")
+        add_component!(gui, c.obj; origin = c.origin, label = "D1")
+        n_history = length(gui.controls.undo_stack)
+        names = _names(_show!(gui, c.obj, :edit))
+        @test all(in(names), (:edit_surface_1, :edit_surface_2, :edit_surface_3))
+        # the cemented surface as an asphere: the `DoubletLens` of the surfaces takes its place
+        _choose!(gui, 2, "aspheric")
+        _tick!(gui)
+        @test all(in(_names(_card(gui))), _asphere_names(2))
+        _widget(gui, :edit_2_k).displayed_string[] = "-1"
+        notify(_widget(gui, :edit_apply).clicks)
+        new = only(sys.objects)
+        @test new !== c.obj && new isa DoubletLens && length(gui.controls.undo_stack) == n_history + 1
+        @test occursin("D1 changed", gui.status.text[])
+        @test gui.components.origin[new].strings[2] == "-45.7; -1; 0, 0, 0, 0, 0, 0, 0"
+        @test startswith(gui.components.origin[new].code, "DoubletLens(SphericalSurface(0.0628, 0.0254), " *
+                                                          "EvenAsphericalSurface(-0.0457, 0.0254, -1.0, [0.0]), ")
+        @test _widget(gui, :edit_surface_2).selection[] == "aspheric"
+        # spherical again: the `SphericalDoubletLens`
+        _choose!(gui, 2, "spherical")
+        _tick!(gui)
+        notify(_widget(gui, :edit_apply).clicks)
+        @test only(sys.objects) !== new
+        @test startswith(gui.components.origin[only(sys.objects)].code, "SphericalDoubletLens(0.0628, -0.0457, ")
+        # an element that BeamletOptics can not build changes nothing
+        kept = only(sys.objects)
+        _choose!(gui, 1, "aspheric")
+        _tick!(gui)
+        _widget(gui, :edit_1).displayed_string[] = "30"
+        _widget(gui, :edit_2).displayed_string[] = "25"
+        _widget(gui, :edit_4).displayed_string[] = "1"
+        notify(_widget(gui, :edit_apply).clicks)
+        @test only(sys.objects) === kept
+        @test occursin("D1 not changed", gui.status.text[]) && occursin("meniscus", gui.status.text[])
+        close(gui)
+    end
 end
 
 end
