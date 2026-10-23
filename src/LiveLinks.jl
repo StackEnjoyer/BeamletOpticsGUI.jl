@@ -127,7 +127,7 @@ function _open_kwargs(gui::LiveView, system, sources)
         labels = gui.labels, catalog = gui.components.catalog,
         orthographic = gui.widgets.orthographic_toggle.active[],
         view_cube = !isnothing(gui.widgets.view_cube), snap = ctrl.snap[],
-        table = _table_kwarg(gui.components.table),
+        table = _table_kwarg(gui.components.table), debug = _debug_kwarg(gui.components.debug),
         # the sizes of the sidebars and the dock, see `_part_size_kwargs`
         _part_size_kwargs(gui)...,
         # the controls
@@ -216,6 +216,7 @@ function _link!(gui::LiveView, new::LiveView, system)
     push!(links.views, new)
     _watch_window!(new)
     _refresh_names!(new)
+    _debug_event!(gui, "linked view opened: $(_label(gui, system))")
     # One switch of the auto tracing for all of them: the one of `new`, which is the one of the
     # `gui` unless a kwarg of `open_system` set it, see `_connect_links!`
     _share_auto_trace!(new, new.trace.auto[])
@@ -262,6 +263,7 @@ function _unlink!(gui::LiveView)
     links = gui.links
     isempty(links.views) && return nothing
     filter!(v -> v !== gui, links.views)
+    foreach(v -> _debug_event!(v, "linked view closed"), links.views)
     # the last view is on its own again
     length(links.views) == 1 && empty!(links.views)
     gui.links = _ViewLinks()
@@ -299,7 +301,7 @@ function _each_linked(f, gui::LiveView)
                 f(view)
             catch e
                 e isa InterruptException && rethrow()
-                view.last_error = _log_once(e, view.last_error, "following a linked view")
+                view.last_error = _log_once(view, e, view.last_error, "following a linked view")
             end
         end
     finally
@@ -385,6 +387,8 @@ function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool
     update_render!(gui.controls.h)
     _update_selection_box!(gui.controls)
     _shows(gui, obj) && _table_include!(gui, obj)
+    # not through the controls of the `gui`, see `_apply_update!`
+    _debug_moved!(gui, _shows(gui, obj) ? obj : nothing)
     if stale
         _follow_stale!(gui)
         # A detector that `from` moved has no hits, unless `from` solves it in the background,
@@ -507,7 +511,8 @@ function _follow_solved!(gui::LiveView, from::LiveView, systems, @nospecialize(o
     states = _DetectorState[gui.detectors.states[pd] for pd in _find_detectors(systems)
                             if haskey(gui.detectors.states, pd)]
     foreach(state -> state.stale = true, states)
-    preview && return nothing
+    # the beams of a preview, which the layers of the debug mode show as well
+    preview && return _debug_solved!(gui)
     if !trace.stale
         gui.detectors.hits_valid = true
         if trace.view_time <= trace.budget
@@ -521,9 +526,11 @@ function _follow_solved!(gui::LiveView, from::LiveView, systems, @nospecialize(o
         gui.on_change(gui, _shows(gui, obj) ? obj : nothing)
         gui.last_error = nothing
     catch e
-        gui.last_error = _log_once(e, gui.last_error, "`on_change` callback")
+        gui.last_error = _log_once(gui, e, gui.last_error, "`on_change` callback")
     end
     _update_user_panels!(gui)
     _on_solved!(gui)
+    # The layers of the debug mode show the beams that `from` traced
+    _debug_solved!(gui)
     return nothing
 end

@@ -110,7 +110,10 @@ end
 
 The debug mode of a `LiveView`: whether it is `shown`, its `layers` (name => layer or `nothing`,
 created the first time it is switched on, see `_new_layer`), what it records (`stats`) and its
-tool (`toggle`).
+tool (`toggle`). `timing` is whether it switched on the compile timing of Julia
+(`Base.cumulative_compile_timing`), which it does only while it is on; `start` is what the last
+solve started with, `(; t0, compile, gc)` (`time()`, `Base.cumulative_compile_time_ns()` and
+`Base.gc_num()`), from which a cancelled or failed solve is recorded, see `_debug_solve_started!`.
 """
 Base.@kwdef mutable struct _Debug
     shown::Bool = false
@@ -118,6 +121,8 @@ Base.@kwdef mutable struct _Debug
     const stats::_DebugStats = _DebugStats()
     toggle::Any = nothing
     created::Bool = false
+    timing::Bool = false
+    start::Any = nothing
 end
 
 """The debug mode of the `gui`, or `nothing` before it is built."""
@@ -218,21 +223,182 @@ end
     _set_debug!(gui, on::Bool)
 
 Switches the debug mode of the `gui` on or off. The first time it is switched on, its layers are
-created (see `_new_layer`), each one at its current state, e.g. the bounding spheres of the objects
-of the view and the rays of the last solve.
+created (see `_new_layer`) and the ticks of the window are passed to them (see `_layer_tick!`).
+Each time it is switched on, the layers catch up with the view as it is, e.g. the bounding spheres
+of the objects of the view and the rays of the last solve, since they learn nothing while it is
+off. Only while it is on, the compile time of the solves is measured, see `_set_compile_timing!`.
 """
-function _set_debug!(gui::LiveView, on::Bool)
+function _set_debug!(gui::LiveView, shown::Bool)
     d = _debug!(gui)
-    d.shown = on
-    if on && !d.created
+    was = d.shown
+    d.shown = shown
+    # The compile time of the solves, only while the mode is on: it costs a little
+    _set_compile_timing!(d, shown)
+    if shown && !d.created
         d.created = true
         for name in _DEBUG_LAYERS
             push!(d.layers, name => _new_layer(gui, Val(name)))
         end
+        # The ticks of the window, passed on while the mode is on
+        push!(gui.controls.listeners,
+            on(tick -> _debug_tick!(gui, tick), events(gui.ax.scene).tick))
+    end
+    if shown && !was
         # each layer catches up with the view as it is
         _debug_moved!(gui, nothing)
+        _debug_hidden!(gui)
         _debug_solved!(gui)
+        # the beams of the last solve are outdated
+        gui.trace.stale && _debug_stale!(gui)
+        _debug_event!(gui, "debug mode on")
     end
     _debug_show!(gui)
     return nothing
+end
+
+# Switches the compile timing of Julia on or off for the debug mode `d`, see `_Debug`: it counts
+# how often it was switched on, hence once per mode
+function _set_compile_timing!(d::_Debug, on::Bool)
+    d.timing == on && return nothing
+    Base.cumulative_compile_timing(on)
+    d.timing = on
+    return nothing
+end
+
+"""
+    _close_debug!(gui)
+
+Switches the compile timing that the debug mode of the `gui` switched on off again, when the `gui`
+is closed, see `_set_compile_timing!`.
+"""
+function _close_debug!(gui::LiveView)
+    d = _debug(gui)
+    isnothing(d) || _set_compile_timing!(d, false)
+    return nothing
+end
+
+"""
+    _build_debug!(gui, on::Bool)
+
+Creates the debug mode of the `gui` with its toggle "Debug" among the tools of the layout, see the
+`debug` kwarg of [`live_view`](@ref). A mode that starts on (`on`) keeps the status line as it is.
+"""
+function _build_debug!(gui::LiveView, on::Bool)
+    d = _debug!(gui)
+    d.toggle = add_tool!(_toggle_debug!, gui, "Debug"; icon = :tune, toggle = true,
+        tooltip = "Debug mode: solve timings, bounding spheres, ends of the beams, hit points")
+    if on
+        status = gui.status.text[]
+        d.toggle.active[] = true
+        gui.status.text[] = status
+    end
+    return nothing
+end
+
+# The toggle "Debug": switches the mode and says so in the status line
+function _toggle_debug!(gui::LiveView, on::Bool)
+    _set_debug!(gui, on)
+    gui.status.text[] = on ? "debug mode on" : "debug mode off"
+    return nothing
+end
+
+# The `debug` kwarg of `live_view` that builds the debug mode `d` again, see `_open_kwargs`
+_debug_kwarg(::Nothing) = false
+_debug_kwarg(d::_Debug) = d.shown
+
+"""
+    _debug_updated!(gui, obj, dt)
+
+Called by the controls of the `gui` after each update of the render, e.g. a step of a drag, which
+took `dt` [s] (see `_apply_update!`), with the moved `obj`: records `dt` in `stats.update`. The
+layers learn about the move of an object from the `on_change` of the controls (see `live_view`),
+those of an update without an object here.
+"""
+function _debug_updated!(gui::LiveView, @nospecialize(obj), dt::Float64)
+    _debug_on(gui) || return nothing
+    _debug(gui).stats.update = dt
+    isnothing(obj) && _debug_moved!(gui, nothing)
+    return nothing
+end
+
+#=
+The records of the solves, see `_SolveRecord`
+=#
+
+# What is measured around the compile time and the garbage collector of a part of a solve
+_debug_counters() = (; compile = first(Base.cumulative_compile_time_ns()), gc = Base.gc_num())
+
+"""
+    _debug_cost(start) -> (; compile, gc, allocated)
+
+The time compiled [s], the time of the garbage collector [s] and the bytes allocated since the
+counters `start` of `_debug_counters`, `nothing` while the mode is off: zero.
+"""
+_debug_cost(::Nothing) = (; compile = 0.0, gc = 0.0, allocated = 0)
+function _debug_cost(start::NamedTuple)
+    diff = Base.GC_Diff(Base.gc_num(), start.gc)
+    return (; compile = 1e-9 * (first(Base.cumulative_compile_time_ns()) - start.compile),
+        gc = 1e-9 * diff.total_time, allocated = Int(diff.allocd))
+end
+
+"""
+    _debug_solve_started!(gui)
+
+Notes the start of a solve of the `gui` while the debug mode is on, from which a solve that is
+cancelled or fails is recorded, see `_debug_solve_ended!`.
+"""
+function _debug_solve_started!(gui::LiveView)
+    _debug_on(gui) || return nothing
+    _debug(gui).start = (; t0 = time(), _debug_counters()...)
+    return nothing
+end
+
+"""
+    _debug_record!(gui, r, kind, render, view, cost)
+
+Records the solve of the `kind` `:full`, `:preview` or `:coarse` with the result `r` of `_compute`
+that `_apply!` showed, while the debug mode of the `gui` is on: with the durations [s] of the
+rendering of its beams (`render`) and of the detector views (`view`), and the cost of the rendering
+(`cost`, see `_debug_cost`), which is added to the cost of the solve in its task (`r.cost`).
+"""
+function _debug_record!(gui::LiveView, r, kind::Symbol, render::Float64, view::Float64, cost)
+    _debug_on(gui) || return nothing
+    d = _debug(gui)
+    d.start = nothing
+    sources = Pair{String, Float64}[_label(gui, b) => t for (b, t) in zip(r.sources, r.source_times)]
+    rc = r.cost
+    record = _SolveRecord(time(), kind, r.solve_time, render, view, sources,
+        rc.compile + cost.compile, rc.gc + cost.gc, rc.allocated + cost.allocated)
+    _push_ring!(d.stats.solves, record, _DEBUG_SOLVES)
+    _debug_event!(gui, "solve $kind, $(_ms_string(r.solve_time + render))")
+    return nothing
+end
+
+"""
+    _debug_solve_ended!(gui, kind, text; elapsed = nothing)
+
+Records a solve of the `gui` that was cancelled or failed (`kind` `:cancelled` or `:failed`), with
+the duration `elapsed` [s] (by default the time since it started, see `_debug_solve_started!`) as
+the duration of the solve, while the debug mode is on; the event `text`, e.g. the first line of
+the error.
+"""
+function _debug_solve_ended!(gui::LiveView, kind::Symbol, text::AbstractString;
+        elapsed::Union{Nothing, Float64} = nothing)
+    _debug_on(gui) || return nothing
+    d = _debug(gui)
+    start = d.start
+    d.start = nothing
+    elapsed = something(elapsed, isnothing(start) ? 0.0 : time() - start.t0)
+    cost = _debug_cost(isnothing(start) ? nothing : (; start.compile, start.gc))
+    record = _SolveRecord(time(), kind, elapsed, 0.0, 0.0, Pair{String, Float64}[], cost.compile,
+        cost.gc, cost.allocated)
+    _push_ring!(d.stats.solves, record, _DEBUG_SOLVES)
+    _debug_event!(gui, text)
+    return nothing
+end
+
+# The first line of the message of the error `e`, at most 80 characters
+function _error_line(e)
+    msg = first(split(sprint(showerror, e), '\n'))
+    return length(msg) > 80 ? first(msg, 79) * "…" : String(msg)
 end

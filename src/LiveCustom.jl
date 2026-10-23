@@ -103,7 +103,7 @@ function _run_update!(gui::LiveView, p::Union{_UserPanel, _UserControls}, update
         update(gui)
         p.last_error = nothing
     catch e
-        p.last_error = _log_once(e, p.last_error, "update of $(_update_source(p))")
+        p.last_error = _log_once(gui, e, p.last_error, "update of $(_update_source(p))")
     end
     return nothing
 end
@@ -198,21 +198,21 @@ _key_name(key::Keyboard.Button) = lstrip(string(key), '_')
 """Calls `f(gui)` after each click of the button `w`, or `f(gui, active)` after the toggle `w`."""
 function _connect_tool!(gui::LiveView, f, w, ::Val{false}, name::String)
     last_error = Ref{Union{Nothing, String}}(nothing)
-    push!(gui.controls.listeners, on(_ -> _call_tool!(() -> f(gui), last_error, name), w.clicks))
+    push!(gui.controls.listeners, on(_ -> _call_tool!(gui, () -> f(gui), last_error, name), w.clicks))
     return nothing
 end
 function _connect_tool!(gui::LiveView, f, w, ::Val{true}, name::String)
     last_error = Ref{Union{Nothing, String}}(nothing)
-    push!(gui.controls.listeners, on(v -> _call_tool!(() -> f(gui, v), last_error, name), w.active))
+    push!(gui.controls.listeners, on(v -> _call_tool!(gui, () -> f(gui, v), last_error, name), w.active))
     return nothing
 end
 
-function _call_tool!(call, last_error::Ref, name::String)
+function _call_tool!(gui::LiveView, call, last_error::Ref, name::String)
     try
         call()
         last_error[] = nothing
     catch e
-        last_error[] = _log_once(e, last_error[], "tool \"$name\"")
+        last_error[] = _log_once(gui, e, last_error[], "tool \"$name\"")
     end
     return nothing
 end
@@ -332,6 +332,7 @@ function retrace!(f, gui::LiveView)
     # Like a slider, see `_connect_sliders!`: `f` may change any object
     _change!(f, gui.controls, nothing)
     update_render!(gui.controls.h)
+    _debug_moved!(gui, nothing)
     _on_change!(gui, nothing)
     return nothing
 end
