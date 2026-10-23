@@ -195,6 +195,21 @@ function _tree_click!(gui::AppView, @nospecialize(obj))
     return nothing
 end
 
+"""
+    _tree_toggle!(gui, key)
+
+Handles a click with `Ctrl` (`Cmd` on macOS) on the label of a row of the object tree (see
+`toggled` of `_ObjectTree`): adds the movable object to the selection or removes it from it, like
+`Ctrl`+click in the 3D view, see `_toggle_select!`. On any other row, e.g. of a system or of an
+object that is not movable, it is a plain click, see `_tree_click!`.
+"""
+_tree_toggle!(gui::AppView, h::AbstractSystemRenderHandle) = _tree_click!(gui, h)
+
+function _tree_toggle!(gui::AppView, @nospecialize(obj))
+    _is_movable(gui.controls, obj) ? _toggle_select!(gui, obj) : _tree_click!(gui, obj)
+    return nothing
+end
+
 # The row of the inspected object is highlighted like the selected one, see `_on_selected!`
 _show_inspected!(::AppView, ::Nothing) = nothing
 function _show_inspected!(gui::AppView, @nospecialize(obj))
