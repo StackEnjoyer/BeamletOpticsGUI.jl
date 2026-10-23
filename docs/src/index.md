@@ -18,7 +18,7 @@ of BeamletOptics (through their render handle protocol) and adds the interaction
 
 ## Installation
 
-BeamletOpticsGUI needs BeamletOptics 0.13 (0.13.11 or newer) and a Makie backend with a window
+BeamletOpticsGUI needs BeamletOptics 0.14 and a Makie backend with a window
 (GLMakie). It is installed from the General registry:
 
 ```julia
