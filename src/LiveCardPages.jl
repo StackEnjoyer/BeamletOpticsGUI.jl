@@ -5,7 +5,7 @@ object
 
 # The pages of a card in the order of the page bar, with their labels
 const _PAGES = (:pose => "Pose", :color => "Color", :edit => "Edit", :results => "Results",
-    :properties => "Properties")
+    :properties => "Properties", :debug => "Debug")
 
 """
     _has_page(obj, ::Val{page}) -> Bool
@@ -20,6 +20,8 @@ _has_page(_, ::Val{:pose}) = true
 _has_page(_, ::Val{:color}) = false
 # Only with the view, which knows what was built from the catalog, see `_card_pages(gui, obj)`
 _has_page(_, ::Val{:edit}) = false
+# Only while the debug mode is on, see `_card_pages(gui, obj)` and `src/LiveDebugPage.jl`
+_has_page(_, ::Val{:debug}) = false
 _has_page(@nospecialize(obj), ::Val{:results}) = _has_view(obj)
 _has_page(@nospecialize(obj), ::Val{:properties}) = _has_properties(obj)
 # A system has one page, the system widget, and hence no page bar, see `_system_rows`
@@ -66,6 +68,23 @@ _card_pages(gui, @nospecialize(obj)) = Tuple(page for (page, _) in _PAGES if _ha
 _has_page(_, @nospecialize(obj), page::Val) = _has_page(obj, page)
 _page_rows(gui, @nospecialize(obj), page::Symbol) = _page_rows(gui, obj, Val(page))
 _page_rows(_, @nospecialize(obj), page::Val) = _page_rows(obj, page)
+
+"""
+Whether the `page` of a card shows a property list instead of declared rows: the page
+"Properties" (see `_inspector_rows`) and the page "Debug" (see `_debug_rows`).
+"""
+_shows_list(page::Symbol) = page === :properties || page === :debug
+
+"""
+    _list_rows(gui, page, obj) -> Vector{Tuple{String, String}}
+
+The rows of the property list of the `page` of a card of `obj`, see `_shows_list`; those of the
+summary of the live view for `obj === nothing`, see `_inspector_rows`.
+"""
+_list_rows(gui, page::Symbol, @nospecialize(obj)) = _list_rows(gui, Val(page), obj)
+_list_rows(gui, ::Val, @nospecialize(obj)) = _inspector_rows(gui, obj)
+_list_rows(gui, ::Val{:debug}, @nospecialize(obj)) = _debug_list_rows(gui, obj)
+_list_rows(gui, ::Val{:debug}, ::Nothing) = _inspector_rows(gui, nothing)
 
 """Whether the `page` of a card shows declared rows, see `_page_rows`."""
 _shows_rows(page::Symbol) = page === :pose || page === :color || page === :edit
