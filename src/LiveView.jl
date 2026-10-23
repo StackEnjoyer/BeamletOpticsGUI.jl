@@ -441,7 +441,8 @@ shown object is `target_shown`, see `_catalog_target`; the
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
 likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
-`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
+`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog;
+the `groups` made in the window, with their `_WindowGroup`, see `_group!`.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -471,6 +472,8 @@ Base.@kwdef mutable struct _ComponentState
     # the optical table of the view (a `_Table`), see `_set_table!`
     table::Any = nothing
     window::Any = nothing
+    # the groups made in the window (an `ObjectGroup` => its `_WindowGroup`), see `_group!`
+    const groups::IdDict{Any, Any} = IdDict{Any, Any}()
 end
 
 """
