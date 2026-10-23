@@ -36,13 +36,8 @@ const GUI = BeamletOpticsGUI
     _in(obj, list) = any(o -> o === obj, list)
     _rendered(gui, obj) = !isnothing(GUI._child_handle(gui.controls.h, obj))
 
-    # Selects several objects without the listeners of the selection, i.e. without the card of the
-    # selection of several (W3); `select!(gui, objs)` once that card exists
-    function _select_several!(gui, objs)
-        gui.controls.selected.val = GUI._MultiSelection(objs)
-        GUI._update_selection_box!(gui.controls)
-        return gui.controls.selected[]
-    end
+    # Selects several objects like Ctrl+click on each, returns the selection
+    _select_several!(gui, objs) = (select!(gui, objs); gui.controls.selected[])
 
     @testset "Delete removes all as one action, $layout" for layout in (:compact, :app)
         m1, m2, pd = _mirror(), _mirror(0.3), _detector()
