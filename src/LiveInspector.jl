@@ -800,11 +800,12 @@ function _show_pin!(gui::AppView)
     obj = _shown_object(gui)
     pinned = !isnothing(obj) && _is_pinned(gui, obj)
     pin.active[] == pinned || (pin.active[] = pinned)
-    visible = !isnothing(obj)
+    # no pin for a selection of several objects, see `_pinnable`
+    visible = !isnothing(obj) && _pinnable(obj)
     pin.box.visible[] == visible || (pin.box.visible[] = visible)
     # "‹" for a part of another object, see `_part_parent`
     back = gui.layout.inspector.back
-    part = visible && !isnothing(_part_parent(gui, obj))
+    part = !isnothing(obj) && !isnothing(_part_parent(gui, obj))
     back.box.visible[] == part || (back.box.visible[] = part)
     return nothing
 end

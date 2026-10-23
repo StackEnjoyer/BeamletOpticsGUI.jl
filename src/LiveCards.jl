@@ -259,6 +259,8 @@ function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obs
     end
     corners = _card_corners(gui, c, obj)
     _show_title!(gui, c, obj)
+    # no pin on the card of a selection of several objects, see `_pinnable`
+    _show_pin_button!(c, c.pinned || _pinnable(obj))
     # "‹" on the card of a part, see `_browse_parent!`
     c.back_shown = !isnothing(_part_parent(gui, obj))
     _show_kind!(c, obj)
@@ -721,6 +723,17 @@ The line below the title of the card of `obj`, in the muted color, e.g. "System 
 1 source" of a system; `nothing` for none, the default.
 """
 _card_subtitle(::LiveView, _) = nothing
+_card_subtitle(::LiveView, ::_MultiSelection) = "Selection"
+
+"""
+    _pinnable(obj) -> Bool
+
+Whether a card can be pinned to `obj`, see `_toggle_pinned!` and `_toggle_pin!`: any object, but
+no selection of several objects (see `_MultiSelection`), which is a new value with every change of
+the selection. The card of such a selection shows no pin.
+"""
+_pinnable(_) = true
+_pinnable(::_MultiSelection) = false
 
 # The line below the title of the card `c` of `obj`: how to end the input while its name is edited
 function _subtitle(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
@@ -850,7 +863,8 @@ end
 
 Pins the card `c` of the selection to the selected object, which keeps the card next to the object
 (or at the spot to which the mouse moved it, see `_drag_cards!`) independent of the selection; the
-selection gets another card. Unpins a pinned card, which hides it and forgets its spot.
+selection gets another card. Unpins a pinned card, which hides it and forgets its spot. The card of
+a selection of several objects is not pinned, see `_pinnable`.
 """
 function _toggle_pinned!(gui::LiveView, c::_ComponentCard)
     # The card of an inspected point or a measurement stays, see `_keep_info!`
@@ -863,7 +877,7 @@ function _toggle_pinned!(gui::LiveView, c::_ComponentCard)
         # the plots of an inspected point or a measurement, unless it is still pinned elsewhere,
         # e.g. after it was docked, see `_forget!`
         _is_pinned(gui, obj) || _forget!(gui, obj)
-    elseif c === gui.cards.selection && !isnothing(_shown_object(gui))
+    elseif c === gui.cards.selection && !isnothing(_shown_object(gui)) && _pinnable(_shown_object(gui))
         c.pinned, c.obj, c.key = true, _shown_object(gui), nothing
         _use_card!(gui, _spare_card!(gui))
     end
@@ -916,7 +930,7 @@ Pins a card to `obj`, independent of the card of the selection, or unpins the ca
 `_is_pinned`): floating next to its object by default, docked below the inspector in the app layout.
 """
 function _toggle_pin!(gui::LiveView, @nospecialize(obj))
-    _is_pinned(gui, obj) ? _unpin!(gui, obj) : _pin!(gui, obj)
+    _is_pinned(gui, obj) ? _unpin!(gui, obj) : (_pinnable(obj) && _pin!(gui, obj))
     _on_pinned!(gui)
     return nothing
 end

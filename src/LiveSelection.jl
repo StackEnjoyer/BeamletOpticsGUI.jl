@@ -32,6 +32,8 @@ The name of `obj` in the `gui`: its entry in `labels`, else its automatic name, 
 """
 _label(gui::LiveView, @nospecialize(obj)) = get(() -> get(gui.objects.names, obj, string(nameof(typeof(obj)))),
     gui.labels, obj)
+# A selection of several objects, e.g. "3 objects", see `_MultiSelection`
+_label(::LiveView, s::_MultiSelection) = "$(length(s.objects)) objects"
 
 """Describes the pose of `obj`, including the change since the controls were enabled."""
 function _pose_string(gui, @nospecialize(obj))
@@ -410,7 +412,9 @@ end
 Hides the object `obj` of the `gui` (of a card or a row of the object tree), i.e. makes the plots
 of its rendered objects invisible and clears the selection if it is hidden now, e.g. `obj` or an
 object of a hidden group or system, or shows it again if all of them are hidden. A hidden object
-can not be selected in the 3D view, but it stays in the systems.
+can not be selected in the 3D view, but it stays in the systems. For a selection of several objects
+(see `_MultiSelection`), all its objects are hidden, or shown if all of them are hidden; the hidden
+objects of a selection of several leave it.
 """
 function _toggle_hidden!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
@@ -421,6 +425,14 @@ function _toggle_hidden!(gui::LiveView, @nospecialize(obj))
         if sel === obj || (!isnothing(sel) && _all_hidden(gui, sel))
             ctrl.selected[] = nothing
             _update_selection_box!(ctrl)
+        elseif _is_multi(sel)
+            # the hidden objects of a selection of several leave it
+            hidden = Any[o for o in _selection_objects(sel) if _all_hidden(gui, o)]
+            kept = _without(sel, hidden)
+            if kept !== sel
+                ctrl.selected[] = kept
+                _update_selection_box!(ctrl)
+            end
         end
         gui.status.text[] = "$(_label(gui, obj)) hidden, $(_show_hint(gui))"
     else
