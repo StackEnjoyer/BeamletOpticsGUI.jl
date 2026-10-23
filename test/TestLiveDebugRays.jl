@@ -157,7 +157,13 @@ const GUI = BeamletOpticsGUI
     @testset "hidden while the beams are outdated, in the spectator mode and with the mode off" begin
         fx = _fixture()
         gui = _live_view(fx.sys => fx.stopped; auto_trace = false)
+        # without auto tracing, the start is not solved: nothing is shown until a solve
         r = _rays!(gui)
+        @test !r.visible[]
+        GUI._trace!(gui)
+        wait_solve(gui)
+        @test !gui.trace.stale
+        GUI._debug_solved!(gui)
         @test _shown(r)
         translate3d!(gui, fx.pd, [0.0, 0.01, 0])
         @test gui.trace.stale
@@ -166,7 +172,8 @@ const GUI = BeamletOpticsGUI
         # a solve of outdated beams reads nothing of them
         GUI._debug_solved!(gui)
         @test _summary(gui).beams == 0
-        retrace!(gui)
+        GUI._trace!(gui)
+        wait_solve(gui)
         @test !gui.trace.stale
         GUI._debug_solved!(gui)
         @test r.visible[]

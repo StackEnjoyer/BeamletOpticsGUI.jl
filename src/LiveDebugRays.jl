@@ -22,8 +22,8 @@ const _RAYS_HIT_COLOR = RGBAf(Makie.to_color("#9b40c9"))
 The layer `:rays` of the debug mode: the diagnostics of the rays of the last solve, read from the
 beams as they were traced (`BMO.path_segments`, `intersection`), never traced again.
 
-- the end of each branch of the beams, colored by reason (see `_end_reason`): green (`t.ok`) on an
-  object, amber (`t.stale`) open, red (`t.danger`) at a limit of the solve
+- the end of each branch of the beams, colored by reason (see `_ray_end_reason`): green (`t.ok`)
+  on an object, amber (`t.stale`) open, red (`t.danger`) at a limit of the solve
 - the hit points of the rays (of a Gaussian beamlet its chief rays) with the normals of the
   surfaces they hit, purple like the clip planes, at most `_RAYS_HIT_CAP` (every k-th)
 - the label "never hit" at the components of the traced systems that no ray hit
@@ -61,7 +61,7 @@ mutable struct _DebugRays <: _DebugLayer
     fresh::Bool
 end
 
-# The colors of the ends, see `_end_reason`: the limits of the solve share one
+# The colors of the ends, see `_ray_end_reason`: the limits of the solve share one
 const _RAYS_END_KEYS = (:object, :open, :limit)
 _end_key(reason::Symbol) = reason === :r_max || reason === :depth_max ? :limit : reason
 _end_color(t, key::Symbol) = key === :object ? t.ok : key === :open ? t.stale : t.danger
@@ -152,7 +152,7 @@ function _layer_solved!(gui::LiveView, r::_DebugRays)
             max_depth = max(max_depth, s.depth)
             isnothing(s.object) || push!(hit_objects, s.object)
             s.leaf || continue
-            reason = _end_reason(s, r_max, depth_max)
+            reason = _ray_end_reason(s, r_max, depth_max)
             counts[reason] += 1
             push!(ends[_end_key(reason)], Point3f(s.stop))
         end
@@ -186,7 +186,7 @@ function _layer_solved!(gui::LiveView, r::_DebugRays)
 end
 
 """
-    _end_reason(segment, r_max, depth_max) -> Symbol
+    _ray_end_reason(segment, r_max, depth_max) -> Symbol
 
 Why the branch of a beam ends with the leaf `segment` (see `BMO.path_segments`): `:r_max` if its
 beam has the most rays a solve traces (`r_max`), `:depth_max` if the solve cut off the children of
@@ -194,7 +194,7 @@ its beam, which lies deeper than `depth_max` in the tree of the beams (only a se
 an object can have children), `:open` if it flies on (a final ray, or an intersection that does
 not name its object), otherwise `:object`, it ends on an object, e.g. a detector.
 """
-function _end_reason(s, r_max::Integer, depth_max::Integer)
+function _ray_end_reason(s, r_max::Integer, depth_max::Integer)
     s.ray_index >= r_max && return :r_max
     (!s.final && s.depth > depth_max) && return :depth_max
     (s.final || isnothing(s.object)) && return :open
