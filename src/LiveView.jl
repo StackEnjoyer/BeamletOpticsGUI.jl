@@ -1615,6 +1615,8 @@ function live_view(
     _connect_placement!(gui)
     # Copying and pasting of the components of the catalog, see `_copy_selected!`
     _connect_copy!(gui)
+    # Grouping the selection of several with `Ctrl+G`, see `_group!`
+    _connect_group_keys!(gui)
     # What linked views share beside their objects, see `open_system`
     _connect_links!(gui)
     # Aiming a source with the mouse, see `_start_aim!`
