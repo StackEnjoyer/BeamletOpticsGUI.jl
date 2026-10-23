@@ -470,6 +470,8 @@ Base.@kwdef mutable struct _ComponentState
     aim::Any = nothing
     # the optical table of the view (a `_Table`), see `_set_table!`
     table::Any = nothing
+    # the debug mode of the view (a `_Debug`), see `_set_debug!`
+    debug::Any = nothing
     window::Any = nothing
 end
 
