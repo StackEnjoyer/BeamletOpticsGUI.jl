@@ -212,9 +212,13 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
     up, left, page = move ? ("green", "red", "blue") : ("red", "blue", "green")
     click = isnothing(select_modifier) ? Any[:mouse => "click"] :
             Any[_modifier_name(select_modifier), :mouse => "click"]
+    # Ctrl+click adds to the selection or removes from it, see `_toggles`
+    toggle = Any[_ctrl_cap(), :mouse => "click"]
+    isnothing(select_modifier) || pushfirst!(toggle, _modifier_name(select_modifier))
     return _HelpSection[
         "Select" => [
             _HelpEntry(click, click_help; combo = true),
+            _HelpEntry(toggle, "add to or remove from the selection"; combo = true),
             _HelpEntry(["Esc"], "enclosing group or deselect")],
         (move ? "Move" : "Rotate") * " the selection" => [
             _HelpEntry(["M"], "switch to $(_other_mode(mode)) mode"),
@@ -546,6 +550,9 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # likewise the arrow under the cursor and the drag of an arrow in the move mode, see `_pick_arrow`
     arrow_hover::Union{Nothing, Symbol}
     arrow::Union{Nothing, _ArrowDrag}
+    # whether the click of the current press adds to or removes from the selection (`Ctrl`+click),
+    # see `_toggles` and `_toggle_leaf!`
+    press_toggle::Bool
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -642,12 +649,76 @@ A click on the rendered object `leaf`: left to `click_leaf` of the `ctrl` if it 
 selects the next level of the hierarchy towards `leaf` (see `_drill_select`) and calls `on_click`.
 """
 function _click_leaf!(ctrl::KinematicController, @nospecialize(leaf))
-    ctrl.click_leaf(leaf) && return nothing
-    ctrl.selected[] = _drill_select(ctrl, leaf)
+    # A click on an object of a selection of several selects that object alone
+    member = _selected_member(ctrl, leaf)
+    if _is_multi(ctrl.selected[]) && !isnothing(member)
+        ctrl.selected[] = member
+    else
+        ctrl.click_leaf(leaf) && return nothing
+        ctrl.selected[] = _drill_select(ctrl, leaf)
+    end
     _update_selection_box!(ctrl)
     ctrl.on_click(ctrl.selected[])
     return nothing
 end
+
+"""
+    _selected_member(ctrl, leaf)
+
+The object of the selection of the `ctrl` (see `_selection_objects`) that the rendered object
+`leaf` is a part of or is, i.e. that lies in `_chain(ctrl, leaf)`, or `nothing`.
+"""
+function _selected_member(ctrl::KinematicController, @nospecialize(leaf))
+    objs = _selection_objects(ctrl.selected[])
+    isempty(objs) && return nothing
+    for x in _chain(ctrl, leaf)
+        _has(objs, x) && return x
+    end
+    return nothing
+end
+
+"""
+    _toggles(ctrl, scene) -> Bool
+
+Returns whether a click in the `scene` adds an object to the selection of the `ctrl` or removes it
+(see `_toggle_leaf!`): while `Ctrl` (`Cmd` on macOS) is held. Such a press never reaches the camera,
+whose `Camera3D` would reset (`center!`) on `Ctrl`+click.
+"""
+_toggles(::KinematicController, scene) = _modifier_held(scene, _CTRL_OR_CMD_KEYS)
+
+"""
+    _toggle_leaf!(ctrl, leaf)
+
+`Ctrl`+click on the rendered object `leaf`: removes the object of the selection that `leaf` is a
+part of or is (see `_selected_member`) from the selection, otherwise adds the top-level object of
+`leaf`, see `_with_toggled`; then calls `on_click` with the new selection. The `click_leaf` of the
+`ctrl`, e.g. the small menu of a group of `live_view`, is not asked.
+"""
+function _toggle_leaf!(ctrl::KinematicController, @nospecialize(leaf))
+    member = _selected_member(ctrl, leaf)
+    obj = isnothing(member) ? last(_chain(ctrl, leaf)) : member
+    sel = _with_toggled(ctrl.selected[], obj)
+    ctrl.selected[] === sel || (ctrl.selected[] = sel)
+    _update_selection_box!(ctrl)
+    ctrl.on_click(ctrl.selected[])
+    return nothing
+end
+
+"""
+Returns whether a press on the rendered object `leaf` grabs the selection of the `ctrl`, i.e. `leaf`
+is a part of the selected object or of one of the objects of a selection of several.
+"""
+function _grabs_selection(ctrl::KinematicController, @nospecialize(leaf))
+    sel = ctrl.selected[]
+    isnothing(sel) && return false
+    chain = _chain(ctrl, leaf)
+    return _has(chain, sel) || !isnothing(_selected_member(ctrl, leaf))
+end
+
+"""The selection after `Esc` with the selection `obj`: the enclosing group, `nothing` at the top
+level and for a selection of several objects."""
+_parent_selection(ctrl::KinematicController, @nospecialize(obj)) = render_parent(ctrl.h, obj)
+_parent_selection(::KinematicController, ::_MultiSelection) = nothing
 
 """
     _control_axes(ctrl, obj) -> (y, x, v)
@@ -687,6 +758,13 @@ _constraints_of(ctrl::KinematicController, @nospecialize(obj)) = get(ctrl.constr
 function _allowed_axes(ctrl::KinematicController, @nospecialize(obj), kind::Symbol)
     return get(_constraints_of(ctrl, obj), kind, _GIZMO_AXES)
 end
+
+# The methods of a selection of several objects (see `src/LiveMultiSelect.jl`) for the controls,
+# which are ambiguous with the methods above otherwise
+_allowed_axes(ctrl::KinematicController, s::_MultiSelection, kind::Symbol) =
+    invoke(_allowed_axes, Tuple{Any, _MultiSelection, Symbol}, ctrl, s, kind)
+_is_movable(ctrl::KinematicController, s::_MultiSelection) =
+    invoke(_is_movable, Tuple{Any, _MultiSelection}, ctrl, s)
 
 """Validates the `constraints` kwarg of [`kinematic_controls!`](@ref)."""
 function _validate_constraints(constraints)
@@ -933,6 +1011,51 @@ function _reset_pose!(ctrl::KinematicController, @nospecialize(obj))
     return nothing
 end
 
+# The poses of the objects of the selection `s` and its own, see `_reset_poses!`
+_selection_state(s::_MultiSelection) = (Any[_pose(o) for o in s.objects], s.pos, s.dir)
+
+"""Sets the poses of the objects of the selection `s` and its own to the `state`, see
+`_selection_state`."""
+function _set_selection_state!(ctrl::KinematicController, s::_MultiSelection, state)
+    poses, pos, dir = state
+    _change!(ctrl, s) do
+        for (o, (P, R)) in zip(s.objects, poses)
+            _set_pose!(o, P, R)
+        end
+    end
+    s.pos, s.dir = pos, dir
+    return nothing
+end
+
+"""
+    _reset_poses!(ctrl, s::_MultiSelection)
+
+`Backspace` with the selection `s` of several objects: resets each of its objects to its initial
+pose (see `ctrl.init_poses`; an object without one stays), as one entry of the undo history, whose
+undo and redo set the poses back and again and select `s`. The center of `s` is then the mean of
+the positions of its objects, its axes those of the world.
+"""
+function _reset_poses!(ctrl::KinematicController, s::_MultiSelection)
+    before = _selection_state(s)
+    poses = Any[get(ctrl.init_poses, o, P) for (o, P) in zip(s.objects, first(before))]
+    pos = Point3{Float64}(sum(P -> Vector{Float64}(first(P)), poses) ./ length(poses))
+    after = (poses, pos, Matrix{Float64}(I, 3, 3))
+    ctrl.last_key_step = nothing
+    # nothing to reset, up to the rounding of the undo of earlier gestures
+    same((a, b)) = norm(first(a) - first(b)) <= 1e-12 && norm(last(a) - last(b)) <= 1e-12
+    all(same, zip(first(before), poses)) && return nothing
+    apply = function (state)
+        _set_selection_state!(ctrl, s, state)
+        _is_movable(ctrl, s) && ctrl.selected[] !== s && (ctrl.selected[] = s)
+        _update_selection_box!(ctrl)
+        _request_update!(ctrl)
+        return nothing
+    end
+    apply(after)
+    _push_action!(ctrl, s, () -> apply(before), () -> apply(after))
+    return nothing
+end
+
 #=
 Snapping of the mouse drags onto beams
 =#
@@ -988,6 +1111,13 @@ function _angle_about(axis, d, y)
 end
 
 """
+Returns whether a mouse drag of `obj` snaps onto beams and onto the grid of the table (see
+`ctrl.snap_beam` and `ctrl.snap_grid`), if the snapping is on: not for a selection of several
+objects, whose center is no point of an object, and which keeps the orientations of its objects.
+"""
+_drag_snaps(@nospecialize(obj)) = !_is_multi(obj)
+
+"""
 Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
 and for the rotate mode the angle of the optical axis of `obj` to the beam through its position,
 see `_snap_angle`; without such a beam, or with the snapping onto beams switched off, its angle to
@@ -997,7 +1127,7 @@ function _start_snap!(ctrl::KinematicController, @nospecialize(obj))
     ctrl.drag_count += 1
     ctrl.drag_angle = ctrl.drag_applied = 0.0
     ctrl.drag_beam_angle = nothing
-    ctrl.mode[] == :rotate || return nothing
+    (ctrl.mode[] == :rotate && _drag_snaps(obj)) || return nothing
     P, R = _pose(obj)
     beam = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, Vector{Float64}(P))
     # beside the beams, the angle to the grid
@@ -1114,7 +1244,9 @@ end
 # Sets the pose of the object of the gesture `e` and selects it
 function _apply_entry!(ctrl::KinematicController, e::_HistoryEntry, P, R)
     _change!(() -> _set_pose!(e.obj, P, R), ctrl, e.obj)
-    ctrl.selected[] === e.obj || (ctrl.selected[] = e.obj)
+    # a selection of several objects only while all of them are still objects of the controls
+    (_is_multi(e.obj) && !_is_movable(ctrl, e.obj)) || ctrl.selected[] === e.obj ||
+        (ctrl.selected[] = e.obj)
     _update_selection_box!(ctrl)
     _request_update!(ctrl)
     return nothing
@@ -1148,14 +1280,16 @@ end
 """
     _drop_history!(ctrl, objs)
 
-Drops the entries of the undo history of the `ctrl` on the objects `objs`, e.g. after another window
-of the same system added or removed them, see `_follow_structure!`.
+Drops the entries of the undo history of the `ctrl` on the objects `objs`, also those on a
+selection of several objects that holds one of them, e.g. after another window of the same system
+added or removed them, see `_follow_structure!`.
 """
 function _drop_history!(ctrl::KinematicController, objs)
     dropped = Base.IdSet{Any}(objs)
-    filter!(e -> !(e.obj in dropped), ctrl.undo_stack)
-    filter!(e -> !(e.obj in dropped), ctrl.redo_stack)
-    !isnothing(ctrl.last_key_step) && ctrl.last_key_step.obj in dropped && (ctrl.last_key_step = nothing)
+    hit(x) = any(o -> o in dropped, _selection_objects(x)) || x in dropped
+    filter!(e -> !hit(e.obj), ctrl.undo_stack)
+    filter!(e -> !hit(e.obj), ctrl.redo_stack)
+    !isnothing(ctrl.last_key_step) && hit(ctrl.last_key_step.obj) && (ctrl.last_key_step = nothing)
     return nothing
 end
 
@@ -1250,7 +1384,9 @@ function _set_spectator!(ctrl::KinematicController, on::Bool; help::Bool = true)
         obj = ctrl.spectator_selected
         ctrl.spectator_selected = nothing
         ctrl.spectator_help = true
-        if was && !isnothing(obj) && isnothing(ctrl.selected[]) && haskey(ctrl.init_poses, obj)
+        # a selection of several objects if all of them are still objects of the controls
+        if was && !isnothing(obj) && isnothing(ctrl.selected[]) &&
+           all(o -> haskey(ctrl.init_poses, o), _selection_objects(obj))
             ctrl.selected[] = obj
             _update_selection_box!(ctrl)
         end
@@ -1568,8 +1704,11 @@ function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
             target = hit .+ ctrl.grab_offset
             allowed = _allowed_axes(ctrl, obj, :move)
             if !isempty(allowed)
-                snapped = ctrl.snap[] == :off ? nothing : ctrl.snap_beam(obj, target)
-                if isnothing(snapped)
+                # A selection of several snaps neither onto beams nor onto the grid, see `_drag_snaps`
+                snaps = _drag_snaps(obj)
+                snapped = (!snaps || ctrl.snap[] == :off) ? nothing : ctrl.snap_beam(obj, target)
+                if !snaps
+                elseif isnothing(snapped)
                     # beside the beams: onto the grid, e.g. the holes of the table
                     grid = ctrl.snap_grid(obj, target)
                     isnothing(grid) || (target = Vector{Float64}(grid.point))
@@ -1578,7 +1717,7 @@ function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
                 end
                 Δ = target .- Vector{Float64}(position(obj))
                 A = hcat(_axis_vectors(ctrl, obj, allowed)...)
-                R = _snap_orientation(ctrl, obj, snapped)
+                R = snaps ? _snap_orientation(ctrl, obj, snapped) : nothing
                 # Projection onto the allowed axes, which may be linearly dependent, e.g. if
                 # a local axis is almost parallel to the rotation axis
                 _change!(ctrl, obj) do
@@ -1655,6 +1794,19 @@ A click selects, a drag moves only what is already selected, every other drag ro
   of the undo history, a click on an arrow does nothing
 - left-drag elsewhere (background or an unselected object): rotates the camera as usual
 - left-click on empty space: deselects the current object
+- `Ctrl`+left-click (`Cmd` on macOS) on an object: adds its top-level object to the selection, or
+  removes the object of the selection that it belongs to; on empty space it keeps the selection.
+  The press of `Ctrl`+click is never passed on, hence it does not reset the camera
+  (`Camera3D`'s reset gesture) in the controls, and a `Ctrl`+drag beside the selection does nothing.
+  With a `select_modifier`, it is held as well
+
+A selection of several objects moves and rotates as one, with the mouse, the gizmo and the keys:
+about its center, the mean of the positions of its objects when it was made, with the axes of the
+world (rotating it turns its axes along). It moves along the axes that all of its objects allow,
+see "Constraints", and does not snap onto beams or a grid. A click on one of its objects selects
+that object alone, a drag on any of them moves all; `esc` deselects it, `Backspace` resets each of
+its objects to its initial pose. `on_change` is called with the selection (`ctrl.selected[]`),
+not with each of its objects.
 
 Object groups (e.g. `ObjectGroup`) are selected as a whole by the first click. Each further click on
 the selected group selects the next level of the hierarchy towards the object under the cursor,
@@ -1688,8 +1840,9 @@ without a selected object. The current step size is shown in the hint line.
 `Ctrl`+`Z` (`Cmd`+`Z` on macOS) undoes the last gesture, `Ctrl`+`Y` or `Ctrl`+`Shift`+`Z`
 (`Cmd`+`Y`/`Cmd`+`Shift`+`Z`) redoes it. A gesture is a mouse drag, a reset (`Backspace`) or a run
 of keyboard steps of the same key on the same object less than 1 s apart, each recorded as a single
-history entry (up to 100 entries). Undoing or redoing selects the affected object and re-triggers
-`on_change`. A new gesture clears the redo history. Not available in the spectator mode.
+history entry (up to 100 entries), also of a selection of several objects, whose undo and redo
+move all of them and select the same selection again. Undoing or redoing selects the affected
+object and re-triggers `on_change`. A new gesture clears the redo history. Not available in the spectator mode.
 
 # Constraints
 
@@ -1718,8 +1871,8 @@ the object (or subgroup) that is currently selected apply.
   when a custom `pick` is used, since it does not provide a hit point.
 - `select_modifier = nothing`: if set to a `Keyboard.Button` (or a tuple/vector of them, meaning
   "any of"), clicks and drags only react on objects while the modifier is held; otherwise they
-  always go to the camera. Suggested: `Keyboard.left_shift` (`Ctrl`+click is taken by Makie's
-  `Camera3D` reset).
+  always go to the camera. Suggested: `Keyboard.left_shift` (`Ctrl`+click adds to the
+  selection, see "Mouse controls").
 - `drag_threshold = 3`: [px] mouse movement between press and release that turns a click into a
   drag
 - `spectator = false`: starts in the spectator mode
@@ -1826,7 +1979,7 @@ function kinematic_controls!(
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
         Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
-        center, nothing, nothing, nothing, nothing
+        center, nothing, nothing, nothing, nothing, false
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -1835,6 +1988,7 @@ function kinematic_controls!(
         if event.action == Mouse.press && ctrl.ignore_mouse()
             # Neither a selection nor a deselection by the release of this press
             ctrl.press_kind, ctrl.press_leaf, ctrl.press_pos = :none, nothing, nothing
+            ctrl.press_toggle = false
             return Consume(false)
         end
         if event.action == Mouse.press
@@ -1842,6 +1996,9 @@ function kinematic_controls!(
                 # Modifier not held: every click and drag goes to the camera, no state change
                 return Consume(false)
             end
+            # Ctrl+click adds to the selection or removes from it; the press never reaches the
+            # camera, which would reset on it
+            ctrl.press_toggle = _toggles(ctrl, scene)
             ring = _pick_ring(ctrl, scene)
             if !isnothing(ring)
                 # A drag on a ring of the gizmo rotates the selection around it, a click does nothing
@@ -1884,12 +2041,13 @@ function kinematic_controls!(
             if isnothing(leaf) || !_is_movable(ctrl, leaf)
                 ctrl.press_leaf = nothing
                 ctrl.press_kind = :background
-                return Consume(false)
+                return Consume(ctrl.press_toggle)
             end
             ctrl.press_leaf = leaf
             sel = ctrl.selected[]
-            if !isnothing(sel) && _has(_chain(ctrl, leaf), sel)
-                # Dragging the already selected object: block the camera immediately
+            if _grabs_selection(ctrl, leaf)
+                # Dragging the already selected object, or a selection of several by one of its
+                # objects: block the camera immediately
                 ctrl.press_kind = :pending_drag
                 ctrl.last_mouse = ctrl.press_pos
                 ctrl.plane_point = Vector{Float64}(position(sel))
@@ -1911,13 +2069,17 @@ function kinematic_controls!(
             else
                 # A press on an unselected object might turn into a camera drag: let it through
                 ctrl.press_kind = :pending_select
-                return Consume(false)
+                return Consume(ctrl.press_toggle)
             end
         elseif event.action == Mouse.release
             cur = _px(scene)
             moved = isnothing(ctrl.press_pos) ? Inf : hypot((cur .- ctrl.press_pos)...)
             kind = ctrl.press_kind
-            consume = false
+            toggle = ctrl.press_toggle
+            ctrl.press_toggle = false
+            # the release of a Ctrl+press is not passed on either, see `_toggles`
+            consume = toggle && kind != :none
+            click! = toggle ? _toggle_leaf! : _click_leaf!
             if ctrl.dragging
                 ctrl.dragging = false
                 consume = true
@@ -1933,13 +2095,14 @@ function kinematic_controls!(
                 consume = true
             elseif kind == :pending_drag
                 # Released before crossing the threshold: a click, not a drag
-                moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
+                moved < ctrl.drag_threshold && click!(ctrl, ctrl.press_leaf)
                 consume = true
             elseif kind == :pending_select
                 # Only select if this was a click, not a camera rotation
-                moved < ctrl.drag_threshold && _click_leaf!(ctrl, ctrl.press_leaf)
+                moved < ctrl.drag_threshold && click!(ctrl, ctrl.press_leaf)
             elseif kind == :background
-                if moved < ctrl.drag_threshold && !ctrl.on_click(nothing)
+                # Ctrl+click on the background keeps the selection
+                if !toggle && moved < ctrl.drag_threshold && !ctrl.on_click(nothing)
                     ctrl.selected[] = nothing
                     _update_selection_box!(ctrl)
                 end
@@ -1962,7 +2125,8 @@ function kinematic_controls!(
         if !ctrl.dragging
             if !(ctrl.press_kind in (:pending_drag, :pending_ring, :pending_arrow))
                 _update_hover!(ctrl, scene)
-                return Consume(false)
+                # A Ctrl+drag beside the selection moves neither an object nor the camera
+                return Consume(ctrl.press_toggle && ctrl.press_kind in (:background, :pending_select))
             end
             cur = _px(scene)
             moved = hypot((cur .- ctrl.press_pos)...)
@@ -2011,8 +2175,10 @@ function kinematic_controls!(
         isnothing(obj) && return Consume(false)
         if event.key == Keyboard.escape
             # One level up in the hierarchy of groups, deselect at the top level
-            ctrl.selected[] = render_parent(ctrl.h, obj)
+            ctrl.selected[] = _parent_selection(ctrl, obj)
             _update_selection_box!(ctrl)
+        elseif event.key == Keyboard.backspace && _is_multi(obj)
+            _reset_poses!(ctrl, obj)
         elseif event.key == Keyboard.backspace
             P0, R0 = _pose(obj)
             _reset_pose!(ctrl, obj)
