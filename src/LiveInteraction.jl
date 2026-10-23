@@ -759,12 +759,13 @@ function _allowed_axes(ctrl::KinematicController, @nospecialize(obj), kind::Symb
     return get(_constraints_of(ctrl, obj), kind, _GIZMO_AXES)
 end
 
-# The methods of a selection of several objects (see `src/LiveMultiSelect.jl`) for the controls,
-# which are ambiguous with the methods above otherwise
-_allowed_axes(ctrl::KinematicController, s::_MultiSelection, kind::Symbol) =
-    invoke(_allowed_axes, Tuple{Any, _MultiSelection, Symbol}, ctrl, s, kind)
-_is_movable(ctrl::KinematicController, s::_MultiSelection) =
-    invoke(_is_movable, Tuple{Any, _MultiSelection}, ctrl, s)
+# A selection of several objects (see `_MultiSelection`) moves along the axes that all its objects
+# allow, see `constraints`, and is movable while all its objects are
+function _allowed_axes(ctrl::KinematicController, s::_MultiSelection, kind::Symbol)
+    sets = [_allowed_axes(ctrl, obj, kind) for obj in s.objects]
+    return Tuple(a for a in _GIZMO_AXES if all(set -> a in set, sets))
+end
+_is_movable(ctrl::KinematicController, s::_MultiSelection) = all(obj -> _is_movable(ctrl, obj), s.objects)
 
 """Validates the `constraints` kwarg of [`kinematic_controls!`](@ref)."""
 function _validate_constraints(constraints)
@@ -1115,7 +1116,8 @@ Returns whether a mouse drag of `obj` snaps onto beams and onto the grid of the 
 `ctrl.snap_beam` and `ctrl.snap_grid`), if the snapping is on: not for a selection of several
 objects, whose center is no point of an object, and which keeps the orientations of its objects.
 """
-_drag_snaps(@nospecialize(obj)) = !_is_multi(obj)
+_drag_snaps(@nospecialize(obj)) = true
+_drag_snaps(::_MultiSelection) = false
 
 """
 Starts the snapping of a drag of `obj` by the controls `ctrl`: a new drag for `ctrl.snap_beam`,
