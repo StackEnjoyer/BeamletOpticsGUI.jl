@@ -7,9 +7,6 @@ using Test
 const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
-# TODO(integration): false once the card of a selection of several (W3) is merged
-const COLLAPSE_INSPECTOR = true
-
 @testset "Selections of several objects in the object tree" begin
 
     # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
@@ -30,9 +27,6 @@ const COLLAPSE_INSPECTOR = true
         tx, rx = System([m, l]), System([m, pd])
         b1 = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
         gui = _live_app(tx => b1, rx; labels = Dict(tx => "TX", rx => "RX"), kwargs...)
-        # TODO(integration): remove; the inspector of a selection of several is W3, collapsed it is
-        # not refreshed, see `_refresh_inspector!`
-        COLLAPSE_INSPECTOR && (gui.layout.collapse.right.active[] = false)
         return gui, (; m, l, pd, tx, rx, b1)
     end
 
