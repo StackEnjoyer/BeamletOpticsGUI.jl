@@ -647,7 +647,8 @@ the parts closes the selection card, see `_click_while_browsing!`; a click besid
 closes it and then counts like any other click. Otherwise a click on an object of a group opens
 the small menu of its top-level group under the cursor (see `_open_menu!`), which closes the cards
 of a beam inspection, of the background and of a failed solve; a click inside the current selection
-keeps it, since a short click on the selection is usually a drag that did not move. Returns `false`
+keeps it, since a short click on the selection is usually a drag that did not move, and a click on
+an object of a selection of several (see `_MultiSelection`) selects that object alone. Returns `false`
 for the controls to select as before: an object that is not in a group, and any click while
 measuring.
 """
@@ -666,6 +667,11 @@ function _on_leaf_click!(gui::LiveView, @nospecialize(leaf))
         length(chain) > 1 || return false
         sel = gui.controls.selected[]
         (!isnothing(sel) && _has(chain, sel)) && return true
+        # a click on an object of a selection of several selects that object alone
+        if _is_multi(sel)
+            i = findfirst(x -> _in_selection(sel, x), chain)
+            isnothing(i) || (_select!(gui, chain[i]); return true)
+        end
         _release_info!(gui, _SolveError)
         _release_info!(gui, _BackgroundItem)
         _clear_inspection!(gui)
