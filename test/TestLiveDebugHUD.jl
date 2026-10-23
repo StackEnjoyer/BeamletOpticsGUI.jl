@@ -204,7 +204,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "frames count only RegularRenderTick" begin
+    @testset "frames count the ticks that draw, also of a video" begin
         gui, _, _ = _fixture()
         GUI._set_debug!(gui, true)
         hud = _hud(gui)
@@ -219,6 +219,16 @@ const GUI = BeamletOpticsGUI
         @test Dict(rows)["frames"] == "30 /s · 33.3 ms"
         GUI._hud_refresh!(gui, hud)
         @test _values(hud)["frames"] == "30 /s · 33.3 ms"
+        # a video, whose frames Makie draws with `OneTimeRenderTick`s that count from 0: the frames
+        # of the window are gone, the card refreshes with the time of the video
+        # (times of 32 frames per second, exact in floating point)
+        n = hud.refreshes
+        for k in 0:44
+            _tick!(gui, k / 32; state = Makie.OneTimeRenderTick)
+        end
+        @test length(hud.frames) == 32
+        @test hud.refreshes > n
+        @test startswith(_values(hud)["frames"], "32 /s")
         # the largest drag step of the last 2 s
         d = GUI._debug(gui)
         d.stats.update = 0.0098

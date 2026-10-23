@@ -62,8 +62,8 @@ the `body`, a free layout of a header per section and a row per value, see `_hud
 the `key` changes, e.g. the number of the events; otherwise only changed texts are assigned, since
 each assignment makes the backend draw a frame, see `_hud_refresh!`.
 
-The ticks of the window (`_layer_tick!`) count the frames (`frames`, the times of the
-`RegularRenderTick`s within the last second) and the drag steps (`updates`, the time of the tick
+The ticks of the window (`_layer_tick!`) count the frames (`frames`, the times of the ticks that
+draw within the last second, see `_hud_frame`) and the drag steps (`updates`, the time of the tick
 and the duration of each new drag step of `_DebugStats` within the last 2 s, the last one in
 `last_update`), and refresh the rows at most every `_HUD_PERIOD` s of tick time (`refreshed`,
 `refreshes`; `now` is the time of the last tick). `plots` is the number of the atomic plots of the
@@ -145,15 +145,21 @@ _layer_tick!(gui::LiveView, hud::_DebugHUD, tick) = _hud_tick!(gui, hud, tick)
 """
     _hud_tick!(gui, hud::_DebugHUD, tick)
 
-Counts the `tick` of the window of the `gui` for the debug card `hud`: a `RegularRenderTick` is a
-frame, the others are not (GLMakie ticks also without drawing). Records a new drag step of the
-stats and refreshes the rows of the shown card at most every `_HUD_PERIOD` s of the time of the
-ticks, see `_hud_refresh!`.
+Counts the `tick` of the window of the `gui` for the debug card `hud`: a tick that draws is a frame
+(see `_hud_frame`), the others are not (GLMakie ticks also without drawing). Records a new drag
+step of the stats and refreshes the rows of the shown card at most every `_HUD_PERIOD` s of the
+time of the ticks, see `_hud_refresh!`.
 """
 function _hud_tick!(gui::LiveView, hud::_DebugHUD, tick)
     now = Float64(tick.time)
+    # Another clock, e.g. the frames of a video or of `save` count from 0: the windows start again
+    if now < hud.now
+        empty!(hud.frames)
+        empty!(hud.updates)
+        hud.refreshed = -Inf
+    end
     hud.now = now
-    tick.state === Makie.RegularRenderTick && push!(hud.frames, now)
+    _hud_frame(tick.state) && push!(hud.frames, now)
     filter!(s -> s > now - _HUD_FRAMES_WINDOW, hud.frames)
     d = _debug(gui)
     u = isnothing(d) ? 0.0 : d.stats.update
@@ -165,6 +171,10 @@ function _hud_tick!(gui::LiveView, hud::_DebugHUD, tick)
     (hud.shown && now - hud.refreshed >= _HUD_PERIOD) && _hud_refresh!(gui, hud)
     return nothing
 end
+
+# Whether a tick of the `state` is a drawn frame: of the window, or of a video, which Makie records
+# with `OneTimeRenderTick`s only
+_hud_frame(state) = state === Makie.RegularRenderTick || state === Makie.OneTimeRenderTick
 
 #=
 The rows of the sections
