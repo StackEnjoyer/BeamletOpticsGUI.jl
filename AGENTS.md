@@ -117,11 +117,18 @@ describe it as available in docs or the skill.
 
 ## Running Julia and tests
 
-- Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`). BeamletOptics comes from
-  the General registry. To work against a local BMO checkout, add `BeamletOptics = {path = "..."}`
-  under `[sources]` in `Project.toml`, `test/Project.toml` and `docs/Project.toml` locally and do
-  not commit that change. A feature that needs unreleased BMO code waits for the BMO release and
-  raises the compat entry.
+- Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`).
+- `main` develops against BeamletOptics `master`: `[sources]` in `Project.toml`,
+  `test/Project.toml` and `docs/Project.toml` point to its repository (each of the three: the
+  workspace does not pass the entry of the root on), and the compat entry names the version of
+  BMO `master`. CI on `main` and on pull requests tests against it, so a breaking change of BMO is
+  adapted on `main` as soon as it lands, and a feature can use BMO code that is not released yet.
+  `Pkg.update()` in `--project=test` fetches the latest `master`. When BMO `master` raises its
+  version, the compat entries of the three files follow.
+- To work against a local BMO checkout: `Pkg.develop("BeamletOptics")` (uses
+  `~/.julia/dev/BeamletOptics`) or `Pkg.develop(path = "...")` in `--project=test`. Pkg replaces
+  the entry in `test/Project.toml` with the path; do not commit that change. `--project=docs`
+  shares the manifest and needs the same `develop` before building the docs.
 - GLMakie is the backend of the tests; on headless Linux run under `xvfb-run -a`.
 - Single test module: `julia --project=test -e 'using Pkg; Pkg.instantiate()'` once, then
   `julia --project=test test/<file>.jl`.
@@ -129,6 +136,17 @@ describe it as available in docs or the skill.
 - New test files are `module TestXyz ... end` and are included in `test/runtests.jl`.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
+
+## Releases
+
+The users of a registered version get BeamletOptics from the registry: Pkg reads `[sources]` only
+in the active project, never in a dependency. The entries stay in the registered version; the
+docs of a tag remove them and use the registered BMO. BMO and the GUI are released together: the
+latest registered GUI works with the latest registered BMO.
+
+- BMO is released first, then the GUI with its compat entry on that version. Otherwise the check
+  "installable" of AutoMerge fails.
+- The release notes of a breaking version have a section "Breaking changes".
 
 ## Precompilation
 
