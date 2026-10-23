@@ -300,7 +300,8 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _key!(gui, Keyboard.delete)
         settle!()
         _check(!GUI._has(fx.system.objects, fx.mirror), "the delete did not remove the selection")
-        _key!(gui, Keyboard.z, Keyboard.left_control)
+        # not by the key: `Ctrl+Z` is "Ctrl+Y" on a keyboard with another layout, see `_layout_key`
+        GUI._undo!(gui.controls)
         settle!()
         _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
             "the undo did not restore the selection")
