@@ -446,9 +446,11 @@ const GUI = BeamletOpticsGUI
         @test [w.name for w in card_actions(b.sys)] == [:hide, :open]
         @test [w.name for w in card_actions(a.lens)] == [:hide]
         GUI._inspect!(gui, b.sys)
+        # an icon in the head of the card: two windows, not the one that floats a docked card
         button = GUI._card_widget(_card(gui), :open)
-        @test button isa Button
-        notify(button.clicks)
+        @test button isa GUI._IconButton && button.icon[] === GUI._icon(:window)
+        @test button.icon[] !== GUI._icon(:float)
+        button.clicks[] += 1
         @test length(gui.links.views) == 2
         new = last(gui.links.views)
         @test only(GUI._systems(new)) === b.sys

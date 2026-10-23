@@ -19,6 +19,7 @@ const BMO = BeamletOptics
 export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
        pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
        add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
+       add_system!, remove_system!,
        CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!,
        spectator!, wait_solve
 
@@ -54,6 +55,7 @@ include("LiveCard.jl")
 include("LiveView.jl")
 include("LiveLayout.jl")
 include("LiveScroll.jl")
+include("LiveSplitter.jl")
 include("LiveDetectors.jl")
 include("LiveTrace.jl")
 include("LiveBeamSwitch.jl")
@@ -82,6 +84,10 @@ include("LiveSolveError.jl")
 include("LiveCustom.jl")
 include("LiveComponents.jl")
 include("LiveSources.jl")
+include("LiveSystems.jl")
+include("LiveSystemTrace.jl")
+include("LivePick.jl")
+include("LiveSystemCard.jl")
 include("LiveBeamColor.jl")
 include("LiveEdit.jl")
 include("LivePlacement.jl")

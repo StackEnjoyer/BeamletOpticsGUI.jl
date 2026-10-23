@@ -42,6 +42,9 @@ overlay (see `_overlay_scene`) in the colors of the `theme` tokens:
   like the key `Tab`, see `_cycle_snap!`). In
   the spectator mode, the part `spectator` is shown instead, whose `spectator_button` switches
   back to the edit mode like the key `v`.
+- `pick`, right of the chips while the members of a system are picked with the mouse (`picking`,
+  see `_set_member_pick!`): the `pick_label` names what a click does, e.g. "+ Transmitter", and
+  that `Esc` ends it, see `_show_pick_chip!`. Not shown in the spectator mode.
 - `card`: the help card below the pill, shown while `shown`: the sections of `_help_sections` in
   columns (see `_help_columns`), each entry with its key caps (see `_help_cap!`) and its text; the
   `close_button` in its head closes it. It lies in a scene of its own over everything else (see
@@ -67,6 +70,8 @@ mutable struct _HelpUI
     const snap_button::Button
     const spectator::_OverlayPart
     const spectator_button::Button
+    const pick::_OverlayPart
+    const pick_label::Label
     const card::_OverlayPart
     const close_button::_OverlayItem
     body::Union{Nothing, GridLayout}
@@ -76,6 +81,7 @@ mutable struct _HelpUI
     shown::Bool
     hidden::Bool
     muted::Bool
+    picking::Bool
 end
 
 _HelpUI(scene::Scene, t::NamedTuple, ax::LScene) = _HelpUI(scene, t, ax, _help_pill(scene, t)...)
@@ -99,6 +105,13 @@ function _HelpUI(scene::Scene, t::NamedTuple, ax::LScene, pill::_OverlayPart,
     spectator_button = _help_button(g[1, 1], t, "Spectator"; accent = true)
     _help_cap!(g[1, 2], t, "V")
     Label(g[1, 3], "camera only"; _card_style(t, Label)..., color = t.muted)
+    # Chip of the pick of the members of a system, see `_show_pick_chip!`
+    pick = _help_chips(scene, t)
+    g = pick.content
+    pick_label = Label(g[1, 1], " "; _card_style(t, Label)..., font = :bold, color = t.accent)
+    Label(g[1, 2], "click components"; _card_style(t, Label)..., color = t.muted)
+    _help_cap!(g[1, 3], t, "Esc")
+    Label(g[1, 4], "ends"; _card_style(t, Label)..., color = t.muted)
     # Help card: the head, the sections are built by `_build_help!`; in a scene of its own, over
     # the cards, and opaque, such that what it covers does not shine through
     card = _OverlayPart(_help_scene(scene), t; color = _rgba(t.sidebar, 1.0),
@@ -112,8 +125,8 @@ function _HelpUI(scene::Scene, t::NamedTuple, ax::LScene, pill::_OverlayPart,
     close_button = _OverlayItem(head[1, 5], t; icon = :close, size = 22, icon_size = 14,
         padding = (0, 0, 0, 0), icon_color = t.muted)
     return _HelpUI(scene, t, ax, pill, pill_button, chips, mode_button, step_label, step_buttons,
-        snap_button, spectator, spectator_button, card, close_button, nothing,
-        Any[], Label[], nothing, false, false, false)
+        snap_button, spectator, spectator_button, pick, pick_label, card, close_button, nothing,
+        Any[], Label[], nothing, false, false, false, false)
 end
 
 # A pill-shaped part for the chips next to the help pill, as high as the pill
@@ -265,7 +278,7 @@ the edit mode or, with `spectator`, the chip of the spectator mode, and below th
 while it is shown; the others, or all while the help is `hidden`, are moved away, see `_park!`.
 """
 function _arrange_help!(help::_HelpUI, spectator::Bool)
-    parts = (help.pill, help.chips, help.spectator, help.card)
+    parts = (help.pill, help.chips, help.spectator, help.pick, help.card)
     (help.hidden || help.muted) && return foreach(p -> _park!(p.outer), parts)
     vp = Rect2f(Makie.viewport(help.ax.scene)[])
     _place_pill!(help.pill, vp)
@@ -274,8 +287,27 @@ function _arrange_help!(help::_HelpUI, spectator::Bool)
     shown, other = spectator ? (help.spectator, help.chips) : (help.chips, help.spectator)
     _place!(shown.outer, top .+ Point2f(size[1] + _OVERLAY_GAP, 0))
     _park!(other.outer)
+    # The chip of the pick right of the chips of the edit mode
+    (help.picking && !spectator) ?
+    _place!(help.pick.outer, top .+ Point2f(size[1] + _card_size(shown.outer)[1] + 2 * _OVERLAY_GAP, 0)) :
+    _park!(help.pick.outer)
     help.shown ? _place!(help.card.outer, top .- Point2f(0, size[2] + _OVERLAY_GAP)) :
     _park!(help.card.outer)
+    return nothing
+end
+
+"""
+    _show_pick_chip!(gui, text)
+
+Shows the chip of the pick of the members of a system in the help of the `gui`, right of the chips
+of the mode: `text` names the pick, e.g. "+ Transmitter"; `nothing` hides the chip, see
+`_show_member_pick!`.
+"""
+function _show_pick_chip!(gui::LiveView, text::Union{Nothing, AbstractString})
+    help = _help_ui(gui)
+    help.picking = !isnothing(text)
+    isnothing(text) || _update!(help.pick_label.text, String(text))
+    _arrange_help!(gui)
     return nothing
 end
 
@@ -285,12 +317,12 @@ _help_ui(gui::LiveView) = gui.layout.help
 _arrange_help!(gui::LiveView) = _arrange_help!(_help_ui(gui), gui.controls.spectator[])
 
 """
-Returns the rectangles [figure px] of the shown parts of the `help` besides its pill: the chips and,
-while it is shown, the help card.
+Returns the rectangles [figure px] of the shown parts of the `help` besides its pill: the chips,
+the chip of a pick of members and, while it is shown, the help card.
 """
 function _help_rects(help::_HelpUI)
     parked(p) = minimum(p.outer.layoutobservables.suggestedbbox[])[1] < -1.0f4
-    return Rect2f[_overlay_rect(p) for p in (help.chips, help.spectator, help.card) if !parked(p)]
+    return Rect2f[_overlay_rect(p) for p in (help.chips, help.spectator, help.pick, help.card) if !parked(p)]
 end
 
 """Returns `true` if the point `p` [figure px] is over the pill or another shown part of the `help`."""

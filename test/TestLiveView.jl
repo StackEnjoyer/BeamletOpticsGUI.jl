@@ -134,8 +134,9 @@ _points(h) = only(render_plots(h))[1][]
         gui = _live_view(sys1 => b1, sys2 => b2; throttle = false, mode = :rotate, fine_angle = 1e-3)
         @test length(_detectors(gui)) == 1 # deduplicated
         @test sprint(show, gui) == "LiveView(2 systems, 2 sources, 1 detectors)"
-        # both systems and the markers of both sources are handled by one controller
-        @test length(render_children(gui.controls.h)) == 5
+        # both systems and the markers of both sources are handled by one controller; the detector
+        # of both systems is rendered once
+        @test length(render_children(gui.controls.h)) == 4
         @test length(BMO.hits(pd)) == 2
         gui.controls.selected[] = m
         _key!(gui, Keyboard.left)

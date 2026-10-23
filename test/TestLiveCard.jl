@@ -89,8 +89,8 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         _select!(gui, m)
         @test c.scene.visible[]
         @test c.title.text[] == "M1"
-        # the default declarations: "hide" and the pose rows
-        @test _w(c, :hide).label[] == "hide"
+        # the default declarations: the eye, which hides, and the pose rows
+        @test !_w(c, :hide).active[]
         @test all(k -> _pose(c, k) isa Textbox, 1:6)
         @test !_away(c.rows) && !_away(c.actions) && !_away(c.step)
         @test _inside(gui)
@@ -331,19 +331,21 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
 
         # the declared widgets get the clicks
         hide = _w(c, :hide)
-        xy = _center(_rect(hide))
+        @test hide.icon[] === GUI._icon(:eye) && hide.tooltip[] == "Hide"
+        xy = _center(_rect(hide.box))
         _click!(gui, xy)
-        @test hide.clicks[] == 1
         @test m in gui.objects.hidden && isnothing(ctrl.selected[])
         @test !c.scene.visible[]
         # hidden widgets are away and take no clicks at their former position
         _click!(gui, xy)
-        @test hide.clicks[] == 1 && c.collapse_button.clicks[] == 0
-        # selected in the menu, the hidden object shows "show"; the same declarations keep the widgets
+        @test m in gui.objects.hidden && c.collapse_button.clicks[] == 0
+        # selected in the menu, the eye of the hidden object is crossed out; the same declarations
+        # keep the widgets
         gui.widgets.menu.i_selected[] = findfirst(o -> o === m, gui.objects.menu)
-        @test ctrl.selected[] === m && _w(c, :hide) === hide && hide.label[] == "show"
-        notify(hide.clicks)
-        @test !(m in gui.objects.hidden) && hide.label[] == "hide"
+        @test ctrl.selected[] === m && _w(c, :hide) === hide && hide.active[]
+        @test hide.icon[] === GUI._icon(:eye_off) && hide.tooltip[] == "Show"
+        hide.active[] = false
+        @test !(m in gui.objects.hidden) && !hide.active[]
 
         # a textbox gets the keyboard, a press elsewhere ends the input
         box = _pose(c, 1)
@@ -425,11 +427,11 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         _pose(c1, 3).stored_string[] = "5"
         @test BMO.position(m)[3] ≈ 5e-3
         @test BMO.position(pd)[3] ≈ 0 atol = 1e-12
-        notify(_w(c1, :hide).clicks)
+        (eye = _w(c1, :hide); eye.active[] = !eye.active[])
         @test m in gui.objects.hidden && ctrl.selected[] === pd
-        @test c1.scene.visible[] && _w(c1, :hide).label[] == "show"
-        notify(_w(c1, :hide).clicks)
-        @test !(m in gui.objects.hidden) && _w(c1, :hide).label[] == "hide"
+        @test c1.scene.visible[] && _w(c1, :hide).active[]
+        (eye = _w(c1, :hide); eye.active[] = !eye.active[])
+        @test !(m in gui.objects.hidden) && !_w(c1, :hide).active[]
         _pose(c1, 1).focused[] = true
         @test GUI._typing(gui)
         _pose(c1, 1).focused[] = false
@@ -607,8 +609,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         # another object with other declarations: new widgets, the old ones are removed
         old = copy(c.blocks)
         _select!(gui, m)
-        @test isnothing(_w(c, :lift)) && _w(c, :hide) isa Button
-        @test all(b -> b.parent === nothing, filter(b -> !any(x -> x === b, c.blocks), old))
+        @test isnothing(_w(c, :lift)) && _w(c, :hide) isa BeamletOpticsGUI._IconToggle
+        @test all(b -> (b isa Makie.Block ? b : b.box).parent === nothing,
+            filter(b -> !any(x -> x === b, c.blocks), old))
         # an object with the same declarations (another mirror) keeps the widgets and shows its values
         kept = copy(c.blocks)
         _select!(gui, m2)

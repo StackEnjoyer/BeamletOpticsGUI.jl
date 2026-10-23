@@ -40,6 +40,8 @@ Makie.record(::Any, ::BeamletOpticsGUI.LiveView, ::AbstractString, ::Any)
 ```@docs
 add_component!
 remove_component!
+add_system!
+remove_system!
 CatalogEntry
 CatalogParam
 CatalogGlass

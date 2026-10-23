@@ -3,8 +3,11 @@ Beams switched on and off: a beam that is off is neither traced nor drawn, every
 as if it were not in the live view, except its source marker, see `_BeamState`
 =#
 
-"""Returns `true` unless the `beam` of the `gui` is switched off, see `_set_beam_on!`."""
-_beam_on(gui::LiveView, beam) = !(beam in gui.beams.off)
+"""
+Returns `true` unless the `beam` of the `gui` is switched off, see `_set_beam_on!`, or has no
+system, see `_set_source_system!`: both are neither traced nor drawn.
+"""
+_beam_on(gui::LiveView, beam) = !(beam in gui.beams.off) && !(beam in gui.beams.unassigned)
 
 """
     _all_beam_handles(gui)
@@ -202,6 +205,12 @@ systems are solved again, or marked as outdated if auto tracing is off, via the 
 controls. Nothing happens if the state does not change.
 """
 function _set_beam_on!(gui::LiveView, beam, on::Bool)
+    if beam in gui.beams.unassigned
+        # only the switch is kept, for when the source gets a system
+        on ? delete!(gui.beams.off, beam) : push!(gui.beams.off, beam)
+        gui.status.text[] = "$(_label(gui, beam)) has no system, it is not traced"
+        return nothing
+    end
     _beam_on(gui, beam) == on && return nothing
     _change!(gui.controls, beam) do
         on ? delete!(gui.beams.off, beam) : _set_beam_off!(gui, beam)

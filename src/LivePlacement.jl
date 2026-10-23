@@ -13,7 +13,7 @@ const _GHOST_OPACITY = 0.5
 
 A component or source of a `LiveView` that follows the mouse until a click drops it, see
 `_start_placement!`: the object or source `obj` and its `ghost`, i.e. its render handle while it is
-not part of the view (of a source: its marker); the `system` that gets it, its `origin` (see
+not part of the view (of a source: its marker); the `system` that gets it (`:none`: no system), its `origin` (see
 `_ComponentState`) and further `kwargs` of its `add_component!`; its orientation
 `R0` as constructed, which it has off the beams; the `plane_point` of the plane it moves on; the
 `ignore_mouse` of the controls, which ignore all presses meanwhile; the mouse position of the
@@ -24,7 +24,7 @@ at the origin.
 mutable struct _Placement
     const obj::Union{BMO.AbstractObject, _Source}
     const ghost::AbstractObjectRenderHandle
-    const system::BMO.AbstractSystem
+    const system::Union{BMO.AbstractSystem, Symbol}
     const origin::Any
     const kwargs::NamedTuple
     const R0::Matrix{Float64}
@@ -91,13 +91,17 @@ end
 The point of the plane on which a component for the system `sys` of the `gui` is placed (see
 `_placement_pose`): the position of the first source that is traced through `sys`, such that the
 component lies at the height of its beam in a view from above, and at its depth in a view from the
-front; or the origin without one.
+front; or the origin without one. Without a system (`:none`) it is the plane of the first system.
 """
 function _placement_plane_point(gui::LiveView, sys::BMO.AbstractSystem)
     for (s, beam) in gui.pairs
         s === sys && return Vector{Float64}(position(beam))
     end
     return zeros(3)
+end
+function _placement_plane_point(gui::LiveView, ::Symbol)
+    isempty(gui.system_handles) && return zeros(3)
+    return _placement_plane_point(gui, rendered(first(gui.system_handles)))
 end
 
 """
@@ -175,16 +179,20 @@ end
 
 """
 The system that gets `obj` when it is placed in the `gui` without a `system`: of a component the
-`_target_system`, of a source the `_source_system`.
+`_target_system`, or `:none` in a view without a `System`; of a source the `_source_system`.
 """
-_placement_system(gui::LiveView, ::BMO.AbstractObject) = _target_system(gui)
+function _placement_system(gui::LiveView, ::BMO.AbstractObject)
+    sys = _target_system(gui)
+    return isnothing(sys) ? :none : sys
+end
 _placement_system(gui::LiveView, ::_Source) = _source_system(gui, nothing)
 
-# A component changes its system, hence it needs a `System`; a source is traced through any system
-_check_placement_system(::BMO.AbstractObject, system) = system isa BMO.System ||
-    throw(ArgumentError("the live view has no `System` that a component can be placed in"))
-_check_placement_system(::_Source, system) = system isa BMO.AbstractSystem ||
-    throw(ArgumentError("`system` must be a system of the live view, got a $(typeof(system))"))
+# A component changes its system, hence it needs a `System`, or none (`:none`); a source is traced
+# through any system, or none
+_check_placement_system(::BMO.AbstractObject, system) = (system isa BMO.System || system === :none) ||
+    throw(ArgumentError("`system` must be a `System` of the live view or `:none`, got $(repr(system))"))
+_check_placement_system(::_Source, system) = (system isa BMO.AbstractSystem || system === :none) ||
+    throw(ArgumentError("`system` must be a system of the live view or `:none`, got $(repr(system))"))
 
 """
     _ghost!(gui, obj, system) -> AbstractObjectRenderHandle
@@ -195,7 +203,8 @@ as its marker (see `_live_render_source!`), whose beam is drawn when it is dropp
 """
 function _ghost!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), system)
     ghost = live_render!(gui.ax, obj; gui.components.render_kwargs...)
-    _ghost_style!(gui, system, ghost)
+    # without a system, in the look of the objects without one
+    _ghost_style!(gui, system === :none ? rendered(gui.extras) : system, ghost)
     return ghost
 end
 _ghost!(gui::LiveView, src::_Source, _) = _live_render_source!(gui.ax, src;

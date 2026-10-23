@@ -71,7 +71,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         widget = GUI._catalog_widget(_window(gui))
         blocks = GUI._blocks!(Any[], widget.layout)
         return (; widget, layout = widget.layout, target = widget.target,
-            menus = filter(b -> b isa Menu, blocks),
+            menus = filter(b -> b isa Menu && b !== widget.target_menu, blocks),
             boxes = filter(b -> b isa Textbox, blocks),
             labels = [b.text[] for b in blocks if b isa Label],
             place = only(filter(b -> b isa Button, blocks)))
@@ -236,7 +236,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         other_boxes() = Textbox[b for x in GUI._catalog_widgets(win) if x !== widget for b in x.boxes]
         other_menus() = Menu[mn for x in GUI._catalog_widgets(win) if x !== widget for mn in x.menus]
         @test isempty(other_boxes()) == !docks
-        @test w.target.text[] == "into: System 1"
+        @test w.target.text[] == "into" && widget.target_menu.selection[] == "System 1"
         @test w.place.label[] == "Place"
         # an icon per group, the first group and its first entry are chosen
         @test widget.groups == unique(e.group for e in entries)
@@ -300,7 +300,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test [mn.selection[] for mn in w.menus] == ["N-BK7", "N-SF5"]
         @test all(tb -> !any(o -> o === tb, old), w.boxes)
         @test Set(gui.custom.boxes) == Set([w.boxes; other_boxes()]) && !(menu in gui.custom.menus)
-        @test Set(gui.custom.menus) == Set([w.menus; other_menus()])
+        targets = Menu[x.target_menu for x in GUI._catalog_widgets(_window(gui))]
+        @test Set(gui.custom.menus) == Set([w.menus; other_menus(); targets])
         @test "glass 2" in w.labels && !("glass" in w.labels)
         w.boxes[3].focused[] = true
         @test GUI._typing(gui)
@@ -548,17 +549,16 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test isnothing(_window(gui))
         @test isempty(gui.custom.boxes)
         close(gui)
-        # no system that components can be added to: only the sources, see `TestLiveSources.jl`,
-        # and no widget without them
+        # no system that components can be added to: the components are offered, into no system
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         static() = StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         gui = live_view(static(); layout, trace_budget = Inf)
-        @test all(e -> e.source, GUI._catalog_widget(_window(gui)).entries)
+        @test any(e -> !e.source, GUI._catalog_widget(_window(gui)).entries)
         close(gui)
         gui = live_view(static(); layout, trace_budget = Inf,
             catalog = [e for e in component_catalog() if !e.source])
-        @test isnothing(_window(gui))
+        @test !isnothing(_window(gui))
         close(gui)
         # an empty system gets one
         gui = live_view(System() => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf)
@@ -597,9 +597,9 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         menu = widget.target_menu
         entry = GUI._catalog_entry(widget)
         target() = GUI._catalog_target(gui, entry)
-        # several systems: a menu of the systems next to the label, on the first system, by its label
+        # a menu of the systems, "no system" and "New system…" next to the label, on the first system
         @test menu isa Menu && w.target.text[] == "into"
-        @test menu.options[] == ["Main", "System 2"]
+        @test menu.options[] == ["Main", "System 2", "no system", "New system…"]
         @test GUI._target_system(gui) === sys
         @test menu.selection[] == "Main" && target() === sys
         # the system of the selected component
@@ -634,10 +634,98 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test GUI._target_system(gui) === sys
         close(gui)
 
-        # a single system: a label, no menu
+        # a single system: the menu as well
         gui, sys, m = _fixture(; layout, label = "Main")
         w = _widgets(gui)
-        @test isnothing(w.widget.target_menu) && w.target.text[] == "into: Main"
+        @test w.widget.target_menu.options[] == ["Main", "no system", "New system…"]
+        @test w.target.text[] == "into" && w.widget.target_menu.selection[] == "Main"
+        close(gui)
+    end
+
+    @testset "no system ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout, label = "Main")
+        w = _widgets(gui)
+        widget = w.widget
+        menu = widget.target_menu
+        entry = GUI._catalog_entry(widget)
+        # "no system" is the option after the systems, in all widgets of the catalog
+        menu.i_selected[] = 2
+        @test menu.selection[] == "no system" && GUI._catalog_target(gui, entry) === :none
+        @test all(x -> x.target_menu.selection[] == "no system", GUI._catalog_widgets(_window(gui)))
+        obj = GUI._place_catalog!(gui, entry, GUI._catalog_strings(widget))
+        @test gui.components.placement.system === :none
+        GUI._drop_placement!(gui)
+        @test GUI._is_extra(gui, obj) && isempty(GUI._member_systems(gui, obj))
+        @test !any(o -> o === obj, sys.objects) && length(sys.objects) == 1
+        # a source without a system is placed as well, but not traced
+        _show_entry!(gui, "Beam")
+        entry = GUI._catalog_entry(widget)
+        @test entry.source && menu.options[] == ["Main", "no system", "New system…"]
+        # the choice holds until another object is shown, which the dropped one is
+        @test GUI._catalog_target(gui, entry) === sys
+        menu.i_selected[] = 2
+        @test GUI._catalog_target(gui, entry) === :none
+        src = GUI._place_catalog!(gui, entry, GUI._catalog_strings(widget))
+        GUI._drop_placement!(gui)
+        @test isnothing(GUI._system_of_source(gui, src)) && src in gui.beams.unassigned
+        close(gui)
+    end
+
+    @testset "new system ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout, label = "Main")
+        w = _widgets(gui)
+        widget = w.widget
+        menu = widget.target_menu
+        entry = GUI._catalog_entry(widget)
+        # "New system…" adds a system, which the menu shows then, and which gets the component
+        menu.i_selected[] = 3
+        @test length(GUI._systems(gui)) == 2
+        sys2 = GUI._systems(gui)[2]
+        name2 = GUI._label(gui, sys2)
+        @test menu.options[] == ["Main", name2, "no system", "New system…"]
+        @test menu.selection[] == name2 && GUI._catalog_target(gui, entry) === sys2
+        @test all(x -> x.target_menu.selection[] == name2, GUI._catalog_widgets(_window(gui)))
+        obj = GUI._place_catalog!(gui, entry, GUI._catalog_strings(widget))
+        @test gui.components.placement.system === sys2
+        GUI._drop_placement!(gui)
+        @test any(o -> o === obj, sys2.objects) && !GUI._is_extra(gui, obj)
+        close(gui)
+    end
+
+    @testset "systems at runtime ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout, label = "Main")
+        w = _widgets(gui)
+        menu = w.widget.target_menu
+        # the options follow the systems that are added, renamed and removed
+        sys2 = add_system!(gui; label = "Second")
+        @test menu.options[] == ["Main", "Second", "no system", "New system…"]
+        @test menu.selection[] == "Second"
+        gui.labels[sys2] = "Renamed"
+        GUI._refresh_catalog!(gui)
+        @test menu.options[] == ["Main", "Renamed", "no system", "New system…"]
+        remove_system!(gui, sys2)
+        @test menu.options[] == ["Main", "no system", "New system…"] && menu.selection[] == "Main"
+        close(gui)
+    end
+
+    @testset "a view without a System ($layout)" for layout in (:compact, :app)
+        m = RoundPlanoMirror(25e-3, 5e-3)
+        translate3d!(m, [0, 0.1, 0])
+        gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout,
+            trace_budget = Inf, throttle = false)
+        _show_entry!(gui, "Thin lens")
+        w = _widgets(gui)
+        widget = w.widget
+        entry = GUI._catalog_entry(widget)
+        # the components are offered, into no system or a new system
+        @test !entry.source
+        @test widget.target_menu.options[] == ["no system", "New system…"]
+        @test GUI._catalog_target(gui, entry) === :none
+        obj = GUI._place_catalog!(gui, entry, GUI._catalog_strings(widget))
+        GUI._drop_placement!(gui)
+        @test GUI._is_extra(gui, obj)
+        widget.target_menu.i_selected[] = 2
+        @test length(GUI._systems(gui)) == 2 && GUI._catalog_target(gui, entry) isa BMO.System
         close(gui)
     end
 

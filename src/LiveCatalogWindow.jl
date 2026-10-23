@@ -56,6 +56,20 @@ function _CatalogDock(gui::LiveView, slot::NamedTuple)
 end
 
 """
+    _resize_catalog_dock!(gui, width)
+
+Lays out the docked catalog of the `gui` again for a place of the `width` [px], e.g. after the
+sidebar that holds it was resized, see `_restyle_catalog!`: also while the catalog floats or is
+minimized, for when it is docked again. Its state is kept. Nothing happens without a dock.
+"""
+function _resize_catalog_dock!(gui::LiveView, width::Real)
+    w = _catalog_window(gui)
+    (isnothing(w) || isnothing(w.dock)) && return nothing
+    _restyle_catalog!(w.dock.widget, _catalog_style(width))
+    return nothing
+end
+
+"""
     _CatalogWindow
 
 The catalog "Components" of a `LiveView`: its window, and where the catalog is shown.
