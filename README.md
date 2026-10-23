@@ -39,7 +39,7 @@ using Pkg
 Pkg.add("BeamletOpticsGUI")
 ```
 
-It needs BeamletOptics 0.13 (0.13.12 or newer) and a Makie backend, preferably GLMakie.
+It needs BeamletOptics 0.14 and a Makie backend, preferably GLMakie.
 
 The order of the packages in `using` makes a difference: load GLMakie last, as above. The window
 works in any order, but with GLMakie loaded first, Julia compiles about twice as much at the first
@@ -58,3 +58,25 @@ hover, click or drag, see "Order of loading" in the
 
 See the [documentation](https://stackenjoyer.github.io/BeamletOpticsGUI.jl/) and the agent skill
 in `skills/beamletopticsgui/` (`BeamletOpticsGUI.install_agent_skill()`).
+
+## Development
+
+`main` develops against the `master` branch of BeamletOptics: the `[sources]` entries in
+`Project.toml`, `test/Project.toml` and `docs/Project.toml` point to its repository, so
+BeamletOptics and the GUI change together. The tests run with
+
+```sh
+julia --project=test -e 'using Pkg; Pkg.instantiate()'   # once, Pkg.update() fetches the latest master
+julia --project=test test/runtests.jl
+```
+
+To work against a local checkout of BeamletOptics, `dev` it in the test environment:
+
+```sh
+julia --project=test -e 'using Pkg; Pkg.develop("BeamletOptics")'   # or Pkg.develop(path = "...")
+```
+
+Without a path this uses `~/.julia/dev/BeamletOptics` (cloned there if missing). Pkg writes the
+path into `test/Project.toml`; do not commit that change. A registered
+version of the GUI uses the registered BeamletOptics; the release steps are in
+[AGENTS.md](AGENTS.md#releases).
