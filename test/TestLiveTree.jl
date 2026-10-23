@@ -127,6 +127,80 @@ const GUI = BeamletOpticsGUI
         @test other[] == 2
     end
 
+    @testset "buttons, counters and rows with the same key" begin
+        fig, tree = _fixture()
+        # two systems that share a mirror: buttons on their rows, a counter on the rows of the mirror
+        rows = [Row("sys1", "System 1", 0, :system, true, true, true; buttons = :none),
+            Row("m", "Mirror", 1, :mirror, false, false, true; count = 2),
+            Row("sys2", "A system with a very long name " ^ 3, 0, :system, true, true, true; buttons = :remove),
+            Row("m", "Mirror", 1, :mirror, false, false, false; count = 2),
+            Row("l", "Lens", 1, :lens, false, false, true)]
+        @test rows[5].count == 0 && isnothing(rows[5].buttons)
+        GUI._set_rows!(tree, rows)
+        p = tree.plots
+        @test p.buttons.text[] == ["+", "−", "+", "−"]
+        # the button of the row's state in the accent color
+        @test p.buttons.color[] == [tree.icon_color, tree.icon_color, tree.icon_color, tree.accent_color]
+        @test p.counters.text[] == ["2", "2"]
+        @test p.counters.color[] == [tree.icon_color, tree.muted_color]
+        # at the right edge of their rows
+        b = GUI._button_columns(tree)
+        w = Makie.widths(tree.scene.viewport[])[1]
+        @test b.add < b.remove == b.counter < w
+        @test [q[1] for q in p.buttons[1][]] == [b.add, b.remove, b.add, b.remove]
+        @test [q[2] for q in p.buttons[1][]] == [GUI._row_y(tree, i) for i in (1, 1, 3, 3)]
+        @test [Tuple(q) for q in p.counters[1][]] == [(b.counter, GUI._row_y(tree, i)) for i in (2, 4)]
+        # the label ends before the buttons
+        label = _labels(tree)[3]
+        @test endswith(label, "…")
+        @test GUI._row_columns(tree, rows[3]).label + GUI._label_width(tree, label) <=
+              b.add - GUI._TREE_BUTTON / 2
+
+        # clicks on the buttons
+        function _click_at!(i, x)
+            _mouse!(tree, x, Makie.widths(tree.scene.viewport[])[2] - GUI._row_y(tree, i))
+            ev = events(tree.scene)
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            ev.mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        end
+        buttons, clicked = Any[], Any[]
+        on(v -> push!(buttons, v), tree.button_clicked)
+        on(k -> push!(clicked, k), tree.clicked)
+        _click_at!(1, b.add)
+        @test buttons == [("sys1", :add)]
+        _click_at!(3, b.remove)
+        @test buttons == [("sys1", :add), ("sys2", :remove)]
+        @test isempty(clicked)
+        # a row without buttons is selected there
+        _click_at!(2, b.remove)
+        @test clicked == ["m"] && length(buttons) == 2
+        # press on "+", release on "−": nothing
+        h = Makie.widths(tree.scene.viewport[])[2]
+        _mouse!(tree, b.add, h - GUI._row_y(tree, 1))
+        events(tree.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+        _mouse!(tree, b.remove, h - GUI._row_y(tree, 1))
+        events(tree.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+        @test clicked == ["m"] && length(buttons) == 2
+
+        # all rows of the selected key are highlighted
+        GUI._set_selected!(tree, "m")
+        rects = p.selection[1][]
+        @test p.selection.visible[] && length(rects) == 4
+        @test [Makie.origin(r)[2] for r in rects] ≈
+              [GUI._row_y(tree, i) - tree.row_height / 2 for i in (2, 2, 4, 4)]
+        @test p.selection.color[] ==
+              [tree.selection_color, tree.accent_color, tree.selection_color, tree.accent_color]
+        GUI._set_selected!(tree, "l")
+        @test length(p.selection[1][]) == 2
+        GUI._set_selected!(tree, nothing)
+        @test !p.selection.visible[]
+        GUI._set_selected!(tree, "m")
+        @test length(p.selection[1][]) == 4
+        # rows without buttons and counters: the plots are empty
+        GUI._set_rows!(tree, _rows())
+        @test isempty(p.buttons.text[]) && isempty(p.counters.text[])
+    end
+
     @testset "selection and scrolling" begin
         fig, tree = _fixture()
         rows = _rows(100)

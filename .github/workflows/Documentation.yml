@@ -31,6 +31,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb mesa-utils
+      # The docs of main use BeamletOptics master ([sources]), those of a release the registered
+      # BeamletOptics that its users get
+      - name: Use the registered BeamletOptics
+        if: startsWith(github.ref, 'refs/tags/')
+        run: sed -i '/^BeamletOptics = {url = /d' Project.toml test/Project.toml docs/Project.toml
       # Precompilation is skipped here: GLMakie needs a display to initialize
       - name: Instantiate the docs environment
         shell: julia --project=docs --color=yes {0}

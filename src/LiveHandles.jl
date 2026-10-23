@@ -56,6 +56,58 @@ function Base.delete!(h::LiveSystemHandle, oh::AbstractObjectRenderHandle)
     return h
 end
 
+#=
+The pool: every object of a live view is rendered once, also one of several systems
+=#
+
+"""
+    _render_pool(ax) -> AbstractSystemRenderHandle
+
+The pool of a live view: the system handle of BeamletOptics that renders every object of the view
+once and knows the hierarchy of its groups. Its `System` is owned by the view and never traced. An
+object can belong to several systems of the view, or to none: the handle of a system (a
+`LiveSystemHandle`, see `_render_members!`) holds the object handles of its members, which are
+those of the pool.
+"""
+_render_pool(ax) = live_render!(ax, BMO.System())
+
+"""
+    _pool_handles!(pool, obj, kwargs) -> Vector{AbstractObjectRenderHandle}
+
+The object handles of `obj` (of the objects of a group) in the `pool`, which renders `obj` with the
+`kwargs` of `live_render!` unless it is rendered already, e.g. as an object of another system.
+"""
+function _pool_handles!(pool::AbstractSystemRenderHandle, @nospecialize(obj), kwargs)
+    leaves = _leaves(obj)
+    ohs = AbstractObjectRenderHandle[]
+    for leaf in leaves
+        oh = _child_handle(pool, leaf)
+        isnothing(oh) || push!(ohs, oh)
+    end
+    length(ohs) == length(leaves) && return ohs
+    isempty(ohs) && return AbstractObjectRenderHandle[live_render!(pool, obj; kwargs...)...]
+    # Some objects of a group are rendered already, as objects of another system on their own
+    for leaf in leaves
+        isnothing(_child_handle(pool, leaf)) && append!(ohs, live_render!(pool, leaf; kwargs...))
+    end
+    return ohs
+end
+
+"""
+    _render_members!(pool, sys, kwargs) -> LiveSystemHandle
+
+The handle of the system `sys` of a live view: its objects are rendered by the `pool` with the
+`kwargs` (see `_pool_handles!`), the handle holds their object handles and looks up the hierarchy
+of the groups in the pool.
+"""
+function _render_members!(pool::AbstractSystemRenderHandle, sys::BMO.AbstractSystem, kwargs)
+    children = AbstractObjectRenderHandle[]
+    for obj in sys.objects
+        append!(children, _pool_handles!(pool, obj, kwargs))
+    end
+    return LiveSystemHandle(sys, unique(objectid, children), AbstractSystemRenderHandle[pool])
+end
+
 """Returns the top-level object of `obj` in the hierarchy of `h`, i.e. the outermost group."""
 function _top_level(h::AbstractSystemRenderHandle, @nospecialize(obj))
     parent = render_parent(h, obj)

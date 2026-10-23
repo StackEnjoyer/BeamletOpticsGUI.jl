@@ -159,17 +159,28 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a source of several systems" begin
-        a, b = System([_mirror()]), System([_mirror(0.2)])
+    @testset "a source that changes its system" begin
+        a, b = System([_mirror()]), System([_mirror(0.2; x = 0.05)])
         beam = _beam()
-        gui = _live_view(a => beam, b => beam)
-        remove_component!(gui, beam)
+        gui = _live_view(a => beam, b)
+        @test _target(beam) === a.objects[1]
+        # traced through the other system
+        add_component!(gui, beam; system = b, select = false)
+        @test [p.first for p in gui.pairs] == [b] && isnothing(_target(beam))
         @test _undo!(gui)
-        @test [p.first for p in gui.pairs] == [a, b] && length(gui.beam_handles) == 2
-        @test isempty(gui.components.removed) && isempty(gui.components.added)
+        @test [p.first for p in gui.pairs] == [a] && _target(beam) === a.objects[1]
         @test occursin("# no changes", GUI._export_code(gui)[1])
         @test _redo!(gui)
-        @test isempty(gui.pairs)
+        @test [p.first for p in gui.pairs] == [b]
+        # without a system: its marker stays, it is neither traced nor drawn
+        remove_component!(gui, beam; system = b)
+        @test _paired(gui, beam) && isnothing(GUI._system_of_source(gui, beam))
+        @test isnothing(_target(beam))
+        @test !any(p -> p.visible[], render_plots(only(gui.beam_handles)))
+        @test _rendered(gui, beam)
+        @test _undo!(gui)
+        @test GUI._system_of_source(gui, beam) === b
+        @test any(p -> p.visible[], render_plots(only(gui.beam_handles)))
         close(gui)
     end
 

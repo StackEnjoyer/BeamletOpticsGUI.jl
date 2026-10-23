@@ -301,6 +301,12 @@ const GUI = BeamletOpticsGUI
         gui.status.text[] = "hello"
         GUI._toggle_pin!(gui, m)
         _tick!(gui)
+        # The widgets of a card that was just built move by a pixel at the first frame with a later
+        # clock time (see `_settle_cards!`): wait for it, such that the card has its final size
+        while !isempty(gui.cards.settle)
+            sleep(1e-3)
+            _tick!(gui)
+        end
         c = only(GUI._floating_cards(gui, m))
         card = Rect2f(c.background.layoutobservables.suggestedbbox[])
         rects = map(GUI._overlay_rect, parts)

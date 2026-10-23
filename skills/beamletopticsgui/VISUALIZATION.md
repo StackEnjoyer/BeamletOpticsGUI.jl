@@ -19,7 +19,9 @@ the mouse and keyboard (`kinematic_controls!`, `h` shows all controls), the syst
 after each change and the detector views update live. `export_changes(gui)` prints the changed poses
 as Julia code. Needs an interactive display; not for headless scripts. A selected component opens a
 card next to it in the 3D view: exact position `x`, `y`, `z` [mm], rotations `rx`, `ry`, `rv`
-[mrad] about the gizmo axes and "hide". The pin keeps a card
+[mrad] about the gizmo axes and an eye icon in its head that hides it (crossed out on a hidden
+object: shows it again). The pencil next to its label renames a component, a source or a system
+(`Enter` renames, `Esc` keeps the name); the name is the one of `labels`. The pin keeps a card
 with its component, so several components can be edited side by side. Dragging the head of a card
 moves it to a fixed place in the view (kept when pinned; double click on the head: back next to
 its component). Every card has pages, chosen by a page bar below its head: "Pose" (the pose
@@ -45,7 +47,9 @@ The card of the selected object also has, on its page "Pose", the keyboard step 
 "Move"/"Rotate" control (in sync with the key `m`); the page "Properties" lists the properties of
 the object (the same rows as the inspector of the app). Objects without a `labels` entry
 get automatic names ("Mirror 1", "Clip plane 2") in the cards, menus and tree. The card of a system
-(number of objects, rays, solve time) opens from its entry in the component menu of the tool rail (compact) or its
+(the system widget: name with a pencil to rename, eye, own-window icon and pin, a status chip with
+the solve time, "auto" and "Trace", "+" and "−" for its members, the list of its members with
+"×", rays per solve, "Remove system") opens from its entry in the component menu of the tool rail (compact) or its
 row in the tree (app), without a selection; non-movable objects are shown the same way (pose
 inputs are rejected). A click on an object of a group opens a small menu under the cursor ("Select <group>" under
 the cursor, so a second click selects the top-level group, and "More ›"); "More ›" opens the
@@ -76,6 +80,13 @@ cards have the same pages as floating ones (a detector view takes the width of t
 resize grip; both sidebars scroll with the mouse wheel when their content is higher than the window). The dock below the 3D view only has
 tabs of `add_panel!` and stays collapsed until the first one exists. Its 3D view has
 the same help pill, chips and help card at the top left.
+The sidebars and the dock are resized with the mouse: drag the edge between a sidebar and the 3D
+view (160 to 600 px) or the upper edge of the dock (80 px to 70 % of the window height), a line
+marks the edge under the mouse; a double click on the edge restores the start size. The start sizes
+are `sidebar_width = (240, 300)` (left, right; a number sets both) and `dock_height = nothing`
+(36 % of the window height) [px]; values outside the limits throw an `ArgumentError`, the compact
+layout ignores both. The tree, the card rows and the detector views follow the width, the tiles of
+the docked catalog are arranged again when the drag ends.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the
 start) shows only the 3D view and the help in both layouts: tools, status, view cube, cards,
 source markers (and with the cards the detector views), panels, toolbar, sidebars and dock are hidden and come back as they were, with the selection from before; the progress window of a
@@ -84,8 +95,10 @@ running trace stays. `Shift+V` hides the help as well (only the 3D view, for scr
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
 `extras = [housing => (; color = :lightblue), ...]` (`obj` or `obj => render_kwargs`), not into
 the system and not via `render!(gui.ax, ...)`: extras cost nothing in the solves, but can be
-selected, moved, hidden and exported like components. An extra must not also be an object of a
-system (`ArgumentError`). The card of a `NonInteractableObject`/`MeshDummy` or
+selected, moved, hidden, removed and exported like components. An extra is an object without a
+system (tree row "No system"); it must not also be an object of a system at the start
+(`ArgumentError`), later it can become a member of one with `add_component!(gui, obj; system =
+sys)`. The card of a `NonInteractableObject`/`MeshDummy` or
 `IntersectableObject` has an "opacity" slider (0-100 %, 0 % hides it); below 50 % a click in the
 3D view passes through it (select it in the tree or the component menu).
 

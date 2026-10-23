@@ -36,10 +36,13 @@ function Makie.record(f, gui::LiveView, path::AbstractString, iter; spectator::B
     clean && _set_spectator!(ctrl, true; help = false)
     try
         scene = gui.ax.scene
+        # The time of the video, which animations of widgets count, e.g. a `Toggle` that was switched
+        frame = 0
         Makie.record(gui.fig, path, iter; framerate, kwargs...) do i
             f(i)
             wait_solve(gui)
-            events(scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1 / framerate)
+            frame += 1
+            events(scene).tick[] = Makie.Tick(Makie.RegularRenderTick, frame, frame / framerate, 1 / framerate)
         end
     finally
         clean && _set_spectator!(ctrl, was; help = was_help)
