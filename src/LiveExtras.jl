@@ -73,6 +73,14 @@ function _on_moved!(gui::LiveView, @nospecialize(obj))
     gui.status.text[] = _pose_string(gui, obj)
     return nothing
 end
+# A selection of several objects: one solve of the systems of all its objects (extras and sources
+# without a system have none), see `_systems_of`
+function _on_moved!(gui::LiveView, s::_MultiSelection)
+    systems = _systems_of(gui, s)
+    isempty(systems) || return _on_change!(gui, s; systems)
+    gui.status.text[] = _pose_string(gui, s)
+    return nothing
+end
 
 #=
 Opacity, see `_set_opacity!`
