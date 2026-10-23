@@ -66,11 +66,13 @@ remove_component!(gui, laser)
 A source is traced through at most one system of the view (keyword `system`, also a `StaticSystem`).
 `add_component!` with another `system` moves a source that the view shows already, and `system =
 :none`, or `remove_component!` with a `system`, leaves it without a system: it keeps its marker, but
-is neither traced nor drawn. A source gets a marker, with which it is selected and moved like the sources the view started with. It is
-drawn in the color of its wavelength: violet to red between 380 nm and 780 nm, a dark violet for
-ultraviolet and a dark red for infrared light, like the sources that the view started with. The
-keyword `beam_kwargs` takes the keywords of its rendering, e.g. `(; render_every = 10)` or another
-`color`.
+is neither traced nor drawn. A source gets a marker, with which it is selected and moved like the
+sources the view started with. It is drawn with `color = :wavelength`: every ray in the display
+color of its own wavelength (`wavelength_color` of BeamletOptics), violet to red between 380 nm and
+780 nm, a dark violet for ultraviolet and a dark red for infrared light (30 % brightness at the ends
+of the spectrum), like the sources that the view started with. The keyword `beam_kwargs` takes the
+keywords of its rendering, e.g. `(; render_every = 10)`, `(; color = :wavelength)` or a fixed
+`color`, which draws all rays in that one color.
 
 ## The catalog and the placement
 

@@ -160,7 +160,8 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(src, 0.02)
         add_component!(gui, src; origin = c.origin, label = "disc")
         P, R = GUI._pose(src)
-        @test _hex(GUI._beam_color(gui, src)) == _hex(GUI._wavelength_color(532e-9))
+        @test _hex(GUI._beam_color(gui, src)) == _hex(Makie.RGBf(wavelength_color(532e-9)...))
+        @test GUI._color_preset(gui, src) == "wavelength"
 
         # another wavelength and number of rays: same pose, the color follows the wavelength
         card = _show!(gui, src, :edit)
@@ -173,7 +174,8 @@ const GUI = BeamletOpticsGUI
         Pn, Rn = GUI._pose(new)
         @test norm(Pn - P) < 1e-12 && norm(Rn - R) < 1e-12
         @test GUI._label(gui, new) == "disc"
-        @test _hex(GUI._beam_color(gui, new)) == _hex(GUI._wavelength_color(632.8e-9))
+        @test _hex(GUI._beam_color(gui, new)) == _hex(Makie.RGBf(wavelength_color(632.8e-9)...))
+        @test GUI._color_preset(gui, new) == "wavelength"
         @test gui.controls.selected[] === new && _card(gui).page === :edit
         @test occursin("UniformDiscSource([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.01, 6.328e-7; num_rays = 30)",
             GUI._export_code(gui)[1])
