@@ -346,7 +346,7 @@ const GUI = BeamletOpticsGUI
         @test all(leaf -> leaf in gui.objects.hidden, GUI._leaves(gui.extras))
         @test row(gui.extras).visible === false
         # the group is selected in the tree like one of a system, its objects are revealed
-        GUI._select!(gui, BMO.shape(group)[1])
+        GUI._select!(gui, BMO.objects(group)[1])
         @test row(group).expanded
         close(gui)
     end

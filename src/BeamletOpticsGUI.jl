@@ -34,7 +34,6 @@ using Base.ScopedValues: ScopedValue, with
 import AbstractTrees
 using AbstractTrees: PreOrderDFS
 using LinearAlgebra: dot, cross, normalize, norm
-using Trapz: trapz
 
 """The 3D axes that the live view draws into."""
 const _Axis = Union{Axis3, LScene}

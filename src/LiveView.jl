@@ -828,7 +828,7 @@ the mouse (`Makie.ray_at_cursor`) meets a sky dome.
 # Extras and opacity
 
 `extras = [housing => (; color = :lightblue), mount]` adds objects without optical function, e.g.
-a `MeshDummy` of an STL file, each an `AbstractObject` (or a group of them) with optional kwargs
+a `NonInteractableObject` of an STL file, each an `AbstractObject` (or a group of them) with optional kwargs
 of its [`render!`](@ref) call. They are not part of any system: never traced, moving them does not
 solve the systems. Otherwise they act like the components: a click in the 3D view (where they do
 not cover the components behind them, which are picked first) or in the component menu or object
@@ -840,7 +840,7 @@ system at the start; later it can become a member of a system like any object, a
 removed with "remove" or `Delete`. A component that was taken out of its last system is in the same
 state.
 
-The card of mechanics, i.e. a `NonInteractableObject` (e.g. `MeshDummy`) or an
+The card of mechanics, i.e. a `NonInteractableObject` (e.g. of an STL file) or an
 `IntersectableObject`, in a system or without one, has an "opacity" slider (0-100 %,
 initially the opacity as rendered, e.g. 5 % for a color with alpha 0.05). It scales the alpha of
 the plots of the object, including its feature edges, and does not change the optics. Objects below
@@ -954,9 +954,9 @@ plot), a drag with the right button pans, and Ctrl + click, a double click or "f
 view. A spot diagram only changes its limits. A field is computed again for the visible window on its full
 grid once the mouse rests for `idle_delay`, not per step of the wheel; "fit" returns to the
 automatic window around the beam, or to `x_min`, `x_max`, `z_min` and `z_max` if they are given.
-One field costs about 14 ns per pixel and hit on one thread, i.e. it grows with `n²` times the
-number of hits (`n = 100` and 1000 ray hits: about 150 ms); the computation uses all threads, start
-Julia with `julia -t auto`.
+One field grows with `n²` times the number of hits; the computation uses all threads, start
+Julia with `julia -t auto`. Moving a detector empties it (BeamletOptics 0.14): with auto trace off,
+its view reads "no hits" until the next solve, with auto trace on the solve after the move updates it.
 
 The chevron of the view collapses it to a thumbnail with the kind, the power or the number of rays,
 the centroid and the radii; a click on the thumbnail expands it again. A floating card with an
@@ -966,7 +966,8 @@ cards, a thumbnail on a grid of at most 48 points; a view that is shown later is
 the hits of the last solve. Pin the card of a detector to keep its view, or list the detector in
 `detectors` to start with its card pinned.
 
-The options of a view in the `kwargs` of `detectors`, which are not passed to `intensity`:
+The options of a view in the `kwargs` of `detectors`, which are not keywords of its sampling
+`BeamletOptics.RegularGrid`:
 
 - `n = 100`: number of points per axis of a field
 - `colorscale = :linear`: `:log` starts with "log" on
@@ -1351,8 +1352,8 @@ A system that is open in another window can not be removed, see "Systems".
   the start (also for `[]`). A vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the
   cards of these detectors at the start and sets the options of their views: `kind` is `:auto`,
   `:spot`, `:psf` or `:intensity`; `kwargs` holds the options of the view, e.g.
-  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are passed to `intensity`,
-  e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
+  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are keywords of the sampling
+  `BeamletOptics.RegularGrid` of the field, e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
   part of the systems throws an `ArgumentError`.
 - `on_change = (gui, obj) -> nothing`: called after each full solve with the moved object, or
   `nothing` after a slider change, i.e. not after preview solves, see "Adaptive tracing"

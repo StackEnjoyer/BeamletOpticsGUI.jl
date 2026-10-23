@@ -109,7 +109,8 @@ GLMakie.activate!(; visible = false)
         @test !occursin("heatmap", source)
         @test !occursin("BMO._", source)
         called = Set(m.captures[1] for m in eachmatch(r"BMO\.(\w+)\(", source))
-        @test called ⊆ Set(["spot_diagram", "intensity", "hits", "hit_count", "is_cancelled"])
+        @test called ⊆ Set(["spot_diagram", "intensity", "hits", "hit_count", "is_cancelled", "RegularGrid",
+            "RectilinearGrid", "sample_points"])
     end
 
     @testset "scale of the colorbar" begin
@@ -163,7 +164,7 @@ GLMakie.activate!(; visible = false)
         # the PSF: the intensity of the rays, normalized to its peak, without a power
         o = GUI._ViewOptions(; kind = :psf, n = 20)
         r = GUI._view_result(pd, o)
-        x, z, I = BMO.intensity(pd; n = 20)
+        x, z, I = BMO.intensity(pd, RegularGrid(; n = 20))
         @test r.kind == PSF && r.n == 20
         @test r.data[1] == x && r.data[2] == z && r.data[3] ≈ I ./ maximum(I)
         @test maximum(r.data[3]) ≈ 1
@@ -184,8 +185,15 @@ GLMakie.activate!(; visible = false)
         pd = _gauss()
         r = GUI._view_result(pd, GUI._ViewOptions(; n = 40))
         @test r.kinds == (Intensity, Spot) && r.kind == Intensity
-        @test r.data[3] == BMO.intensity(pd; n = 40)[3]
-        @test isapprox(r.metrics.P, optical_power(pd; n = 40); rtol = 1e-9)
+        @test r.data[3] == BMO.intensity(pd, RegularGrid(; n = 40))[3]
+        @test isapprox(r.metrics.P, optical_power(pd, RegularGrid(; n = 40)); rtol = 1e-9)
+        # zoomed: the power in the window, that of `optical_power` with the same sampling
+        w = (-0.2e-3, 0.3e-3, -0.25e-3, 0.25e-3)
+        r = GUI._view_result(pd, GUI._ViewOptions(; n = 40, window = w))
+        zoomed = RegularGrid(; n = 40, x_min = w[1], x_max = w[2], z_min = w[3], z_max = w[4])
+        @test r.data[3] == BMO.intensity(pd, zoomed)[3]
+        @test isapprox(r.metrics.P, optical_power(pd, zoomed); rtol = 1e-12)
+        @test r.metrics.P < optical_power(pd, RegularGrid(; n = 40))
         @test GUI._view_result(pd, GUI._ViewOptions(; kind = :psf, n = 20)).kind == Intensity
         r = GUI._view_result(pd, GUI._ViewOptions(; kind = :spot))
         @test r.kind == Spot && haskey(r.metrics, :rms)
@@ -227,7 +235,7 @@ GLMakie.activate!(; visible = false)
         # Gaussian beamlet: power and 1/e² radius
         pd = _gauss()
         m = GUI._view_result(pd, GUI._ViewOptions()).metrics
-        @test m == GUI._intensity_metrics(BMO.intensity(pd)...)
+        @test m == GUI._intensity_metrics(pd, BMO.intensity(pd)...)
         @test isapprox(m.P, optical_power(pd); rtol = 1e-3)
         # waist 0.5 mm at the source, 200 mm to the detector
         zR = π * 0.5e-3^2 / 1e-6
@@ -241,7 +249,7 @@ GLMakie.activate!(; visible = false)
               "P = 1.000 mW, peak 0 W/m²\nno intensity"
 
         # logarithmic color scale with a floor
-        _, _, I = BMO.intensity(pd; n = 20, x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3)
+        _, _, I = BMO.intensity(pd, RegularGrid(; n = 20, x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3))
         Imax = maximum(I)
         values, range = GUI._display_intensity(I, :log)
         @test values ≈ log10.(max.(I, 1e-4 * Imax))

@@ -235,6 +235,47 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         close(gui)
     end
 
+    @testset "a moved detector has no hits until it is traced" begin
+        # BeamletOptics empties a detector that moves: without auto trace its view shows "no hits"
+        m, pd = _fixture()
+        gui = _live_view(System([m, pd]), _rays(); auto_trace = false)
+        view = _view!(gui, pd)
+        state = GUI._detector_state(gui, pd)
+        GUI._trace!(gui)
+        @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
+        translate3d!(gui, pd, [0, 0, 0.5e-3])
+        @test BMO.hit_count(pd) == 0 && gui.trace.stale
+        @test !state.stale && isempty(state.result.kinds) && view.kind_label.text[] == "no hits"
+        @test GUI._signal_text(gui, pd) == "no hits"
+        GUI._trace!(gui)
+        @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
+        close(gui)
+        # with auto trace, the solve after the move shows the new hits
+        m, pd = _fixture()
+        gui = _live_view(System([m, pd]), _rays(); preview = false)
+        view = _view!(gui, pd)
+        state = GUI._detector_state(gui, pd)
+        translate3d!(gui, pd, [0, 0, 0.5e-3])
+        @test !gui.trace.stale && state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
+        close(gui)
+    end
+
+    @testset "preview solve of the rendered beams" begin
+        # every k-th beam, solved as a group of its own, the same hits as each solved on its own
+        m, pd = _fixture()
+        sys, bg, k = System([m, pd]), _rays(), 5
+        bms = BMO.beams(bg)
+        shown = 1:k:length(bms)
+        GUI._solve_preview!(sys, bg, k)
+        @test BMO.hit_count(pd) == length(shown)
+        @test all(i -> length(BMO.rays(bms[i])) > 1, shown)
+        @test all(i -> length(BMO.rays(bms[i])) == 1, setdiff(eachindex(bms), shown))
+        points = sort([collect(BMO.hit_point(h)) for h in BMO.hits(pd)])
+        empty!(pd)
+        foreach(i -> solve_system!(sys, bms[i]), shown)
+        @test all(splat(≈), zip(points, sort([collect(BMO.hit_point(h)) for h in BMO.hits(pd)])))
+    end
+
     @testset "systems are initialized before a solve" begin
         # an own type with a method of `initialize!`, in a nested group, hit by two sources
         block = CountingBlock(20e-3, 2e-3)

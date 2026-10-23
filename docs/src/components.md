@@ -96,7 +96,7 @@ takes numbers and glasses:
 
 | group | entries |
 |:--|:--|
-| Sources | Beam, Gaussian beamlet, Collimated source, Uniform disc source, Point source, Uniform point source, Astigmatic Gaussian beamlet |
+| Sources | Beam, Gaussian beamlet, Collimated source, Uniform disc source, Uniform line source, Point source, Uniform point source, Uniform fan source, Astigmatic Gaussian beamlet; the rays of the line and the fan source lie in the plane of the table (`basis = [1.0, 0.0, 0.0]`) |
 | Lenses | Thin lens, Singlet (`SphericalLens`), Doublet, Triplet, the last three also with aspheric surfaces |
 | Mirrors | Round mirror, Square mirror, Rectangular mirror, Thin mirror (`SquarePlanoMirror2D`), Prism mirror, Retroreflector |
 | Curved mirrors | Spherical, Parabolic, Conic, Ellipsoidal and Hyperbolic mirror, the last four also off-axis |

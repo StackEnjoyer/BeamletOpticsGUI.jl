@@ -15,6 +15,13 @@ _has_preview(gui::LiveView) = gui.trace.preview_enabled &&
                               any(i -> _beam_on(gui, gui.pairs[i].second) &&
                                   _previewable(gui.pairs[i].second, gui.beam_handles[i]), eachindex(gui.pairs))
 
+"""The beams `idx` of a beam group as a group of their own, which `_solve_preview!` solves."""
+struct _PreviewBeams{T, R, V <: AbstractVector} <: BMO.AbstractBeamGroup{T, R}
+    beams::V
+end
+_PreviewBeams(bg::BMO.AbstractBeamGroup{T, R}, idx) where {T, R} =
+    (bms = collect(BMO.beams(bg))[idx]; _PreviewBeams{T, R, typeof(bms)}(bms))
+
 """
     _solve_preview!(system, bg, k)
 
@@ -23,11 +30,9 @@ beams to their untraced start state, such that no outdated paths are rendered or
 """
 function _solve_preview!(system, bg::BMO.AbstractBeamGroup, k::Int)
     bms = BMO.beams(bg)
-    idx = 1:k:length(bms)
-    # Like `solve_system!` of a beam group
-    Threads.@threads for i in idx
-        solve_system!(system, bms[i])
-    end
+    # The rendered beams as a group of their own: BeamletOptics solves them like any beam group, with
+    # one table of bounding spheres, its threads and its hit buffers
+    solve_system!(system, _PreviewBeams(bg, 1:k:length(bms)); progress = false)
     for i in eachindex(bms)
         (i - 1) % k == 0 || empty!(bms[i])
     end
@@ -356,6 +361,8 @@ function _fail!(gui::LiveView, e)
 end
 
 _task_error(e::TaskFailedException) = _task_error(e.task.result)
+# the threads of the solve of a beam group, e.g. a hit-kind conflict when their hits are stored
+_task_error(e::CompositeException) = isempty(e.exceptions) ? e : _task_error(first(e.exceptions))
 _task_error(e) = e
 
 """
@@ -553,6 +560,7 @@ function _on_change!(gui::LiveView, @nospecialize(obj); systems = nothing)
     auto, manual = _split_auto(gui, affected)
     if isempty(auto)
         _mark_stale!(gui, obj; systems = affected)
+        _detectors_moved!(gui, obj)
     elseif (preview ? trace.preview_time : trace.solve_time) <= trace.budget
         # a system without a source has nothing to trace
         filter!(sys -> !isempty(_sources_of(gui, sys)), manual)
@@ -563,6 +571,7 @@ function _on_change!(gui::LiveView, @nospecialize(obj); systems = nothing)
         _mark_stale!(gui, obj; msg = "tracing when the movement pauses", systems = affected)
         trace.pending = true
         trace.pending_obj = obj
+        _detectors_moved!(gui, obj)
     end
     return nothing
 end

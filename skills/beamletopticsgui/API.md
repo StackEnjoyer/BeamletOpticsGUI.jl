@@ -122,8 +122,9 @@ line "into" names the system that gets the entry (of the selection, else the fir
 of the systems that can get it, then "no system" and "New system…". Its icons select a
 group (sources, lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
 component (all components of BeamletOptics with a constructor of numbers and glasses) or a source
-(`Beam`, `GaussianBeamlet`, `CollimatedSource`, `UniformDiscSource`, `PointSource`,
-`UniformPointSource`, `AstigmaticGaussianBeamlet`; placed along +y, then rotated with the controls), its form takes
+(`Beam`, `GaussianBeamlet`, `CollimatedSource`, `UniformDiscSource`, `UniformLineSource`, `PointSource`,
+`UniformPointSource`, `UniformFanSource`, `AstigmaticGaussianBeamlet`; placed along +y, then rotated with the
+controls; the line and the fan source with `basis = [1.0, 0.0, 0.0]`, i.e. their rays in the plane of the table), its form takes
 the numbers and the glass: one of `catalog_glasses()` (N-BK7, fused silica, CaF2, N-SF11, N-SF10,
 N-SF6HT, N-SF5, N-F2, N-BAF10, N-LAK22, as `SellmeierEquation`s) or "constant" with a number. Each
 surface of the entries Singlet, Doublet and Triplet (S1, S2, ...) has a menu "spherical"/"aspheric":

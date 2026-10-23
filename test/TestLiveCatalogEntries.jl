@@ -35,7 +35,10 @@ const GUI = BeamletOpticsGUI
             RoundPlateBeamsplitter, CubeBeamsplitter, RectangularCompensatorPlate,
             RightAnglePrism, PolarizationFilter, RoundPolarizationFilter, RoundLinearPolarizer,
             Detector]
-        @test all(e -> e.code_name == string(nameof(e.constructor)), filter(e -> e.group != "Lenses", catalog))
+        # the line and the fan source are built by the GUI, see the testset "sources"
+        built = (GUI._line_source, GUI._fan_source)
+        @test all(e -> e.code_name == string(nameof(e.constructor)),
+            filter(e -> e.group != "Lenses" && !(e.constructor in built), catalog))
         @test [e.code_name for e in entries[1:4]] ==
               ["ThinLens", "SphericalLens", "SphericalDoubletLens", "SphericalTripletLens"]
         for entry in entries
@@ -69,9 +72,13 @@ const GUI = BeamletOpticsGUI
         @test all(e -> e.group == "Sources", entries)
         @test GUI._catalog_group_icon(entries, "Sources") === :source
         @test [e.constructor for e in entries] == Any[Beam, GaussianBeamlet, CollimatedSource,
-            UniformDiscSource, PointSource, UniformPointSource, AstigmaticGaussianBeamlet]
+            UniformDiscSource, GUI._line_source, PointSource, UniformPointSource, GUI._fan_source,
+            AstigmaticGaussianBeamlet]
         @test [e.icon for e in entries] == [:beam, :gaussian_beam, :collimated_source, :disc_source,
-            :point_source, :uniform_point_source, :astigmatic_beam]
+            :line_source, :point_source, :uniform_point_source, :fan_source, :astigmatic_beam]
+        # the line and the fan source of the GUI are written as the sources of BeamletOptics
+        @test [e.code_name for e in entries if e.constructor in (GUI._line_source, GUI._fan_source)] ==
+              ["UniformLineSource", "UniformFanSource"]
         # the number of rays of a source
         rays(src::BMO.AbstractBeamGroup) = length(BMO.beams(src))
         rays(::BMO.AbstractBeam) = 1
@@ -112,7 +119,7 @@ const GUI = BeamletOpticsGUI
             @test all(p -> isempty(p.presets), filter(p -> p isa CatalogParam && p !== wavelength, entry.params))
             for p in filter(p -> p.integer, entry.params)
                 @test p.keyword in (:num_rings, :num_rays)
-                @test !occursin(".", last(split(code, "$(p.keyword) = ")))
+                @test !occursin(".", first(split(last(split(code, "$(p.keyword) = ")), r"[,)]")))
             end
         end
         # the parameters and the code of each source
@@ -124,6 +131,10 @@ const GUI = BeamletOpticsGUI
         @test _code(UniformDiscSource) == "UniformDiscSource($at, 0.01, 6.328e-7; num_rays = 1000)"
         @test _code(PointSource) == "PointSource($at, $(deg2rad(5)), 6.328e-7; num_rings = 10)"
         @test _code(UniformPointSource) == "UniformPointSource($at, $(deg2rad(5)), 6.328e-7; num_rays = 1000)"
+        @test _code(GUI._line_source) ==
+              "UniformLineSource($at, 0.01, 6.328e-7; num_rays = 101, basis = [1.0, 0.0, 0.0])"
+        @test _code(GUI._fan_source) ==
+              "UniformFanSource($at, $(deg2rad(5)), 6.328e-7; num_rays = 101, basis = [1.0, 0.0, 0.0])"
         @test _code(AstigmaticGaussianBeamlet) ==
               "AstigmaticGaussianBeamlet($at, 6.328e-7, 0.001, 0.0005; P0 = 0.001)"
         # the inputs of the form reach the source: the half angle in degrees, the numbers of rays
@@ -139,6 +150,27 @@ const GUI = BeamletOpticsGUI
         rings = _entry(entries, CollimatedSource)
         @test rays(GUI._catalog_component(rings, ["4", "500", "2"]).obj) <
               rays(GUI._catalog_component(rings, ["4", "500", "4"]).obj)
+        # the line and the fan source: an odd number of rays, in the plane of the table (x-y) like
+        # the source of their code
+        line, fan = _entry(entries, GUI._line_source), _entry(entries, GUI._fan_source)
+        @test [p.name for p in line.params] == ["width", "wavelength", "rays"]
+        @test [p.name for p in fan.params] == ["half angle", "wavelength", "rays"]
+        for entry in (line, fan)
+            values = _defaults(entry)
+            src = GUI._catalog_object(entry, values)
+            @test rays(src) == 101 && isodd(rays(src))
+            @test src.sampling isa Union{BMO.DiscLine, BMO.ConeFan}
+            @test all(b -> abs(position(b)[3]) < 1e-15 && abs(BMO.direction(b)[3]) < 1e-15, BMO.beams(src))
+            # the first beam is the center ray, the others spread in x
+            @test position(first(BMO.beams(src))) == [0, 0, 0] && BMO.direction(first(BMO.beams(src))) == [0, 1, 0]
+            twin = Core.eval(_script(), Meta.parse(GUI._catalog_code(entry, values)))
+            @test all(((a, b),) -> position(a) ≈ position(b) && BMO.direction(a) ≈ BMO.direction(b),
+                zip(BMO.beams(twin), BMO.beams(src)))
+        end
+        @test maximum(b -> position(b)[1], BMO.beams(GUI._catalog_object(line, _defaults(line)))) ≈ 5e-3
+        @test maximum(b -> BMO.direction(b)[1], BMO.beams(GUI._catalog_object(fan, _defaults(fan)))) ≈ sind(5)
+        @test GUI._catalog_component(line, ["4", "500", "21"]).origin.code ==
+              "UniformLineSource($at, 0.004, 5.0e-7; num_rays = 21, basis = [1.0, 0.0, 0.0])"
         gauss = _entry(entries, GaussianBeamlet)
         @test GUI._catalog_component(gauss, ["1064", "0.5", "2"]).origin.code ==
               "GaussianBeamlet($at, 1.064e-6, 0.0005; P0 = 0.002)"

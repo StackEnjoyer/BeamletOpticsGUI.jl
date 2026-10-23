@@ -91,7 +91,7 @@ function _snap_lines(gui::LiveView, @nospecialize(obj))
 end
 
 # Only the components of the systems snap, not the sources and the clip planes
-_snaps(::BMO.AbstractObject) = true
+_snaps(::BMO.ObjectOrGroup) = true
 _snaps(_) = false
 
 """

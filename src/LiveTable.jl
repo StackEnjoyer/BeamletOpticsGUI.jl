@@ -232,7 +232,7 @@ Extends the table of the `gui` to the position of the component or source `obj`,
 added, with `_TABLE_MARGIN` holes around it, while the table is shown.
 """
 _table_include!(::LiveView, _) = nothing
-function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.AbstractObject, _Source}))
+function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrGroup, _Source}))
     t = gui.components.table
     (isnothing(t) || !t.shown) && return nothing
     range = _union_range(t.range,
@@ -244,7 +244,7 @@ function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.AbstractObj
 end
 
 # Components and sources snap onto the holes of the table, clip planes do not
-_grid_snaps(::Union{BMO.AbstractObject, _Source}) = true
+_grid_snaps(::Union{BMO.ObjectOrGroup, _Source}) = true
 _grid_snaps(_) = false
 
 """

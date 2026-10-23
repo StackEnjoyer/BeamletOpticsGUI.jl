@@ -158,8 +158,8 @@ Entries
 
 The entries `(kind, obj)` of the selection card of `x` in the `gui`: first `(:select, x)`, which
 selects `x` itself, then `(:parent, parent)` if `x` is a part of another object (see `_part_parent`),
-then `(:part, p)` per direct part `p` of `x` that is not hidden, in the order of
-`BeamletOptics.shape`, see `_part_children`.
+then `(:part, p)` per direct part `p` of `x` that is not hidden, in their
+order, see `_part_children`.
 """
 function _browse_entries(gui::LiveView, x)
     entries = Tuple{Symbol, Any}[(:select, x)]

@@ -74,7 +74,7 @@ _forget_detector!(::LiveView, _) = nothing
 # `origin` is `nothing` or `(; code, pose0)`: the constructor call of `obj` as Julia code and its
 # pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`.
 # The public keyword `code` gives one with the pose of `obj` when it is added, see `_code_origin`
-function add_component!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject); system = nothing,
+function add_component!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup); system = nothing,
         select::Bool = true, label = nothing, code = nothing, origin = _code_origin(obj, code))
     ctrl = gui.controls
     # Selecting it would be taken as a click of a pick of members, see `_pick_member!`
@@ -151,7 +151,7 @@ pushed to `sys`, which is traced again, and stays one object with one pose, one 
 plots. Recorded in the undo history. Throws an `ArgumentError` for an `obj` that the view does not
 show at its top level, or that is in `sys` already.
 """
-function _add_member!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), sys::BMO.System)
+function _add_member!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), sys::BMO.System)
     isnothing(_system_handle(gui, sys)) && throw(ArgumentError("the system is not shown in the live view"))
     _shown_top(gui, obj) || throw(ArgumentError(
         "$(_label(gui, obj)) is not a top-level object of the live view, e.g. it is part of a group"))
@@ -174,7 +174,7 @@ Takes the object `obj` out of the `System` `sys` of the `gui`: it is deleted fro
 traced again, and stays in the view, as a member of its other systems or without a system, see
 `_detach!`. Recorded in the undo history. Throws an `ArgumentError` for an `obj` that is not in `sys`.
 """
-function _remove_member!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), sys::BMO.System)
+function _remove_member!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), sys::BMO.System)
     isnothing(_system_handle(gui, sys)) && throw(ArgumentError("the system is not shown in the live view"))
     _has(sys.objects, obj) || throw(ArgumentError("$(_label(gui, obj)) is not in $(_label(gui, sys))"))
     _change!(() -> delete!(sys, obj), gui.controls, nothing)
@@ -252,7 +252,7 @@ that does not change the system, i.e. its plots, the controls, its name and what
 of it (see `_ComponentState`). Also for a view that follows a linked one, in which `obj` was added,
 see `_follow_structure!`. Throws what `live_render!` throws, before the view changes.
 """
-function _attach!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject),
+function _attach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
         sys::Union{Nothing, BMO.AbstractSystem}; label = nothing, origin = nothing)
     ctrl = gui.controls
     comp = gui.components
@@ -327,7 +327,7 @@ What the `gui` knows of the component or source `obj` and forgets when it is rem
 `_restore!` adds it again as it was: its system, its label and the names of its parts, its `origin`
 and the initial poses of the controls, from which [`export_changes`](@ref) counts.
 """
-function _snapshot(gui::LiveView, @nospecialize(obj::BMO.AbstractObject))
+function _snapshot(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup))
     ctrl = gui.controls
     parts = _component_parts(obj)
     return (; systems = _member_systems(gui, obj), label = get(gui.labels, obj, nothing),
@@ -342,7 +342,7 @@ end
 Adds the component or source `obj` to the `gui` again as its `snap` describes it, see `_snapshot`,
 without recording it in the undo history.
 """
-function _restore!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), snap)
+function _restore!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), snap)
     _unrecorded(gui) do
         system = isempty(snap.systems) ? :none : first(snap.systems)
         add_component!(gui, obj; system, label = snap.label, origin = snap.origin)
@@ -512,7 +512,7 @@ function remove_component!(gui::LiveView, @nospecialize(obj); system = nothing)
         # Only out of this system, the object stays in the view
         system isa BMO.System || throw(ArgumentError(
             "`system` must be a `System` of the live view, got a $(nameof(typeof(system)))"))
-        obj isa BMO.AbstractObject ||
+        obj isa BMO.ObjectOrGroup ||
             throw(ArgumentError("a $(nameof(typeof(obj))) is not a component of a system"))
         _remove_member!(gui, obj, system)
         return obj
@@ -544,7 +544,7 @@ afterwards stays in the view without a system with `keep`, see `_live_render_ext
 the view lets go of it, see `_drop!`. Also for a view that follows a linked one, in which `obj` was
 removed, see `_follow_structure!`.
 """
-function _detach!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject),
+function _detach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
         sys::Union{Nothing, BMO.AbstractSystem}; keep::Bool = false)
     ohs = _pool_handles(gui, obj)
     h = _member_handle(gui, sys)
@@ -568,7 +568,7 @@ Lets go of the component `obj` in the `gui`, which no system of the view holds a
 plots, the controls, its name and what the `gui` records of it (see `_release!` and
 `_ComponentState`, with `sys` as the system that it was removed from, `nothing` for none).
 """
-function _drop!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), sys)
+function _drop!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), sys)
     ctrl = gui.controls
     comp = gui.components
     parts = _component_parts(obj)

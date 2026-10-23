@@ -10,14 +10,14 @@ const _Mechanics = Union{BMO.NonInteractableObject, BMO.IntersectableObject}
 Extras, see the `extras` kwarg of `live_view`
 =#
 
-_extra_spec(@nospecialize(obj::BMO.AbstractObject)) = (obj, (;))
-_extra_spec(p::Pair{<:BMO.AbstractObject, <:NamedTuple}) = (p.first, p.second)
+_extra_spec(@nospecialize(obj::BMO.ObjectOrGroup)) = (obj, (;))
+_extra_spec(p::Pair{<:BMO.ObjectOrGroup, <:NamedTuple}) = (p.first, p.second)
 function _extra_spec(x)
-    throw(ArgumentError("invalid extra $(repr(x)), use `obj` or `obj => (; kwargs...)` with an `AbstractObject` `obj`"))
+    throw(ArgumentError("invalid extra $(repr(x)), use `obj` or `obj => (; kwargs...)` with an `AbstractObject` or `AbstractObjectGroup` `obj`"))
 end
 
 """
-    _extra_specs(extras, systems) -> Vector{Tuple{AbstractObject, NamedTuple}}
+    _extra_specs(extras, systems) -> Vector{Tuple{ObjectOrGroup, NamedTuple}}
 
 Returns `(obj, render_kwargs)` of each entry of the `extras` kwarg of `live_view`. An extra must
 not be an object of the `systems` (it would be rendered twice) nor be given twice.
@@ -49,7 +49,7 @@ function _live_render_extras!(pool::AbstractSystemRenderHandle, specs)
     for (obj, kw) in specs
         append!(children, _pool_handles!(pool, obj, kw))
     end
-    return LiveSystemHandle(BMO.System(BMO.AbstractObject[first.(specs)...]), children,
+    return LiveSystemHandle(BMO.System(BMO.ObjectOrGroup[first.(specs)...]), children,
         AbstractSystemRenderHandle[pool])
 end
 

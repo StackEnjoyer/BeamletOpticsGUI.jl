@@ -436,7 +436,7 @@ Returns the variable names of the top-level objects and sources `tops` of the `g
 objects of their groups in the code of `export_script`, see `_export_names`: `obj1`, `obj2`, … count
 the `tops` first, then the objects of their groups. The objects of a group whose constructor is
 known (see the `origin` of `_ComponentState`) are no variables of the script; they are named by
-their place in the group, e.g. `BeamletOptics.shape(pair)[1]`.
+their place in the group, e.g. `BeamletOptics.objects(pair)[1]`.
 """
 function _export_script_names(gui::LiveView, tops)
     seen = Base.IdSet{Any}(tops)
@@ -449,7 +449,7 @@ function _export_script_names(gui::LiveView, tops)
     names = _export_names(gui, all)
     function name_children!(obj)
         for (i, c) in enumerate(_children(obj))
-            names[c] = "BeamletOptics.shape($(names[obj]))[$i]"
+            names[c] = "BeamletOptics.objects($(names[obj]))[$i]"
             name_children!(c)
         end
         return nothing

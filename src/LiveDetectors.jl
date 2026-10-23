@@ -209,6 +209,26 @@ end
 """After a cancelled solve or computation, the views wait for the next solve, like the beams."""
 _views_cancelled!(gui::LiveView) = (gui.detectors.hits_valid = false; nothing)
 
+"""
+    _detectors_moved!(gui, obj)
+
+Called after `obj` changed when no solve follows at once (auto trace off, or tracing when the
+movement pauses): BeamletOptics empties a detector that moves, hence the views of the detectors of
+`obj` are computed again from their hits and show "no hits" until the next solve, like a detector
+that no ray reaches, see `_refresh_views!`.
+"""
+function _detectors_moved!(gui::LiveView, @nospecialize(obj))
+    isnothing(obj) && return nothing
+    moved = false
+    for leaf in _leaves(obj)
+        state = leaf isa BMO.Detector ? get(gui.detectors.states, leaf, nothing) : nothing
+        isnothing(state) && continue
+        state.stale = moved = true
+    end
+    moved && _refresh_views!(gui)
+    return nothing
+end
+
 # Status of the computation of a view in the background, see `_refresh_views!`
 const _VIEW_COMPUTING = "computing the detector view, Cancel in the progress window stops it"
 
@@ -293,7 +313,7 @@ The `detectors` kwarg of `live_view`
 # The kinds of a view that the `detectors` kwarg accepts, see `_view_kinds`
 const _DETECTOR_KINDS = (:auto, :spot, :psf, :intensity)
 
-# Options of a view in the kwargs of a detector, which are not passed to `intensity`
+# Options of a view in the kwargs of a detector, which are not keywords of its `RegularGrid`
 const _VIEW_OPTION_KEYS = (:n, :colorscale, :colorrange, :colorbar, :profiles, :expanded)
 
 const _DETECTOR_SPEC_HINT = "use `pd`, `pd => kind` or `pd => (kind, kwargs)`"
@@ -312,7 +332,7 @@ The detectors of the `detectors` kwarg of [`live_view`](@ref) whose cards start 
 `(; pd, opts, expanded)` with the options of its view (a `_ViewOptions`) and whether the view
 starts expanded: none for `:auto`, otherwise an entry per `pd`, `pd => kind` or
 `pd => (kind, kwargs)`. The `kwargs` hold the options `n`, `colorscale`, `colorrange`, `colorbar`,
-`profiles` and `expanded`; all others are passed to `intensity`.
+`profiles` and `expanded`; all others are keywords of the sampling `BeamletOptics.RegularGrid`.
 """
 function _detector_specs(detectors)
     if detectors isa Symbol

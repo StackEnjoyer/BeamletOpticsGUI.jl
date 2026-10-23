@@ -18,16 +18,20 @@ _polarizable(_) = false
 """
     _central_beam(beam)
 
-The beam whose polarization the overlay of `beam` shows: a single beam itself, of a beam group the
-beam whose start point is nearest to the axis of the group. The axis runs through the mean start
-point of the beams along the central direction of the group (the second column of its
-orientation). Ties, e.g. of the beamlets of a point source that all start at the same point, are
-broken by the smallest angle between the start direction of the beam and the axis.
+The central beam of `beam`, e.g. the one whose polarization its overlay shows, and the one that
+snapping, aligning and measuring use: a single beam itself; of a source whose rays BeamletOptics
+generated (`BeamletOptics.min_num_rays` is not `nothing`, e.g. a `UniformDiscSource` or a
+`UniformLineSource`) its first beam, which is the center ray of the sampling. Of any other beam
+group, e.g. a source from given beams or an `AstigmaticBeamGroup`, the beam whose start point is
+nearest to the axis of the group. The axis runs through the mean start point of the beams along the
+central direction of the group (the second column of its orientation). Ties, e.g. of the beamlets
+of a point source that all start at the same point, are broken by the smallest angle between the
+start direction of the beam and the axis.
 """
 _central_beam(beam::BMO.AbstractBeam) = beam
 function _central_beam(bg::BMO.AbstractBeamGroup)
     bs = BMO.beams(bg)
-    length(bs) == 1 && return first(bs)
+    (length(bs) == 1 || !isnothing(BMO.min_num_rays(bg))) && return first(bs)
     axis = normalize(Vector{Float64}(BMO.orientation(bg)[:, 2]))
     starts = [Vector{Float64}(position(b)) for b in bs]
     center = sum(starts) / length(starts)

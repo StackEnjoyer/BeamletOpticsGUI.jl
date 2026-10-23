@@ -68,7 +68,7 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
 
 # A system with a name, traced like a `System`
 struct MyBench <: BeamletOptics.AbstractSystem
-    objects::Vector{BeamletOptics.AbstractObject}
+    objects::Vector{BeamletOptics.ObjectOrGroup}
     name::String
 end
 

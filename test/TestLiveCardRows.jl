@@ -118,6 +118,33 @@ const GUI = BeamletOpticsGUI
         _select!(gui, ps)
         @test _text(gui, :source) == "633 nm, NA 0.01"
         close(gui)
+
+        # a line source: its width, only odd numbers of rays on the slider, an even current count kept
+        steps = [11, 21, 51, 101, 201, 501, 1001, 2001, 5001, 10001, 20001]
+        line = UniformLineSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 101, basis = [1.0, 0, 0])
+        @test GUI._ray_steps(line.sampling, 10, 101) == steps
+        @test GUI._ray_steps(line.sampling, 10, 40) == sort([steps; 40])
+        fan = UniformFanSource([0.0, 0, 0], [0.0, 1, 0], 0.1, 633e-9; num_rays = 11, basis = [1.0, 0, 0])
+        @test GUI._ray_steps(fan.sampling, 10, 11) == steps
+        # ring and sunflower sources keep the steps 1-2-5
+        disc = UniformDiscSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 20)
+        @test GUI._ray_steps(disc.sampling, 10, 20) == GUI._ray_steps(10, 20) ==
+              [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+        @test GUI._ray_steps(BMO.DiscRings(2), 40, 40) == GUI._ray_steps(40, 40)
+        gui = _live_view(System([m, pd]), line)
+        _select!(gui, line)
+        @test _text(gui, :source) == "633 nm, width 4 mm"
+        @test collect(GUI._card_widget(gui.cards.selection, :rays).range[]) == steps
+        # its properties name the width
+        names = first.(GUI._properties(line))
+        @test "Width [m]" in names && !("Diameter [m]" in names)
+        @test "Diameter [m]" in first.(GUI._properties(disc))
+        close(gui)
+        gui = _live_view(System([m, pd]), fan)
+        _select!(gui, fan)
+        @test _text(gui, :source) == "633 nm, NA $(round(sin(0.1); digits = 3))"
+        @test all(isodd, GUI._card_widget(gui.cards.selection, :rays).range[])
+        close(gui)
     end
 
     @testset "systems" begin

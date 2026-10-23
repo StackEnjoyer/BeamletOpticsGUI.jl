@@ -411,7 +411,8 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(sys; layout)
         sources = [e for e in gui.components.catalog if e.source]
         @test [e.name for e in sources] == ["Beam", "Gaussian beamlet", "Collimated source",
-            "Uniform disc source", "Point source", "Uniform point source", "Astigmatic Gaussian beamlet"]
+            "Uniform disc source", "Uniform line source", "Point source", "Uniform point source",
+            "Uniform fan source", "Astigmatic Gaussian beamlet"]
         # "Place" of each entry with its defaults, then the drop: a source of the system
         for (k, entry) in enumerate(sources)
             src = GUI._place_catalog!(gui, entry, String[GUI._catalog_string(p) for p in entry.params])

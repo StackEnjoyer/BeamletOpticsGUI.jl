@@ -59,12 +59,12 @@ _catalog_args(entry::CatalogEntry, values) = _catalog_args(_catalog_arg, entry, 
 _catalog_keyword(p::Union{CatalogParam, CatalogGlass}) = p.keyword
 
 """
-    _catalog_object(entry, values) -> Union{AbstractObject, AbstractBeam, AbstractBeamGroup}
+    _catalog_object(entry, values) -> Union{ObjectOrGroup, AbstractBeam, AbstractBeamGroup}
 
 Constructs the component of the catalog `entry` with the `values` of its parameters, see
 `_catalog_args`. The constructor of an entry with `source` gets the position `[0, 0, 0]` and the
 direction `[0, 1, 0]` before them and returns a beam or a beam group. Throws what the constructor
-throws, and an `ArgumentError` if it does not return an `AbstractObject`, or a source for an entry
+throws, and an `ArgumentError` if it does not return an `AbstractObject` or an `AbstractObjectGroup`, or a source for an entry
 with `source`.
 """
 function _catalog_object(entry::CatalogEntry, values)
@@ -77,8 +77,8 @@ function _catalog_object(entry::CatalogEntry, values)
         return src
     end
     obj = entry.constructor(positional...; keywords...)
-    obj isa BMO.AbstractObject ||
-        throw(ArgumentError("the constructor returned a $(nameof(typeof(obj))), not an AbstractObject"))
+    obj isa BMO.ObjectOrGroup ||
+        throw(ArgumentError("the constructor returned a $(nameof(typeof(obj))), not an AbstractObject or an AbstractObjectGroup"))
     return obj
 end
 
@@ -99,9 +99,11 @@ _catalog_code(entry::CatalogEntry, values) = _entry_code(entry.constructor, entr
 
 _entry_code(@nospecialize(constructor), entry::CatalogEntry, values) = _call_code(entry, values)
 
-# The call `code_name(arguments...; keywords...)` of the `entry`, see `_catalog_code`
-function _call_code(entry::CatalogEntry, values)
+# The call `code_name(arguments...; keywords...)` of the `entry`, see `_catalog_code`, with the
+# keywords `extra` (`keyword => code`) after those of the parameters
+function _call_code(entry::CatalogEntry, values; extra = ())
     positional, keywords = _catalog_args(_catalog_arg_code, entry, values)
+    append!(keywords, extra)
     # the position and the direction that `_catalog_object` passes
     entry.source && pushfirst!(positional, "[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]")
     args = join(positional, ", ")
@@ -181,7 +183,7 @@ function _catalog_component(entry::CatalogEntry, strings)
 end
 
 """
-    _place_catalog!(gui, entry, strings) -> Union{AbstractObject, AbstractBeam, AbstractBeamGroup, Nothing}
+    _place_catalog!(gui, entry, strings) -> Union{ObjectOrGroup, AbstractBeam, AbstractBeamGroup, Nothing}
 
 "Place" of the catalog of the `gui`: constructs the component or source of the `entry` from the `strings` of
 its form (see `_catalog_component`) and starts placing it with the mouse, see `_start_placement!`.

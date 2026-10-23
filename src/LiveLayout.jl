@@ -283,8 +283,7 @@ const _APP_THEMES = Dict{Symbol, NamedTuple}(
         help = Makie.to_color("#a4abb3"), rays = Makie.to_color("#5b9bff"),
         clip_plane = Makie.to_color("#b48ef0"), clip_plane_icon = Makie.to_color("#b48ef0"),
         marker_stroke = Makie.to_color("#d5d9de"), gizmo_outline = Makie.to_color("#e3e5e8"),
-        materials = Dict{Symbol, RGBf}(:detector => Makie.to_color("#5d6673"),
-            :polarizer => Makie.to_color("#56707d"))))
+        materials = Dict{Symbol, RGBf}(:detector => Makie.to_color("#5d6673"))))
 
 """Returns the color tokens of the `theme`, see `_APP_THEMES`."""
 function _app_theme(theme::Symbol)
