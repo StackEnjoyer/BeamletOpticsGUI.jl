@@ -279,16 +279,23 @@ function _close_debug!(gui::LiveView)
     return nothing
 end
 
+# The entry of the debug mode in the help, a chip of its tool since it has no key
+const _DEBUG_HELP = _HelpSection[
+    "View" => [_HelpEntry([:tool => "Debug"], "debug mode: timings, bounding spheres, ends of the beams")]]
+
 """
     _build_debug!(gui, on::Bool)
 
 Creates the debug mode of the `gui` with its toggle "Debug" among the tools of the layout, see the
-`debug` kwarg of [`live_view`](@ref). A mode that starts on (`on`) keeps the status line as it is.
+`debug` kwarg of [`live_view`](@ref), and its entry in the help (`_DEBUG_HELP`). A mode that starts
+on (`on`) keeps the status line as it is.
 """
 function _build_debug!(gui::LiveView, on::Bool)
     d = _debug!(gui)
     d.toggle = add_tool!(_toggle_debug!, gui, "Debug"; icon = :tune, toggle = true,
         tooltip = "Debug mode: solve timings, bounding spheres, ends of the beams, hit points")
+    append!(gui.controls.help_extra, _DEBUG_HELP)
+    _update_help!(gui.controls)
     if on
         status = gui.status.text[]
         d.toggle.active[] = true

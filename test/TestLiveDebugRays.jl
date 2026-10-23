@@ -144,6 +144,11 @@ const GUI = BeamletOpticsGUI
         @test n > GUI._RAYS_HIT_CAP
         @test GUI._RAYS_HIT_CAP / 2 <= s.hits <= GUI._RAYS_HIT_CAP
         @test length(r.hits) == length(r.hits_px[]) == s.hits
+        # the normals are arrows of at most `_RAYS_NORMAL_PX` on the screen, whatever the zoom
+        ps = r.normals_px[]
+        ls = [hypot((ps[2i] - ps[2i - 1])...) for i in 1:(length(ps) ÷ 2)]
+        @test length(ls) == s.hits
+        @test all(l -> isnan(l) || l <= GUI._RAYS_NORMAL_PX + 1e-3, ls) && any(l -> l > 1, ls)
         close(gui)
 
         # by default every 5th beam of a group is drawn

@@ -1350,7 +1350,7 @@ The toggle "Debug" among the tools (or the `debug` kwarg) shows what the window 
 find errors in an optical system or in the GUI: a debug card in the top left corner of the 3D view
 (frames, the durations of the last solves with the time compiled, the rays of the last solve, the
 scene and the last events), the bounding spheres of the objects, where and why the beams end, the
-hit points with their surface normals, the components that no ray hit, and a page "Debug" on the
+hit points with their surface normals as short arrows, the components that no ray hit, and a page "Debug" on the
 cards of the objects. The spectator mode hides it. A window opened with [`open_system`](@ref)
 takes the mode over. Only while it is on, the compile time of Julia is measured.
 

@@ -11,8 +11,12 @@ read from what the last solve stored, see `_DebugRays`
 const _RAYS_Z = 9000.0f0
 # The most hit points drawn, see `_layer_solved!`
 const _RAYS_HIT_CAP = 2000
-# The length of a normal as a fraction of the radius of the scene, see `_scene_bounds`
-const _RAYS_NORMAL = 0.05
+# The length of the normals in 3D as a fraction of the radius of the scene (see `_scene_bounds`):
+# only their direction is drawn, as an arrow of `_RAYS_NORMAL_PX`, see `_normals_px`
+const _RAYS_NORMAL = 1e-3
+# The length of the arrow of a normal that lies in the plane of the screen [px], whatever the zoom;
+# a normal towards the camera or away from it is shorter, as seen in perspective
+const _RAYS_NORMAL_PX = 22.0f0
 # The color of the hit points and normals: the purple of the clip planes
 const _RAYS_HIT_COLOR = RGBAf(Makie.to_color("#9b40c9"))
 
@@ -25,7 +29,8 @@ beams as they were traced (`BMO.path_segments`, `intersection`), never traced ag
 - the end of each branch of the beams, colored by reason (see `_ray_end_reason`): green (`t.ok`)
   on an object, amber (`t.stale`) open, red (`t.danger`) at a limit of the solve
 - the hit points of the rays (of a Gaussian beamlet its chief rays) with the normals of the
-  surfaces they hit, purple like the clip planes, at most `_RAYS_HIT_CAP` (every k-th)
+  surfaces they hit as arrows of a fixed length on the screen (see `_normals_px`), purple like the
+  clip planes, at most `_RAYS_HIT_CAP` (every k-th)
 - the label "never hit" at the components of the traced systems that no ray hit
 
 Only the sources that are switched on and up to date count, of a beam group the beams that are
@@ -76,8 +81,16 @@ function _new_layer(gui::LiveView, ::Val{:rays})
     hits_px, normals_px, unhit_px = Observable(Point2f[]), Observable(Point2f[]), Observable(Point2f[])
     unhit_text = Observable(String[])
     plots = Dict{Symbol, AbstractPlot}()
-    plots[:normals] = linesegments!(hud, normals_px; common..., color = _RAYS_HIT_COLOR,
-        linewidth = 2.5)
+    # The arrows of the normals (see `_normals_px`): the shafts, and a triangle at the end of each
+    # one, turned along it (`arrows2d` can not show no arrows)
+    plots[:normals] = linesegments!(hud, normals_px; common..., color = _RAYS_HIT_COLOR, linewidth = 2)
+    tips = Makie.lift(ps -> ps[2:2:end], normals_px)
+    angles = Makie.lift(normals_px) do ps
+        return Float32[atan(ps[2i][2] - ps[2i - 1][2], ps[2i][1] - ps[2i - 1][1]) - π / 2
+                       for i in 1:(length(ps) ÷ 2)]
+    end
+    plots[:normal_tips] = scatter!(hud, tips; common..., color = _RAYS_HIT_COLOR,
+        marker = :utriangle, markersize = 9, rotation = angles)
     plots[:hits] = scatter!(hud, hits_px; common..., color = _RAYS_HIT_COLOR, markersize = 7,
         strokecolor = :white, strokewidth = 1)
     for k in _RAYS_END_KEYS
@@ -87,7 +100,7 @@ function _new_layer(gui::LiveView, ::Val{:rays})
     plots[:labels] = text!(hud, unhit_px; common..., text = unhit_text, color = t.stale_text,
         fontsize = 12, offset = Vec2f(16, 0), align = (:left, :center))
     # In this order: the normals below the hit points, the ends and the labels on top
-    for (k, name) in enumerate((:normals, :hits, _RAYS_END_KEYS..., :labels))
+    for (k, name) in enumerate((:normals, :normal_tips, :hits, _RAYS_END_KEYS..., :labels))
         translate!(plots[name], 0, 0, _RAYS_Z + k)
     end
     r = _DebugRays(scene, hud, Dict(k => Point3f[] for k in _RAYS_END_KEYS), Point3f[],
@@ -292,12 +305,36 @@ function _project_rays!(r::_DebugRays)
     for k in _RAYS_END_KEYS
         r.ends_px[k][] = _rays_px(pv, wh, r.ends[k])
     end
-    r.normals_px[] = _rays_px(pv, wh, r.normals)
+    r.normals_px[] = _normals_px(Makie.camera(r.scene).view[], pv, wh, r.normals)
     r.hits_px[] = _rays_px(pv, wh, r.hits)
     # The texts first, the plot is computed when it is drawn
     length(r.unhit_text[]) == length(r.unhit) || (r.unhit_text[] = fill("never hit", length(r.unhit)))
     r.unhit_px[] = _rays_px(pv, wh, r.unhit)
     return nothing
+end
+
+"""
+    _normals_px(view, pv, wh, normals) -> Vector{Point2f}
+
+The arrows of the `normals` (3D points in pairs of start and end) on the screen, in pairs of start
+and end [px]: an arrow starts at the projection of the hit point and points along the projection of
+the normal, `_RAYS_NORMAL_PX` long for a normal in the plane of the screen and shorter as seen in
+perspective, compared with a vector of the same length along the right of the camera (the first row
+of `view`). Points behind the camera give `NaN`, which is not drawn.
+"""
+function _normals_px(view, pv, wh, normals::Vector{Point3f})
+    right = Vec3f(view[1, 1], view[1, 2], view[1, 3])
+    out = Vector{Point2f}(undef, length(normals))
+    for i in 1:2:length(normals)
+        p, q = normals[i], normals[i + 1]
+        a, b, c = _rays_px(pv, wh, [p, q, p + norm(q - p) * right])
+        s = norm(c - a)
+        d = b - a
+        ok = isfinite(s) && s > 0 && all(isfinite, d)
+        out[i] = ok ? a : Point2f(NaN, NaN)
+        out[i + 1] = ok ? a + _RAYS_NORMAL_PX * d / s : Point2f(NaN, NaN)
+    end
+    return out
 end
 
 # The pixel positions of the 3D points `ps` with the matrix `pv` of the camera in a view of the

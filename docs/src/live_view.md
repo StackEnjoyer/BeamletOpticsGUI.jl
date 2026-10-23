@@ -748,7 +748,8 @@ While it is on, the 3D view shows:
   `NonInteractableObject`, show none;
 - a **marker at the end of each beam**, colored by why it ends: green on an object, amber if it
   flies on, red at a limit of the solve (the ray limit `r_max` or the depth limit). Every hit point is
-  drawn with its surface normal (at most 2000), and components that no ray hits are marked "never
+  drawn with its surface normal, a short arrow of the same length on the screen at any zoom, towards
+  the side the ray comes from (at most 2000), and components that no ray hits are marked "never
   hit";
 - the page "Debug" on the cards: type, id, systems, traits, the exact position and orientation
   matrix, shapes, bounding sphere, hits and plots; for sources also the beams, rays, segments and
