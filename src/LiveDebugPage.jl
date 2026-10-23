@@ -182,8 +182,8 @@ function _debug_segments(gui::LiveView, @nospecialize(src), i::Int)
 end
 
 # The number of rays of a beam, of a Gaussian beamlet those of its chief, waist and divergence beams
-_ray_count(beam) = length(BMO.rays(beam))
-_ray_count(beam::BMO.GaussianBeamlet) =
+_traced_rays(beam) = length(BMO.rays(beam))
+_traced_rays(beam::BMO.GaussianBeamlet) =
     length(BMO.rays(beam.chief)) + length(BMO.rays(beam.waist)) + length(BMO.rays(beam.divergence))
 
 # The index of `src` in the pairs of the `gui`, or `nothing`
@@ -198,7 +198,7 @@ function _source_rows(gui::LiveView, @nospecialize(src))
     rows = Pair{String, Any}[]
     _beam_stale(gui, src) && push!(rows, "state" => "outdated")
     push!(rows, "beams" => string(src isa BMO.AbstractBeamGroup ? length(BMO.beams(src)) : 1))
-    push!(rows, "rays" => string(sum(_ray_count, tree; init = 0)))
+    push!(rows, "rays" => string(sum(_traced_rays, tree; init = 0)))
     push!(rows, "segments" => string(length(segs)))
     push!(rows, "max depth" => string(maximum(s -> s.depth, segs; init = 0)))
     ends = Dict{Symbol, Int}()
