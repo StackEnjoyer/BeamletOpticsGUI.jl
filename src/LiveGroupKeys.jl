@@ -34,8 +34,7 @@ end
 Connects `Ctrl+G` and `Ctrl+Shift+G` (`Cmd` on macOS) of the `gui`, see `_group_key!`, by the
 letter of the key in the keyboard layout, see `_layout_key`. The listener runs before the controls
 and the camera (200), which would take `g` as the zoom to the selection. The keys are left to a text
-box that is focused and do nothing in the spectator mode. They are listed in the help of a view with
-a catalog.
+box that is focused and do nothing in the spectator mode. They are listed in the help.
 """
 function _connect_group_keys!(gui::LiveView)
     scene = gui.ax.scene
@@ -49,10 +48,8 @@ function _connect_group_keys!(gui::LiveView)
         _group_key!(gui, _shift_pressed(scene))
         return Consume(true)
     end)
-    if !isnothing(gui.components.window)
-        append!(ctrl.help_extra, _GROUP_HELP)
-        _update_help!(ctrl)
-    end
+    append!(ctrl.help_extra, _GROUP_HELP)
+    _update_help!(ctrl)
     return nothing
 end
 
