@@ -1059,7 +1059,7 @@ const _INSPECTOR_SKIPPED = ("Type", "Position [m]")
 Shows the properties of `obj` (see `_inspector_rows`) in the property list of the part of the
 selection `part`, see `_selection_part!`.
 """
-_show_properties!(gui::LiveView, part, @nospecialize(obj)) = (_set_rows!(part.list, _inspector_rows(gui, obj)); nothing)
+_show_properties!(gui::LiveView, part, @nospecialize(obj)) = (_set_rows!(part.list, _list_rows(gui, part.page, obj)); nothing)
 
 """Returns the rows of the property list for `obj`, see `BeamletOptics.properties` and `_properties`."""
 function _inspector_rows(::LiveView, @nospecialize(obj))
@@ -1123,7 +1123,7 @@ _refresh_selection_part!(::LiveView, ::_AbstractCard, ::Nothing) = nothing
 _has_list(::_AbstractCard) = false
 _has_list(::_ComponentCard) = true
 # A floating card lists the properties on its page "Properties"
-_list_shown(c::_ComponentCard, @nospecialize(obj)) = c.page === :properties && _has_properties(obj)
+_list_shown(c::_ComponentCard, @nospecialize(obj)) = _shows_list(c.page) && _has_properties(obj)
 # The list of a floating card that is not shown is moved away with its part, see `_lower_parts`
 _hide_properties!(::_AbstractCard) = nothing
 
