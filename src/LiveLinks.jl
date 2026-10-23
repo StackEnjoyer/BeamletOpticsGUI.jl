@@ -230,6 +230,17 @@ function _link!(gui::LiveView, new::LiveView, system)
         end
         push!(to.removed, obj)
     end
+    # the groups made in the window, which `new` shows as groups of the `system`, see `_group!`
+    # and their members, not `new`, started with
+    for (g, rec) in from.groups
+        any(top -> _has(_descendants(top), g), system.objects) || continue
+        to.groups[g] = rec
+        delete!(to.start_systems, g)
+        for m in rec.members
+            haskey(from.start_systems, m) &&
+                (to.start_systems[m] = Any[s for s in from.start_systems[m] if s === system])
+        end
+    end
     init = new.controls.init_poses
     for (obj, pose) in gui.controls.init_poses
         haskey(init, obj) && (init[obj] = pose)
@@ -429,9 +440,11 @@ Shows the sources and the components of the `systems` that the `gui` shares with
 `_detach!`), one that the `gui` lacks is shown (see `_attach!`), with the origin and, for a source,
 the kwargs that it has in `from`. The entries of the undo history of the `gui` on these objects are
 dropped, since they no longer apply. A source that the `gui` traces through another system as well
-is left as it is.
+is left as it is. Objects that `from` grouped or ungrouped are grouped or ungrouped in the `gui` as
+well, see `_follow_groups!`.
 """
 function _follow_structure!(gui::LiveView, from::LiveView, systems = _shared_systems(gui, from))
+    _follow_groups!(gui, from, systems)
     changed = Any[]
     origin(obj) = get(from.components.origin, obj, nothing)
     for sys in systems
@@ -470,6 +483,49 @@ function _follow_structure!(gui::LiveView, from::LiveView, systems = _shared_sys
         end
     end
     isempty(changed) || _drop_history!(gui.controls, changed)
+    return nothing
+end
+
+"""
+    _follow_groups!(gui, from, systems)
+
+The groups made in the linked view `from` (see `_group!`) of objects of the `System`s among the
+shared `systems`, in the `gui` as well: a group whose members the `gui` shows at the top level is
+made there too (see `_show_group!`), one that `from` ungrouped is ungrouped (see
+`_unshow_group!`), both without changing the systems, which the views share; the `gui` records the
+groups that it does not show yet as made in the window, such that `_follow_structure!` adds them as
+such, e.g. after `from` undid their removal.
+"""
+function _follow_groups!(gui::LiveView, from::LiveView, systems)
+    shared = BMO.System[sys for sys in systems if sys isa BMO.System]
+    isempty(shared) && return nothing
+    function top(x)
+        @nospecialize x
+        return any(sys -> _has(sys.objects, x), shared)
+    end
+    function inside(x)
+        @nospecialize x
+        return any(sys -> any(t -> _has(_descendants(t), x), sys.objects), shared)
+    end
+    function shown(x)
+        @nospecialize x
+        return any(h -> _has(_top_levels(h), x), (gui.system_handles..., gui.extras))
+    end
+    groups = gui.components.groups
+    # ungrouped in `from`: the systems hold its members instead
+    for (g, rec) in collect(groups)
+        (shown(g) && !top(g) && all(top, rec.members)) || continue
+        _unshow_group!(gui, g, _member_systems(gui, first(rec.members)))
+    end
+    for (g, rec) in from.components.groups
+        haskey(groups, g) && continue
+        if top(g) && all(shown, rec.members)
+            # grouped in `from`
+            _show_group!(gui, g, rec, _member_systems(gui, g))
+        elseif inside(g) && !_shows(gui, g)
+            groups[g] = rec
+        end
+    end
     return nothing
 end
 

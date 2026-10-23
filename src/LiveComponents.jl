@@ -251,15 +251,19 @@ function _check_code(code::AbstractString)
 end
 
 """
-    _attach!(gui, obj, sys; label = nothing, origin = nothing)
+    _attach!(gui, obj, sys; label = nothing, origin = nothing, record = true)
 
 Shows the component `obj` of the `System` `sys` in the `gui`: the part of [`add_component!`](@ref)
 that does not change the system, i.e. its plots, the controls, its name and what the `gui` records
-of it (see `_ComponentState`). Also for a view that follows a linked one, in which `obj` was added,
-see `_follow_structure!`. Throws what `live_render!` throws, before the view changes.
+of it (see `_ComponentState`; of a group made in the window, of its members, see `_record_units`).
+Also for a view that follows a linked one, in which `obj` was added, see `_follow_structure!`.
+Without `record`, `gui.components` records nothing, e.g. for a group that is made in the window of
+objects that the view shows already, see `_show_group!`. Throws what `live_render!` throws, before
+the view changes.
 """
 function _attach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
-        sys::Union{Nothing, BMO.AbstractSystem}; label = nothing, origin = nothing)
+        sys::Union{Nothing, BMO.AbstractSystem}; label = nothing, origin = nothing,
+        record::Bool = true)
     ctrl = gui.controls
     comp = gui.components
     # An object that the view shows is not rendered again, it only becomes a member of `sys`
@@ -288,20 +292,64 @@ function _attach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
         isnothing(label) || (gui.labels[obj] = String(label))
         _name_objects!(gui)
         _map_parts!(gui)
-        # A component the view started with, removed and added again, is no change
-        i = _index(comp.removed, obj)
-        if isnothing(i)
-            _has(comp.added, obj) || push!(comp.added, obj)
-            comp.system[obj] = sys
-            comp.origin[obj] = origin
-        else
-            deleteat!(comp.removed, i)
-            delete!(comp.system, obj)
-        end
+        record && _record_attached!(comp, obj, _record_units(gui, obj), sys, origin)
         _table_include!(gui, obj)
     end
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
+    return nothing
+end
+
+"""
+    _record_units(gui, obj) -> Vector{Any}
+
+The objects for which `gui.components` records that `obj` was added or removed (see
+`_ComponentState`): `obj` itself; for a group made in the window (see `_group!`) also its members
+(before it), which [`export_changes`](@ref) and [`export_script`](@ref) write, and those of a member
+that is such a group in turn.
+"""
+function _record_units(gui::LiveView, @nospecialize(obj))
+    rec = get(gui.components.groups, obj, nothing)
+    isnothing(rec) && return Any[obj]
+    units = Any[]
+    foreach(m -> append!(units, _record_units(gui, m)), rec.members)
+    push!(units, obj)
+    return units
+end
+
+# Records that the `units` of `obj` (see `_record_units`) were added to the system `sys` with the
+# `origin` of `obj`: a component that the view started with, removed and added again, is no change;
+# a member of a group made in the window keeps its own origin
+function _record_attached!(comp, @nospecialize(obj), units, sys, origin)
+    for u in units
+        i = _index(comp.removed, u)
+        if isnothing(i)
+            _has(comp.added, u) || push!(comp.added, u)
+            comp.system[u] = sys
+            u === obj && (comp.origin[u] = origin)
+        else
+            deleteat!(comp.removed, i)
+            delete!(comp.system, u)
+        end
+    end
+    return nothing
+end
+
+# Records that the `units` of `obj` (see `_record_units`) were removed from the system `sys`: one
+# that the view started with is listed by `export_changes` as removed, one that was added is
+# forgotten; a member of a group made in the window keeps its origin, for the undo of the removal
+function _record_dropped!(comp, @nospecialize(obj), units, sys)
+    for u in units
+        i = _index(comp.added, u)
+        if isnothing(i)
+            push!(comp.removed, u)
+            comp.system[u] = sys
+        else
+            deleteat!(comp.added, i)
+            u === obj && delete!(comp.origin, u)
+            delete!(comp.system, u)
+        end
+    end
     return nothing
 end
 
@@ -330,16 +378,19 @@ end
     _snapshot(gui, obj) -> NamedTuple
 
 What the `gui` knows of the component or source `obj` and forgets when it is removed, such that
-`_restore!` adds it again as it was: its system, its label and the names of its parts, its `origin`
-and the initial poses of the controls, from which [`export_changes`](@ref) counts.
+`_restore!` adds it again as it was: its system, its label and the names of its parts, its `origin`,
+the initial poses of the controls, from which [`export_changes`](@ref) counts, and the records of
+the groups among its parts that were made in the window (see `_group!`).
 """
 function _snapshot(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup))
     ctrl = gui.controls
     parts = _component_parts(obj)
+    groups = gui.components.groups
     return (; systems = _member_systems(gui, obj), label = get(gui.labels, obj, nothing),
         origin = get(gui.components.origin, obj, nothing),
         names = Pair{Any, String}[p => gui.objects.names[p] for p in parts if haskey(gui.objects.names, p)],
-        init_poses = Pair{Any, Any}[p => ctrl.init_poses[p] for p in parts if haskey(ctrl.init_poses, p)])
+        init_poses = Pair{Any, Any}[p => ctrl.init_poses[p] for p in parts if haskey(ctrl.init_poses, p)],
+        groups = Pair{Any, Any}[p => groups[p] for p in parts if haskey(groups, p)])
 end
 
 """
@@ -349,6 +400,10 @@ Adds the component or source `obj` to the `gui` again as its `snap` describes it
 without recording it in the undo history.
 """
 function _restore!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), snap)
+    # a group made in the window stays one, see `_record_units`
+    for (g, rec) in get(snap, :groups, ())
+        gui.components.groups[g] = rec
+    end
     _unrecorded(gui) do
         system = isempty(snap.systems) ? :none : first(snap.systems)
         add_component!(gui, obj; system, label = snap.label, origin = snap.origin)
@@ -591,13 +646,35 @@ plots, the controls, its name and what the `gui` records of it (see `_release!` 
 `_ComponentState`, with `sys` as the system that it was removed from, `nothing` for none).
 """
 function _drop!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), sys)
-    ctrl = gui.controls
     comp = gui.components
-    parts = _component_parts(obj)
     leaves = _leaves(obj)
+    units = _record_units(gui, obj)
     # A component the view started with is listed by `export_changes` as removed, under its name
-    added = _index(comp.added, obj)
-    _release!(gui, obj, parts; keep_name = isnothing(added))
+    _unshow!(gui, obj; keep_name = !_has(comp.added, obj))
+    # A removed component is no longer initialized by the solves: it keeps nothing of the last one,
+    # e.g. a detector no hits
+    initialize!(obj)
+    foreach(leaf -> _forget_detector!(gui, leaf), leaves)
+    _record_dropped!(comp, obj, units, sys)
+    # the groups made in the window among its parts, which its snapshot keeps, see `_snapshot`
+    foreach(p -> delete!(comp.groups, p), _component_parts(obj))
+    _refresh_menu_options!(gui, gui.widgets.menu)
+    _on_components_changed!(gui)
+    return nothing
+end
+
+"""
+    _unshow!(gui, obj; keep_name = false)
+
+Takes the top-level component `obj` out of the `gui` without changing its systems and without
+recording it in `gui.components`: lets go of it and its parts (see `_release!` and `keep_name`) and
+removes its plots from the pool and from the handles of the systems, the extras and the controls.
+The part of `_drop!` that a group made in the window does to its members, which it renders again as
+its parts, see `_show_group!`.
+"""
+function _unshow!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup); keep_name::Bool = false)
+    ctrl = gui.controls
+    _release!(gui, obj, _component_parts(obj); keep_name)
     ohs = _pool_handles(gui, obj)
     for h in (gui.system_handles..., gui.extras)
         foreach(oh -> delete!(h, oh), ohs)
@@ -606,20 +683,6 @@ function _drop!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), sys)
     _has(extras.objects, obj) && delete!(extras, obj)
     remove_render!(gui.pool, obj)
     foreach(oh -> delete!(ctrl.h, oh), ohs)
-    # A removed component is no longer initialized by the solves: it keeps nothing of the last one,
-    # e.g. a detector no hits
-    initialize!(obj)
-    foreach(leaf -> _forget_detector!(gui, leaf), leaves)
-    if isnothing(added)
-        push!(comp.removed, obj)
-        comp.system[obj] = sys
-    else
-        deleteat!(comp.added, added)
-        delete!(comp.origin, obj)
-        delete!(comp.system, obj)
-    end
-    _refresh_menu_options!(gui, gui.widgets.menu)
-    _on_components_changed!(gui)
     return nothing
 end
 
