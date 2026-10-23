@@ -302,6 +302,60 @@ const _TOOLTIP_Z = 9990.0f0
 const _ICON_LABEL_PADDING = 8
 
 """
+    _ICON_TIPS
+
+The tooltip of the icon buttons of each window (see `_icon_tip`): its root scene => the plot (weak,
+the scene keeps it) and the id of the button that shows it. Weak keys: a closed window is freed.
+"""
+const _ICON_TIPS = WeakKeyDict{Makie.Scene, Tuple{WeakRef, Base.RefValue{UInt}}}()
+
+"""
+    _icon_tip(scene) -> (tip, owner)
+
+The tooltip that the icon buttons of the window of `scene` share, created at the first use: one
+plot in the root scene, drawn over everything (`_TOOLTIP_Z`), and `owner`, the id of the button that
+shows it. In the root scene, since Makie 0.24 places a tooltip of a child scene, e.g. the scene of
+a block, as if the window had the size before it was last resized: far off its button.
+"""
+function _icon_tip(scene::Makie.Scene)
+    root = Makie.root(scene)
+    entry = get(_ICON_TIPS, root, nothing)
+    if !isnothing(entry)
+        tip = entry[1].value
+        (!isnothing(tip) && _has(root.plots, tip)) && return tip, entry[2]
+    end
+    tip = Makie.tooltip!(root, Point2f(0); text = " ", placement = :below, visible = false,
+        backgroundcolor = _TOOLTIP_COLOR, textcolor = _TOOLTIP_TEXT_COLOR, outline_linewidth = 0,
+        triangle_size = 6, offset = 4, fontsize = 13, textpadding = (6, 6, 4, 4), overdraw = true,
+        inspectable = false)
+    translate!(tip, 0, 0, _TOOLTIP_Z)
+    owner = Ref(UInt(0))
+    _ICON_TIPS[root] = (WeakRef(tip), owner)
+    return tip, owner
+end
+
+"""The shared tooltip of the icon buttons of the window of `scene` if it exists, else `nothing`."""
+function _icon_tip_plot(scene::Makie.Scene)
+    entry = get(_ICON_TIPS, Makie.root(scene), nothing)
+    return isnothing(entry) ? nothing : entry[1].value
+end
+
+"""
+The offset [px] of the pixel coordinates of `scene` in those of its root scene: the origins of the
+viewports and the translations of `scene` and of its parents, e.g. a scrolled area.
+"""
+function _root_offset(scene::Makie.Scene)
+    o = Point2f(0)
+    s = scene
+    while !isnothing(s.parent)
+        t = Makie.translation(s)[]
+        o += Point2f(t[1], t[2]) + Point2f(Makie.origin(s.viewport[]) .- Makie.origin(s.parent.viewport[]))
+        s = s.parent
+    end
+    return o
+end
+
+"""
     _IconButton(parent; icon::Union{Symbol, BezierPath}, tooltip::String = "", size = 28, kwargs...)
 
 A flat icon button of the app layout of the live view at the grid position `parent`, e.g.
@@ -328,7 +382,8 @@ gets a rounded background while the mouse is over it. A left click increments `c
 - `hovered`: whether the mouse is over the button
 - `tooltip`: the text of the tooltip, may be changed
 - `icon`, `icon_color`, `background`: the marker and the colors as drawn
-- `plots`: background, icon and tooltip
+- `plots`: background and icon (and the label); the tooltip is shared by the buttons of the
+  window, see `_icon_tip`
 
 Hover and clicks are handled by `Makie.addmouseevents!` on the bounding box: observables change
 only when the mouse enters or leaves the button, there is no per-frame work.
@@ -450,37 +505,40 @@ function _icon_widget(parent, icon::Observable{BezierPath}, active::Observable{B
         push!(plots, caption)
     end
 
-    # Tooltip, placed when shown
+    # Tooltip, the one of the window (see `_icon_tip`), placed and colored when shown
     tip_text = Observable(tooltip)
-    tip_visible = Observable(false)
-    tip_pos = Observable(Point2f(0))
-    tip_align = Observable(0.5f0)
-    tip = Makie.tooltip!(scene, tip_pos, tip_text; placement = tooltip_placement,
-        align = tip_align, visible = tip_visible, backgroundcolor = tooltip_color,
-        textcolor = tooltip_text_color, outline_linewidth = 0, triangle_size = 6, offset = 4,
-        fontsize = 13, textpadding = (6, 6, 4, 4), overdraw = true, inspectable = false)
-    translate!(tip, 0, 0, _TOOLTIP_Z)
+    id = objectid(box)
+    tip_colors = (RGBAf(Makie.to_color(tooltip_color)), RGBAf(Makie.to_color(tooltip_text_color)))
     function show_tooltip!()
         (hovered[] && !isempty(tip_text[])) || return nothing
         r = bbox[]
         (x0, y0), (w, h) = Makie.origin(r), Makie.widths(r)
-        tip_pos[] = tooltip_placement === :below ? Point2f(x0 + w / 2, y0) :
-                    tooltip_placement === :above ? Point2f(x0 + w / 2, y0 + h) :
-                    tooltip_placement === :left ? Point2f(x0, y0 + h / 2) :
-                    Point2f(x0 + w, y0 + h / 2)
+        pos = tooltip_placement === :below ? Point2f(x0 + w / 2, y0) :
+              tooltip_placement === :above ? Point2f(x0 + w / 2, y0 + h) :
+              tooltip_placement === :left ? Point2f(x0, y0 + h / 2) :
+              Point2f(x0 + w, y0 + h / 2)
+        pos += _root_offset(scene)
         # Keep the tooltip of buttons near the left or right edge inside the window: `align` is
         # the position of the arrow along the tooltip, from the left
+        align = 0.5f0
         if tooltip_placement in (:below, :above)
-            W = Makie.widths(Makie.viewport(scene)[])[1]
-            tip_align[] = x0 + w / 2 < W / 4 ? 0.15f0 : x0 + w / 2 > 3W / 4 ? 0.85f0 : 0.5f0
+            W = Makie.widths(Makie.viewport(Makie.root(scene))[])[1]
+            align = pos[1] < W / 4 ? 0.15f0 : pos[1] > 3W / 4 ? 0.85f0 : 0.5f0
         end
-        tip_visible[] = true
+        tip, owner = _icon_tip(scene)
+        owner[] = id
+        Makie.update!(tip, pos; text = tip_text[], placement = tooltip_placement, align,
+            backgroundcolor = tip_colors[1], textcolor = tip_colors[2], visible = true)
         return nothing
     end
     timer = Ref{Union{Nothing, Timer}}(nothing)
     function hide_tooltip!()
         isnothing(timer[]) || (close(timer[]); timer[] = nothing)
-        tip_visible[] && (tip_visible[] = false)
+        entry = get(_ICON_TIPS, Makie.root(scene), nothing)
+        isnothing(entry) && return nothing
+        tip, owner = entry[1].value, entry[2]
+        # only the tooltip of this button, another one may show it already
+        (!isnothing(tip) && owner[] == id && tip.visible[]) && (tip.visible = false)
         return nothing
     end
 
@@ -506,6 +564,5 @@ function _icon_widget(parent, icon::Observable{BezierPath}, active::Observable{B
         end
         return Consume(false)
     end
-    push!(plots, tip)
     return (; box, hovered, tooltip = tip_text, icon, icon_color = fg, background, plots)
 end

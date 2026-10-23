@@ -727,7 +727,6 @@ end
 function _card_tools!(layout::AppLayout, c::_ComponentCard)
     b = _card_dock!(c.tools[1, 0], layout.theme)
     colgap!(c.tools, 2)
-    _fix_tooltip!(b)
     c.dock_button = b
     return c
 end

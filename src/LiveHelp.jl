@@ -8,9 +8,9 @@ using Makie: rich
 # Gap between the columns of the help card and between the key caps of an entry [px]
 const _HELP_COLGAP = 28
 const _HELP_CAP_GAP = 3
-# z translation of the scene of the help card: over everything else, i.e. the cards with their
-# tooltips (`_CARD_Z` + `_CARD_TOOLTIP_DZ`), the selection card of groups and the windows of the
-# live view, within the clip range ±10000 of the pixel camera
+# z translation of the scene of the help card: over everything else but the tooltips, i.e. the
+# cards, the selection card of groups and the windows of the live view, within the clip range
+# ±10000 of the pixel camera
 const _HELP_Z = 9970.0f0
 # Priority of the listeners that keep the presses and the scrolling on the help card from
 # everything below it: before the controls (200), the placement (210), the cards (250), the tool

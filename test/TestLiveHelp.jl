@@ -219,7 +219,9 @@ const GUI = BeamletOpticsGUI
         # of the catalog and the other parts of the help, within the clip range of the camera
         hz = z(help.card.outer.parent)
         @test hz == GUI._HELP_Z < 10000
-        @test all(k -> hz > GUI._card_z(k) + GUI._CARD_TOOLTIP_DZ, 1:100)
+        @test all(k -> hz > GUI._card_z(k), 1:100)
+        # the tooltips of the icon buttons, in the root scene, over the help
+        @test GUI._TOOLTIP_Z > hz
         @test all(c -> hz > z(c.scene), gui.cards.all)
         @test hz > GUI._BROWSE_Z && hz > GUI._CATALOG_Z && hz > GUI._PROGRESS_Z
         @test hz > z(GUI._catalog_window(gui).scene) && hz > z(help.pill.outer.parent)
