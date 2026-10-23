@@ -353,10 +353,12 @@ function _finish!(gui::LiveView, job::_SolveJob)
         was_stale = gui.trace.stale
         # The systems that were traced are up to date, see `_trace_set`
         _set_fresh!(gui, job.systems)
-        # The cards that say which systems are outdated were updated before, see `_apply!`
+        # The cards that say which systems are outdated were updated before, see `_apply!`, and
+        # the layers of the debug mode left out their beams
         if was_stale
             _update_inspector!(gui)
             _update_cards!(gui)
+            _debug_solved!(gui)
         end
     end
     return true

@@ -198,6 +198,33 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "follow the solves and the length of the final rays by themselves" begin
+        fx = _fixture()
+        # each change outdates the beams until the solve, which runs once the changes pause
+        gui = _live_view(fx.sys => fx.stopped; trace_budget = 0.0)
+        r = _rays!(gui)
+        # without a call of `_debug_solved!`
+        translate3d!(gui, fx.pd, [0.0, 0.01, 0])
+        @test gui.trace.stale
+        wait_solve(gui)
+        @test !gui.trace.stale
+        @test r.visible[]
+        @test only(r.ends[:object])[2] ≈ 0.11 atol = 1e-3
+        # a source added to the system, e.g. placed from the catalog, which flies on
+        src = Beam([-0.2, 0, 0], [0.0, 1, 0])
+        add_component!(gui, src; system = fx.sys)
+        wait_solve(gui)
+        @test !gui.trace.stale
+        @test r.visible[]
+        @test length(r.ends[:object]) == 1
+        @test only(r.ends[:open]) ≈ Point3f(-0.2, GUI._flen(gui, src), 0) atol = 1e-6
+        # its final ray drawn shorter: its end moves along, nothing is solved
+        GUI._set_flen!(gui, src, 0.25)
+        @test only(r.ends[:open]) ≈ Point3f(-0.2, 0.25, 0) atol = 1e-6
+        @test r.visible[]
+        close(gui)
+    end
+
     @testset "nothing is read while a solve runs" begin
         fx = _fixture()
         gui = _live_view(fx.sys => fx.stopped)

@@ -17,7 +17,8 @@ switched on, and follows the view by methods of the hooks below, which do nothin
 - `_layer_attached!(gui, layer, obj)`, `_layer_released!(gui, layer, obj)`: `obj` was added to
   the view or is removed from it
 - `_layer_hidden!(gui, layer)`: objects were hidden or shown
-- `_layer_solved!(gui, layer)`: a solve was shown, i.e. its beams are rendered
+- `_layer_solved!(gui, layer)`: a solve was shown, i.e. its beams are rendered, the systems it
+  traced are up to date, or the beams are drawn otherwise (e.g. the length of their final rays)
 - `_layer_stale!(gui, layer)`: the beams are outdated
 - `_layer_tick!(gui, layer, tick)`: each tick of the window while the mode is on
 
