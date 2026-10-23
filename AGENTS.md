@@ -140,14 +140,13 @@ describe it as available in docs or the skill.
 ## Releases
 
 The users of a registered version get BeamletOptics from the registry: Pkg reads `[sources]` only
-in the active project, never in a dependency. The entries stay in the registered version; CI and
-the docs of a tag remove them and use the registered BMO. A version is registered only when
+in the active project, never in a dependency. The entries stay in the registered version; the
+docs of a tag remove them and use the registered BMO. BMO and the GUI are released together: the
+latest registered GUI works with the latest registered BMO.
 
-- the compat entry of BeamletOptics admits a registered version, so BMO is released first.
-  Otherwise the check "installable" of AutoMerge fails.
-- the workflow "Registered BeamletOptics" (`.github/workflows/Registered.yml`) is green on the
-  commit: the full suite without the `[sources]` entries of BMO, against the registered version.
-- the release notes of a breaking version have a section "Breaking changes".
+- BMO is released first, then the GUI with its compat entry on that version. Otherwise the check
+  "installable" of AutoMerge fails.
+- The release notes of a breaking version have a section "Breaking changes".
 
 ## Precompilation
 
