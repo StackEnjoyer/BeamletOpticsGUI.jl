@@ -84,7 +84,8 @@ GUI._debug_kind(::GUI.LiveView, ::DebugPageBroken) = Any[() -> error("broken row
         group = ObjectGroup([l1, l2])
         beam = _gauss()
         src = CollimatedSource([-0.1, 0.0, 0.0], [0.0, 1, 0], 2e-3, 532e-9; num_rings = 2, num_rays = 40)
-        gui = _live_view(System([m, pd, lens, doublet, group]), beam, src)
+        sys = System([m, pd, lens, doublet, group])
+        gui = _live_view(sys => beam, sys => src)
         _debug!(gui, true)
         wait_solve(gui; timeout = 120)
 
@@ -94,7 +95,7 @@ GUI._debug_kind(::GUI.LiveView, ::DebugPageBroken) = Any[() -> error("broken row
             @test !("Error" in _names(rows))
             @test _value(rows, "id") == "0x" * string(objectid(obj); base = 16)
             @test length(_value(rows, "type")) <= 40
-            @test _value(rows, "movable") == "movable"
+            @test endswith(_value(rows, "systems"), "movable")
             @test _value(rows, "systems") isa String
         end
         # an object: pose in six digits, three rows of the orientation, shapes, sphere

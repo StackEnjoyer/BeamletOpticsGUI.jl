@@ -45,13 +45,14 @@ _vector6(v) = string("(", join((_fixed6(x) for x in v), ", "), ")")
 
 _short_type(@nospecialize(obj)) = (s = string(typeof(obj)); length(s) > 40 ? first(s, 39) * "…" : s)
 _hex_id(@nospecialize(obj)) = "0x" * string(objectid(obj); base = 16)
-_trait_text(trait) = replace(string(trait), "BeamletOptics." => "")
+_trait_text(trait) = replace(string(typeof(trait)), "BeamletOptics." => "")
 _shape_trait_text(@nospecialize(obj::BMO.AbstractObject)) = string(nameof(typeof(BMO.shape_trait_of(obj))))
 _shape_trait_text(@nospecialize(obj)) = "–"
 
 function _systems_rows(gui::LiveView, @nospecialize(obj))
     systems = _systems_of(gui, obj)
-    return ["systems" => isempty(systems) ? "none" : join((_label(gui, s) for s in systems), ", ")]
+    names = isempty(systems) ? "none" : join((_label(gui, s) for s in systems), ", ")
+    return ["systems" => string(names, " · ", BMO.is_static(obj) ? "static" : "movable")]
 end
 
 # The entries (functions without arguments that return rows) of every object
@@ -60,7 +61,6 @@ function _debug_common(gui::LiveView, @nospecialize(obj))
         () -> ["type" => _short_type(obj)],
         () -> ["id" => _hex_id(obj)],
         () -> _systems_rows(gui, obj),
-        () -> ["movable" => BMO.is_static(obj) ? "static" : "movable"],
         () -> ["kinematic trait" => _trait_text(BMO.kinematic_trait_of(obj))],
         () -> ["shape trait" => _shape_trait_text(obj)]]
 end
@@ -181,13 +181,10 @@ function _debug_segments(gui::LiveView, @nospecialize(src), i::Int)
     return BMO.path_segments(src; flen)
 end
 
-# The reason why the branch that ends with the leaf `seg` ends
-function _end_reason(seg, r_max::Int, depth_max::Int)
-    seg.final && return :open
-    seg.depth >= depth_max && return :depth_max
-    seg.ray_index >= r_max && return :r_max
-    return isnothing(seg.object) ? :open : :object
-end
+# The number of rays of a beam, of a Gaussian beamlet those of its chief, waist and divergence beams
+_ray_count(beam) = length(BMO.rays(beam))
+_ray_count(beam::BMO.GaussianBeamlet) =
+    length(BMO.rays(beam.chief)) + length(BMO.rays(beam.waist)) + length(BMO.rays(beam.divergence))
 
 # The index of `src` in the pairs of the `gui`, or `nothing`
 _pair_index(gui::LiveView, @nospecialize(src)) = findfirst(p -> p.second === src, gui.pairs)
@@ -201,14 +198,14 @@ function _source_rows(gui::LiveView, @nospecialize(src))
     rows = Pair{String, Any}[]
     _beam_stale(gui, src) && push!(rows, "state" => "outdated")
     push!(rows, "beams" => string(src isa BMO.AbstractBeamGroup ? length(BMO.beams(src)) : 1))
-    push!(rows, "rays" => string(sum(b -> length(BMO.rays(b)), tree; init = 0)))
+    push!(rows, "rays" => string(sum(_ray_count, tree; init = 0)))
     push!(rows, "segments" => string(length(segs)))
     push!(rows, "max depth" => string(maximum(s -> s.depth, segs; init = 0)))
     ends = Dict{Symbol, Int}()
     r_max, depth_max = BMO.get_default_r_max(), BMO.get_default_depth_max()
     for s in segs
         s.leaf || continue
-        r = _end_reason(s, r_max, depth_max)
+        r = _ray_end_reason(s, r_max, depth_max)
         ends[r] = get(ends, r, 0) + 1
     end
     push!(rows, "ends" => isempty(ends) ? "–" :
