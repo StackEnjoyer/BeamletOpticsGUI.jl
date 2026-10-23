@@ -546,6 +546,10 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # likewise the arrow under the cursor and the drag of an arrow in the move mode, see `_pick_arrow`
     arrow_hover::Union{Nothing, Symbol}
     arrow::Union{Nothing, _ArrowDrag}
+    # `(obj, dt) -> nothing`, called after each update of the render (see `_apply_update!`) with the
+    # changed object (or `nothing`) and the duration of the update [s], e.g. for the debug mode of
+    # `live_view`, see `_debug_updated!`
+    after_update::Function
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -877,24 +881,28 @@ _apply_update!(ctrl::KinematicController) = _apply_update!(ctrl, ctrl.selected[]
     _apply_update!(ctrl, obj)
 
 Shows the change of `obj` (by default the selection): updates the render of all objects and the
-selection box and calls `on_change` with `obj`, unless it is `nothing`.
+selection box and calls `on_change` with `obj`, unless it is `nothing`. Then `after_update` gets
+the duration of all of it.
 """
 function _apply_update!(ctrl::KinematicController, @nospecialize(obj))
+    t0 = time_ns()
     ctrl.dirty = false
     update_render!(ctrl.h)
     _update_selection_box!(ctrl)
-    isnothing(obj) && return nothing
-    # Errors must not propagate into the render loop
-    try
-        ctrl.on_change(obj)
-        ctrl.last_error = nothing
-    catch e
-        msg = sprint(showerror, e)
-        if msg != ctrl.last_error
-            @error "kinematic_controls!: `on_change` callback failed" exception = (e, catch_backtrace())
-            ctrl.last_error = msg
+    if !isnothing(obj)
+        # Errors must not propagate into the render loop
+        try
+            ctrl.on_change(obj)
+            ctrl.last_error = nothing
+        catch e
+            msg = sprint(showerror, e)
+            if msg != ctrl.last_error
+                @error "kinematic_controls!: `on_change` callback failed" exception = (e, catch_backtrace())
+                ctrl.last_error = msg
+            end
         end
     end
+    ctrl.after_update(obj, 1e-9 * (time_ns() - t0))
     return nothing
 end
 
@@ -1826,7 +1834,7 @@ function kinematic_controls!(
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
         Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
-        center, nothing, nothing, nothing, nothing
+        center, nothing, nothing, nothing, nothing, (obj, dt) -> nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
