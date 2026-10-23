@@ -260,7 +260,8 @@ GUI._layer_tick!(::GUI.LiveView, l::_CountingLayer, tick) = _count!(l, :tick, ti
         gui.trace.job = job
         GUI._cancel_solve!(gui)
         @test length(solves) == n + 3 && solves[end].kind == :cancelled
-        @test solves[end].solve >= 0.05 && solves[end].render == 0
+        # `time()` near 1.7e9 s rounds the difference of the two timestamps to some 1e-7 s
+        @test solves[end].solve >= 0.049 && solves[end].render == 0
         @test any(t -> startswith(t, "solve cancelled"), _texts(gui))
 
         # a job that only computes the detector views is no solve
