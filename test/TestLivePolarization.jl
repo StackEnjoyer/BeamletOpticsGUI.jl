@@ -56,6 +56,27 @@ const GUI = BeamletOpticsGUI
         c = GUI._central_beam(sg)
         @test all(b -> BMO.direction(b)[2] ≤ BMO.direction(c)[2] + 1e-12, BMO.beams(sg))
         @test BMO.direction(c) ≈ [0, 1, 0] atol = 1e-9
+        # Sources whose rays BeamletOptics generated: the first beam, the center ray
+        pos, dir = [1e-3, 2e-3, 0.0], [0.0, 1, 0]
+        for src in (CollimatedSource(pos, dir, 4e-3, 633e-9; num_rings = 2, num_rays = 40),
+                UniformDiscSource(pos, dir, 4e-3, 633e-9; num_rays = 20),
+                UniformLineSource(pos, dir, 4e-3, 633e-9; num_rays = 11, basis = [1.0, 0, 0]),
+                UniformLineSource(pos, dir, 4e-3, 633e-9; num_rays = 10),
+                PointSource(pos, dir, 0.1, 633e-9; num_rings = 2, num_rays = 40),
+                UniformPointSource(pos, dir, 0.1, 633e-9; num_rays = 20),
+                UniformFanSource(pos, dir, 0.1, 633e-9; num_rays = 11, basis = [1.0, 0, 0]))
+            @test !isnothing(BMO.min_num_rays(src))
+            c = GUI._central_beam(src)
+            @test c === first(BMO.beams(src))
+            @test position(c) == pos && BMO.direction(c) == dir
+        end
+        # ... also after their rays were generated again
+        line = UniformLineSource(pos, dir, 4e-3, 633e-9; num_rays = 11)
+        set_num_rays!(line, 21)
+        @test GUI._central_beam(line) === first(BMO.beams(line)) && position(GUI._central_beam(line)) == pos
+        # A source from given beams keeps the search, see `_wrapped`
+        @test isnothing(BMO.min_num_rays(first(_wrapped())))
+        @test isnothing(BMO.min_num_rays(sg))
     end
 
     @testset "single beam: on, follows the beam, off" begin

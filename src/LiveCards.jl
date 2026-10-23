@@ -1061,10 +1061,10 @@ selection `part`, see `_selection_part!`.
 """
 _show_properties!(gui::LiveView, part, @nospecialize(obj)) = (_set_rows!(part.list, _inspector_rows(gui, obj)); nothing)
 
-"""Returns the rows of the property list for `obj`, see `BeamletOptics.properties`."""
+"""Returns the rows of the property list for `obj`, see `BeamletOptics.properties` and `_properties`."""
 function _inspector_rows(::LiveView, @nospecialize(obj))
     props = try
-        BMO.properties(obj)
+        _properties(obj)
     catch e
         # a failing `properties` method of a user type must not break the live view
         Pair{String, Any}["Error" => sprint(showerror, e)]

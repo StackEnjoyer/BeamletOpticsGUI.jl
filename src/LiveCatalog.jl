@@ -99,9 +99,11 @@ _catalog_code(entry::CatalogEntry, values) = _entry_code(entry.constructor, entr
 
 _entry_code(@nospecialize(constructor), entry::CatalogEntry, values) = _call_code(entry, values)
 
-# The call `code_name(arguments...; keywords...)` of the `entry`, see `_catalog_code`
-function _call_code(entry::CatalogEntry, values)
+# The call `code_name(arguments...; keywords...)` of the `entry`, see `_catalog_code`, with the
+# keywords `extra` (`keyword => code`) after those of the parameters
+function _call_code(entry::CatalogEntry, values; extra = ())
     positional, keywords = _catalog_args(_catalog_arg_code, entry, values)
+    append!(keywords, extra)
     # the position and the direction that `_catalog_object` passes
     entry.source && pushfirst!(positional, "[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]")
     args = join(positional, ", ")

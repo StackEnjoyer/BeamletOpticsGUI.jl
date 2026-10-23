@@ -50,6 +50,27 @@ const _LASER_LINES = (405, 450, 488, 532, 589, 632.8, 780, 850, 1064, 1310, 1550
 # A length in [m], shown in mm
 _length_param(name, default; kwargs...) = CatalogParam(name, default; unit = "mm", scale = 1e-3, kwargs...)
 
+# The `basis` of the line and the fan sources of the catalog: their rays lie in the plane of the
+# table, the x-y plane, for a source along +y, see `_line_source`
+const _TABLE_BASIS = (1.0, 0.0, 0.0)
+
+"""
+    _line_source(pos, dir, width, λ; num_rays) -> CollimatedSource
+    _fan_source(pos, dir, θ, λ; num_rays) -> PointSource
+
+The constructors of the entries "Uniform line source" and "Uniform fan source" of the catalog: a
+`UniformLineSource` and a `UniformFanSource` with the `basis` `_TABLE_BASIS`, such that the rays of
+a source along +y lie in the x-y plane, the plane of the table. Their code is the call of the
+source of BeamletOptics with that `basis`, see `_entry_code`.
+"""
+_line_source(pos, dir, width, λ; num_rays::Int) =
+    UniformLineSource(pos, dir, width, λ; num_rays, basis = collect(_TABLE_BASIS))
+_fan_source(pos, dir, θ, λ; num_rays::Int) =
+    UniformFanSource(pos, dir, θ, λ; num_rays, basis = collect(_TABLE_BASIS))
+
+_entry_code(::Union{typeof(_line_source), typeof(_fan_source)}, entry::CatalogEntry, values) =
+    _call_code(entry, values; extra = (:basis => repr(collect(_TABLE_BASIS)),))
+
 """
     _builtin_catalog() -> Vector{CatalogEntry}
 
@@ -67,7 +88,9 @@ spherical surfaces they call the `SphericalLens`, the `SphericalDoubletLens` and
 
 The sources (entries with `source = true`) are constructed at the origin along +y with a wavelength
 of 632.8 nm, which offers the laser lines `_LASER_LINES` as its presets; the half angle of the point sources is entered in degrees, the numbers of rings and
-rays are whole numbers.
+rays are whole numbers. The rays of the line and the fan source lie in the x-y plane, the plane of
+the table (see `_line_source`), and their default number of rays is odd, as are the steps of the
+slider on their card, see `_ray_steps`.
 """
 function _builtin_catalog()
     inch = 25.4e-3
@@ -77,10 +100,12 @@ function _builtin_catalog()
     reflectance = CatalogParam("reflectance", 0.5; keyword = :reflectance)
     flint = "N-SF5"
     entries = CatalogEntry[]
-    # The entries of a group, each as (name, icon, constructor, parameters...)
+    # The entries of a group, each as (name, icon, constructor, parameters...); a constructor of
+    # the GUI as `constructor => code`, the constructor of BeamletOptics in the code of the entry
     function group!(group, items...; source::Bool = false)
         for (name, icon, constructor, params...) in items
-            push!(entries, CatalogEntry(name, constructor; group, icon, params, source))
+            f, code = constructor isa Pair ? (first(constructor), last(constructor)) : (constructor, constructor)
+            push!(entries, CatalogEntry(name, f; group, icon, params, source, code_name = string(nameof(code))))
         end
         return nothing
     end
@@ -96,6 +121,8 @@ function _builtin_catalog()
     half_angle = CatalogParam("half angle", deg2rad(5); unit = "°", scale = π / 180)
     rings = CatalogParam("rings", 10; keyword = :num_rings, integer = true)
     rays = CatalogParam("rays", 1000; keyword = :num_rays, integer = true)
+    # an odd number: the rays of a line or a fan are symmetric to the center ray
+    line_rays = CatalogParam("rays", 101; keyword = :num_rays, integer = true)
     group!("Sources",
         ("Beam", :beam, Beam, wavelength),
         ("Gaussian beamlet", :gaussian_beam, GaussianBeamlet, wavelength, len("waist", 1e-3), power),
@@ -103,9 +130,13 @@ function _builtin_catalog()
             len("diameter", 10e-3), wavelength, rings),
         ("Uniform disc source", :disc_source, UniformDiscSource,
             len("diameter", 10e-3), wavelength, rays),
+        ("Uniform line source", :line_source, _line_source => UniformLineSource,
+            len("width", 10e-3), wavelength, line_rays),
         ("Point source", :point_source, PointSource, half_angle, wavelength, rings),
         ("Uniform point source", :uniform_point_source, UniformPointSource,
             half_angle, wavelength, rays),
+        ("Uniform fan source", :fan_source, _fan_source => UniformFanSource,
+            half_angle, wavelength, line_rays),
         ("Astigmatic Gaussian beamlet", :astigmatic_beam, AstigmaticGaussianBeamlet,
             wavelength, len("waist x", 1e-3), len("waist y", 0.5e-3), power);
         source = true)

@@ -246,7 +246,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test [b.active[] for b in widget.group_buttons] == (1:8 .== 1)
         @test widget.group_label.text[] == "Sources"
         @test _tiles(widget) == ["Beam", "Gaussian beamlet", "Collimated source", "Uniform disc source",
-            "Point source", "Uniform point source", "Astigmatic Gaussian beamlet"]
+            "Uniform line source", "Point source", "Uniform point source", "Uniform fan source",
+            "Astigmatic Gaussian beamlet"]
         @test _active(widget) == ["Beam"] && widget.entry_label.text[] == "Beam"
         @test GUI._catalog_entry(widget) === first(entries) && first(entries).source
         @test _texts(w.boxes) == ["632.8"]
