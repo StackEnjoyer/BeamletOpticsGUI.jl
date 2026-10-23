@@ -62,7 +62,7 @@ full_area = (; x_min = -pd_size / 2, x_max = pd_size / 2, z_min = -pd_size / 2, 
 power = Point2f[]
 
 function record_power!(gui, obj)
-    P = BMO.hit_count(pd) == 0 ? 0.0 : optical_power(pd; n = 100, full_area...)
+    P = BMO.hit_count(pd) == 0 ? 0.0 : optical_power(pd, RegularGrid(; n = 100, full_area...))
     n = isempty(power) ? 1 : last(power)[1] + 1
     push!(power, Point2f(n, 1e3 * P))
     length(power) > 300 && popfirst!(power)

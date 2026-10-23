@@ -313,7 +313,7 @@ The `detectors` kwarg of `live_view`
 # The kinds of a view that the `detectors` kwarg accepts, see `_view_kinds`
 const _DETECTOR_KINDS = (:auto, :spot, :psf, :intensity)
 
-# Options of a view in the kwargs of a detector, which are not passed to `intensity`
+# Options of a view in the kwargs of a detector, which are not keywords of its `RegularGrid`
 const _VIEW_OPTION_KEYS = (:n, :colorscale, :colorrange, :colorbar, :profiles, :expanded)
 
 const _DETECTOR_SPEC_HINT = "use `pd`, `pd => kind` or `pd => (kind, kwargs)`"
@@ -332,7 +332,7 @@ The detectors of the `detectors` kwarg of [`live_view`](@ref) whose cards start 
 `(; pd, opts, expanded)` with the options of its view (a `_ViewOptions`) and whether the view
 starts expanded: none for `:auto`, otherwise an entry per `pd`, `pd => kind` or
 `pd => (kind, kwargs)`. The `kwargs` hold the options `n`, `colorscale`, `colorrange`, `colorbar`,
-`profiles` and `expanded`; all others are passed to `intensity`.
+`profiles` and `expanded`; all others are keywords of the sampling `BeamletOptics.RegularGrid`.
 """
 function _detector_specs(detectors)
     if detectors isa Symbol

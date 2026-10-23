@@ -966,7 +966,8 @@ cards, a thumbnail on a grid of at most 48 points; a view that is shown later is
 the hits of the last solve. Pin the card of a detector to keep its view, or list the detector in
 `detectors` to start with its card pinned.
 
-The options of a view in the `kwargs` of `detectors`, which are not passed to `intensity`:
+The options of a view in the `kwargs` of `detectors`, which are not keywords of its sampling
+`BeamletOptics.RegularGrid`:
 
 - `n = 100`: number of points per axis of a field
 - `colorscale = :linear`: `:log` starts with "log" on
@@ -1351,8 +1352,8 @@ A system that is open in another window can not be removed, see "Systems".
   the start (also for `[]`). A vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the
   cards of these detectors at the start and sets the options of their views: `kind` is `:auto`,
   `:spot`, `:psf` or `:intensity`; `kwargs` holds the options of the view, e.g.
-  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are passed to `intensity`,
-  e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
+  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are keywords of the sampling
+  `BeamletOptics.RegularGrid` of the field, e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
   part of the systems throws an `ArgumentError`.
 - `on_change = (gui, obj) -> nothing`: called after each full solve with the moved object, or
   `nothing` after a slider change, i.e. not after preview solves, see "Adaptive tracing"

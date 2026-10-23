@@ -305,10 +305,11 @@ gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity
 ```
 
 `kind` is `:auto` (default, the first kind of the hits), `:spot`, `:psf` or `:intensity`. The
-`kwargs` of the `pd => (kind, kwargs)` form are options of the view or are passed to `intensity`;
+`kwargs` of the `pd => (kind, kwargs)` form are options of the view or keywords of the sampling
+`RegularGrid` of BeamletOptics, with which the view evaluates `intensity`;
 most useful is a fixed extent via `x_min`, `x_max`, `z_min` and `z_max` (in meters, like the rest
 of this package), which is the area that "fit" shows, instead of the automatic crop around the
-beam. The following options are not passed to `intensity`:
+beam. The following options are not keywords of the `RegularGrid`:
 
 | Option                  | Effect                                                               |
 |:------------------------|:---------------------------------------------------------------------|

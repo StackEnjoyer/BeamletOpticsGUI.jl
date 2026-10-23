@@ -640,7 +640,7 @@ _points(h) = only(render_plots(h))[1][]
         # small area and coarse grid, such that the edges contribute to the integral
         area = (; n = 5, x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, area)])
-        P = optical_power(pd; area...)
+        P = optical_power(pd, RegularGrid(; area...))
         @test _result(gui).metrics.P ≈ P
         @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)

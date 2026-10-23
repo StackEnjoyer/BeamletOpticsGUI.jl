@@ -132,7 +132,8 @@ thumbnail on at most 48 points per axis). A floating card with an expanded view 
 grip at the bottom right (160 px up to the size of the 3D view). `detectors = [pd => (:intensity,
 (; n = 100, colorscale = :log, colorrange = (lo, hi), colorbar = false, profiles = true, expanded = false, x_min, ...))]`
 pins the card at start (floating next to the detector in compact, docked in the right sidebar in
-app); other entries go to `BeamletOptics.intensity`, `x_min`/`x_max`/`z_min`/`z_max` set the area
+app); other entries are keywords of `BeamletOptics.RegularGrid` (the sampling of the field),
+`x_min`/`x_max`/`z_min`/`z_max` set the area
 that "fit" shows. `history` is gone (`ArgumentError`): record in `on_change`, plot in `add_panel!`.
 
 Own GUI parts go into a `gui = live_view(...)` via three functions that work with both
