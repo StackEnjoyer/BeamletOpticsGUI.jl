@@ -62,10 +62,9 @@ _add_system(::LiveView, x) =
     throw(ArgumentError("`system` must be a `System` of the live view, got a $(typeof(x))"))
 
 # A detector that is added gets the state of its view when its card first shows the page "Results",
-# see `_detector_state`. A removed one is no longer emptied by the solves: it keeps no hits, and
-# the view forgets it; its cards were unpinned before, see `remove_component!`
+# see `_detector_state`. The view forgets a removed one; its cards were unpinned before, see
+# `remove_component!`
 function _forget_detector!(gui::LiveView, pd::BMO.Detector)
-    empty!(pd)
     delete!(gui.detectors.states, pd)
     filter!(((p, _),) -> p !== pd, gui.detectors.registered)
     return nothing
@@ -585,6 +584,9 @@ function _drop!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), sys)
     _has(extras.objects, obj) && delete!(extras, obj)
     remove_render!(gui.pool, obj)
     foreach(oh -> delete!(ctrl.h, oh), ohs)
+    # A removed component is no longer initialized by the solves: it keeps nothing of the last one,
+    # e.g. a detector no hits
+    initialize!(obj)
     foreach(leaf -> _forget_detector!(gui, leaf), leaves)
     if isnothing(added)
         push!(comp.removed, obj)

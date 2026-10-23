@@ -19,8 +19,9 @@ function kinematic_controls! end
 Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
 without a source, e.g. an empty table `live_view(System())` that gets its sources in the window: a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
-sliders. After each change, the detectors are emptied, the systems are solved again and the beams
-and the shown detector views are updated. Returns a `LiveView`, which can be shown via `display`.
+sliders. After each change, all systems are initialized (`BeamletOptics.initialize!`, which empties
+the detectors) and solved again, and the beams and the shown detector views are updated. Returns a
+`LiveView`, which can be shown via `display`.
 
 A source is given once: `live_view(sys1 => beam, sys2 => beam)` throws an `ArgumentError`, since a
 source belongs to at most one system. Systems are added and removed in the window

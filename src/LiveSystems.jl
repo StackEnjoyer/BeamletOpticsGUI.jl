@@ -93,8 +93,8 @@ function _take_system!(gui::LiveView, sys::BMO.AbstractSystem)
         push!(orphans, obj)
         push!(extras, obj)
         foreach(oh -> _has(render_children(gui.extras), oh) || push!(gui.extras, oh), _pool_handles(gui, obj))
-        # no hits of a system that is gone
-        foreach(leaf -> leaf isa BMO.Detector && empty!(leaf), _leaves(obj))
+        # nothing of the last solve of a system that is gone, e.g. no hits of a detector
+        initialize!(obj)
     end
     comp = gui.components
     comp.target === sys && (comp.target = comp.target_shown = nothing)
