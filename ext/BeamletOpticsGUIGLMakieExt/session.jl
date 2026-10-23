@@ -92,11 +92,16 @@ _press!(gui, button = Mouse.left) = (_events(gui).mousebutton[] = Makie.MouseBut
 _release!(gui, button = Mouse.left) = (_events(gui).mousebutton[] = Makie.MouseButtonEvent(button, Mouse.release))
 _click!(gui) = (_press!(gui); _release!(gui))
 _click!(gui, xy) = (_move!(gui, xy); _click!(gui))
+# The time of the ticks: one second per tick, otherwise Makie takes two clicks of consecutive steps
+# for a double click, which it measures with the time of the ticks; the GUI animates with their
+# `delta_time` only
+const _CLOCK = Ref(0.0)
 # A tick of the render loop, once the solve of the step is done, such that the step shows its
 # result: while precompiling, a solve is slow and may continue in the background
 function _tick!(gui)
     wait_solve(gui)
-    _events(gui).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1 / 60)
+    _CLOCK[] += 1.0
+    _events(gui).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, _CLOCK[], 1 / 60)
     return nothing
 end
 # A tick and a rendered image, such that the plots that an action shows are drawn

@@ -23,8 +23,8 @@ const GUI = BeamletOpticsGUI
             :round_plate_beamsplitter, :compensator, :prism, :polarization_filter,
             :linear_polarizer,
             # the sources of the component catalog
-            :beam, :gaussian_beam, :collimated_source, :disc_source, :point_source,
-            :uniform_point_source, :astigmatic_beam,
+            :beam, :gaussian_beam, :collimated_source, :disc_source, :line_source, :point_source,
+            :uniform_point_source, :fan_source, :astigmatic_beam,
             # the tool that exports the whole setup, see `export_script`, and the optical table
             :script, :table,
             # the card of a system: its own window, renaming and removing

@@ -239,7 +239,7 @@ _hits_text(pd) = (n = BMO.hit_count(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit
 _source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.wavelength(src))), $(_size_text(src))"
 # the size of a collimated source per sampling: the width of a line (`UniformLineSource`), else the diameter
 _size_text(cs::BMO.CollimatedSource) = _size_text(cs, cs.sampling)
-_size_text(cs::BMO.CollimatedSource, ::BMO.AbstractSampling) = "⌀ $(_length_string(cs.diameter))"
+_size_text(cs::BMO.CollimatedSource, ::BMO.AbstractSourceSampling) = "⌀ $(_length_string(cs.diameter))"
 _size_text(cs::BMO.CollimatedSource, ::BMO.DiscLine) = "width $(_length_string(cs.diameter))"
 _size_text(ps::BMO.PointSource) = "NA $(round(BMO.numerical_aperture(ps); digits = 3))"
 
@@ -252,7 +252,7 @@ with `"Width [m]"` in the place of `"Diameter [m]"`, since its rays lie on a lin
 """
 _properties(@nospecialize(obj)) = BMO.properties(obj)
 _properties(cs::BMO.CollimatedSource) = _properties(cs, cs.sampling)
-_properties(cs::BMO.CollimatedSource, ::BMO.AbstractSampling) = BMO.properties(cs)
+_properties(cs::BMO.CollimatedSource, ::BMO.AbstractSourceSampling) = BMO.properties(cs)
 _properties(cs::BMO.CollimatedSource, ::BMO.DiscLine) =
     Pair{String, Any}[(name == "Diameter [m]" ? "Width [m]" : name) => value for (name, value) in BMO.properties(cs)]
 
@@ -318,7 +318,7 @@ a fan (`DiscLine`, `ConeFan`) the odd numbers next to them, e.g. 11, 21, 51, 101
 number of rays repeats the center ray, see `UniformLineSource`. The current count `n` stays a value,
 also if it is even.
 """
-_ray_steps(::BMO.AbstractSampling, lo::Int, n::Int) = _ray_steps(lo, n)
+_ray_steps(::BMO.AbstractSourceSampling, lo::Int, n::Int) = _ray_steps(lo, n)
 function _ray_steps(::Union{BMO.DiscLine, BMO.ConeFan}, lo::Int, n::Int)
     odd = [isodd(s) ? s : s + 1 for s in _ray_steps(lo, lo)]
     return sort!(unique!([odd; n]))
