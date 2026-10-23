@@ -30,7 +30,7 @@ const _COPY_HELP = _HelpSection["Edit" => [
     _HelpEntry([_ctrl_cap(), "V"], "paste it at the mouse: click to drop it"; combo = true)]]
 
 # Of a source also how its beam is drawn, e.g. its color and its line width
-_copy_kwargs(::LiveView, ::BMO.AbstractObject) = (;)
+_copy_kwargs(::LiveView, ::BMO.ObjectOrGroup) = (;)
 _copy_kwargs(gui::LiveView, src::_Source) = (; beam_kwargs = _snapshot(gui, src).kwargs)
 
 """

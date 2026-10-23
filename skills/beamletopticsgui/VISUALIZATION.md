@@ -101,7 +101,7 @@ the system and not via `render!(gui.ax, ...)`: extras cost nothing in the solves
 selected, moved, hidden, removed and exported like components. An extra is an object without a
 system (tree row "No system"); it must not also be an object of a system at the start
 (`ArgumentError`), later it can become a member of one with `add_component!(gui, obj; system =
-sys)`. The card of a `NonInteractableObject`/`MeshDummy` or
+sys)`. The card of a `NonInteractableObject` (e.g. of an STL file) or
 `IntersectableObject` has an "opacity" slider (0-100 %, 0 % hides it); below 50 % a click in the
 3D view passes through it (select it in the tree or the component menu).
 
@@ -117,12 +117,15 @@ PSF, powers of ten with "log"; the image rescales to its maximum after every sol
 changes of the intensity from the ticks of the bar or fix the scale with `colorrange`). Kinds (first = default): rays (`RayHit`, `PolarizedRayHit`): "Spot"
 and "PSF" (`intensity` of the rays, normalized to its peak, metrics without power); Gaussian
 beamlets: "Intensity" (W/m², with power) and "Spot" (1/e² outlines). A kind that the hits do not
-offer falls back to the default; without hits the view reads "no hits". Mouse as on a Makie `Axis`: wheel zooms
+offer falls back to the default; without hits the view reads "no hits". Moving a detector (or a group
+containing it) empties it (BeamletOptics 0.14): with auto trace off its view reads "no hits" until
+the next solve, with auto trace on the solve after the move updates it. The ray PSF and intensity
+are the flux through the detector (Poynting vector along its normal, a hit under the angle θ counts
+with cos θ); the automatic window of beamlet hits reaches 3 beam radii beyond the hits. Mouse as on a Makie `Axis`: wheel zooms
 about the cursor, left drag selects the rectangle to zoom to (shape of the plot), right drag pans,
 Ctrl + click, double click or "fit" resets; in a PSF or intensity view the field is recomputed
-for the visible window on the full grid `n` once the mouse rests for `idle_delay`. A field costs
-about 14 ns · n² · hits per thread (n = 100, 1000 ray hits: about 150 ms on one thread, 9 ms with 32
-threads): start Julia with `julia -t auto`. Slow computations run in the background with the
+for the visible window on the full grid `n` once the mouse rests for `idle_delay`. A field grows
+with n² · hits and uses all threads: start Julia with `julia -t auto`. Slow computations run in the background with the
 progress window and "Cancel"; above `trace_budget` a coarse preview comes first. Only shown views
 are computed (page "Results" of the selected detector or of a pinned, not collapsed card; a
 thumbnail on at most 48 points per axis). A floating card with an expanded view is resizable by its

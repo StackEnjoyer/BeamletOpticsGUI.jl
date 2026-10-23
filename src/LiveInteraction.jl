@@ -556,14 +556,14 @@ function Base.show(io::IO, ctrl::KinematicController)
 end
 
 """Returns the objects of the group `obj`, or an empty vector if `obj` is not a group."""
-_children(@nospecialize(obj)) = obj isa BMO.AbstractObjectGroup ? collect(_LiveMovable, BMO.shape(obj)) :
+_children(@nospecialize(obj)) = obj isa BMO.AbstractObjectGroup ? collect(_LiveMovable, BMO.objects(obj)) :
                  _LiveMovable[]
 
 """Returns all objects of the group `obj` that are not groups themselves (recursively), or `[obj]`."""
 function _leaves(@nospecialize(obj))
     obj isa BMO.AbstractObjectGroup || return _LiveMovable[obj]
     leaves = _LiveMovable[]
-    for c in BMO.shape(obj)
+    for c in BMO.objects(obj)
         append!(leaves, _leaves(c))
     end
     return leaves
@@ -1458,7 +1458,8 @@ end
 
 Returns `(obj, t)`: the object among `objects` with the nearest hit of the ray from `origin` along
 `dir`, and the hit distance `t`, or `(nothing, nothing)` if the ray misses all `objects`. Objects
-are hit via `BMO.intersect3d`, i.e. `ObjectGroup`s and `MultiShape` objects are picked as a whole.
+are hit via `BMO.intersect3d`, i.e. `MultiShape` objects are picked as a whole; groups have no
+geometry, the callers pass their objects (see `_leaves`).
 Objects for which `intersect3d` errors (e.g. custom objects without a geometry implementation) or
 returns `nothing` (e.g. `NonInteractableObject`) are skipped. Sources, which have no geometry, are
 hit via the bounding box returned by `box`.

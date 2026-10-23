@@ -159,7 +159,7 @@ Objects without a system, e.g. a housing from a CAD file, are passed as `extras`
 each optionally with the kwargs of its `render!` call:
 
 ```julia
-housing = MeshDummy("housing.stl")
+housing = NonInteractableObject("housing.stl")
 gui = live_view(system => beam; extras = [housing => (; transparency = true, color = (:gray, 0.3))])
 ```
 
@@ -170,7 +170,7 @@ or in the object tree (under "No system"), moved, hidden and exported, and remov
 They do not block clicking on
 the optics behind them: objects are picked by intersecting the camera ray with the optical
 components first, which a `NonInteractableObject` never intersects. The card of a
-`NonInteractableObject` (e.g. a `MeshDummy`) or an `IntersectableObject` has an "opacity" slider,
+`NonInteractableObject` (e.g. of an STL file) or an `IntersectableObject` has an "opacity" slider,
 which makes it transparent without changing the optics; 0 % hides it. Below 50 % opacity, a click
 in the 3D view passes through such an object, i.e. a click into the empty space inside a
 transparent housing does not select the housing; select it in the object tree or the component
@@ -259,7 +259,12 @@ The kinds depend on the hits, the first is the default:
 | Gaussian beamlets (`GaussianBeamletHit`, `AstigmaticGaussianBeamletHit`) | "Intensity" (in W/m², with the power), "Spot" (the 1/e² outlines) |
 
 A chosen kind that the current hits do not offer falls back to their default and applies again
-when they offer it. Without hits, the view reads "no hits". The metrics are for alignment; a red
+when they offer it. Without hits, the view reads "no hits". Moving a detector (or a group that
+contains it) empties it (BeamletOptics 0.14): with auto trace off, its view reads "no hits" until
+the next solve, with auto trace on the solve that follows the move updates it. The ray PSF and the
+intensity are the flux through the detector (`intensity` of BeamletOptics 0.14, the time-averaged
+Poynting vector along its normal), i.e. a hit under the angle θ to the normal counts with cos θ; the
+automatic window of beamlet hits reaches 3 beam radii beyond the hits. The metrics are for alignment; a red
 cross marks the centroid in a spot diagram, and in a field while "profiles" is on:
 
 - spot diagram: the number of hits `N`, the centroid `c`, the RMS radius `sqrt(mean(|p - c|²))`
@@ -274,8 +279,7 @@ square in a square plot), a drag with the right button pans, and Ctrl + click, a
 "fit" resets the view. In a spot view, this only changes the limits. In a PSF or intensity view, the
 field is recomputed for the visible window on the full grid `n` once the mouse rests for
 `idle_delay`, not per wheel step. The cost of one field is proportional to `n² ·` the number of
-hits, about 14 ns per pixel and hit on one thread, e.g. about 150 ms for `n = 100` and 1000 ray
-hits, but about 9 ms with 32 threads. Start Julia with `julia -t auto` to use the threads. Long
+hits. The computation uses all threads, start Julia with `julia -t auto`. Long
 computations run in the background with the progress window and its "Cancel", like long solves;
 computations slower than `trace_budget` show a coarse preview first.
 

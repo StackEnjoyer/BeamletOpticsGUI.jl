@@ -387,6 +387,9 @@ function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool
     _shows(gui, obj) && _table_include!(gui, obj)
     if stale
         _follow_stale!(gui)
+        # A detector that `from` moved has no hits, unless `from` solves it in the background,
+        # whose detectors nothing else reads meanwhile
+        (_shows(gui, obj) && !_running(from)) && _detectors_moved!(gui, obj)
     else
         _follow_solved!(gui, from, systems, obj; preview)
     end

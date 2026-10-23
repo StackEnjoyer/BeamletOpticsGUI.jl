@@ -35,7 +35,10 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
     end
     _gauss() = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
     _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf, detectors = []), kwargs)...)
-    _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0))
+    # A frame of 1 s: the time goes on, otherwise Makie takes two clicks on the same button for a
+    # double click, which it measures with the time of the ticks
+    clock = Ref(0.0)
+    _tick!(gui) = (clock[] += 1.0; events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, clock[], 1.0))
     # a click on the pin toggle of the card `c`
     _pin!(c) = (c.pin_button.active[] = !c.pin_button.active[])
 

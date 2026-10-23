@@ -64,6 +64,19 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "a beam group of another kind on the detector" begin
+        # the tasks of the solve of a group store their hits at their end, where the conflict fails
+        sys, pd, b1, _ = _fixture()
+        pol = [Beam([x, 0, 0], [0.0, 1, 0], 633e-9, [1.0, 0, 0]) for x in range(-5e-3, 5e-3; length = 50)]
+        group = CollimatedSource(pol, 10e-3, [0.0, 0, 0], [0.0, 1, 0])
+        gui = @test_logs (:error, r"solving the systems failed") match_mode=:any _live_view(sys => b1,
+            sys => group; labels = Dict(pd => "PD"))
+        c = _message(gui)
+        @test !isnothing(c)
+        @test _texts(c)[1:2] == ["PD", "rays and polarized rays"]
+        close(gui)
+    end
+
     @testset "other errors, pin and click close ($layout)" for layout in (:compact, :app)
         sys, pd, b1, _ = _fixture()
         gui = _live_view(sys => b1; layout)

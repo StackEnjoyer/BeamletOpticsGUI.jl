@@ -98,7 +98,7 @@ Same steps as above, but no pose. Objects that are not movable are shown the sam
 ```julia
 # A system with a name, traced like a `System`
 struct MyBench <: BeamletOptics.AbstractSystem
-    objects::Vector{BeamletOptics.AbstractObject}
+    objects::Vector{BeamletOptics.ObjectOrGroup}
     name::String
 end
 
@@ -123,7 +123,9 @@ acts as its entry, a click beside closes, `Esc` goes up one level (closes at the
 head of the menu or the card moves it. The card of a
 part has "‹" in its head to browse its parent, the card of an object with parts the button "parts ›"
 (added to the buttons of `card_actions`, also if that method returns none). An own group type gets
-this automatically, since it is `MultiShape`.
+this automatically: a group is an `ObjectOrGroup` container, not a `MultiShape` object (BeamletOptics
+0.14), and an own group type is a `mutable struct ... <: BeamletOptics.AbstractObjectGroup{T}` with
+the fields `objects`, `center` (the pivot) and `dir` (the orientation); its card needs no code.
 
 ## Recipe: a card for an object without a place in the scene
 

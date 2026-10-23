@@ -47,8 +47,9 @@ _normal(p::LiveClipPlane) = p.dir[:, 2]
 """Returns the `Makie.Plane3f` of the clip plane `p`, as applied to the plots."""
 _plane3f(p::LiveClipPlane) = Plane3f(Point3f(p.pos), Vec3f(_normal(p)))
 
-"""Values that can be live-rendered and moved by the controls: objects, sources and clip planes."""
-const _LiveMovable = Union{BMO.AbstractObject, BMO.AbstractBeam, BMO.AbstractBeamGroup, LiveClipPlane}
+"""Values that can be live-rendered and moved by the controls: objects, groups, sources and clip planes."""
+const _LiveMovable = Union{BMO.AbstractObject, BMO.AbstractObjectGroup, BMO.AbstractBeam, BMO.AbstractBeamGroup,
+    LiveClipPlane}
 
 """
     _live_render_source!(ax, src; size, color = :orange, strokecolor = :black)

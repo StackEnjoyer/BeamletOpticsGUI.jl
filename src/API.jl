@@ -45,7 +45,7 @@ options `n`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`),
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects without a system that are
 rendered, selected, moved and hidden like the components, but never traced, e.g. a housing from an
-STL file (`MeshDummy`); the card of such mechanics has an opacity slider. `auto_trace` is the start
+STL file (`NonInteractableObject`); the card of such mechanics has an opacity slider. `auto_trace` is the start
 value of the auto tracing of every system. `sidebar_width` and `dock_height` set the start sizes
 of the sidebars and the dock of `layout = :app`, which are resized with the mouse. `background_card = obj` (or
 `gui -> obj`, `nothing` for none) shows the card of an object without a place in the scene, e.g.
@@ -268,7 +268,7 @@ sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length o
 `BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
 its signal (the power or the number of rays of its detector view while a view is shown, else the
 number of hits), mechanics (`NonInteractableObject`, e.g. a
-`MeshDummy`, and `IntersectableObject`) a slider for their opacity. A system (`AbstractSystem`)
+`NonInteractableObject(loadpath)` of an STL file, and `IntersectableObject`) a slider for their opacity. A system (`AbstractSystem`)
 has no rows by default: its card (shown after a click on its entry in the component menu or the
 object tree) is the system widget of the window (its tracing, its members and "Remove system", see
 "Systems" of [`live_view`](@ref)), which is not part of this method; the rows of a method for an

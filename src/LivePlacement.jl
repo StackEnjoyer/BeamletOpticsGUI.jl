@@ -22,7 +22,7 @@ first component or source of an empty view is `fixed`: it does not follow the mo
 at the origin.
 """
 mutable struct _Placement
-    const obj::Union{BMO.AbstractObject, _Source}
+    const obj::Union{BMO.ObjectOrGroup, _Source}
     const ghost::AbstractObjectRenderHandle
     const system::Union{BMO.AbstractSystem, Symbol}
     const origin::Any
@@ -181,7 +181,7 @@ end
 The system that gets `obj` when it is placed in the `gui` without a `system`: of a component the
 `_target_system`, or `:none` in a view without a `System`; of a source the `_source_system`.
 """
-function _placement_system(gui::LiveView, ::BMO.AbstractObject)
+function _placement_system(gui::LiveView, ::BMO.ObjectOrGroup)
     sys = _target_system(gui)
     return isnothing(sys) ? :none : sys
 end
@@ -189,7 +189,7 @@ _placement_system(gui::LiveView, ::_Source) = _source_system(gui, nothing)
 
 # A component changes its system, hence it needs a `System`, or none (`:none`); a source is traced
 # through any system, or none
-_check_placement_system(::BMO.AbstractObject, system) = (system isa BMO.System || system === :none) ||
+_check_placement_system(::BMO.ObjectOrGroup, system) = (system isa BMO.System || system === :none) ||
     throw(ArgumentError("`system` must be a `System` of the live view or `:none`, got $(repr(system))"))
 _check_placement_system(::_Source, system) = (system isa BMO.AbstractSystem || system === :none) ||
     throw(ArgumentError("`system` must be a system of the live view or `:none`, got $(repr(system))"))
@@ -201,7 +201,7 @@ Renders `obj` while it is being placed in the `gui`, i.e. while it is not part o
 component for the `system` as its objects are rendered and in the look of `_ghost_style!`, a source
 as its marker (see `_live_render_source!`), whose beam is drawn when it is dropped.
 """
-function _ghost!(gui::LiveView, @nospecialize(obj::BMO.AbstractObject), system)
+function _ghost!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), system)
     ghost = live_render!(gui.ax, obj; gui.components.render_kwargs...)
     # without a system, in the look of the objects without one
     _ghost_style!(gui, system === :none ? rendered(gui.extras) : system, ghost)
@@ -230,7 +230,7 @@ click drops it, such that e.g. the beam of a source starts at the origin along +
 follow the mouse and is added where it is. A source is placed by its marker, hence the markers of
 the sources are shown if they were hidden.
 """
-function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.AbstractObject, _Source});
+function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrGroup, _Source});
         origin = nothing, system = _placement_system(gui, obj), kwargs::NamedTuple = (;))
     ctrl = gui.controls
     _check_placement_system(obj, system)
@@ -264,7 +264,7 @@ function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.AbstractO
 end
 
 # The markers of the sources are shown while a source is placed, which is placed by its marker
-_show_placed_markers!(::LiveView, ::BMO.AbstractObject) = nothing
+_show_placed_markers!(::LiveView, ::BMO.ObjectOrGroup) = nothing
 function _show_placed_markers!(gui::LiveView, ::_Source)
     toggle = gui.widgets.sources_toggle.active
     toggle[] || (toggle[] = true)

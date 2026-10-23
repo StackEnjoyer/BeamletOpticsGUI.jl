@@ -209,6 +209,26 @@ end
 """After a cancelled solve or computation, the views wait for the next solve, like the beams."""
 _views_cancelled!(gui::LiveView) = (gui.detectors.hits_valid = false; nothing)
 
+"""
+    _detectors_moved!(gui, obj)
+
+Called after `obj` changed when no solve follows at once (auto trace off, or tracing when the
+movement pauses): BeamletOptics empties a detector that moves, hence the views of the detectors of
+`obj` are computed again from their hits and show "no hits" until the next solve, like a detector
+that no ray reaches, see `_refresh_views!`.
+"""
+function _detectors_moved!(gui::LiveView, @nospecialize(obj))
+    isnothing(obj) && return nothing
+    moved = false
+    for leaf in _leaves(obj)
+        state = leaf isa BMO.Detector ? get(gui.detectors.states, leaf, nothing) : nothing
+        isnothing(state) && continue
+        state.stale = moved = true
+    end
+    moved && _refresh_views!(gui)
+    return nothing
+end
+
 # Status of the computation of a view in the background, see `_refresh_views!`
 const _VIEW_COMPUTING = "computing the detector view, Cancel in the progress window stops it"
 

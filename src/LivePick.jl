@@ -96,7 +96,7 @@ function _show_member_pick!(gui::LiveView)
 end
 
 """Whether `obj` is what a pick of members takes: a component or a source."""
-_pick_candidate(@nospecialize(obj)) = obj isa BMO.AbstractObject || _is_source(obj)
+_pick_candidate(@nospecialize(obj)) = obj isa BMO.ObjectOrGroup || _is_source(obj)
 
 """
     _pick_member!(gui, obj)
@@ -136,7 +136,7 @@ function _apply_member_pick!(gui::LiveView, src::_Source, sys, add::Bool)
     return nothing
 end
 function _apply_member_pick!(gui::LiveView, @nospecialize(obj), sys, add::Bool)
-    obj isa BMO.AbstractObject || throw(ArgumentError("$(_label(gui, obj)) is not a component"))
+    obj isa BMO.ObjectOrGroup || throw(ArgumentError("$(_label(gui, obj)) is not a component"))
     sys isa BMO.System || throw(ArgumentError(
         "$(_label(gui, sys)) is a $(nameof(typeof(sys))), its objects can not be changed"))
     add ? _add_member!(gui, obj, sys) : _remove_member!(gui, obj, sys)
@@ -166,7 +166,11 @@ function _member_under_cursor(gui::LiveView)
         objects = Any[]
         for oh in render_children(ctrl.h)
             x = rendered(oh)
-            (x isa BMO.AbstractObject && !_is_hidden(ctrl, x)) && push!(objects, x)
+            # the objects of a group are hit, not the group, which has no geometry
+            (x isa BMO.ObjectOrGroup && !_is_hidden(ctrl, x)) || continue
+            for y in _leaves(x)
+                y isa BMO.AbstractObject && push!(objects, y)
+            end
         end
         other, s = _ray_pick(objects, origin, dir)
         (!isnothing(other) && (isnothing(t) || s < t)) && (leaf = other)

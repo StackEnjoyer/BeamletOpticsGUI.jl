@@ -38,7 +38,7 @@ Rows of the component families, below the pose rows
 # Clip planes and any other movable object: the pose
 card_rows(@nospecialize(obj)) = pose_card_rows(obj)
 # Optical components and groups: the pose and the beams that hit them, see `_beam_text`
-card_rows(@nospecialize(obj::BMO.AbstractObject)) = (pose_card_rows(obj)..., _beam_row())
+card_rows(@nospecialize(obj::BMO.ObjectOrGroup)) = (pose_card_rows(obj)..., _beam_row())
 # Lenses and prisms: the refractive index at the wavelength of the beam and the center thickness
 card_rows(@nospecialize(l::BMO.AbstractRefractiveOptic)) = (pose_card_rows(l)..., _beam_row(),
     _text_row("n", :index, _index_text), _thickness_rows(l)...)
@@ -315,12 +315,14 @@ Parts of groups and multi-shape objects, one level at a time, see the selection 
 """
     _part_children(x) -> Tuple
 
-The direct parts of `x` on the selection card (see `_browse!`): of a `MultiShape` object, e.g. a
-group, a doublet or a cube beamsplitter, the elements of `BeamletOptics.shape(x)` that are objects,
-in their order (beams and bare shapes are left out); none of a `SingleShape` object or of anything
-else, e.g. a beam or a clip plane.
+The direct parts of `x` on the selection card (see `_browse!`): of a group, its objects and
+subgroups (`BeamletOptics.objects(x)`); of a `MultiShape` object, e.g. a doublet or a cube
+beamsplitter, the elements of `BeamletOptics.shape(x)` that are objects, in their order (beams and
+bare shapes are left out); none of a `SingleShape` object or of anything else, e.g. a beam or a
+clip plane.
 """
 _part_children(@nospecialize(x::BMO.AbstractObject)) = _part_children(x, BMO.shape_trait_of(x))
+_part_children(@nospecialize(x::BMO.AbstractObjectGroup)) = Tuple(BMO.objects(x))
 _part_children(_) = ()
 function _part_children(@nospecialize(x), ::BMO.MultiShape)
     # a loop: a generator over the shapes is compiled for each type of `x`

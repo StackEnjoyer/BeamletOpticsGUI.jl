@@ -828,7 +828,7 @@ the mouse (`Makie.ray_at_cursor`) meets a sky dome.
 # Extras and opacity
 
 `extras = [housing => (; color = :lightblue), mount]` adds objects without optical function, e.g.
-a `MeshDummy` of an STL file, each an `AbstractObject` (or a group of them) with optional kwargs
+a `NonInteractableObject` of an STL file, each an `AbstractObject` (or a group of them) with optional kwargs
 of its [`render!`](@ref) call. They are not part of any system: never traced, moving them does not
 solve the systems. Otherwise they act like the components: a click in the 3D view (where they do
 not cover the components behind them, which are picked first) or in the component menu or object
@@ -840,7 +840,7 @@ system at the start; later it can become a member of a system like any object, a
 removed with "remove" or `Delete`. A component that was taken out of its last system is in the same
 state.
 
-The card of mechanics, i.e. a `NonInteractableObject` (e.g. `MeshDummy`) or an
+The card of mechanics, i.e. a `NonInteractableObject` (e.g. of an STL file) or an
 `IntersectableObject`, in a system or without one, has an "opacity" slider (0-100 %,
 initially the opacity as rendered, e.g. 5 % for a color with alpha 0.05). It scales the alpha of
 the plots of the object, including its feature edges, and does not change the optics. Objects below
@@ -954,9 +954,9 @@ plot), a drag with the right button pans, and Ctrl + click, a double click or "f
 view. A spot diagram only changes its limits. A field is computed again for the visible window on its full
 grid once the mouse rests for `idle_delay`, not per step of the wheel; "fit" returns to the
 automatic window around the beam, or to `x_min`, `x_max`, `z_min` and `z_max` if they are given.
-One field costs about 14 ns per pixel and hit on one thread, i.e. it grows with `n²` times the
-number of hits (`n = 100` and 1000 ray hits: about 150 ms); the computation uses all threads, start
-Julia with `julia -t auto`.
+One field grows with `n²` times the number of hits; the computation uses all threads, start
+Julia with `julia -t auto`. Moving a detector empties it (BeamletOptics 0.14): with auto trace off,
+its view reads "no hits" until the next solve, with auto trace on the solve after the move updates it.
 
 The chevron of the view collapses it to a thumbnail with the kind, the power or the number of rays,
 the centroid and the radii; a click on the thumbnail expands it again. A floating card with an

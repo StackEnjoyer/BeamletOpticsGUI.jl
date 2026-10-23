@@ -531,13 +531,13 @@ _declarations(gui::LiveView, c::_AbstractCard, @nospecialize(obj)) =
     _card_rows(obj)
 
 The rows of the card of `obj`: those of [`card_rows`](@ref) and, below them, a row of buttons for
-a component, i.e. an `AbstractObject` ("onto beam", "face beam" and "remove", see
+a component, i.e. an `AbstractObject` or a group ("onto beam", "face beam" and "remove", see
 `_component_row`), and for a source, i.e. a beam or a beam group ("aim" and "remove", see
 `_source_row`). They are a row and not actions in the head, whose width the name of the object
 needs in the inspector of the app layout.
 """
 _card_rows(@nospecialize(obj)) = card_rows(obj)
-_card_rows(@nospecialize(obj::BMO.AbstractObject)) = (card_rows(obj)..., _component_row())
+_card_rows(@nospecialize(obj::BMO.ObjectOrGroup)) = (card_rows(obj)..., _component_row())
 _card_rows(@nospecialize(obj::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})) = (card_rows(obj)..., _source_row())
 
 """

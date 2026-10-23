@@ -131,7 +131,7 @@ card of a type, except that a system has no pose:
 ```julia
 # A system with a name, traced like a `System`
 struct MyBench <: BeamletOptics.AbstractSystem
-    objects::Vector{BeamletOptics.AbstractObject}
+    objects::Vector{BeamletOptics.ObjectOrGroup}
     name::String
 end
 
@@ -159,8 +159,11 @@ the 3D view on a part acts like its entry, a click beside closes the card, `Esc`
 (closes at the top level). The card of a part has a button "‹" in its head that browses its parent.
 See the section "Selection card" of [`live_view`](@ref).
 
-The card needs no code: an own group type gets it automatically, since its `shape_trait_of` is
-`MultiShape`, and `card_rows` needs no row for the parts.
+A group is an `ObjectOrGroup` container, not a `MultiShape` object (BeamletOptics 0.14): an own group
+type is a `mutable struct ... <: BeamletOptics.AbstractObjectGroup{T}` with the fields `objects`
+(its parts), `center` (the pivot) and `dir` (the orientation), see `AbstractObjectGroup` of
+BeamletOptics. Its card needs no code: the parts come from `BeamletOptics.objects`, and `card_rows`
+needs no row for them.
 
 ## Recipe: a card for an object without a place in the scene
 

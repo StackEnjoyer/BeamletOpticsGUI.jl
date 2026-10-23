@@ -36,7 +36,8 @@ _hit_kind(T::Type) = string(nameof(T))
 
 Recognizes the error `e` of a solve of the `gui` that a detector was hit by two kinds of beams,
 e.g. polarized and unpolarized rays: a detector stores one kind of hits per solve (BMO sets it with
-the first hit), a hit of another kind fails to `convert` in `push!`. Returns the detectors of the
+the first hits it stores), a hit of another kind fails to `convert` in `push!` or, for the hits that
+a task of the solve of a beam group collected, in `append!`. Returns the detectors of the
 systems whose hits have the kind of the first hit, `pds`, and the two kinds `(; pds, kinds)`, or
 `nothing` for any other error.
 """
