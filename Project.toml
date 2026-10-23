@@ -14,7 +14,6 @@ InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
-Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
 
 [weakdeps]
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
@@ -34,5 +33,4 @@ InteractiveUtils = "1"
 LinearAlgebra = "1"
 Makie = "0.24"
 PrecompileTools = "1"
-Trapz = "2"
 julia = "1.12"

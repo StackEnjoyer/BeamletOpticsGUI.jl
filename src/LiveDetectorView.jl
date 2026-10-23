@@ -127,12 +127,13 @@ _window_kwargs(w::NTuple{4, Float64}) = (; x_min = w[1], x_max = w[2], z_min = w
 
 Computes the data of the `kind` of view for the detector `pd` with the `hits`: the points [m] of
 the spot diagram, or the field `(x, z, I)` on the grid `_view_grid(n, coarse)` in the window of
-the `opts` (see `_ViewOptions`), for the PSF divided by its maximum.
+the `opts` (see `_ViewOptions`), for the PSF divided by its maximum. The grid is a
+`BeamletOptics.RegularGrid` with the kwargs of the `opts`, e.g. `x_min` or `crop_factor`.
 """
 _kind_data(::_SpotKind, pd, _, _, _, _) = BMO.spot_diagram(pd)
 function _kind_data(::_IntensityKind, pd, _, opts::_ViewOptions, n, coarse)
     kwargs = merge(opts.kwargs, (; n = _view_grid(n, coarse)), _window_kwargs(opts.window))
-    x, z, I = BMO.intensity(pd; kwargs...)
+    x, z, I = BMO.intensity(pd, BMO.RegularGrid(; kwargs...))
     return (x, z, I)
 end
 function _kind_data(::_PSFKind, pd, hits, opts::_ViewOptions, n, coarse)
@@ -157,10 +158,10 @@ function _shown_data(kind::_IntensityKind, pd, hits::AbstractVector{<:BMO.Astigm
 end
 
 """Metrics of the `data` of the `kind`, see `_spot_metrics` and `_intensity_metrics`; the PSF without the power."""
-_kind_metrics(::_SpotKind, pts) = _spot_metrics(pts)
-_kind_metrics(::_IntensityKind, (x, z, I)) = _intensity_metrics(x, z, I)
-function _kind_metrics(::_PSFKind, (x, z, I))
-    m = _intensity_metrics(x, z, I)
+_kind_metrics(::_SpotKind, _, pts) = _spot_metrics(pts)
+_kind_metrics(::_IntensityKind, pd, (x, z, I)) = _intensity_metrics(pd, x, z, I)
+function _kind_metrics(::_PSFKind, pd, (x, z, I))
+    m = _intensity_metrics(pd, x, z, I)
     return (; m.cx, m.cz, m.wx, m.wz, m.peak)
 end
 
@@ -185,7 +186,7 @@ function _view_result(pd, opts::_ViewOptions; n::Integer = opts.n, coarse::Bool 
         isempty(kinds) && return _ViewResult(kinds, nothing, nothing, nothing, Int(n), coarse, preview, nothing)
         kind = _resolve_kind(kinds, opts.kind)
         kind, data = _shown_data(kind, pd, hits, opts, n, coarse)
-        return _ViewResult(kinds, kind, data, _kind_metrics(kind, data), _result_n(kind, n, coarse),
+        return _ViewResult(kinds, kind, data, _kind_metrics(kind, pd, data), _result_n(kind, n, coarse),
             coarse, preview, nothing)
     catch e
         BMO.is_cancelled(e) && rethrow()
@@ -225,15 +226,17 @@ function _spot_metrics(pts)
 end
 
 """
-    _intensity_metrics(x, z, I)
+    _intensity_metrics(pd, x, z, I)
 
 Returns the metrics `(; P, cx, cz, wx, wz, peak)` of the intensity `I[i, j]` at `x[i]`, `z[j]`
-[m]: the power (integrated like `optical_power`), the centroid, the 1/e² radii `2σ` from the second
-moments along x and z and the peak intensity. The centroid and the radii are `NaN` without
-intensity.
+[m] on the detector `pd`: the power (integrated like `optical_power`, with the weights of the
+sampling of the grid, see `BeamletOptics.sample_points`), the centroid, the 1/e² radii `2σ` from
+the second moments along x and z and the peak intensity. The centroid and the radii are `NaN`
+without intensity.
 """
-function _intensity_metrics(x, z, I)
-    P = trapz((x, z), I)
+function _intensity_metrics(pd, x, z, I)
+    w = BMO.sample_points(pd, BMO.RectilinearGrid(x, z)).weights
+    P = sum(Broadcast.instantiate(Broadcast.broadcasted(*, w, I)))
     peak = maximum(I)
     S = sum(I)
     S > 0 || return (; P, cx = NaN, cz = NaN, wx = NaN, wz = NaN, peak)

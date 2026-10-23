@@ -39,7 +39,7 @@ power = Point2f[]
 
 # Called after each full solve, also while the power panel is hidden (a tab of the app layout)
 function record_power!(gui, obj)
-    P = BMO.hit_count(pd) == 0 ? 0.0 : optical_power(pd; n = 100, full_area...)
+    P = BMO.hit_count(pd) == 0 ? 0.0 : optical_power(pd, RegularGrid(; n = 100, full_area...))
     n = isempty(power) ? 1 : last(power)[1] + 1
     push!(power, Point2f(n, 1e3 * P))
     length(power) > 300 && popfirst!(power)
