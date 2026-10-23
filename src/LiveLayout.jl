@@ -225,7 +225,13 @@ Color tokens of the live view by `theme`, see `_live_layout`:
 
 - chrome: `background` (figure, toolbar, status bar), `sidebar`, `view` (background of the 3D view
   and the detector panels), `border`, `text`, `muted` (secondary text), `accent` and `accent_soft`
-  (active toggles), `field` (buttons and textboxes), `hover`, `tooltip` and `tooltip_text`
+  (active toggles), `on_accent` (text on the accent color, e.g. of the button "Trace" of an
+  outdated system), `field` (buttons and textboxes), `hover`, `tooltip` and `tooltip_text`
+- status: the chip of the tracing of a system on its card, each with a background, a text and a
+  dot: `ok`, `ok_soft` and `ok_text` (up to date), `stale`, `stale_soft` and `stale_text`
+  (outdated), `chip` and `chip_text` (neither, e.g. without a source); `danger`, the color of
+  an action that removes, e.g. "Remove system". The texts have a contrast of at least 4.5:1 to
+  their backgrounds, `danger` to the `sidebar`
 - `gizmo`: the red, green and blue axes of the controls, e.g. the labels of the rotations in the
   inspector, and the x (red) and z (blue) lines of the profiles and the centroid history of the
   detector panels
@@ -248,6 +254,12 @@ const _APP_THEMES = Dict{Symbol, NamedTuple}(
         text = Makie.to_color("#1f2328"), muted = Makie.to_color("#69727d"),
         accent = Makie.to_color("#2f6fdb"), accent_soft = Makie.to_color("#d7e4fa"),
         field = Makie.to_color("#ffffff"), hover = Makie.to_color("#e2e6eb"),
+        on_accent = Makie.to_color("#ffffff"),
+        ok = Makie.to_color("#2c8a55"), ok_soft = Makie.to_color("#e3f1e8"),
+        ok_text = Makie.to_color("#1c5f3a"), stale = Makie.to_color("#b87a00"),
+        stale_soft = Makie.to_color("#fbecc8"), stale_text = Makie.to_color("#6b4300"),
+        chip = Makie.to_color("#e2e6eb"), chip_text = Makie.to_color("#4d5661"),
+        danger = Makie.to_color("#a3271f"),
         tooltip = _TOOLTIP_COLOR, tooltip_text = _TOOLTIP_TEXT_COLOR,
         gizmo = Makie.to_color.((:red, :green, :blue)),
         help = Makie.to_color(:gray40), rays = Makie.to_color(:blue),
@@ -260,6 +272,12 @@ const _APP_THEMES = Dict{Symbol, NamedTuple}(
         text = Makie.to_color("#e3e5e8"), muted = Makie.to_color("#9aa1a9"),
         accent = Makie.to_color("#6ea4ff"), accent_soft = Makie.to_color("#2b4166"),
         field = Makie.to_color("#1a1c1f"), hover = Makie.to_color("#33373c"),
+        on_accent = Makie.to_color("#10151c"),
+        ok = Makie.to_color("#4fbf85"), ok_soft = Makie.to_color("#1f3a2b"),
+        ok_text = Makie.to_color("#a5dfbd"), stale = Makie.to_color("#d9a520"),
+        stale_soft = Makie.to_color("#43360f"), stale_text = Makie.to_color("#f0cf7a"),
+        chip = Makie.to_color("#33373c"), chip_text = Makie.to_color("#c3c8ce"),
+        danger = Makie.to_color("#ff8f85"),
         tooltip = Makie.to_color("#e3e5e8"), tooltip_text = Makie.to_color("#1f2328"),
         gizmo = Makie.to_color.(("#ff6b6b", "#5ccf5c", "#6ea4ff")),
         help = Makie.to_color("#a4abb3"), rays = Makie.to_color("#5b9bff"),

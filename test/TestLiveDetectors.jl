@@ -7,6 +7,20 @@ using Test
 const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
+# An own type that stores data during a solve: a beam block that counts the rays it absorbs
+struct CountingBlock{T} <: BMO.AbstractObject{T}
+    shape::BMO.PlanoSurfaceSDF{T}
+    count::Threads.Atomic{Int}
+end
+
+CountingBlock(width, thickness) =
+    CountingBlock(BMO.PlanoSurfaceSDF(thickness, width), Threads.Atomic{Int}(0))
+
+BMO.interact3d(::BMO.AbstractSystem, b::CountingBlock, ::Beam, ::Ray) =
+    (Threads.atomic_add!(b.count, 1); nothing)
+
+BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
+
 @testset "Detectors of the live view" begin
 
     _live_view(args...; kwargs...) =
@@ -54,6 +68,10 @@ const GUI = BeamletOpticsGUI
             profiles = true, expanded = false))]))
         @test opts.opts.kind == :psf && opts.opts.colorscale == :log && opts.opts.profiles
         @test opts.opts.colorrange == (-3, 0) && !opts.expanded && isempty(opts.opts.kwargs)
+        # the colorbar is shown unless it is switched off, and is no kwarg of `intensity`
+        @test opts.opts.colorbar
+        opts = only(GUI._detector_specs([pd => (:intensity, (; colorbar = false))]))
+        @test !opts.opts.colorbar && isempty(opts.opts.kwargs)
         @test_throws ArgumentError GUI._detector_specs([pd => :heat])
         @test_throws ArgumentError GUI._detector_specs([pd => (:spot, (; colorscale = :sqrt))])
         @test_throws ArgumentError GUI._detector_specs([pd => "spot"])
@@ -111,6 +129,8 @@ const GUI = BeamletOpticsGUI
         r = state.result
         GUI._set_view!(gui, pd; colorscale = :log)
         @test state.opts.colorscale == :log && state.result === r && !state.stale
+        GUI._set_view!(gui, pd; colorbar = false)
+        @test !state.opts.colorbar && state.result === r && !state.stale
         GUI._set_view!(gui, pd; colorscale = :log)
         @test state.result === r
         # after a cancelled solve the views wait for the next one, like the beams
@@ -212,6 +232,33 @@ const GUI = BeamletOpticsGUI
         @test GUI._signal_text(gui, pd) == "no hits"
         GUI._trace!(gui)
         @test gui.detectors.hits_valid && !state.stale && !isnothing(state.result)
+        close(gui)
+    end
+
+    @testset "systems are initialized before a solve" begin
+        # an own type with a method of `initialize!`, in a nested group, hit by two sources
+        block = CountingBlock(20e-3, 2e-3)
+        translate3d!(block, [0, 0.1, 0])
+        group = ObjectGroup([ObjectGroup([block])])
+        sys = System([group])
+        b1 = Beam([0.0, 0, 0], [0.0, 1, 0])
+        b2 = Beam([1e-3, 0, 0], [0.0, 1, 0])
+        gui = _live_view(sys => b1, sys => b2)
+        # the sources of a solve superpose, the solves do not
+        @test block.count[] == 2
+        GUI._resolve!(gui, nothing)
+        @test block.count[] == 2
+        GUI._solve!(gui, nothing)
+        @test block.count[] == 2
+        # a beam that is off leaves nothing of an earlier solve
+        GUI._set_beam_on!(gui, b2, false)
+        GUI._resolve!(gui, nothing)
+        @test block.count[] == 1
+        # a removed component is initialized, no solve does it anymore
+        remove_component!(gui, group)
+        @test block.count[] == 0
+        GUI._resolve!(gui, nothing)
+        @test block.count[] == 0
         close(gui)
     end
 end

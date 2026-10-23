@@ -39,7 +39,7 @@ power = Point2f[]
 
 # Called after each full solve, also while the power panel is hidden (a tab of the app layout)
 function record_power!(gui, obj)
-    P = isnothing(BMO.hits(pd)) ? 0.0 : optical_power(pd; n = 100, full_area...)
+    P = BMO.hit_count(pd) == 0 ? 0.0 : optical_power(pd; n = 100, full_area...)
     n = isempty(power) ? 1 : last(power)[1] + 1
     push!(power, Point2f(n, 1e3 * P))
     length(power) > 300 && popfirst!(power)
@@ -47,9 +47,12 @@ function record_power!(gui, obj)
 end
 
 ## Interactive window, `layout = :app` opens it as an application window. The card of the
-## photodiode starts pinned with its expanded intensity view (page "Results")
-gui = live_view(system, beam; size = (1200, 700), detectors = [pd => (:intensity, full_area)],
-    on_change = record_power!, layout = :compact)
+## photodiode starts pinned with its expanded intensity view (page "Results"). The window is large
+## enough for it next to the card of a selected mirror; without room, a pinned card shows its head only
+labels = Dict(rpm => "Prism mirror", cbs => "Beamsplitter", m1 => "Mirror 1", m2 => "Mirror 2",
+    pd => "Photodiode")
+gui = live_view(system, beam; size = (1600, 900), detectors = [pd => (:intensity, full_area)],
+    on_change = record_power!, labels, layout = :compact)
 
 # The optical power as an own panel: a column right of the 3D view, or a tab in the app layout
 add_panel!(gui, "Optical power") do layout
@@ -59,11 +62,6 @@ add_panel!(gui, "Optical power") do layout
     # Called after each full solve while the panel is shown
     return gui -> (pts[] = copy(power); autolimits!(ax))
 end
-fig = gui.fig
-controls = gui.controls
-
-# Solves the system again after moving a component from code, as the controls do after each change
-on_change(obj) = controls.on_change(obj)
 
 # Open the interactive window when used from the REPL or run as a script
 if isinteractive()

@@ -125,13 +125,15 @@ const GUI = BeamletOpticsGUI
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rings = 2, num_rays = 40)
         sys = System([m, pd])
         gui = _live_view(sys => src, sys => Beam([0.0, 0, 0], [0.0, 1, 0]); preview = false)
-        # no pose rows, the number of objects, the rays of both sources and the last solve
-        rows = BeamletOpticsGUI.card_rows(sys)
-        @test length(rows) == 3
+        # no rows of its own: its card is the system widget, with the number of its objects and
+        # sources, the rays of both sources and the last solve
+        @test isempty(BeamletOpticsGUI.card_rows(sys))
         GUI._inspect!(gui, sys)
-        @test _text(gui, :objects) == "2"
-        @test _text(gui, :rays) == "41"
-        @test _text(gui, :solve) == GUI._ms_string(gui.trace.solve_time)
+        card = gui.cards.selection
+        @test card.subtitle_shown && card.subtitle.text[] == "System · 2 objects · 2 sources"
+        @test _text(gui, :rays) == "41 rays per solve"
+        @test GUI._card_widget(card, :trace_state).label.text[] ==
+              "● up to date · " * GUI._ms_string(gui.trace.solve_time)
         @test isnothing(GUI._card_widget(gui.cards.selection, :x))
         close(gui)
     end
@@ -157,7 +159,7 @@ const GUI = BeamletOpticsGUI
         on.active[] = false
         @test !GUI._beam_on(gui, b) && _nhits(pd) == 40
         GUI._inspect!(gui, sys)
-        @test _w(gui, :rays).text[] == "41"
+        @test _w(gui, :rays).text[] == "41 rays per solve"
         @test occursin("41 rays", gui.widgets.info.text[])
         _select!(gui, b)
         @test !_w(gui, :beam_on).active[]

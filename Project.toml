@@ -22,6 +22,9 @@ GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 [extensions]
 BeamletOpticsGUIGLMakieExt = "GLMakie"
 
+[sources]
+BeamletOptics = {url = "https://github.com/JuliaPhysics/BeamletOptics.jl", rev = "master"}
+
 [compat]
 AbstractTrees = "0.4"
 BeamletOptics = "0.14"

@@ -245,6 +245,8 @@ _update_card!(::LiveView, c::_ComponentCard, ::Nothing, ::Vector{Rect2f}) = _hid
 function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obstacles::Vector{Rect2f})
     pose = _card_pose(obj)
     if c.pose === nothing || c.pose[1] !== obj
+        # The name of the object before is not edited any more
+        _end_rename!(gui, c; refresh = false)
         # The rows of the card are those of its page, see `_declarations`
         _choose_page!(gui, c, obj)
         _build_content!(gui, c, obj)
@@ -256,7 +258,7 @@ function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obs
         _refresh_card!(gui, c)
     end
     corners = _card_corners(gui, c, obj)
-    _update!(c.title.text, _label(gui, obj))
+    _show_title!(gui, c, obj)
     # "‹" on the card of a part, see `_browse_parent!`
     c.back_shown = !isnothing(_part_parent(gui, obj))
     _show_kind!(c, obj)
@@ -696,6 +698,145 @@ function _card_bbox(ctrl::KinematicController, sys::BMO.AbstractSystem)
     return _selection_bbox(ctrl, first(leaves), _object_plots(ctrl.h, sys))
 end
 
+#=
+The title of a card: its subtitle, and the pencil and the textbox that rename its object, see
+`_TitleEdit`
+=#
+
+"""
+    _renamable(obj) -> Bool
+    _rename!(gui, obj, name)
+
+Whether `obj` has a name of its own that the title of its card changes, e.g. a system, and the
+change of its name to `name`, the input of the textbox of the title. By default no object is
+renamed. Add methods for a type to rename its objects on their cards.
+"""
+_renamable(_) = false
+_rename!(::LiveView, _, _) = nothing
+
+"""
+    _card_subtitle(gui, obj) -> Union{Nothing, String}
+
+The line below the title of the card of `obj`, in the muted color, e.g. "System · 3 objects ·
+1 source" of a system; `nothing` for none, the default.
+"""
+_card_subtitle(::LiveView, _) = nothing
+
+# The line below the title of the card `c` of `obj`: how to end the input while its name is edited
+function _subtitle(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
+    c.name.editing && return "Enter renames · Esc keeps $(_label(gui, obj))"
+    return _card_subtitle(gui, obj)
+end
+
+"""
+    _show_title!(gui, c::_ComponentCard, obj)
+
+Shows the title of the floating card `c` for its object `obj`: its label, the pencil of an object
+that is renamed on its card (see `_renamable`) and its subtitle, if any (see `_card_subtitle`).
+Only changes update the layout.
+"""
+function _show_title!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
+    _update!(c.title.text, _label(gui, obj))
+    _show_pencil!(c.name, _renamable(obj))
+    _show_subtitle!(c, _subtitle(gui, c, obj))
+    return nothing
+end
+
+function _show_subtitle!(c::_ComponentCard, ::Nothing)
+    c.subtitle_shown || return nothing
+    c.subtitle_shown = false
+    _view_detach!(c.subtitle)
+    _GLB.trim!(c.head)
+    return nothing
+end
+function _show_subtitle!(c::_ComponentCard, s::String)
+    _set_text!(c.subtitle, s)
+    c.subtitle_shown && return nothing
+    c.subtitle_shown = true
+    _view_attach!(c.head, 2, 2, c.subtitle, true)
+    rowgap!(c.head, 1, 1)
+    return nothing
+end
+
+"""
+    _begin_rename!(gui, c)
+
+Replaces the title of the card `c` of the `gui` by a textbox with the name of its object, after a
+click on its pencil, for an object that is renamed on its card (see `_renamable`): Enter renames
+the object (see `_rename!`), Esc and a lost focus keep its name, see `_end_rename!`. The textbox
+has the focus and takes the keyboard like the other textboxes of the card, see `_typing`.
+"""
+function _begin_rename!(gui::LiveView, c::_AbstractCard)
+    e = c.name
+    obj = _card_object(gui, c)
+    (e.editing || isnothing(obj) || !_renamable(obj)) && return nothing
+    e.editing = true
+    _view_detach!(e.title)
+    e.renamable && _view_detach!(e.pencil.box)
+    _set_box!(e.box, _label(gui, obj))
+    _view_attach!(e.grid, 1, 1, e.box, true)
+    _GLB.trim!(e.grid)
+    Makie.focus!(e.box)
+    _on_rename!(gui, c)
+    return nothing
+end
+
+"""
+    _end_rename!(gui, c)
+
+Shows the title of the card `c` of the `gui` again instead of the textbox of its name, see
+`_begin_rename!`: after Enter, Esc, a lost focus or another object of the card. Nothing while the
+name is not edited. Without `refresh`, the host does not show its title again, for a caller that
+does so itself.
+"""
+function _end_rename!(gui::LiveView, c::_AbstractCard; refresh::Bool = true)
+    e = c.name
+    e.editing || return nothing
+    e.editing = false
+    e.box.focused[] && Makie.defocus!(e.box)
+    _view_detach!(e.box)
+    _view_attach!(e.grid, 1, 1, e.title, true)
+    e.renamable && _view_attach!(e.grid, 1, 2, e.pencil.box, true)
+    _keep_keyboard!(gui)
+    refresh && _on_rename!(gui, c)
+    return nothing
+end
+
+# Called after the editing of the name on the card `c` started or ended: a host shows its title
+# again, e.g. the docked card of the app layout; a floating card does so with every frame
+_on_rename!(gui::LiveView, ::_AbstractCard) = _update_cards!(gui)
+
+"""
+    _connect_rename!(gui, c) -> Vector
+
+Connects the line of the title of the card `c` of the `gui` (see `_TitleEdit`): its pencil starts
+the editing of the name, Enter in its textbox renames the object of the card (see `_rename!`), and
+the lost focus of the textbox, also after Enter, ends the editing, and so does Esc. Returns the
+listeners.
+"""
+function _connect_rename!(gui::LiveView, c::_AbstractCard)
+    e = c.name
+    return Any[on(_ -> _begin_rename!(gui, c), e.pencil.clicks),
+        # Before the textbox (70): with Makie 0.24, Esc ends the input of a textbox, but leaves it
+        # focused, such that it would keep the keyboard
+        on(events(e.box.blockscene).keyboardbutton; priority = 75) do event
+            (e.editing && event.action == Keyboard.press && event.key == Keyboard.escape) ||
+                return Consume(false)
+            _end_rename!(gui, c)
+            return Consume(true)
+        end,
+        on(e.box.stored_string) do name
+            obj = _card_object(gui, c)
+            (e.editing && !isnothing(obj)) && _rename!(gui, obj, name)
+            return nothing
+        end,
+        on(e.box.focused) do focused
+            _keep_keyboard!(gui)
+            focused || _end_rename!(gui, c)
+            return nothing
+        end]
+end
+
 """Collapses the card `c` of the `gui` to its head, or expands it again."""
 function _toggle_collapsed!(gui::LiveView, c::_ComponentCard)
     c.collapsed = !c.collapsed
@@ -855,6 +996,7 @@ function _connect_card!(gui::LiveView, c::_ComponentCard)
     # The toggle switches itself, `_toggle_pinned!` sets it to the state of the card
     push!(listeners, on(v -> v == _pin_state(c) || _toggle_pinned!(gui, c), c.pin_button.active))
     push!(listeners, on(_ -> _browse_parent!(gui, _card_object(gui, c)), c.back_button.clicks))
+    append!(listeners, _connect_rename!(gui, c))
     _connect_selection_part!(gui, c)
     _connect_dock_button!(gui, c, c.dock_button)
     return nothing
@@ -930,16 +1072,6 @@ function _inspector_rows(::LiveView, @nospecialize(obj))
     return [_property_row(name, value) for (name, value) in props if !(name in _INSPECTOR_SKIPPED)]
 end
 
-"""
-The rows of the property list of an inspected system (see `_inspect!`): its properties (see
-`BeamletOptics.properties`), then the number of its objects and of its sources.
-"""
-function _inspector_rows(gui::LiveView, sys::BMO.AbstractSystem)
-    rows = invoke(_inspector_rows, Tuple{LiveView, Any}, gui, sys)
-    sources = count(p -> p.first === sys, gui.pairs)
-    return Tuple{String, String}[rows; ("Objects", string(length(_leaves(sys)))); ("Sources", string(sources))]
-end
-
 """Summary of the live view, shown without a selection, e.g. in the inspector of the app layout."""
 function _inspector_rows(gui::LiveView, ::Nothing)
     objects = sum(h -> length(render_children(h)), gui.system_handles; init = 0)
@@ -960,8 +1092,9 @@ object `obj`: the card of the selection, and a pinned card while its object is s
 then shown instead of the card of the selection (see `_update_cards!`). Not in a layout that shows
 them elsewhere, e.g. in the inspector of the app layout, see `_selection_card_shown`.
 """
-_shows_step(gui::LiveView, c::_ComponentCard, @nospecialize(obj)) = c === gui.cards.selection ||
-    (_selection_card_shown(gui) && !c.transient && obj === gui.controls.selected[])
+_shows_step(gui::LiveView, c::_ComponentCard, @nospecialize(obj)) = _has_step(obj) &&
+    (c === gui.cards.selection ||
+     (_selection_card_shown(gui) && !c.transient && obj === gui.controls.selected[]))
 
 """
 Returns `true` if the card of `obj` has the page "Properties" with the list of its properties (see

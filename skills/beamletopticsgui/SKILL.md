@@ -42,8 +42,11 @@ When this Skill is active:
 1) Build and check the system without the GUI first (the `beamletoptics` skill): solve it, look at the
    numbers, render it statically with `render!`.
 2) Open the window: `gui = live_view(system, beam); display(gui)`. Several systems and beams:
-   `live_view(sys1 => beam1, sys2 => beam2)`; `open_system(gui, sys2)` opens one of them in a second,
-   linked window. Pass `labels`, `detectors`, `extras` (housings),
+   `live_view(sys1 => beam1, sys2 => beam2)` (a source is given once: the same beam for two systems
+   throws an `ArgumentError`); systems are added with `add_system!(gui)` or the tool "System", and an
+   object that two systems share is added to the second with `add_component!(gui, obj; system = sys2)`
+   (one object, drawn once, each system traced on its own); `open_system(gui, sys2)` opens one of
+   them in a second, linked window. Pass `labels`, `detectors`, `extras` (housings),
    `constraints`, `on_change` as needed (`API.md`).
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
    controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added
@@ -54,7 +57,8 @@ When this Skill is active:
 
 ## Limits of the current version
 
-- Extras are fixed when the view starts (they can be hidden). Components of a `System` and sources can
+- Extras (objects without a system) are given when the view starts; they can be hidden, removed and
+  made members of a system like any component. Components of a `System`, sources and systems can
   be added and removed at runtime, with these limits: the objects of a `StaticSystem` and objects
   inside a group cannot be added or removed; a component or source that is being placed is not traced until it is
   dropped; only components and sources from the catalog can be changed afterwards (page "Edit" of the card).
@@ -64,6 +68,11 @@ When this Skill is active:
   `Ctrl+Z` and redone with `Ctrl+Y`. `Ctrl+C` and `Ctrl+V` copy and paste the selected component or
   source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
   the object again and call `add_component!`.
+- A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
+  `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
+  cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"
+  exist in the window only; there is no public function for them (from code: `add_component!` and
+  `remove_component!` with `system`).
 - Aligning is done in the window only: the buttons "onto beam" and "face beam" of the card of a
   component, "aim" of the card of a source and the optical table (`table = true`, a grid of holes that
   dragged components snap onto). There is no public function for them; from code, set the poses with

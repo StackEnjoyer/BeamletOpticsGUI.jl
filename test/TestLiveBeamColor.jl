@@ -153,12 +153,12 @@ const GUI = BeamletOpticsGUI
     @testset "the handles keep the color" begin
         m = _mirror()
         beam = _beam()
-        gui = _live_view(System([m]) => beam, System([_mirror(0.2)]) => beam)
+        gui = _live_view(System([m]) => beam)
         handles = _handles(gui, beam)
         plots = [copy(render_plots(h)) for h in handles]
-        @test length(handles) == 2 && _mode(gui, beam) === :wavelength
+        @test length(handles) == 1 && _mode(gui, beam) === :wavelength
 
-        # a fixed color and back: the same handles and plots, of each pair of the beam
+        # a fixed color and back: the same handle and plots of the beam
         GUI._set_beam_color!(gui, beam, :orange)
         @test _hex(_mode(gui, beam)) == _hex(:orange) && GUI._color_preset(gui, beam) == "custom"
         @test _plot_colors(gui, beam) == [_hex(:orange)]

@@ -80,7 +80,7 @@ const GUI = BeamletOpticsGUI
         GUI._toggle_hidden!(gui, nothing)
         @test startswith(gui.status.text[], "select a component")
         gui.widgets.menu.i_selected[] = 2
-        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
+        (eye = GUI._card_widget(gui.cards.selection, :hide); eye.active[] = !eye.active[])
         @test isnothing(gui.controls.selected[])
         @test gui.widgets.menu.i_selected[] == 0
         @test m in gui.objects.hidden
@@ -96,16 +96,16 @@ const GUI = BeamletOpticsGUI
         # a hidden object can be selected in the menu and shown again
         gui.widgets.menu.i_selected[] = 2
         @test gui.controls.selected[] === m
-        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
+        (eye = GUI._card_widget(gui.cards.selection, :hide); eye.active[] = !eye.active[])
         @test !(m in gui.objects.hidden)
         @test all(p -> p.visible[], render_plots(render_children(gui.controls.h)[1]))
         @test gui.controls.selected[] === m
 
         # groups: all objects, show all
         gui.widgets.menu.i_selected[] = 4
-        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
+        (eye = GUI._card_widget(gui.cards.selection, :hide); eye.active[] = !eye.active[])
         gui.widgets.menu.i_selected[] = 2
-        notify(GUI._card_widget(gui.cards.selection, :hide).clicks)
+        (eye = GUI._card_widget(gui.cards.selection, :hide); eye.active[] = !eye.active[])
         @test length(gui.objects.hidden) == 3
         leaf_plots = [p for oh in render_children(gui.controls.h) if rendered(oh) in (m, g.objects...) for p in render_plots(oh)]
         @test all(p -> !p.visible[], leaf_plots)
@@ -165,26 +165,24 @@ const GUI = BeamletOpticsGUI
         @test card.scene.visible[]
         @test card.title.text[] == "System 1"
         @test GUI._card_object(gui, card) === sys
-        # the rows of a system, see `card_rows(::AbstractSystem)`, and the default action
-        @test GUI._card_widget(card, :objects).text[] == "2"
-        @test GUI._card_widget(card, :rays).text[] == "1"
-        @test endswith(GUI._card_widget(card, :solve).text[], "ms")
-        @test GUI._card_widget(card, :hide).label[] == "hide"
+        # the rows of the system widget, see `_system_rows`, and the default action
+        @test card.subtitle_shown && card.subtitle.text[] == "System · 2 objects · 1 source"
+        @test GUI._card_widget(card, :rays).text[] == "1 ray per solve"
+        @test endswith(GUI._card_widget(card, :trace_state).label.text[], "ms")
+        @test !GUI._card_widget(card, :hide).active[]
         @test isnothing(GUI._card_widget(card, :x))
-        # the page "Properties" of the card shows a summary of the system
-        GUI._set_page!(gui, card, :properties)
-        @test ("Objects", "2") in card.list.rows
-        GUI._set_page!(gui, card, :pose)
+        # one page, without a page bar: the properties of a system are not listed
+        @test card.pages == (:pose,) && isnothing(card.bar)
         # the card lies next to the bounding box of the objects of the system
         corners = GUI._card_corners(gui, card, sys)
         lo, hi = extrema(p -> p[1], corners)
         @test lo < 0.0 && hi > 0.1
         # the hide action hides all objects of the system, but keeps the inspection
-        notify(GUI._card_widget(card, :hide).clicks)
+        (eye = GUI._card_widget(card, :hide); eye.active[] = !eye.active[])
         @test m in gui.objects.hidden && pd in gui.objects.hidden
         @test gui.objects.inspected === sys
-        @test GUI._card_widget(card, :hide).label[] == "show"
-        notify(GUI._card_widget(card, :hide).clicks)
+        @test GUI._card_widget(card, :hide).active[]
+        (eye = GUI._card_widget(card, :hide); eye.active[] = !eye.active[])
         @test isempty(gui.objects.hidden)
         # Esc ends the inspection
         _key!(gui, Keyboard.escape)
@@ -222,10 +220,11 @@ const GUI = BeamletOpticsGUI
         @test isnothing(ctrl.selected[])
         @test insp.name.text[] == "System 1"
         @test tree.selected === h
-        @test GUI._card_widget(insp.card, :objects).text[] == "3"
-        GUI._set_page!(gui, insp.card, :properties)
-        @test ("Sources", "1") in insp.list.rows
-        GUI._set_page!(gui, insp.card, :pose)
+        @test insp.type.text[] == "System · 3 objects · 1 source"
+        @test GUI._card_widget(insp.card, :member_count).label.text[] == "4"
+        # one page, without a page bar: the properties of a system are not listed
+        @test GUI._card_pages(gui, rendered(h)) == (:pose,) && !insp.card.bar_part.shown
+        @test isempty(insp.list.rows)
         # no card floats in the 3D view
         @test !gui.cards.selection.scene.visible[]
         # the expander still expands and collapses it

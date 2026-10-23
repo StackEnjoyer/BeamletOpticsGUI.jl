@@ -260,12 +260,13 @@ const GUI = BeamletOpticsGUI
         gui, o = _tree_fixture()
         tree = gui.layout.tree
         @test tree isa GUI._ObjectTree
-        # systems expanded, groups collapsed; sources and clip planes after the systems
-        @test _labels(gui) == ["System 1", "ObjectGroup 1", "Mirror 1", "PD1",
-            "NonInteractableObject 1", "Beam 1", "Clip plane 1"]
+        # systems expanded, groups collapsed; the source under its system, before its objects, and
+        # the clip planes after the systems
+        @test _labels(gui) == ["System 1", "Beam 1", "ObjectGroup 1", "Mirror 1", "PD1",
+            "NonInteractableObject 1", "Clip plane 1"]
         @test [r.kind for r in _rows(gui)] ==
-              [:system, :group, :mirror, :detector, :mesh, :source, :clip_plane]
-        @test [r.depth for r in _rows(gui)] == [0, 1, 1, 1, 1, 0, 0]
+              [:system, :source, :group, :mirror, :detector, :mesh, :clip_plane]
+        @test [r.depth for r in _rows(gui)] == [0, 1, 1, 1, 1, 1, 0]
         @test _row(gui, o.group).expandable && !_row(gui, o.group).expanded
         @test _row(gui, gui.system_handles[1]).expanded
         # eyes for everything that is rendered, none for clip planes
@@ -279,7 +280,7 @@ const GUI = BeamletOpticsGUI
         @test GUI._tree_kind(gui.system_handles[1]) == :system
         @test GUI._tree_kind(RoundThinBeamsplitter(0.01)) == :beamsplitter
         # one plot per part, independent of the number of rows
-        @test length(tree.scene.plots) == 7
+        @test length(tree.scene.plots) == 9
         # the compact layout has no tree and its hooks do nothing
         close(gui)
         gui = live_view(System([o.m, o.pd]), o.beam; trace_budget = Inf)
@@ -320,7 +321,7 @@ const GUI = BeamletOpticsGUI
         @test !_row(gui, o.group).expanded
         @test !("Lens 1" in _labels(gui))
         tree.expand_clicked[] = gui.system_handles[1]
-        @test _labels(gui) == ["System 1", "Beam 1", "Clip plane 1"]
+        @test _labels(gui) == ["System 1", "Clip plane 1"]
         tree.expand_clicked[] = gui.system_handles[1]
         @test length(_rows(gui)) == 7
         # the eye hides and shows, the row is muted
@@ -329,7 +330,7 @@ const GUI = BeamletOpticsGUI
         @test o.housing in gui.objects.hidden
         @test !any(p -> p.visible[], render_plots(handle(o.housing)))
         @test _row(gui, o.housing).visible === false
-        @test tree.plots.labels.color[][5] == tree.muted_color
+        @test tree.plots.labels.color[][6] == tree.muted_color
         tree.eye_clicked[] = o.housing
         @test isempty(gui.objects.hidden)
         @test all(p -> p.visible[], render_plots(handle(o.housing)))
@@ -342,7 +343,8 @@ const GUI = BeamletOpticsGUI
         @test _row(gui, o.group).visible === false
         # the system eye hides everything, "show all" shows everything again
         tree.eye_clicked[] = gui.system_handles[1]
-        @test all(r -> r.visible === false, _rows(gui)[1:5])
+        @test all(r -> r.visible === false, filter(r -> !(r.kind in (:source, :clip_plane)), _rows(gui)))
+        @test _row(gui, o.beam).visible === true
         gui.widgets.show_all_button.clicks[] += 1
         @test isempty(gui.objects.hidden)
         @test all(r -> r.visible !== false, _rows(gui))

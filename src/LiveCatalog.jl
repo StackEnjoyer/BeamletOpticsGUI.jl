@@ -48,11 +48,15 @@ function _catalog_args(f, entry::CatalogEntry, values)
     positional = Any[]
     keywords = Pair{Symbol, Any}[]
     for (p, v) in zip(entry.params, values)
-        isnothing(p.keyword) ? push!(positional, f(p, v)) : push!(keywords, p.keyword => f(p, v))
+        keyword = _catalog_keyword(p)
+        isnothing(keyword) ? push!(positional, f(p, v)) : push!(keywords, keyword => f(p, v))
     end
     return positional, keywords
 end
 _catalog_args(entry::CatalogEntry, values) = _catalog_args(_catalog_arg, entry, values)
+
+# The keyword as which the parameter `p` is passed, `nothing` for a positional argument
+_catalog_keyword(p::Union{CatalogParam, CatalogGlass}) = p.keyword
 
 """
     _catalog_object(entry, values) -> Union{AbstractObject, AbstractBeam, AbstractBeamGroup}
@@ -87,8 +91,16 @@ code, e.g. `"ThinBeamsplitter(0.0254, 0.0254; reflectance = 0.5)"`: the call tha
 constructor, see `_glass_code`, such that the code runs without this package. The code of an entry
 with `source` has the position and the direction of the source before the arguments, e.g.
 `"Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.328e-7)"`.
+
+The code of an entry whose constructor is a function of the GUI is the one of `_entry_code` for
+that function, e.g. the call of the lens of BeamletOptics that `_surface_lens` builds.
 """
-function _catalog_code(entry::CatalogEntry, values)
+_catalog_code(entry::CatalogEntry, values) = _entry_code(entry.constructor, entry, values)
+
+_entry_code(@nospecialize(constructor), entry::CatalogEntry, values) = _call_code(entry, values)
+
+# The call `code_name(arguments...; keywords...)` of the `entry`, see `_catalog_code`
+function _call_code(entry::CatalogEntry, values)
     positional, keywords = _catalog_args(_catalog_arg_code, entry, values)
     # the position and the direction that `_catalog_object` passes
     entry.source && pushfirst!(positional, "[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]")
@@ -212,6 +224,10 @@ const _CATALOG_GLASS_WIDTH = 128
 # ... and the menus of the presets of a number, and their option for a value that is no preset
 const _CATALOG_PRESET_WIDTH = 96
 const _CATALOG_PRESET_CUSTOM = "custom"
+# ... the menus of the kinds of a surface, and the indent of the fields of an asphere below its
+# surface, where they are in two columns
+const _CATALOG_SURFACE_WIDTH = 96
+const _CATALOG_INDENT = 16
 # Gap between the name, the box and the unit of a parameter in the form of the catalog, and
 # between its two columns [px]
 const _CATALOG_GAP = 8
@@ -233,7 +249,9 @@ as its content, or in a place of the `width` [px], e.g. a section of a sidebar.
   `nothing` for icon buttons of `tile_size` without a name, in a narrow place, where the name of
   the entry under the mouse is shown below them. In rows of `tiles_per_row`.
 - `two_columns`: the numbers of an entry are in two columns from this number on
-- `constant_inline`: whether the box of a "constant" glass is right of its menu, otherwise below it
+- `constant_inline`: whether the box of a "constant" glass is right of its menu, otherwise below it;
+  likewise the box of the radius of a surface, and with it, the fields of an asphere are in two
+  columns, otherwise in one
 """
 _catalog_style() = (; group_size = 32, group_icon = 20, groups_per_row = typemax(Int),
     tile_width = 86, tile_size = 40, tiles_per_row = 4, two_columns = 5, constant_inline = true)
@@ -253,9 +271,9 @@ The widgets of the catalog of a `LiveView` in a `layout`, e.g. the body of its w
 dock (see `_catalog_widget!`), laid out by the `style` (see `_catalog_style`) in the colors of the
 theme tokens `theme`, from top to bottom:
 
-- `target`: the label of the system that gets the component, "into: <system>"; in a view with
-  several systems only "into", next to the menu `target_menu` of the systems, see
-  `_show_catalog_target!` (`showing` is `true` while the menu is set to the system that it shows)
+- `target`: the label "into", next to the menu `target_menu` of the systems that get the
+  component, then "no system" and "New system…", see `_show_catalog_target!` (`showing` is `true`
+  while the menu is set to the target that it shows)
 - `group_buttons`: an icon per group of the `entries` (`groups`, in the order of their first
   entries), of which the one with the index `group` is chosen; `group_label` names it, or the one
   under the mouse
@@ -263,24 +281,29 @@ theme tokens `theme`, from top to bottom:
   the `style`; `tile_buttons`, each with the index of its entry), of which the one of the entry
   with the index `entry` is chosen; `entry_label` names it, see `_show_catalog_entry!`
 - `form`: the inputs of the parameters of the chosen entry (`inputs`, one per parameter): a
-  `Textbox` per number, and per glass its menu and, for "constant", the box of the refractive
-  index, as `(; menu, box)`. `boxes` and `menus` hold all of them; the `menus` also hold the menus
-  of the presets of the numbers, which set their boxes, see `_catalog_preset_menu!`.
+  `Textbox` per number, per glass its menu and, for "constant", the box of the refractive
+  index, as `(; menu, box)`, and per surface its menu, the box of its radius and, for "aspheric",
+  the boxes of its conic constant and of its coefficients, as
+  `(; menu, radius, conic, coefficients)`, see `_fill_catalog_surfaces!`. `boxes` and `menus` hold
+  all of them; the `menus` also hold the menus of the presets of the numbers, which set their
+  boxes, see `_catalog_preset_menu!`.
 - `place`: the button "Place"
 
 The tiles are built again when another group is chosen (see `_build_catalog_tiles!`), the form
 when another entry is chosen (see `_build_catalog_form!`) and, at the next frame while `dirty`,
-after a menu of a glass changed to or from "constant", see `_flush_catalog_form!`. `settle` holds
+after a menu of a glass changed to or from "constant" or the one of a surface to or from
+"aspheric", see `_flush_catalog_form!`. `settle` holds
 the grids of a new form and its time until its boxes were moved once, see `_settle_catalog_form!`.
+The `style` changes when the place of the widgets gets another width, see `_restyle_catalog!`.
 """
 mutable struct _CatalogWidget
     const layout::GridLayout
     const theme::NamedTuple
-    const style::NamedTuple
+    style::NamedTuple
     const entries::Vector{CatalogEntry}
     const groups::Vector{String}
     const target::Label
-    const target_menu::Union{Nothing, Menu}
+    const target_menu::Menu
     showing::Bool
     const group_buttons::Vector{_OverlayItem}
     const group_label::Label
@@ -310,6 +333,17 @@ function _catalog_input_string(p::CatalogGlass, input::NamedTuple)
     return isnothing(input.box) ? _catalog_number_string(p.n) : String(input.box.displayed_string[])
 end
 
+# The text of a surface from its menu and its boxes, see `_surface_string`
+function _catalog_input_string(::CatalogSurface, input::NamedTuple)
+    radius = String(input.radius.displayed_string[])
+    input.menu.selection[] == _SURFACE_ASPHERIC || return _surface_string(false, radius, "0", String[])
+    # "aspheric" was chosen and its boxes are not built yet, see `_flush_catalog_form!`
+    isnothing(input.conic) &&
+        return _surface_string(true, radius, "0", fill("0", length(_SURFACE_ORDERS)))
+    return _surface_string(true, radius, String(input.conic.displayed_string[]),
+        String[tb.displayed_string[] for tb in input.coefficients])
+end
+
 """The texts of the inputs of the catalog widget `w`, one per parameter of its entry, see `_catalog_value`."""
 _catalog_strings(w::_CatalogWidget) =
     String[_catalog_input_string(p, input) for (p, input) in zip(_catalog_entry(w).params, w.inputs)]
@@ -318,22 +352,20 @@ _catalog_strings(w::_CatalogWidget) =
     _catalog_widget!(gui, body, style) -> _CatalogWidget
 
 Builds the widgets of the catalog of the `gui` (`gui.components.catalog`) in the layout `body`,
-laid out by the `style` (see `_catalog_style`): the line "into: <system>" with the system that gets
-the component (see `_catalog_target`), which is a menu of the systems in a view with several
-systems, the icons of the groups, the tiles of the entries of the
-chosen group, the form of the chosen entry and the button "Place", see `_CatalogWidget` and
+laid out by the `style` (see `_catalog_style`): the line "into" with the menu of the system that
+gets the component (see `_catalog_target`), i.e. the systems, "no system" and "New system…", the
+icons of the groups, the tiles of the entries of the chosen group, the form of the chosen entry and the button "Place", see `_CatalogWidget` and
 `_place_catalog!`. The first group and its first entry are chosen.
 """
 function _catalog_widget!(gui::LiveView, body::GridLayout, style::NamedTuple)
     entries = gui.components.catalog
     t = gui.layout.theme
     label = (; _card_style(t, Label)..., halign = :left)
-    # With several systems, the system is chosen in a menu next to the label
+    # The system is chosen in a menu next to the label, also in a view that gets systems later
     line = GridLayout(body[1, 1]; halign = :left, default_colgap = _CATALOG_GAP)
-    target = Label(line[1, 1], ""; label..., color = t.muted)
-    target_menu = length(gui.system_handles) > 1 ?
-                  Menu(line[1, 2]; options = [""], _card_style(t, Menu)...,
-        width = _CATALOG_GLASS_WIDTH, halign = :left) : nothing
+    target = Label(line[1, 1], "into"; label..., color = t.muted)
+    target_menu = Menu(line[1, 2]; options = [""], _card_style(t, Menu)...,
+        width = _CATALOG_GLASS_WIDTH, halign = :left)
     groups = unique(e.group for e in entries)
     rows = GridLayout(body[2, 1]; halign = :left, default_colgap = _CATALOG_GROUP_GAP,
         default_rowgap = _CATALOG_GROUP_GAP)
@@ -350,11 +382,9 @@ function _catalog_widget!(gui::LiveView, body::GridLayout, style::NamedTuple)
         entry_label, place, 0, 0, tiles, Pair{Int, _OverlayItem}[], form, Any[], Textbox[], Menu[], false,
         nothing)
     listeners = gui.controls.listeners
-    if !isnothing(target_menu)
-        # its search takes the keyboard like the menus of the form
-        _register_widget!(gui, target_menu)
-        push!(listeners, on(i -> _choose_catalog_target!(gui, widget, i), target_menu.i_selected))
-    end
+    # its search takes the keyboard like the menus of the form
+    _register_widget!(gui, target_menu)
+    push!(listeners, on(i -> _choose_catalog_target!(gui, widget, i), target_menu.i_selected))
     for (k, button) in enumerate(group_buttons)
         push!(listeners, on(_ -> _select_catalog_group!(gui, widget, k), button.clicks))
         push!(listeners, on(_ -> _show_catalog_group!(widget), button.hovered))
@@ -378,12 +408,11 @@ the widgets of the catalog, see `_catalog_widget!`. Without a dock, the window i
 with one, the catalog starts docked. The toggle "Components" among the tools of the layout (see
 [`add_tool!`](@ref)) shows and hides it, the key `Insert` shows the window at the mouse, see
 `_connect_catalog_window!`. Both are listed in the help with the mouse while placing
-(`_CATALOG_HELP`). A view without a `System`, to which components can be added, only offers the
-sources of the catalog, which are traced through any system. Nothing is built for an empty catalog.
+(`_CATALOG_HELP`). A view without a `System` offers the components as well, into "no system" or a
+new system. Nothing is built for an empty catalog.
 """
 function _build_catalog!(gui::LiveView)
     entries = gui.components.catalog
-    isempty(_mutable_systems(gui)) && filter!(e -> e.source, entries)
     isempty(entries) && return nothing
     w = _CatalogWindow(gui, _catalog_dock_slot!(gui, _CATALOG_TITLE))
     gui.components.window = w
@@ -422,32 +451,40 @@ _catalog_systems(gui::LiveView, entry::CatalogEntry) =
     entry.source ? _systems(gui) : BMO.AbstractSystem[_mutable_systems(gui)...]
 
 """
-    _catalog_target(gui, entry) -> Union{AbstractSystem, Nothing}
+    _catalog_target(gui, entry) -> Union{AbstractSystem, Symbol}
 
-The system that gets the `entry` of the catalog of the `gui` when it is placed: the system of the
-selected or inspected object, otherwise the first one (of a component the `_target_system`, of a
-source the system it is traced through, see `_source_system`), unless another one was chosen in
-the menu "into" of the catalog since that object is shown, see `_choose_catalog_target!`. `nothing`
-without a system that can get it.
+The system that gets the `entry` of the catalog of the `gui` when it is placed, or `:none` for no
+system: the system of the selected or inspected object, otherwise the first one (of a component
+the `_target_system`, of a source the system it is traced through, see `_source_system`), unless
+another one was chosen in the menu "into" of the catalog since that object is shown, see
+`_choose_catalog_target!`. A view without a `System` places a component into `:none`.
 """
 function _catalog_target(gui::LiveView, entry::CatalogEntry)
     comp = gui.components
     if !isnothing(comp.target) && comp.target_shown === _shown_object(gui) &&
-       any(sys -> sys === comp.target, _catalog_systems(gui, entry))
+       (comp.target === :none || any(sys -> sys === comp.target, _catalog_systems(gui, entry)))
         return comp.target
     end
-    return entry.source ? _source_system(gui, nothing) : _target_system(gui)
+    sys = entry.source ? _source_system(gui, nothing) : _target_system(gui)
+    return isnothing(sys) ? :none : sys
 end
 
 """
-The menu "into" of the catalog widget `w` of the `gui` chose its option `i`: that system gets the
-entries of the catalog until another object is selected or inspected, see `_catalog_target`.
+The menu "into" of the catalog widget `w` of the `gui` chose its option `i`: that system, or no
+system, gets the entries of the catalog until another object is selected or inspected, see
+`_catalog_target`. The last option adds a system, which gets them.
 """
 function _choose_catalog_target!(gui::LiveView, w::_CatalogWidget, i::Integer)
     (w.showing || w.entry == 0) && return nothing
     systems = _catalog_systems(gui, _catalog_entry(w))
-    i in eachindex(systems) || return nothing
-    gui.components.target = systems[i]
+    n = length(systems)
+    if i == n + 2
+        # makes the new system the target and shows it in the menus, see `add_system!`
+        add_system!(gui)
+        return nothing
+    end
+    i == n + 1 || i in eachindex(systems) || return nothing
+    gui.components.target = i == n + 1 ? :none : systems[i]
     gui.components.target_shown = _shown_object(gui)
     # also in the other widget of the catalog, e.g. its window
     _refresh_catalog!(gui)
@@ -455,21 +492,17 @@ function _choose_catalog_target!(gui::LiveView, w::_CatalogWidget, i::Integer)
 end
 
 """
-Shows the system that gets the chosen entry of the catalog widget `w`, see `_catalog_target`: in
-its label, or, in a view with several systems, in its menu of the systems that can get the entry.
+Shows the system that gets the chosen entry of the catalog widget `w`, see `_catalog_target`, in its
+menu: the systems that can get the entry, "no system" and "New system…".
 """
 function _show_catalog_target!(gui::LiveView, w::_CatalogWidget)
     entry = w.entry == 0 ? nothing : _catalog_entry(w)
     sys = isnothing(entry) ? _target_system(gui) : _catalog_target(gui, entry)
     menu = w.target_menu
-    if isnothing(menu)
-        _update!(w.target.text, isnothing(sys) ? "into: no system" : "into: $(_label(gui, sys))")
-        return nothing
-    end
-    _update!(w.target.text, "into")
     systems = isnothing(entry) ? _systems(gui) : _catalog_systems(gui, entry)
-    names = isempty(systems) ? ["no system"] : String[_label(gui, s) for s in systems]
-    i = something(_index(systems, sys), 1)
+    names = String[String[_label(gui, s) for s in systems]..., "no system", "New system…"]
+    i = isnothing(sys) || sys === :none ? length(systems) + 1 :
+        something(_index(systems, sys), length(systems) + 1)
     # Showing the system is no choice of the user, see `_choose_catalog_target!`
     w.showing = true
     try
@@ -605,6 +638,41 @@ function _select_catalog_entry!(gui::LiveView, w::_CatalogWidget, i::Integer)
 end
 
 """
+    _regrid!(grid::GridLayout, old::Int, new::Int)
+
+Arranges the content of the `grid`, which fills its rows with `old` cells each, in rows of `new`
+cells, in the same order, e.g. the tiles of the catalog. The blocks are moved, not built again:
+they keep their state and their listeners.
+"""
+function _regrid!(grid::GridLayout, old::Int, new::Int)
+    old == new && return nothing
+    for gc in copy(grid.content)
+        row, col = gc.span.rows.start, gc.span.cols.start
+        k = row == 1 ? col : (row - 1) * old + col
+        grid[fldmod1(k, new)...] = gc.content
+    end
+    _GLB.trim!(grid)
+    return nothing
+end
+
+"""
+    _restyle_catalog!(w, style)
+
+Lays out the catalog widget `w` by another `style` of the same kind (see `_catalog_style`), e.g.
+after its place got another width: the icons of the groups and the tiles of the entries are
+arranged in the rows of the `style`. The chosen group and entry, the form and the texts of its
+inputs are kept.
+"""
+function _restyle_catalog!(w::_CatalogWidget, style::NamedTuple)
+    old = w.style
+    w.style = style
+    groups = _GLB.gridcontent(first(w.group_buttons).box).parent
+    _regrid!(groups, old.groups_per_row, style.groups_per_row)
+    _regrid!(w.tiles, old.tiles_per_row, style.tiles_per_row)
+    return nothing
+end
+
+"""
     _copy_catalog_state!(gui, to, from)
 
 Shows in the catalog widget `to` what the widget `from` shows: its group, its entry and the texts
@@ -629,7 +697,7 @@ Form
 # The layout of the form of the catalog in the `layout` of its widgets, see `_CatalogWidget`
 _catalog_form(layout::GridLayout) = GridLayout(layout[6, 1]; halign = :left, default_rowgap = 6)
 
-# A grid of the form of the catalog: the numbers or the glasses, see `_fill_catalog_form!`
+# A grid of the form of the catalog: the surfaces, the numbers or the glasses, see `_fill_catalog_form!`
 _catalog_form_grid(pos) = GridLayout(pos; halign = :left, default_rowgap = 6, default_colgap = _CATALOG_GAP)
 
 """
@@ -683,12 +751,109 @@ function _catalog_preset_menu!(gui::LiveView, pos, p::CatalogParam, tb::Textbox,
     return menu
 end
 
+# The unit of the coefficient of the `order` of an asphere as shown in the form, e.g. mm^-3 for A4.
+# Rich text, since the font of the labels may not have the superscript digits of Unicode
+_surface_unit(order::Integer) = Makie.rich(_SURFACE_UNIT, Makie.superscript(string(1 - order)))
+
+"""
+    _fill_catalog_surfaces!(gui, w, pos, surfaces, strings) -> Vector{GridLayout}
+
+Builds the inputs of the surfaces of the chosen entry of the catalog widget `w` at the position
+`pos` of its form, i.e. of its parameters with the indices `surfaces` (see `CatalogSurface`), with
+the `strings` as their texts, see `_surface_string`: per surface its name, the menu of "spherical"
+and "aspheric" and the box of its radius in mm, right of the menu or below it (see
+`_catalog_style`). An asphere has the boxes of its conic constant `k` and of its coefficients A4,
+A6, ... (see `_SURFACE_ORDERS`) with their units below it, in two columns or in one. They come and
+go at the next frame after the menu changed, see `_flush_catalog_form!`.
+
+Sets the inputs `(; menu, radius, conic, coefficients)` of the surfaces in `w.inputs`, with
+`conic === nothing` and no `coefficients` for a spherical surface, and adds their boxes and menus
+to `w.boxes` and `w.menus`. Returns the grids of the boxes, see `_settle_catalog_form!`.
+"""
+function _fill_catalog_surfaces!(gui::LiveView, w::_CatalogWidget, pos, surfaces, strings)
+    params = _catalog_entry(w).params
+    t = w.theme
+    label = (; _card_style(t, Label)..., halign = :left)
+    box = (; _card_style(t, Textbox)..., width = _CATALOG_BOX_WIDTH, halign = :left)
+    kinds = [_SURFACE_SPHERICAL, _SURFACE_ASPHERIC]
+    # An emptied box shows its placeholder
+    stored(s) = isempty(s) ? nothing : s
+    inline = w.style.constant_inline
+    grids = GridLayout[]
+    # Where the box of the radius is right of the menu, each surface has a grid of its own in a
+    # column of grids, and so have the fields of an asphere, which are wider than their surface:
+    # a layout does not make room for content that spans its columns. Otherwise all are in one
+    # grid of labels, boxes and units, whose last two columns a menu spans
+    outer = inline ? GridLayout(pos; halign = :left, default_rowgap = 6) : _catalog_form_grid(pos)
+    inline || push!(grids, outer)
+    row = 0
+    for i in surfaces
+        p = params[i]
+        f = _surface_fields(strings[i])
+        row += 1
+        head = inline ? _catalog_form_grid(outer[row, 1]) : outer
+        inline && push!(grids, head)
+        Label(head[inline ? 1 : row, 1], p.name; label...)
+        menu = Menu(inline ? head[1, 2] : head[row, 2:3]; options = kinds,
+            default = f.aspheric ? _SURFACE_ASPHERIC : _SURFACE_SPHERICAL, _card_style(t, Menu)...,
+            width = _CATALOG_SURFACE_WIDTH, halign = :left)
+        inline || (row += 1)
+        r, col = inline ? (1, 2) : (row, 0)
+        Label(head[r, col + 1], "R"; label..., halign = inline ? :left : :right)
+        # An emptied box shows the default as its placeholder, see `_catalog_value`
+        radius = Textbox(head[r, col + 2]; stored_string = stored(f.radius),
+            placeholder = _catalog_string(p), box...)
+        Label(head[r, col + 3], _SURFACE_UNIT; label...)
+        push!(w.boxes, radius)
+        conic = nothing
+        coefficients = Textbox[]
+        if f.aspheric
+            fields = outer
+            if inline
+                row += 1
+                fields = GridLayout(outer[row, 1]; halign = :left, default_rowgap = 6,
+                    default_colgap = _CATALOG_GAP, alignmode = Makie.Outside(_CATALOG_INDENT, 0, 0, 0))
+                push!(grids, fields)
+            end
+            names = String["k"; ["A$order" for order in _SURFACE_ORDERS]]
+            texts = String[f.conic; f.coefficients]
+            for (k, (name, text)) in enumerate(zip(names, texts))
+                # row by row in two columns, or down the column of the boxes of the radii
+                if inline
+                    r, c = fldmod1(k, 2)
+                    col = 3 * (c - 1)
+                else
+                    row += 1
+                    r, col = row, 0
+                end
+                Label(fields[r, col + 1], name; label..., halign = inline ? :left : :right)
+                tb = Textbox(fields[r, col + 2]; stored_string = stored(text), placeholder = "0", box...)
+                # the conic constant has no unit
+                k == 1 || Label(fields[r, col + 3], _surface_unit(_SURFACE_ORDERS[k - 1]); label...)
+                push!(w.boxes, tb)
+                k == 1 ? (conic = tb) : push!(coefficients, tb)
+            end
+            inline && Makie.colgap!(fields, 3, _CATALOG_COLUMN_GAP)
+        end
+        w.inputs[i] = (; menu, radius, conic, coefficients)
+        push!(w.menus, menu)
+        # The boxes of an asphere come and go with the next frame, not while the menu, which is
+        # deleted with the form, handles its own selection
+        aspheric = f.aspheric
+        push!(gui.controls.listeners, on(menu.selection) do s
+            (s == _SURFACE_ASPHERIC) == aspheric || (w.dirty = true)
+            return nothing
+        end)
+    end
+    return grids
+end
+
 """
     _fill_catalog_form!(gui, w, strings)
 
 Builds the form of the catalog widget `w` for its chosen entry with the `strings` as the texts of
-its inputs (see `_catalog_strings`): first the numbers, each with its name, a `Textbox` and its
-unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
+its inputs (see `_catalog_strings`): first the surfaces (see `_fill_catalog_surfaces!`), then the
+numbers, each with its name, a `Textbox` and its unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
 with its name and the menu of the glasses and "constant", for which a box takes the refractive
 index, right of the menu or below it. A number with presets has their menu right of its unit, or
 below its box where the box of "constant" is below its menu, see `_catalog_preset_menu!`. The boxes
@@ -703,9 +868,14 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     # An empty layout has no size
     isempty(params) && Label(w.form[1, 1], "no parameters"; label..., color = t.muted)
     grids = GridLayout[]
+    # the row of the form of the next part
+    part = 0
+    surfaces = findall(p -> p isa CatalogSurface, params)
+    isempty(surfaces) ||
+        append!(grids, _fill_catalog_surfaces!(gui, w, w.form[part += 1, 1], surfaces, strings))
     numbers = findall(p -> p isa CatalogParam, params)
     if !isempty(numbers)
-        grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
+        grid = _catalog_form_grid(w.form[part += 1, 1])
         push!(grids, grid)
         two = length(numbers) >= w.style.two_columns
         per_column = two ? cld(length(numbers), 2) : length(numbers)
@@ -740,7 +910,7 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     end
     glasses = findall(p -> p isa CatalogGlass, params)
     if !isempty(glasses)
-        grid = _catalog_form_grid(w.form[length(grids) + 1, 1])
+        grid = _catalog_form_grid(w.form[part += 1, 1])
         push!(grids, grid)
         names = [_glass_names(); _GLASS_CONSTANT]
         inline = w.style.constant_inline
@@ -842,8 +1012,9 @@ end
     _flush_catalog_form!(gui, w)
 
 Builds the form of the catalog widget `w` again with the texts of its inputs if it is `dirty`,
-i.e. after the menu of a glass changed to or from "constant": the box of the refractive index is
-added or removed. Called every frame, see `_connect_catalog_window!`.
+i.e. after the menu of a glass changed to or from "constant" or the one of a surface to or from
+"aspheric": the box of the refractive index or the boxes of the asphere are added or removed.
+Called every frame, see `_connect_catalog_window!`.
 """
 function _flush_catalog_form!(gui::LiveView, w::_CatalogWidget)
     w.dirty && _build_catalog_form!(gui, w, _catalog_strings(w))

@@ -38,12 +38,14 @@ const GUI = BeamletOpticsGUI
         labels = Dict(fx.bench => "Bench", fx.pair => "Pair", fx.dl => "Achromat", fx.dl.front => "Crown",
             fx.m3 => "Flat"))
     _plot(gui, leaf) = first(render_plots(GUI._child_handle(gui.controls.h, leaf)))
-    # A click in the 3D view on `leaf` (`nothing`: the background), at the right edge of the view,
-    # where no card is
+    # A click in the 3D view on `leaf` (`nothing`: the background), near the right edge of the view,
+    # where no card is, but left of the splitter of the sidebar
     function _click!(gui, leaf)
         picked[] = isnothing(leaf) ? nothing : _plot(gui, leaf)
         vp = gui.ax.scene.viewport[]
-        _move!(gui, (vp.origin[1] + vp.widths[1] - 3, vp.origin[2] + vp.widths[2] / 2))
+        # the edge of the view of the app layout is the splitter of its sidebar, see `_Splitter`
+        inset = gui isa GUI.AppView ? 6 : 3
+        _move!(gui, (vp.origin[1] + vp.widths[1] - inset, vp.origin[2] + vp.widths[2] / 2))
         @assert !GUI._over_browse_card(gui)
         _press!(gui)
         _release!(gui)

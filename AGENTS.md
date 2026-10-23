@@ -16,7 +16,7 @@ describe it as available in docs or the skill.
 
 | # | Principle | Gap in 0.3 |
 |---|---|---|
-| P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components and sources can be added to and removed from the scene in the GUI. One view holds several systems with several beams each. | `StaticSystem`s can not be changed; only components and sources from the catalog can be changed afterwards (page "Edit"); `export_script` writes the constructors of those and of the objects added with `code` (`add_component!`), since the constructor of an object from the user's script is not known otherwise; the glasses of the catalog (`catalog_glasses`) are data of the GUI until BeamletOptics has a glass catalog |
+| P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components, sources and systems can be added to and removed from the scene in the GUI. One view holds several systems with several beams each; an object belongs to any number of systems or to none and is drawn once, a source to at most one, and each system is traced on its own. | `StaticSystem`s can not be changed; only components and sources from the catalog can be changed afterwards (page "Edit"); `export_script` writes the constructors of those and of the objects added with `code` (`add_component!`), since the constructor of an object from the user's script is not known otherwise; the glasses of the catalog (`catalog_glasses`) are data of the GUI until BeamletOptics has a glass catalog |
 | P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`, `_has_view`), only `Detector` has a view; tree icons per type are internal |
 | P3 | Any layout can be assembled from the widgets and presented to the user. Layouts are composed in code from public widget blocks; `:compact` and `:app` are two such compositions. | the layout interface `AbstractLiveLayout` is internal, the widgets have no public constructors |
 | P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads (`card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`; a component package adds them in a package extension on BeamletOpticsGUI). | own views (the page "Results") and icons per type |
@@ -38,7 +38,10 @@ describe it as available in docs or the skill.
   entry on the BMO version pins. Never `BMO._x` names in `src/`, never
   `Base.get_extension(BeamletOptics, ...)`. If something is missing, add it to BMO first.
 - **Physics stays in BMO.** Solving is `solve_system!`; the GUI never computes rays, intersections
-  or detector fields itself.
+  or detector fields itself. What the objects stored during the last solve is discarded by
+  `initialize!`, never by the GUI (no `empty!` of a detector): once for all systems before their
+  sources are solved (`_compute`), since the sources superpose on a detector, and for a component
+  that is removed.
 - **A solve in the background owns the beams and detectors**, from its start until its result is
   shown or it is cancelled. Nothing else changes or reads them meanwhile: changes of objects go
   through `_change!`, which cancels the solve first, and code that reads the beams or the hits
@@ -55,13 +58,19 @@ describe it as available in docs or the skill.
 - `src/BeamletOpticsGUI.jl`: module, exports, include order (order matters).
 - `src/API.jl`: the docstrings of the exported functions, `CardWidget`, `CardRow`.
 - `src/LiveHandles.jl`: `LiveSystemHandle`, the GUI's system handle on BMO's render handle
-  protocol (combines systems, source markers, clip planes and extras), and small pose helpers.
+  protocol (combines systems, source markers, clip planes and extras), the pool (`_render_pool`,
+  `gui.pool`: the one handle that renders every object of the view once, also an object of several
+  systems; the `LiveSystemHandle` of a system holds the object handles of its members, which are the
+  pool's, see `_render_members!`), and small pose helpers.
 - `src/LiveView.jl`: `LiveView{L}` and its state structs (`_TraceState`, `_ClipState`,
   `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_DetectorStates`, `_LayoutWidgets`), `live_view`,
   and the docstring of `AbstractLiveLayout` (the layout interface).
 - `src/LiveScroll.jl`: scroll areas (`_ScrollArea`), e.g. the sidebars of the app layout: Makie has
   no scroll container and GLMakie does not clip, so the content lies behind the other parts of the
   window, which cover what is scrolled out, and gets the mouse only inside its region.
+- `src/LiveSplitter.jl`: splitters (`_Splitter`, `_Splitters`), e.g. of the sidebars and the dock of
+  the app layout: the mouse drags the edge of a `_LayoutPart` to resize it, a double click restores
+  the size of the start. An invisible strip around the edge instead of a column or row of the layout.
 - `src/LiveLayout.jl`: built-in tools (`_BUILTIN_TOOLS`), themes, the collapsible parts of the
   layouts (`_LayoutPart`, `_set_shown!`: the only way to collapse a part of the figure layout) and
   the spectator mode, which hides the UI (`_on_spectator!`, `_set_spectator_ui!`). `src/LiveCompact.jl`,
@@ -78,10 +87,13 @@ describe it as available in docs or the skill.
   of views per type of hits (spot diagram, PSF, intensity), their results and metrics, and the
   widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of the view per detector,
   its computation only while it is shown, and the `detectors` kwarg.
-- `src/LiveTrace.jl`, `src/LiveProgress.jl`: solving, progress window. `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
+- `src/LiveTrace.jl`, `src/LiveProgress.jl`: solving, progress window. `src/LiveSystemTrace.jl`:
+  tracing per system (`_system_auto`, `_set_system_auto!`, `_trace_system!`, `_trace_set`: systems
+  that share a `Detector` are traced together, the outdated beams of a system). `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,
   `src/LiveSelection.jl`, `src/LiveExport.jl`, `src/LiveExtras.jl`, `src/LiveInfo.jl`: features.
 - `src/LiveSelectionCard.jl`: the small menu of a click on a group ("Select", "More") and the selection card of groups (browsing their parts level by level).
-  `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts).
+  `src/LiveHighlight.jl`: the highlight while browsing (group see-through, boxes of the parts) and of the
+  members of a system that is inspected or whose members are picked (everything else see-through).
   `src/LiveBackground.jl`: the background card. `src/LiveOverlay.jl`: the overlay of the compact layout. `src/LiveHelp.jl`: the help of both layouts (pill, chips of mode and step, help card), built from the entries of `_help_sections` in `src/LiveInteraction.jl`.
 - `src/LiveInteraction.jl`: `kinematic_controls!`. `src/ViewCube.jl`: `view_cube!`.
 - `src/LiveScripting.jl`: driving a window from code: the verbs of BMO with the window as first
@@ -90,12 +102,21 @@ describe it as available in docs or the skill.
 - `src/LiveCustom.jl`, `src/LiveWidgets.jl`: `add_panel!`, `add_controls!`, `add_tool!`,
   `retrace!`, own widgets.
 - `src/LiveComponents.jl`: `add_component!`, `remove_component!` (components added to and removed
-  from a `System` at runtime), `src/LiveSources.jl`: their methods for sources (beams and beam
-  groups), which may also leave a view without a source. `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
+  from a `System` at runtime; an object is a member of any number of systems or of none,
+  `_add_member!`, `_remove_member!`, `_attach!`, `_detach!`, `_drop!`), `src/LiveSources.jl`: their
+  methods for sources (beams and beam groups), which belong to at most one system or to none
+  (`_set_source_system!`) and may also leave a view without a source. `src/LiveSystems.jl`:
+  `add_system!`, `remove_system!` and the tool "System". `src/LiveSystemCard.jl`: the card of a
+  system, the system widget (its name with the pencil that renames it, the chip of its tracing,
+  "+" and "−", the list of its members (`_MemberList`), "Remove system").
+  `src/LivePick.jl`: picking the members of a system with the mouse (`_set_member_pick!`,
+  `_pick_member!`), whose highlight is in `src/LiveHighlight.jl`. `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
   `component_catalog`) and its widgets (groups, tiles, form), `src/LiveCatalogWindow.jl`: its
   window over the 3D view (pin, minimize) and its dock in a place of the layout
   (`_catalog_dock_slot!`, e.g. the left sidebar of the app layout), `src/LiveCatalogEntries.jl`: the entries of the components of
-  BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`).
+  BeamletOptics, `src/LiveGlasses.jl`: the glasses (`catalog_glasses`, `CatalogGlass`),
+  `src/LiveSurfaces.jl`: the surfaces of its lenses (`CatalogSurface`, internal: spherical or
+  aspheric each), the lenses that are built from them and their code.
   `src/LivePlacement.jl`: placing a new component with the mouse, with snapping onto beams.
   `src/LiveSnap.jl`: snapping of dragged components onto beams (the beams of the live view for
   the snapping of the controls, see `_set_snap!` in `src/LiveInteraction.jl`).
@@ -117,11 +138,18 @@ describe it as available in docs or the skill.
 
 ## Running Julia and tests
 
-- Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`). BeamletOptics comes from
-  the General registry. To work against a local BMO checkout, add `BeamletOptics = {path = "..."}`
-  under `[sources]` in `Project.toml`, `test/Project.toml` and `docs/Project.toml` locally and do
-  not commit that change. A feature that needs unreleased BMO code waits for the BMO release and
-  raises the compat entry.
+- Julia ≥ 1.12. The repository is a Pkg workspace (`test`, `docs`).
+- `main` develops against BeamletOptics `master`: `[sources]` in `Project.toml`,
+  `test/Project.toml` and `docs/Project.toml` point to its repository (each of the three: the
+  workspace does not pass the entry of the root on), and the compat entry names the version of
+  BMO `master`. CI on `main` and on pull requests tests against it, so a breaking change of BMO is
+  adapted on `main` as soon as it lands, and a feature can use BMO code that is not released yet.
+  `Pkg.update()` in `--project=test` fetches the latest `master`. When BMO `master` raises its
+  version, the compat entries of the three files follow.
+- To work against a local BMO checkout: `Pkg.develop("BeamletOptics")` (uses
+  `~/.julia/dev/BeamletOptics`) or `Pkg.develop(path = "...")` in `--project=test`. Pkg replaces
+  the entry in `test/Project.toml` with the path; do not commit that change. `--project=docs`
+  shares the manifest and needs the same `develop` before building the docs.
 - GLMakie is the backend of the tests; on headless Linux run under `xvfb-run -a`.
 - Single test module: `julia --project=test -e 'using Pkg; Pkg.instantiate()'` once, then
   `julia --project=test test/<file>.jl`.
@@ -129,6 +157,17 @@ describe it as available in docs or the skill.
 - New test files are `module TestXyz ... end` and are included in `test/runtests.jl`.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
+
+## Releases
+
+The users of a registered version get BeamletOptics from the registry: Pkg reads `[sources]` only
+in the active project, never in a dependency. The entries stay in the registered version; the
+docs of a tag remove them and use the registered BMO. BMO and the GUI are released together: the
+latest registered GUI works with the latest registered BMO.
+
+- BMO is released first, then the GUI with its compat entry on that version. Otherwise the check
+  "installable" of AutoMerge fails.
+- The release notes of a breaking version have a section "Breaking changes".
 
 ## Precompilation
 

@@ -260,12 +260,12 @@ function _views_idle!(gui::LiveView)
 end
 
 """
-    _set_view!(gui, pd; kind, colorscale, profiles, window)
+    _set_view!(gui, pd; kind, colorscale, colorbar, profiles, window)
 
 Sets options of the view of the detector `pd` from its widgets, only those given: the `kind`
 (`:auto` or the name of a kind, see `_view_kinds`) and the `window` of a field view (the visible
 rectangle `(x_min, x_max, z_min, z_max)` [m] after zoom or pan, `nothing` for the automatic one)
-need a new result, the `colorscale` and the `profiles` only show the result again. A new window is
+need a new result, the `colorscale`, the `colorbar` and the `profiles` only show the result again. A new window is
 computed once the mouse rests for `idle_delay`, see `_views_idle!`, not per step of the wheel.
 """
 function _set_view!(gui::LiveView, pd; changes...)
@@ -294,7 +294,7 @@ The `detectors` kwarg of `live_view`
 const _DETECTOR_KINDS = (:auto, :spot, :psf, :intensity)
 
 # Options of a view in the kwargs of a detector, which are not passed to `intensity`
-const _VIEW_OPTION_KEYS = (:n, :colorscale, :colorrange, :profiles, :expanded)
+const _VIEW_OPTION_KEYS = (:n, :colorscale, :colorrange, :colorbar, :profiles, :expanded)
 
 const _DETECTOR_SPEC_HINT = "use `pd`, `pd => kind` or `pd => (kind, kwargs)`"
 
@@ -311,8 +311,8 @@ _detector_spec(pd, x) = throw(ArgumentError("invalid detector $(pd => x), $_DETE
 The detectors of the `detectors` kwarg of [`live_view`](@ref) whose cards start pinned, each as
 `(; pd, opts, expanded)` with the options of its view (a `_ViewOptions`) and whether the view
 starts expanded: none for `:auto`, otherwise an entry per `pd`, `pd => kind` or
-`pd => (kind, kwargs)`. The `kwargs` hold the options `n`, `colorscale`, `colorrange`, `profiles`
-and `expanded`; all others are passed to `intensity`.
+`pd => (kind, kwargs)`. The `kwargs` hold the options `n`, `colorscale`, `colorrange`, `colorbar`,
+`profiles` and `expanded`; all others are passed to `intensity`.
 """
 function _detector_specs(detectors)
     if detectors isa Symbol
@@ -348,7 +348,8 @@ function _view_spec(pd, kind::Symbol, kwargs::NamedTuple)
         throw(ArgumentError("colorscale of a detector view must be :linear or :log, got $(repr(colorscale))"))
     rest = NamedTuple(k => v for (k, v) in pairs(kwargs) if !(k in _VIEW_OPTION_KEYS))
     opts = _ViewOptions(; kind, n = Int(get(kwargs, :n, 100)), kwargs = rest, colorscale,
-        colorrange = get(kwargs, :colorrange, nothing), profiles = Bool(get(kwargs, :profiles, false)))
+        colorrange = get(kwargs, :colorrange, nothing), colorbar = Bool(get(kwargs, :colorbar, true)),
+        profiles = Bool(get(kwargs, :profiles, false)))
     return (; pd, opts, expanded = Bool(get(kwargs, :expanded, true)))
 end
 

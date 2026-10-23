@@ -134,19 +134,18 @@ _points(h) = only(render_plots(h))[1][]
         gui = _live_view(sys1 => b1, sys2 => b2; throttle = false, mode = :rotate, fine_angle = 1e-3)
         @test length(_detectors(gui)) == 1 # deduplicated
         @test sprint(show, gui) == "LiveView(2 systems, 2 sources, 1 detectors)"
-        # both systems and the markers of both sources are handled by one controller
-        @test length(render_children(gui.controls.h)) == 5
+        # both systems and the markers of both sources are handled by one controller; the detector
+        # of both systems is rendered once
+        @test length(render_children(gui.controls.h)) == 4
         @test length(BMO.hits(pd)) == 2
         gui.controls.selected[] = m
         _key!(gui, Keyboard.left)
         _key!(gui, Keyboard.left)
         n_gui = length(BMO.hits(pd))
         # reference: fresh solves of both pairs
-        empty!(pd)
-        solve_system!(sys1, b1)
+        solve_system!(sys1, b1; initialize = true)
         n1 = length(BMO.hits(pd))
-        empty!(pd)
-        solve_system!(sys2, b2)
+        solve_system!(sys2, b2; initialize = true)
         n2 = length(BMO.hits(pd))
         @test n1 == 1 && n2 == 1
         @test n_gui == n1 + n2
@@ -668,8 +667,7 @@ _points(h) = only(render_plots(h))[1][]
         # beam points and spot of a fresh solve of the system
         function _fresh(sys, pd)
             b = Beam([0.0, 0, 0], [0.0, 1, 0])
-            empty!(pd)
-            solve_system!(sys, b)
+            solve_system!(sys, b; initialize = true)
             pts = Point3f[p for s in GUI._beam_segments!(GUI._BeamSegment[], b; flen = 1.0)
                           for p in (Point3f(s.a), Point3f(s.b))]
             return pts, length(BMO.hits(pd)), _spot(pd)

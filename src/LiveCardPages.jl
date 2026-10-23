@@ -22,6 +22,17 @@ _has_page(_, ::Val{:color}) = false
 _has_page(_, ::Val{:edit}) = false
 _has_page(@nospecialize(obj), ::Val{:results}) = _has_view(obj)
 _has_page(@nospecialize(obj), ::Val{:properties}) = _has_properties(obj)
+# A system has one page, the system widget, and hence no page bar, see `_system_rows`
+_has_page(::BMO.AbstractSystem, ::Val{:properties}) = false
+
+"""
+    _has_step(obj) -> Bool
+
+Whether the card of `obj` shows the keyboard step and the mode of the controls on its page "Pose"
+while it stands for the selection: every object, but no system, which is not moved.
+"""
+_has_step(_) = true
+_has_step(::BMO.AbstractSystem) = false
 
 """
     _card_pages(obj) -> Tuple{Vararg{Symbol}}
