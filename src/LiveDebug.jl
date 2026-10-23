@@ -253,6 +253,8 @@ function _set_debug!(gui::LiveView, shown::Bool)
         _debug_event!(gui, "debug mode on")
     end
     _debug_show!(gui)
+    # the page "Debug" of the cards comes or goes
+    shown == was || _debug_pages_changed!(gui)
     return nothing
 end
 
