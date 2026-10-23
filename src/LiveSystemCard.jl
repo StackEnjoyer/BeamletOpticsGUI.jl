@@ -423,13 +423,8 @@ function card_show!(l::_MemberList, v::_MemberValue)
     return nothing
 end
 
-# The list on a floating card, in its theme and of a fixed width; the tooltips of its buttons are
-# relative to the translation of the card, see `_fix_tooltip!`
+# The list on a floating card, in its theme and of a fixed width
 _card_style(t::NamedTuple, ::Type{_MemberList}) = (; theme = t, width = _MEMBER_LIST_WIDTH)
-function _fix_caret!(::_ComponentCard, l::_MemberList)
-    foreach(row -> isnothing(row.out) || _fix_tooltip!(row.out), l.rows)
-    return nothing
-end
 # The list on a docked card is as wide as the sidebar
 _card_style(c::_DockedCard, ::Type{_MemberList}) = (; theme = c.theme, tooltip_placement = :left)
 
