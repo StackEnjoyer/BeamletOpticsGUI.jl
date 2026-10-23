@@ -8,24 +8,6 @@ using Test
 const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
-# TODO(integration): remove. `_label(gui, ::_MultiSelection)` and `_allowed_axes(ctrl,
-# ::_MultiSelection, kind)` of W0 are ambiguous with `_label(::LiveView, obj)` and
-# `_allowed_axes(::KinematicController, obj, kind)`; until `src/LiveMultiSelect.jl` types them,
-# the unambiguous methods are defined here
-_ambiguous(f, T) = try
-    which(f, T)
-    false
-catch
-    true
-end
-_ambiguous(GUI._label, Tuple{GUI.LiveView, GUI._MultiSelection}) &&
-    @eval GUI _label(gui::LiveView, s::_MultiSelection) = "$(length(s.objects)) objects"
-_ambiguous(GUI._allowed_axes, Tuple{GUI.KinematicController, GUI._MultiSelection, Symbol}) &&
-    @eval GUI function _allowed_axes(ctrl::KinematicController, s::_MultiSelection, kind::Symbol)
-        sets = [_allowed_axes(ctrl, obj, kind) for obj in s.objects]
-        return Tuple(a for a in _GIZMO_AXES if all(set -> a in set, sets))
-    end
-
 @testset "Removing and solving a selection of several objects" begin
 
     # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
