@@ -306,6 +306,37 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
             "the undo did not restore the selection")
     end
+    # Groups made in the window: Ctrl+G groups the selection of several, which is then dragged like a
+    # group, Ctrl+Shift+G ungroups it; the undo history takes the ungrouping back and does it again
+    is_group() = GUI._is_window_group(gui, gui.controls.selected[])
+    step("ctrl+g (group lens and mirror)") do
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group(), "Ctrl+G did not make a group")
+    end
+    step("drag the group made in the window") do
+        a = _px(gui, _pos(fx.lens))
+        _drag!(gui, a, a .+ (20, 5))
+        settle!()
+        _check(is_group(), "the drag did not keep the group selected")
+    end
+    step("ctrl+shift+g (ungroup), undo, redo") do
+        _key!(gui, Keyboard.g, Keyboard.left_control, Keyboard.left_shift)
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(is_group(), "the undo did not group again")
+        GUI._redo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
+            "the redo did not ungroup")
+    end
     step(deselect!, "click background (deselect) of the selection")
 
     step("camera: rotate (left drag)") do
