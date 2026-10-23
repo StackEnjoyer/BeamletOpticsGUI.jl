@@ -644,6 +644,20 @@ hidden) and remove (all removable objects as one undo step; the others stay sele
 line says why). From code, `select!(gui, [lens, mirror])` selects several; `gui.controls.selected[]`
 then holds an internal value for the selection, not a component.
 
+`Ctrl+G` (`Cmd+G` on macOS) makes the selection of several a group (an `ObjectGroup` of
+BeamletOptics): the systems of the objects hold the group instead of them, and the group is
+selected and then moved, rotated, hidden and browsed (its parts) like a group of the script. Its
+pivot is the mean of the positions of the members, with the axes of the world. It is one undo step.
+Only two or more movable top-level components with the same systems (or none) can be grouped: no
+sources, clip planes, static objects, parts of groups or objects of a `StaticSystem`; otherwise the
+status line says why. `Ctrl+Shift+G` ungroups a group made in the window (not a group of the
+script): its members are top-level again in the same systems at their current poses and are
+selected as a selection of several, again as one undo step. The card of a selection of several has
+the action "group", the card of a group made in the window the action "ungroup". Removing such a
+group (`Delete`) and undoing it keeps it a group of the window, and linked views
+([`open_system`](@ref)) follow grouping and ungrouping. [`export_script`](@ref) and
+[`export_changes`](@ref) write the groups, see [Adding and removing components](@ref components_page).
+
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and
 actions, and below it the pinned cards, one below the other, each with its own head (icon, label,

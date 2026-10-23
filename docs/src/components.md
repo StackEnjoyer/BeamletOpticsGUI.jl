@@ -219,6 +219,12 @@ gui = live_view(System())
 code = export_script(gui)
 ```
 
+A group made in the window (`Ctrl+G`, see [`live_view`](@ref)) is written
+as its members, then `g = ObjectGroup([a, b])`, `set_pivot3d!(g, [...])` and the change of the pose
+of the group, and `g` is listed in the `System` instead of its members. [`export_changes`](@ref)
+writes the grouping of objects of the script: `delete!` of the members from the system, the group
+and `push!` of the group.
+
 An object that is built in code, e.g. by a tool or an agent, is exported with its constructor as
 well if it is added with the keyword `code` of [`add_component!`](@ref), its constructor call as
 Julia code. Add it as `code` constructs it and move it afterwards, since the script writes the call

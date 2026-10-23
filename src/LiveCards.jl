@@ -540,6 +540,10 @@ needs in the inspector of the app layout.
 """
 _card_rows(@nospecialize(obj)) = card_rows(obj)
 _card_rows(@nospecialize(obj::BMO.ObjectOrGroup)) = (card_rows(obj)..., _component_row())
+# a group: "ungroup" in the last row, not in the head, which it would take the room of the name of;
+# shown only for a group made in the window, see `_ungroup_button`
+_card_rows(@nospecialize(g::BMO.AbstractObjectGroup)) =
+    (card_rows(g)..., CardRow(_component_row().cells..., _ungroup_button()))
 _card_rows(@nospecialize(obj::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})) = (card_rows(obj)..., _source_row())
 
 """

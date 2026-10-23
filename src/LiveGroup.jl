@@ -20,12 +20,16 @@ end
 """Returns whether `g` is a group made in the window of the `gui`, see `_group!`."""
 _is_window_group(gui, @nospecialize(g)) = haskey(gui.components.groups, g)
 
+# Whether `obj` can be a member of an `ObjectGroup`: objects and groups, no sources or clip planes
+_groupable(@nospecialize(obj::BMO.ObjectOrGroup)) = true
+_groupable(_) = false
+
 # Why the object `obj` of a selection of several can not be a member of a group, see `_group_reason`
+_member_reason(gui, ::LiveClipPlane) = "a clip plane can not be grouped"
 function _member_reason(gui, @nospecialize(obj))
-    obj isa LiveClipPlane && return "a clip plane can not be grouped"
     name = _label(gui, obj)
     _is_source(obj) && return "$name is a source, sources can not be grouped"
-    obj isa BMO.ObjectOrGroup || return "$name is not a component, it can not be grouped"
+    _groupable(obj) || return "$name is not a component, it can not be grouped"
     BMO.is_static(obj) && return "$name is static, it can not be grouped"
     if !_shown_top(gui, obj)
         top = _component_top(gui, obj)

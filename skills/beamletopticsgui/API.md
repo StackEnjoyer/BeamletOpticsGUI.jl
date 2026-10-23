@@ -97,7 +97,9 @@ a change traces the affected systems that have auto tracing, the other affected 
 (beams dimmed); the trace button and `t` trace all systems; systems that share a `Detector` are
 always traced together. `export_changes`/`export_script` write the memberships (`push!`/`delete!`
 per system, `systemN = System()`, and `add_component!(gui, x; system = :none)` for what has no
-system).
+system). A group made in the window with `Ctrl+G` is exported as `g = ObjectGroup([a, b])`,
+`set_pivot3d!(g, [...])` and its pose change, listed in the `System`; `export_changes` writes the
+grouping of objects of the script (`delete!` of the members, the group, `push!` of the group).
 
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and

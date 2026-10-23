@@ -76,6 +76,16 @@ When this Skill is active:
   objects" ("Selection"), one row per object (click: that object alone), hide and remove, no pages and
   no pin. `Ctrl+C` copies nothing. `gui.controls.selected[]` then holds an internal value, not a
   component.
+- `Ctrl+G` (`Cmd+G`) makes a selection of several an `ObjectGroup`: the systems hold the group
+  instead of the objects, it is selected, moved, rotated, hidden and browsed like a group of the
+  script (pivot: mean of the member positions, world axes), one undo step. Only two or more movable
+  top-level components with the same systems (or none) qualify (no sources, clip planes, static
+  objects, parts of groups, objects of a `StaticSystem`); else the status line says why.
+  `Ctrl+Shift+G` ungroups a group made in the window (not one of the script): the members are
+  top-level again at their poses and selected, one undo step. The cards have the actions "group"
+  and "ungroup". `export_script` writes the members, `g = ObjectGroup([a, b])`, `set_pivot3d!` and
+  the pose of the group; `export_changes` writes the grouping of objects of the script (`delete!`
+  of the members, the group, `push!` of the group).
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
   `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
   cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"

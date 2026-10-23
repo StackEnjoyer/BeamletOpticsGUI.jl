@@ -100,8 +100,9 @@ const GUI = BeamletOpticsGUI
         _ctrl_shift!(gui, Keyboard.g)
         @test gui.status.text[] == "select a group made in the window to ungroup it"
         @test gui.controls.selected[] === g && length(gui.controls.undo_stack) == n_history
-        # its card has the button, which is hidden
-        @test [w.name for w in card_actions(g)] == [:hide, :ungroup]
+        # its card has the button in its last row, which is hidden; the head keeps its room
+        @test [w.name for w in card_actions(g)] == [:hide]
+        @test :ungroup in [c.name for c in last(GUI._card_rows(g)).cells if c isa CardWidget]
         @test !GUI._ungroup_button().value(gui, g).shown
     end
 
