@@ -90,9 +90,10 @@ function _snap_lines(gui::LiveView, @nospecialize(obj))
     return lines
 end
 
-# Only the components of the systems snap, not the sources and the clip planes
-_snaps(::BMO.ObjectOrGroup) = true
-_snaps(_) = false
+# Only the components of the systems snap onto beams, not the sources, the clip planes and the
+# selections of several objects (`_snaps` tells whether a drag snaps at all, also onto the table)
+_beam_snaps(::BMO.ObjectOrGroup) = true
+_beam_snaps(_) = false
 
 """
     _sight_line(scene, point) -> (origin, direction)
@@ -163,7 +164,7 @@ function _connect_snap!(gui::LiveView)
     cache = Ref{Any}(nothing)
     ctrl.snap_beam = function (obj, point)
         @nospecialize obj
-        _snaps(obj) || return nothing
+        _beam_snaps(obj) || return nothing
         if isnothing(cache[]) || cache[][1] != ctrl.drag_count || cache[][2] !== obj
             # The beams are being traced by a solve in the background
             _running(gui) && return nothing
