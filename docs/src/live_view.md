@@ -33,6 +33,12 @@ orthographic view, there `W`/`S` zoom like `U`/`O`:
 gui = live_view(system, beam; orthographic = true)
 ```
 
+While the camera is rotated, panned or zoomed (also by `g`, the view cube, home and the saved
+views), a dot with a small camera symbol beside it marks the point the camera turns about (its
+`lookat` point). It fades shortly after the camera stops. Arrows about the dot show the motion: two
+arcs while rotating, four arrows while panning, arrows pointing outwards while zooming in and
+inwards while zooming out; `g`, the view cube, home and the saved views show dot and symbol alone.
+
 With `layout = :compact` (default), the 3D view fills the window; the panels of
 [`add_panel!`](@ref), if there are any, form a column on its right. Everything else appears on
 demand over the 3D view:
@@ -43,7 +49,7 @@ demand over the 3D view:
   The chips right of the pill show the mode and the keyboard step; a click on the mode switches it
   (`m`), "+" and "−" change the step. In the spectator mode (`v`), a chip names it and its button
   leaves it. The spectator mode shows only the 3D view with this help: the tools, the status,
-  the view cube, the cards (and with them the detector views), the markers of the sources and the panels of [`add_panel!`](@ref) are hidden, in the app layout also the toolbar,
+  the view cube, the cards (and with them the detector views), the markers of the sources, the marker of the camera pivot and the panels of [`add_panel!`](@ref) are hidden, in the app layout also the toolbar,
   the sidebars, the dock and the status bar, such that the 3D view fills the window. Only the
   progress window of a running trace stays, with its "Cancel". Leaving the mode shows everything
   as it was, e.g. a sidebar that was collapsed stays collapsed, and selects the object again that

@@ -265,13 +265,29 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         a = _free_px(gui)
         _drag!(gui, a, a .+ (40, 20))
         frame!()
+        _check(!isnothing(gui.camera.pivot) && gui.camera.pivot.visible[], "the drag did not show the pivot")
+        _check(gui.camera.pivot_gesture == :rotate, "the left drag is not the gesture :rotate")
+    end
+    step("camera: pivot fades") do
+        for _ in 1:600
+            gui.camera.pivot.visible[] || break
+            _tick!(gui)
+        end
+        frame!()
+        _check(!gui.camera.pivot.visible[], "the pivot did not fade")
     end
     step("camera: pan (right drag)") do
         a = _free_px(gui)
         _drag!(gui, a, a .+ (40, 20); button = Mouse.right)
         frame!()
+        _check(gui.camera.pivot_gesture == :pan, "the right drag is not the gesture :pan")
     end
-    step(() -> (_move!(gui, _free_px(gui)); _events(gui).scroll[] = (0.0, 1.0); frame!()), "camera: zoom (scroll)")
+    step("camera: zoom (scroll)") do
+        _move!(gui, _free_px(gui))
+        _events(gui).scroll[] = (0.0, 1.0)
+        frame!()
+        _check(gui.camera.pivot_gesture in (:zoom_in, :zoom_out), "the scroll is not a zoom gesture")
+    end
     step(home!, "camera: home after the drags")
 
     cube = gui.widgets.view_cube
