@@ -212,6 +212,31 @@ const GUI = BeamletOpticsGUI
         close(ctrl)
     end
 
+    @testset "the axes stay orthogonal after a tilt of the selection" begin
+        f = _fixture(; fine_angle = 0.3)
+        ctrl, scene = f.ctrl, f.scene
+        s = _select3!(f)
+        _key!(scene, Keyboard.m)
+        # ↑ about the red axis, page up about the green one: the selection is tilted
+        _key!(scene, Keyboard.up)
+        _key!(scene, Keyboard.page_up)
+        @test abs(BMO.orientation(s)[3, 2]) > 0.1
+        y, x, v = GUI._control_axes(ctrl, s)
+        @test v == ctrl.rotation_axis
+        @test abs(dot(y, v)) < 1e-12 && abs(dot(x, v)) < 1e-12 && abs(dot(x, y)) < 1e-12
+        @test norm(y) ≈ 1 && norm(x) ≈ 1 && cross(x, y) ≈ v
+        # ← about the blue axis turns the arrows with the selection
+        _key!(scene, Keyboard.left)
+        y2, _, _ = GUI._control_axes(ctrl, s)
+        @test y2 ≈ BMO.rotate3d(v, 0.3) * y atol = 1e-12
+        # the move arrows stay orthogonal, e.g. ↑ moves within the plane perpendicular to v
+        _key!(scene, Keyboard.m)
+        P0 = Vector{Float64}(position(s))
+        _key!(scene, Keyboard.up)
+        @test abs(dot(Vector{Float64}(position(s)) - P0, v)) < 1e-12
+        close(ctrl)
+    end
+
     @testset "the gizmo arrows and rings move all" begin
         function _px(scene, p)
             q = Makie.project(scene, :data, :pixel, Point3(p))
