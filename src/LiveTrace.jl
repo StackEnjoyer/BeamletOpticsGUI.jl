@@ -153,8 +153,9 @@ function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = 
     _update_inspector!(gui)
     # The linked views show the beams, which this one traced, see `_follow!`
     _sync_links!(gui, obj; stale = false, preview = previewed, traced)
-    # The layers of the debug mode show the rendered beams
-    _debug_solved!(gui)
+    # The layers of the debug mode show the rendered beams; of outdated beams once they are up to
+    # date, see `_finish!`
+    gui.trace.stale || _debug_solved!(gui)
     return nothing
 end
 
@@ -353,8 +354,8 @@ function _finish!(gui::LiveView, job::_SolveJob)
         was_stale = gui.trace.stale
         # The systems that were traced are up to date, see `_trace_set`
         _set_fresh!(gui, job.systems)
-        # The cards that say which systems are outdated were updated before, see `_apply!`, and
-        # the layers of the debug mode left out their beams
+        # The cards that say which systems are outdated were updated before, see `_apply!`, the
+        # layers of the debug mode not
         if was_stale
             _update_inspector!(gui)
             _update_cards!(gui)
