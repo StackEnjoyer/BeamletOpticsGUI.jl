@@ -742,6 +742,26 @@ function _control_axes(ctrl::KinematicController, @nospecialize(obj))
     return (y, x, v)
 end
 
+"""
+    _control_axes(ctrl, s::_MultiSelection) -> (y, x, v)
+
+The axes of the controls of a selection of several objects, which has no orientation of its own
+that is seen: its local y-axis projected onto the plane perpendicular to the rotation axis `v`, the
+axis perpendicular to both, and `v`, an orthonormal frame. A rotation about `v` turns the arrows
+with the selection, a tilt about one of the other axes does not skew them; the local x-axis
+replaces the y-axis if that is parallel to `v`.
+"""
+function _control_axes(ctrl::KinematicController, s::_MultiSelection)
+    R, v = _pose(s)[2], ctrl.rotation_axis
+    y = Vector{Float64}(R[:, 2]) .- dot(R[:, 2], v) .* v
+    if norm(y) < 1e-6
+        x = Vector{Float64}(R[:, 1]) .- dot(R[:, 1], v) .* v
+        y = cross(v, x)
+    end
+    y = normalize(y)
+    return (y, normalize(cross(y, v)), v)
+end
+
 """Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:v`) of `obj`."""
 function _axis_vectors(ctrl::KinematicController, @nospecialize(obj), syms)
     y, x, v = _control_axes(ctrl, obj)
