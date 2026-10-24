@@ -758,7 +758,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         limits = Makie.data_limits(ax.scene)
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
         @test length(ax.scene.plots) == n0 + 4 # selection box and gizmo
-        @test length(ax.blockscene.plots) == nb + 1 # controls overlay
+        @test length(ax.blockscene.plots) == nb + 2 # controls overlay and selection rectangle
         # the hidden gizmo and the overlay must not change the limits of the scene
         @test Makie.data_limits(ax.scene) ≈ limits
 

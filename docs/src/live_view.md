@@ -630,7 +630,11 @@ on a selected group selects the part). See the section "Selection card" of [`liv
 selection, or removes it if it is selected; in the object tree of the app layout, `Ctrl`/`Cmd`+click
 on a row does the same, and every row of a selected object is highlighted. A plain click on an object
 of the selection selects that object alone, `Ctrl`+click on the background keeps the selection and
-`Esc` clears it. With a `select_modifier` set, see [`kinematic_controls!`](@ref), a toggle needs that
+`Esc` clears it. A `Ctrl`+drag (`Cmd` on macOS) that starts on the background or on an object that is
+not selected draws a selection rectangle, without moving the camera; on release every visible, movable
+top-level object (a group as a whole) whose center lies inside it is added to the selection (objects
+already selected stay; hidden objects and clip planes are not selected). A `Ctrl`+drag that starts on
+an object of the selection still moves the selection. With a `select_modifier` set, see [`kinematic_controls!`](@ref), a toggle needs that
 modifier and `Ctrl` held. A selection of several is moved (a drag on any of its objects, the arrows,
 the arrow and page keys) and rotated (rotate mode, rings, keys) as one, about the mean of the
 positions of its objects, with the axes of the world as its gizmo axes. It does not snap onto beams

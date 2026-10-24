@@ -342,6 +342,25 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
             "the undo did not ungroup")
     end
+    # Ctrl+drag beside the selection draws a rectangle, which adds the objects whose center it holds
+    step("ctrl+drag a rectangle around lens and mirror") do
+        deselect!()
+        a, b = _px(gui, _pos(fx.lens)), _px(gui, _pos(fx.mirror))
+        lo, hi = min.(a, b) .- 25, max.(a, b) .+ 25
+        _ctrl!(gui, Keyboard.press)
+        _move!(gui, lo)
+        _press!(gui)
+        _move!(gui, lo .+ 10)
+        _check(gui.controls.rect_visible[], "the Ctrl+drag did not draw a rectangle")
+        _move!(gui, hi)
+        frame!()
+        _release!(gui)
+        _ctrl!(gui, Keyboard.release)
+        settle!()
+        sel = gui.controls.selected[]
+        _check(GUI._in_selection(sel, fx.lens) && GUI._in_selection(sel, fx.mirror) &&
+               !gui.controls.rect_visible[], "the rectangle did not select lens and mirror")
+    end
     step(deselect!, "click background (deselect) of the selection")
 
     step("camera: rotate (left drag)") do

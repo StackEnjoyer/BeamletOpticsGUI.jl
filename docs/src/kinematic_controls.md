@@ -40,6 +40,7 @@ mode, which is switched with `m`:
 | `Ctrl`/`Cmd` + `Z`           | Undo the last change                                            |
 | `Ctrl`/`Cmd` + `Y`           | Redo, also `Ctrl`/`Cmd` + `Shift` + `Z`                         |
 | `Ctrl`/`Cmd` + left-click    | Add a component to the selection, or remove it from it          |
+| `Ctrl`/`Cmd` + left-drag     | Draw a rectangle that adds the objects inside it to the selection (a drag on a selected object moves the selection) |
 | `Ctrl`/`Cmd` + `G`           | Group the selection of several (in `live_view`)                 |
 | `Ctrl`/`Cmd` + `Shift` + `G` | Ungroup a group made in the window (in `live_view`)             |
 | `Esc`                        | Select the enclosing group, or deselect at the top level        |

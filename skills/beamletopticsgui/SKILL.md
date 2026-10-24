@@ -69,7 +69,9 @@ When this Skill is active:
   source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
   the object again and call `add_component!`.
 - Several objects can be selected: `Ctrl`+click (`Cmd` on macOS) in the 3D view or on a row of the
-  tree (app layout) toggles an object, `select!(gui, [a, b])` from code, `Esc` clears. They are moved
+  tree (app layout) toggles an object, `Ctrl`+drag from the background or an unselected object draws a rectangle that adds
+  the visible, movable top-level objects whose center is inside (a drag on a selected object moves the
+  selection), `select!(gui, [a, b])` from code, `Esc` clears. They are moved
   and rotated as one about the mean of their positions with the world axes as gizmo axes, without
   snapping, only on the axes that all allow; one drag, run of keys or `Backspace` is one undo step,
   and `on_change` is called once per object. Their card (compact) or the inspector (app) shows "N

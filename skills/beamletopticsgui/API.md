@@ -151,7 +151,9 @@ an arrow of the gizmo moves the component along that arrow only, a drag elsewher
 in the plane of the view. `Ctrl`+click (`Cmd` on macOS) on a component adds its top-level object to
 the selection or removes it (no camera reset on `Ctrl`+click in the controls; with a `select_modifier`
 set, a toggle needs that modifier and `Ctrl`); a plain click on an object of the selection selects it
-alone, `Ctrl`+click on the background keeps the selection.
+alone, `Ctrl`+click on the background keeps the selection. `Ctrl`+drag starting on the background or an
+unselected object draws a rectangle and adds the visible, movable top-level objects whose center is
+inside; starting on a selected object it moves the selection.
 
 ## Scripting a window
 
