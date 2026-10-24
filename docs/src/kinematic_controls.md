@@ -39,6 +39,7 @@ mode, which is switched with `m`:
 | `Backspace`                  | Reset the selected component to its initial pose                |
 | `Ctrl`/`Cmd` + `Z`           | Undo the last change                                            |
 | `Ctrl`/`Cmd` + `Y`           | Redo, also `Ctrl`/`Cmd` + `Shift` + `Z`                         |
+| `Ctrl`/`Cmd` + left-click    | Add a component to the selection, or remove it from it          |
 | `Esc`                        | Select the enclosing group, or deselect at the top level        |
 | Left-click on empty space    | Deselect                                                        |
 | `v`                          | Switch the spectator mode on or off                             |

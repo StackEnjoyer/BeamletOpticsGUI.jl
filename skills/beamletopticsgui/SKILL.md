@@ -68,6 +68,14 @@ When this Skill is active:
   `Ctrl+Z` and redone with `Ctrl+Y`. `Ctrl+C` and `Ctrl+V` copy and paste the selected component or
   source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
   the object again and call `add_component!`.
+- Several objects can be selected: `Ctrl`+click (`Cmd` on macOS) in the 3D view or on a row of the
+  tree (app layout) toggles an object, `select!(gui, [a, b])` from code, `Esc` clears. They are moved
+  and rotated as one about the mean of their positions with the world axes as gizmo axes, without
+  snapping, only on the axes that all allow; one drag, run of keys or `Backspace` is one undo step,
+  and `on_change` is called once per object. Their card (compact) or the inspector (app) shows "N
+  objects" ("Selection"), one row per object (click: that object alone), hide and remove, no pages and
+  no pin. `Ctrl+C` copies nothing. `gui.controls.selected[]` then holds an internal value, not a
+  component.
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
   `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
   cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"

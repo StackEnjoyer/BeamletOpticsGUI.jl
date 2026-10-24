@@ -13,17 +13,23 @@ function _system_handle(gui::LiveView, sys::BMO.AbstractSystem)
     return isnothing(i) ? nothing : gui.system_handles[i]
 end
 
+# The object that stands for the selection `obj`, e.g. for the system that gets a new component:
+# `obj` itself, the first object of a selection of several (see `_MultiSelection`)
+_first_object(@nospecialize(obj)) = obj
+_first_object(s::_MultiSelection) = first(s.objects)
+
 """
     _target_system(gui) -> Union{System, Nothing}
 
 The system that gets a component added to the `gui` without a `system`, e.g. from the catalog: the
 inspected `System`, else the `System` of the selected or inspected object (of a source: the first
-one it is paired with), else the first `System` of the view; `nothing` without a `System`.
+one it is paired with; of a selection of several: of its first object), else the first `System` of
+the view; `nothing` without a `System`.
 """
 function _target_system(gui::LiveView)
     systems = _mutable_systems(gui)
     isempty(systems) && return nothing
-    obj = _shown_object(gui)
+    obj = _first_object(_shown_object(gui))
     isnothing(obj) && return first(systems)
     top = _top_level(gui.controls.h, obj)
     for sys in systems
@@ -478,14 +484,17 @@ function _release!(gui::LiveView, top, parts; keep_name::Bool = false)
     ctrl = gui.controls
     _end_browse!(gui)
     gui.objects.inspected in parts && _end_inspection!(gui)
-    if ctrl.press_leaf in parts || ctrl.selected[] in parts
+    # A selection of several keeps its other objects, see `_without`
+    sel = ctrl.selected[]
+    kept = sel in parts ? nothing : _without(sel, parts)
+    if ctrl.press_leaf in parts || kept !== sel
         ctrl.dragging = false
         ctrl.drag_start = nothing
         ctrl.press_kind = :none
         ctrl.press_leaf = nothing
     end
-    if ctrl.selected[] in parts
-        ctrl.selected[] = nothing
+    if kept !== sel
+        ctrl.selected[] = kept
         _update_selection_box!(ctrl)
     end
     foreach(p -> _unpin!(gui, p), parts)
@@ -517,6 +526,22 @@ function remove_component!(gui::LiveView, @nospecialize(obj); system = nothing)
         _remove_member!(gui, obj, system)
         return obj
     end
+    snap, traced = _take_out!(gui, obj)
+    # An object without a system was not traced
+    traced && _on_change!(gui, nothing)
+    _record_removed!(gui, obj, snap)
+    return obj
+end
+
+"""
+    _take_out!(gui, obj) -> (snap, traced)
+
+The part of [`remove_component!`](@ref) of `obj` from the `gui` before the solve, without recording
+it in the undo history: throws an `ArgumentError` with the `_removal_reason`, if any, and returns
+the snapshot of `obj` (see `_snapshot`) and whether the systems must be solved again, i.e. whether
+`obj` was traced.
+"""
+function _take_out!(gui::LiveView, @nospecialize(obj))
     reason = _removal_reason(gui, obj)
     isnothing(reason) || throw(ArgumentError(reason))
     systems = _member_systems(gui, obj)
@@ -528,10 +553,7 @@ function remove_component!(gui::LiveView, @nospecialize(obj); system = nothing)
     # The linked views let go of it before the solve, see `_sync_structure!`
     _sync_structure!(gui)
     gui.status.text[] = "$name removed"
-    # An object without a system was not traced
-    isempty(systems) || _on_change!(gui, nothing)
-    _record_removed!(gui, obj, snap)
-    return obj
+    return snap, !isempty(systems)
 end
 
 """
@@ -616,4 +638,82 @@ function _remove_selected!(gui::LiveView, @nospecialize(obj))
     end
     remove_component!(gui, obj)
     return true
+end
+
+"""
+    _remove_selected!(gui, s::_MultiSelection) -> Bool
+
+Removes the objects of the selection `s` of several objects that can be removed (see
+`_removal_reason`) from the `gui`, each like `remove_component!`, with one solve afterwards and as
+one action of the undo history: undo adds all of them again and selects them, redo removes them
+again. The objects that can not be removed stay selected, the status line names the reasons.
+Returns whether an object was removed.
+"""
+function _remove_selected!(gui::LiveView, s::_MultiSelection)
+    removable = Any[]
+    reasons = String[]
+    for obj in s.objects
+        reason = _removal_reason(gui, obj)
+        isnothing(reason) ? push!(removable, obj) : push!(reasons, reason)
+    end
+    if isempty(removable)
+        gui.status.text[] = "nothing removed: " * join(reasons, "; ")
+        return false
+    end
+    snaps = _remove_all!(gui, removable)
+    if gui.components.recording
+        state = Ref{Any}(snaps)
+        _push_action!(gui.controls, _selection_of(removable),
+            () -> _restore_all!(gui, removable, state[]),
+            () -> (state[] = _remove_all!(gui, removable)))
+    end
+    isempty(reasons) || (gui.status.text[] = "$(_removed_string(gui, removable)), kept: " * join(reasons, "; "))
+    return true
+end
+
+# "Lens 1 removed" or "3 objects removed"
+_removed_string(gui::LiveView, objs) =
+    length(objs) == 1 ? "$(_label(gui, only(objs))) removed" : "$(length(objs)) objects removed"
+
+"""
+Removes the objects `objs` from the `gui` like `remove_component!`, without recording it in the
+undo history and with one solve afterwards, and returns their snapshots, see `_take_out!`.
+"""
+function _remove_all!(gui::LiveView, objs::Vector{Any})
+    # the labels before they are forgotten
+    msg = _removed_string(gui, objs)
+    snaps = Any[]
+    traced = false
+    for obj in objs
+        snap, t = _take_out!(gui, obj)
+        push!(snaps, snap)
+        traced |= t
+    end
+    traced && _on_change!(gui, nothing)
+    # like after the removal of the last source, see `remove_component!`
+    gui.status.text[] = (isempty(gui.pairs) && any(_is_source, objs)) ? "$msg, " * _NO_SOURCE : msg
+    return snaps
+end
+
+"""
+Adds the objects `objs` to the `gui` again as their `snaps` describe them (see `_restore!`), e.g.
+by undoing `_remove_selected!`, and selects those that are movable.
+"""
+function _restore_all!(gui::LiveView, objs::Vector{Any}, snaps)
+    for (obj, snap) in zip(objs, snaps)
+        _restore!(gui, obj, snap)
+    end
+    ctrl = gui.controls
+    ctrl.spectator[] && return nothing
+    movable = Any[]
+    for obj in objs
+        _is_movable(ctrl, obj) && push!(movable, obj)
+    end
+    # one of them was selected when it was added, see `add_component!`
+    length(movable) >= 2 || return nothing
+    sel = _MultiSelection(movable)
+    ctrl.selected[] = sel
+    _update_selection_box!(ctrl)
+    gui.status.text[] = _pose_string(gui, sel)
+    return nothing
 end

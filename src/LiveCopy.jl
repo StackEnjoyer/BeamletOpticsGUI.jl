@@ -39,13 +39,18 @@ _copy_kwargs(gui::LiveView, src::_Source) = (; beam_kwargs = _snapshot(gui, src)
 `Ctrl+C` in the `gui`: keeps the selected (or inspected) component or source for `_paste!`, with
 its parameters as they are applied, its orientation and, of a source, the look of its beam. Only an
 object that was built from an entry of the catalog can be copied, like on the page "Edit" (see
-`_editable`): of any other one the constructor is not known. Otherwise, and without a selection,
-the status line tells why nothing was copied, and what was copied before is kept.
+`_editable`): of any other one the constructor is not known. Otherwise, without a selection and
+with a selection of several objects (see `_MultiSelection`), the status line tells why nothing was
+copied, and what was copied before is kept.
 """
 function _copy_selected!(gui::LiveView)
     obj = _shown_object(gui)
     if isnothing(obj)
         gui.status.text[] = "nothing selected to copy"
+        return nothing
+    end
+    if _is_multi(obj)
+        gui.status.text[] = "$(_label(gui, obj)) selected, $(_ctrl_cap())+C copies one component or source"
         return nothing
     end
     name = _label(gui, obj)

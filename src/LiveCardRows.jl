@@ -61,6 +61,19 @@ card_rows(@nospecialize(src::Union{BMO.CollimatedSource, BMO.PointSource})) = (p
 card_rows(@nospecialize(g::BMO.GaussianBeamlet)) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
     beam_card_rows(g)...)
 # Systems: see `LiveSystemCard.jl`
+# A selection of several objects (see `_MultiSelection`): a row per object with its name, a click
+# on which selects that object alone, see `_member_name_row`
+card_rows(s::_MultiSelection) = Tuple(_member_name_row(i, obj) for (i, obj) in enumerate(s.objects))
+
+"""
+    _member_name_row(i, obj)
+
+The row of the `i`-th object `obj` of a selection of several on its card (see `_MultiSelection`): a
+button `:object_<i>` with the name of `obj` (see `_label`), a click on which selects `obj` alone,
+see `_select!`.
+"""
+_member_name_row(i::Int, @nospecialize(obj)) = CardRow(CardWidget(Button; name = Symbol(:object_, i),
+    label = " ", value = (gui, _) -> _label(gui, obj), on = (gui, _, _) -> _select!(gui, obj)))
 
 # The eye in the head of a card, which hides its object and shows it again: an icon toggle that is
 # active, i.e. shows the crossed-out eye, while the object is hidden
@@ -79,6 +92,10 @@ _shown_hidden(gui::LiveView, @nospecialize(obj)) = !isempty(_leaves(obj)) && _al
 # names the reason in the status line for any other object, e.g. an object of a group or an extra
 _remove_button() = CardWidget(Button; name = :remove, label = "remove",
     on = (gui, o, _) -> _remove_selected!(gui, o))
+
+# A selection of several objects: the eye hides all of them (see `_toggle_hidden!`), "remove"
+# removes all of them that can be removed, see `_remove_selected!`
+card_actions(::_MultiSelection) = (_hide_action(), _remove_button())
 
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),

@@ -626,6 +626,24 @@ small menu or of the selection card moves it, e.g. off the parts that it covers.
 group opens its card at once. A click on a pinned card beside its widgets selects its object. The standalone [`kinematic_controls!`](@ref) keeps its drill-down (a second click
 on a selected group selects the part). See the section "Selection card" of [`live_view`](@ref).
 
+`Ctrl`+click (`Cmd` on macOS) on an object in the 3D view adds its top-level object to the
+selection, or removes it if it is selected; in the object tree of the app layout, `Ctrl`/`Cmd`+click
+on a row does the same, and every row of a selected object is highlighted. A plain click on an object
+of the selection selects that object alone, `Ctrl`+click on the background keeps the selection and
+`Esc` clears it. With a `select_modifier` set, see [`kinematic_controls!`](@ref), a toggle needs that
+modifier and `Ctrl` held. A selection of several is moved (a drag on any of its objects, the arrows,
+the arrow and page keys) and rotated (rotate mode, rings, keys) as one, about the mean of the
+positions of its objects, with the axes of the world as its gizmo axes. It does not snap onto beams
+or the table grid, and only the axes that all its objects allow are free. One drag, one run of key
+steps and one `Backspace` (which resets all its objects to their initial poses) are one undo step,
+and `on_change` is called once per object of a moved selection. `Ctrl+C` copies nothing while
+several objects are selected. Its card (compact layout) or the inspector (app layout) shows "N
+objects" with the subtitle "Selection" and one row per object with its name, where a click selects
+that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
+hidden) and remove (all removable objects as one undo step; the others stay selected and the status
+line says why). From code, `select!(gui, [lens, mirror])` selects several; `gui.controls.selected[]`
+then holds an internal value for the selection, not a component.
+
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and
 actions, and below it the pinned cards, one below the other, each with its own head (icon, label,

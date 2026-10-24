@@ -249,6 +249,18 @@ function remove_component!(gui::LiveView, src::_Source; system = nothing)
         _set_source_system!(gui, src, nothing)
         return src
     end
+    name = _label(gui, src)
+    snap, _ = _take_out!(gui, src)
+    # The detectors lose the hits of the source with the next solve
+    _on_change!(gui, nothing)
+    isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
+    _record_removed!(gui, src, snap)
+    return src
+end
+
+# The part of `remove_component!` of the source `src` before the solve, see `_take_out!`: a source
+# is always traced again, its hits leave the detectors
+function _take_out!(gui::LiveView, src::_Source)
     reason = _removal_reason(gui, src)
     isnothing(reason) || throw(ArgumentError(reason))
     name = _label(gui, src)
@@ -257,11 +269,7 @@ function remove_component!(gui::LiveView, src::_Source; system = nothing)
     # The linked views let go of it before the solve, see `_sync_structure!`
     _sync_structure!(gui)
     gui.status.text[] = "$name removed"
-    # The detectors lose the hits of the source with the next solve
-    _on_change!(gui, nothing)
-    isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
-    _record_removed!(gui, src, snap)
-    return src
+    return snap, true
 end
 
 """

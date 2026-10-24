@@ -137,6 +137,9 @@ function _key!(gui, key, modifiers...)
     return nothing
 end
 
+# Holds (`Keyboard.press`) or lets go of (`Keyboard.release`) the left Ctrl key
+_ctrl!(gui, action) = (_events(gui).keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, action))
+
 function _drag!(gui, a, b; button = Mouse.left, n = 6)
     _move!(gui, a)
     _press!(gui, button)
@@ -260,6 +263,50 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _selected(gui, fx.detector)
     end
     step(deselect!, "click background (deselect) of the detector")
+
+    # Several objects at once: Ctrl+click adds to and removes from the selection, which is dragged,
+    # stepped by the keys and reset as one
+    ctrl_click!(xy) = (_ctrl!(gui, Keyboard.press); _click!(gui, xy); _ctrl!(gui, Keyboard.release))
+    in_selection(objs...) = _check(GUI._selection_objects(gui.controls.selected[]) == Any[objs...],
+        "the selection does not hold the $(join((nameof(typeof(o)) for o in objs), " and "))")
+    step("ctrl+click lens and mirror (select both)") do
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+    end
+    step("drag the selection of several") do
+        a = _px(gui, _pos(fx.lens))
+        _drag!(gui, a, a .+ (20, 5))
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+    end
+    step("key steps, undo and reset of the selection of several") do
+        _key!(gui, Keyboard.up)
+        _key!(gui, Keyboard.z, Keyboard.left_control)
+        _key!(gui, Keyboard.backspace)
+        settle!()
+    end
+    step("ctrl+click mirror (remove it from the selection)") do
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        _selected(gui, fx.lens)
+    end
+    step("delete the selection of several, undo") do
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        _key!(gui, Keyboard.delete)
+        settle!()
+        _check(!GUI._has(fx.system.objects, fx.mirror), "the delete did not remove the selection")
+        # not by the key: `Ctrl+Z` is "Ctrl+Y" on a keyboard with another layout, see `_layout_key`
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
+            "the undo did not restore the selection")
+    end
+    step(deselect!, "click background (deselect) of the selection")
 
     step("camera: rotate (left drag)") do
         a = _free_px(gui)
@@ -568,6 +615,18 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             _check(right.size.x == w + 40, "the drag did not resize the right sidebar")
         end
         step(() -> (tree.clicked[] = fx.mirror; frame!()), "tree: click mirror")
+        step("tree: ctrl+click lens (select both)") do
+            i = findfirst(r -> r.key === fx.lens, tree.rows)
+            _check(!isnothing(i), "the tree has no row of the lens")
+            o = minimum(tree.scene.viewport[])
+            _move!(gui, (Float64(o[1] + GUI._row_columns(tree, tree.rows[i]).label + 5), Float64(o[2] + GUI._row_y(tree, i))))
+            _ctrl!(gui, Keyboard.press)
+            _click!(gui)
+            _ctrl!(gui, Keyboard.release)
+            frame!()
+            in_selection(fx.mirror, fx.lens)
+            deselect!()
+        end
         step("splitter: drag the left sidebar") do
             left = gui.layout.left
             w = left.size.x
