@@ -251,7 +251,7 @@ function _connect_member_pick!(gui::LiveView)
                 _pick_release!(gui, p0, leaf)
             end
         catch e
-            gui.last_error = _log_once(e, gui.last_error, "picking members")
+            gui.last_error = _log_once(gui, e, gui.last_error, "picking members")
         end
         return Consume(false)
     end)
@@ -271,7 +271,7 @@ function _connect_member_pick!(gui::LiveView)
             _sync_system_cards!(gui)
             _update_system_highlight!(gui)
         catch e
-            gui.last_error = _log_once(e, gui.last_error, "system cards")
+            gui.last_error = _log_once(gui, e, gui.last_error, "system cards")
         end
         return nothing
     end)

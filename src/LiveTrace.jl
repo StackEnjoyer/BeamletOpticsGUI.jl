@@ -56,19 +56,24 @@ The systems are initialized once, before the first solve, and not by the solves 
 `solve_system!`): the sources of a system and the systems that share a detector superpose on it.
 
 With `preview`, beam groups rendered with `render_every > 1` are solved only for their rendered
-beams, see `_solve_preview!`. Returns `(; previewed, requests, results, solve_time, field_time)`:
-whether a beam group was solved as a preview, the `requests` and their results (`_ViewResult`s) and
-the durations [s].
+beams, see `_solve_preview!`. Returns `(; previewed, requests, results, solve_time, field_time,
+sources, source_times, cost)`: whether a beam group was solved as a preview, the `requests` and
+their results (`_ViewResult`s), the durations [s], the sources of the `pairs` with the duration of
+each solve [s], and, with `debug` (see `_Debug`), the time compiled and the cost of the garbage
+collector during the solves (see `_debug_cost`; zero otherwise).
 """
 function _compute(pairs, handles, requests, sinks; systems = first.(pairs), coarse = false,
-        preview = false)
+        preview = false, debug::Bool = false)
+    counters = debug ? _debug_counters() : nothing
     # Monotonic clock with ns resolution, time() is too coarse on Windows for fast solves
     t0 = time_ns()
     # A detector can be part of several systems, hence all are initialized before solving
     foreach(initialize!, systems)
     previewed = preview && any(i -> _previewable(pairs[i].second, handles[i]), eachindex(pairs))
+    source_times = zeros(length(pairs))
     for (i, (sys, beam)) in enumerate(pairs)
         h = handles[i]
+        ts = time_ns()
         Base.ScopedValues.with(BMO.PROGRESS_SINK => sinks[i]) do
             if preview && _previewable(beam, h)
                 _solve_preview!(sys, beam, _render_every(h))
@@ -76,13 +81,16 @@ function _compute(pairs, handles, requests, sinks; systems = first.(pairs), coar
                 solve_system!(sys, beam)
             end
         end
+        source_times[i] = 1e-9 * (time_ns() - ts)
     end
     t1 = time_ns()
+    cost = _debug_cost(counters)
     n = length(pairs)
     results = Any[Base.ScopedValues.with(() -> _view_field(r, coarse, previewed), BMO.PROGRESS_SINK => sinks[n + k])
                   for (k, r) in enumerate(requests)]
     return (; previewed, requests, results, solve_time = 1e-9 * (t1 - t0),
-        field_time = 1e-9 * (time_ns() - t1))
+        field_time = 1e-9 * (time_ns() - t1), sources = Any[p.second for p in pairs],
+        source_times, cost)
 end
 
 """
@@ -98,6 +106,8 @@ After a preview (see `_compute`), the detector views are marked as a preview and
 `_on_idle!`. `on_change` is only called after full solves.
 """
 function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = nothing)
+    # The cost of the rendering, while the debug mode is on, see `_debug_record!`
+    counters = _debug_on(gui) ? _debug_counters() : nothing
     t0 = time_ns()
     # The solve succeeded, the message of a failed one is outdated
     _clear_solve_error!(gui)
@@ -108,15 +118,21 @@ function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = 
         _beam_on(gui, beam) && update_render!(h)
     end
     t1 = time_ns()
+    render_cost = _debug_cost(counters)
     previewed = r.previewed
     foreach((request, result) -> _apply_view!(gui, request, result), r.requests, r.results)
-    solve_time = r.solve_time + 1e-9 * (t1 - t0)
+    render_time = 1e-9 * (t1 - t0)
+    view_time = r.field_time + 1e-9 * (time_ns() - t1)
+    # solve and render: the budget of the adaptive tracing depends on both
+    solve_time = r.solve_time + render_time
     if previewed
         gui.trace.preview_time = solve_time
     else
         gui.trace.solve_time = solve_time
-        coarse || (gui.trace.view_time = r.field_time + 1e-9 * (time_ns() - t1))
+        coarse || (gui.trace.view_time = view_time)
     end
+    _debug_record!(gui, r, previewed ? :preview : coarse ? :coarse : :full, render_time, view_time,
+        render_cost)
     gui.trace.coarse = coarse
     gui.trace.preview = previewed
     gui.trace.preview_obj = obj
@@ -125,7 +141,7 @@ function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = 
             gui.on_change(gui, obj)
             gui.last_error = nothing
         catch e
-            gui.last_error = _log_once(e, gui.last_error, "`on_change` callback")
+            gui.last_error = _log_once(gui, e, gui.last_error, "`on_change` callback")
         end
         # After `on_change`, which may record what the panels of `add_panel!` show
         _update_user_panels!(gui)
@@ -137,6 +153,9 @@ function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = 
     _update_inspector!(gui)
     # The linked views show the beams, which this one traced, see `_follow!`
     _sync_links!(gui, obj; stale = false, preview = previewed, traced)
+    # The layers of the debug mode show the rendered beams; of outdated beams once they are up to
+    # date, see `_finish!`
+    gui.trace.stale || _debug_solved!(gui)
     return nothing
 end
 
@@ -155,7 +174,9 @@ function _resolve!(gui::LiveView, @nospecialize(obj); coarse = false, preview = 
     # Beams that are switched off are not traced, see `_set_beam_on!`
     pairs, handles = _on_pairs(gui, gui.pairs, gui.beam_handles)
     sinks = fill(nothing, length(pairs) + length(requests))
-    r = _compute(pairs, handles, requests, sinks; systems = _systems(gui), coarse, preview)
+    _debug_solve_started!(gui)
+    r = _compute(pairs, handles, requests, sinks; systems = _systems(gui), coarse, preview,
+        debug = _debug_on(gui))
     _apply!(gui, r, obj; coarse)
     return nothing
 end
@@ -187,8 +208,11 @@ function _start_job(gui::LiveView, apply, @nospecialize(obj), pairs, handles, re
     sinks = [BMO.ProgressSink() for _ in 1:(length(pairs) + length(requests))]
     anchors = Point3f[_progress_anchor.(last.(pairs)); _progress_anchor.(getfield.(requests, :pd))]
     done = Base.Event()
+    # A job that only computes detector views is not a solve, see `_debug_solve_ended!`
+    debug = _debug_on(gui)
+    timing === :view_time || _debug_solve_started!(gui)
     task = Threads.@spawn try
-        _compute(pairs, handles, requests, sinks; systems, coarse, preview)
+        _compute(pairs, handles, requests, sinks; systems, coarse, preview, debug)
     finally
         notify(done)
     end
@@ -290,6 +314,10 @@ function _cancel!(gui::LiveView, job::_SolveJob)
     gui.trace.job = nothing
     _hide_progress!(gui.trace.progress)
     setproperty!(gui.trace, job.timing, max(getproperty(gui.trace, job.timing), time() - job.t0))
+    if _solves(job)
+        elapsed = time() - job.t0
+        _debug_solve_ended!(gui, :cancelled, "solve cancelled after $(_ms_string(elapsed))"; elapsed)
+    end
     gui.trace.pending = gui.trace.preview = gui.trace.coarse = false
     _views_cancelled!(gui)
     # the systems that the job traced, all of them for a job of the whole view
@@ -326,10 +354,12 @@ function _finish!(gui::LiveView, job::_SolveJob)
         was_stale = gui.trace.stale
         # The systems that were traced are up to date, see `_trace_set`
         _set_fresh!(gui, job.systems)
-        # The cards that say which systems are outdated were updated before, see `_apply!`
+        # The cards that say which systems are outdated were updated before, see `_apply!`, the
+        # layers of the debug mode not
         if was_stale
             _update_inspector!(gui)
             _update_cards!(gui)
+            _debug_solved!(gui)
         end
     end
     return true
@@ -346,10 +376,12 @@ function _fail!(gui::LiveView, e)
     # The cards show the beams and detectors again, see `_TRACING_VALUE`
     _update_inspector!(gui)
     if BMO.is_cancelled(e)
+        _debug_solve_ended!(gui, :cancelled, "solve cancelled")
         _mark_stale!(gui, nothing; msg = _CANCELLED)
         return nothing
     end
     e = _task_error(e)
+    _debug_solve_ended!(gui, :failed, "solve failed: $(_error_line(e))")
     gui.last_error = _log_once(e, gui.last_error, "solving the systems")
     gui.trace.stale = true
     _note_stale!(gui, nothing)
@@ -437,7 +469,8 @@ _beam_plots(h) = AbstractPlot[]
 """
 Dims the beam plots of the `gui` whose systems are outdated (see `_system_stale`), including their
 overlays, e.g. the polarization, and stores their original `alpha`; the plots of the systems that
-are up to date get theirs back. Called after `gui.trace` says which systems are outdated.
+are up to date get theirs back. Called after `gui.trace` says which systems are outdated; while
+any are, the layers of the debug mode learn it, see `_debug_stale!`.
 """
 function _dim_beams!(gui::LiveView)
     alphas = gui.trace.beam_alphas
@@ -458,6 +491,8 @@ function _dim_beams!(gui::LiveView)
     for store in _overlay_stores(gui), (beam, h) in store
         dim!(beam, h)
     end
+    # Every place that marks beams as outdated dims them here, see `_layer_stale!`
+    gui.trace.stale && _debug_stale!(gui)
     return nothing
 end
 
@@ -718,12 +753,13 @@ function _connect_sliders!(gui::LiveView, callbacks)
                 _change!(() -> callbacks[i](v), gui.controls, nothing)
                 errors[i] = nothing
             catch e
-                errors[i] = _log_once(e, errors[i], "slider callback")
+                errors[i] = _log_once(gui, e, errors[i], "slider callback")
             end
         end
         empty!(pending)
         # The callbacks may have moved objects or sources
         update_render!(gui.controls.h)
+        _debug_moved!(gui, nothing)
         _on_change!(gui, nothing)
         return nothing
     end

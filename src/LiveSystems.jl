@@ -41,6 +41,7 @@ function add_system!(gui::LiveView; label = nothing, select::Bool = true)
         _refresh_catalog!(gui)
     end
     gui.status.text[] = "$name added, it gets the next component"
+    _debug_event!(gui, "added $name")
     if gui.components.recording
         taken = Ref{Any}(nothing)
         _push_action!(gui.controls, sys, () -> (taken[] = _take_system!(gui, sys)),
@@ -134,6 +135,7 @@ function remove_system!(gui::LiveView, sys::BMO.AbstractSystem)
     name = _label(gui, sys)
     taken = Ref{Any}(_take_system!(gui, sys))
     gui.status.text[] = "$name removed, its components stay in the view"
+    _debug_event!(gui, "removed $name")
     # The detectors that it shares with other systems lose its hits
     _on_change!(gui, nothing)
     if gui.components.recording

@@ -344,7 +344,7 @@ function _on_tree_hover!(gui::AppView)
         try
             _show_tree_tip!(gui)
         catch e
-            gui.last_error = _log_once(e, gui.last_error, "tooltip of the object tree")
+            gui.last_error = _log_once(gui, e, gui.last_error, "tooltip of the object tree")
         end
     end
     return nothing

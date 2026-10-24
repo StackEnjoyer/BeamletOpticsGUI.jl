@@ -659,7 +659,7 @@ function _lower_parts(c::_ComponentCard)
         c.step_shown && push!(parts, c.step)
     elseif _shows_rows(c.page)
         isempty(c.rows.content) || push!(parts, c.rows)
-    elseif c.page === :properties
+    elseif _shows_list(c.page)
         push!(parts, c.properties)
     elseif c.page === :results && !isnothing(c.view)
         push!(parts, c.view_part)

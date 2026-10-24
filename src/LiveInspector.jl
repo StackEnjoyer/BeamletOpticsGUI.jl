@@ -219,7 +219,7 @@ function _show_page!(gui::AppView, c::_DockedCard, @nospecialize(obj))
     _set_shown!(c.rows_part, open && _shows_rows(c.page) && !isempty(c.rows.content))
     _show_step!(c, c.step_part, isnothing(obj) || (c.page === :pose && _has_step(obj)))
     _show_view!(gui, c, obj, open && c.page === :results)
-    _show_list!(gui, c, obj, isnothing(obj) ? !c.pinned : (open && c.page === :properties))
+    _show_list!(gui, c, obj, isnothing(obj) ? !c.pinned : (open && _shows_list(c.page)))
     _set_card_gaps!(gui, c)
     return nothing
 end
@@ -281,7 +281,7 @@ function _show_list!(gui::AppView, c::_DockedCard, @nospecialize(obj), shown::Bo
     # an empty list has no height: emptied before its part is detached from the layout
     (shown || isempty(c.list.rows)) || _set_rows!(c.list, Tuple{String, String}[])
     _set_shown!(c.properties_part, shown)
-    shown && _set_rows!(c.list, _inspector_rows(gui, obj))
+    shown && _set_rows!(c.list, _list_rows(gui, c.page, obj))
     return nothing
 end
 
