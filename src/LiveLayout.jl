@@ -156,7 +156,7 @@ Hides the UI of the `gui` when the spectator mode of its controls is switched `o
 [`spectator!`](@ref)), and shows it again when it is switched off: the parts that all layouts
 share, i.e. the view cube (see `_set_visible!`), the floating cards (see `_update_cards!`), the
 markers of the sources (see `_update_source_markers!`, they come back if their toggle is on), the
-selection card and open menus, then the parts of the layout, see `_set_spectator_ui!`. The help
+marker of the pivot of the camera (see `_update_pivot!`), the selection card and open menus, then the parts of the layout, see `_set_spectator_ui!`. The help
 pill with the chip of the mode and the progress window of a running solve stay, such that the mode
 can be left and a long trace cancelled.
 
@@ -182,6 +182,7 @@ function _on_spectator!(gui::LiveView, on::Bool)
     _set_visible!(gui.widgets.view_cube, !on || s.view_cube)
     _help_ui(gui).muted = on && !gui.controls.spectator_help
     _update_source_markers!(gui)
+    _update_pivot!(gui)
     _set_spectator_ui!(gui, on)
     _update_cards!(gui)
     _arrange_help!(gui)

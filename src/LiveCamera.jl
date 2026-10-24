@@ -72,6 +72,211 @@ function _step_camera!(gui::LiveView, dt)
     return nothing
 end
 
+# The marker of the pivot is opaque for `_PIVOT_HOLD` [s] after the last move of the camera, then
+# fades within `_PIVOT_FADE` [s]
+const _PIVOT_HOLD = 0.3
+const _PIVOT_FADE = 0.4
+
+# The gestures that have arrows next to the marker of the pivot, see `_pivot_gesture`
+const _PIVOT_GESTURES = (:rotate, :pan, :zoom_in, :zoom_out)
+
+"""
+    _PivotGlyph
+
+The arrows of a gesture next to the marker of the pivot, see `_draw_pivot!`: the `halo` lines in
+the color of the background of the 3D view below the lines and heads `fg` in the accent color.
+"""
+struct _PivotGlyph
+    halo::Vector{AbstractPlot}
+    fg::Vector{AbstractPlot}
+end
+
+"""
+    _step_pivot!(gui, dt)
+
+Advances the marker of the pivot of the camera of the `gui` by `dt` [s]: a dot at the `lookat`
+point, the point `Camera3D` turns about, with a small camera beside it, shown while the view
+changes (drags, scroll, keys, `g`, the view cube, home, the views menu, scripts) and faded shortly
+after it stops, see `_PIVOT_HOLD` and `_PIVOT_FADE`. Arrows about it show the gesture of the last
+move, see `_pivot_gesture`.
+Like the other overlays, it is never selected or traced.
+"""
+function _step_pivot!(gui::LiveView, dt)
+    c = gui.camera
+    view = c.pivot_moved ? _current_view(gui) : c.pivot_view
+    gesture = c.pivot_moved ? _pivot_gesture(c.pivot_view, view) : :still
+    c.pivot_moved = false
+    # `Camera3D` sets the view again when a drag ends, which is no move
+    if gesture === :still
+        isfinite(c.pivot_idle) && (c.pivot_idle += dt)
+    else
+        c.pivot_idle = 0.0
+        c.pivot_gesture = gesture
+        c.pivot_view = view
+    end
+    _update_pivot!(gui)
+    return nothing
+end
+
+"""
+    _pivot_gesture(v0, v1) -> Symbol
+
+Returns the gesture that changed the view `v0` to `v1` (each `(eye, lookat, up)`): `:still` if it
+did not change, `:zoom_in` or `:zoom_out` if only the distance of the eye to `lookat` changed (the
+scroll zoom of `Camera3D` also shifts both by the same vector), `:pan` if both were shifted by the
+same vector, `:rotate` if `lookat` and the distance were kept, and `:none` otherwise, e.g. for
+the animation of `g`. The tolerance is relative to the coordinates as well, since a view set by
+`set_view` is rounded to `Float32`.
+"""
+function _pivot_gesture(v0, v1)
+    (e0, l0, u0), (e1, l1, u1) = v0, v1
+    d0, d1 = e0 .- l0, e1 .- l1
+    n0, n1 = norm(d0), norm(d1)
+    tol = 1e-5 * max(n0, norm(e0), norm(l0), eps())
+    shifted = norm(l1 .- l0) > tol
+    !shifted && norm(e1 .- e0) <= tol && norm(u1 .- u0) <= 1e-5 * max(norm(u0), eps()) && return :still
+    if n0 > tol && n1 > tol && abs(n1 - n0) > tol && norm(d1 ./ n1 .- d0 ./ n0) <= tol / n0
+        return n1 < n0 ? :zoom_in : :zoom_out
+    end
+    norm(d1 .- d0) <= tol && return shifted ? :pan : :rotate
+    !shifted && abs(n1 - n0) <= tol && return :rotate
+    return :none
+end
+
+"""Returns the opacity of the marker of the pivot of the `gui`, see `_step_pivot!`."""
+_pivot_alpha(gui::LiveView) = clamp(1 - (gui.camera.pivot_idle - _PIVOT_HOLD) / _PIVOT_FADE, 0.0, 1.0)
+
+"""
+    _pivot_arrows(gesture) -> (lines, heads)
+
+Returns the arrows of the `gesture` (see `_PIVOT_GESTURES`) next to the marker of the pivot, in
+pixels about its center: the `lines`, separated by `NaN`, and the `heads` as pairs of position and
+direction [rad]. Two arcs for `:rotate`, four arrows for `:pan`, four diagonal arrows outwards for
+`:zoom_in` and inwards for `:zoom_out`.
+"""
+function _pivot_arrows(gesture::Symbol)
+    lines, heads = Point2f[], Tuple{Point2f, Float64}[]
+    # straight from `a` to `b` along `d`, the head at `b`
+    function arrow!(d, a, b)
+        u = normalize(Makie.Vec2f(d...))
+        append!(lines, (Point2f(a .* u), Point2f(b .* u), Point2f(NaN, NaN)))
+        t = (b - a) .* u
+        push!(heads, (Point2f(b .* u), atan(t[2], t[1])))
+    end
+    # counterclockwise from `φ0` to `φ1`, the head at `φ1`
+    function arc!(φ0, φ1; r = 15)
+        append!(lines, (Point2f(r * cos(φ), r * sin(φ)) for φ in range(φ0, φ1, 16)))
+        push!(lines, Point2f(NaN, NaN))
+        push!(heads, (Point2f(r * cos(φ1), r * sin(φ1)), φ1 + π / 2))
+    end
+    axes, diagonals = ((1, 0), (0, 1), (-1, 0), (0, -1)), ((1, 1), (-1, 1), (-1, -1), (1, -1))
+    if gesture === :rotate
+        arc!(π / 6, 5π / 6)
+        arc!(7π / 6, 11π / 6)
+    elseif gesture === :pan
+        foreach(d -> arrow!(d, 10, 18), axes)
+    elseif gesture === :zoom_in
+        foreach(d -> arrow!(d, 10, 18), diagonals)
+    elseif gesture === :zoom_out
+        foreach(d -> arrow!(d, 18, 10), diagonals)
+    end
+    return lines, heads
+end
+
+"""
+    _draw_pivot!(gui)
+
+Draws the hidden marker of the pivot of the `gui`, see `_step_pivot!`: a dot at the pivot, a small
+camera (the icon of the views) up right of it and the arrows of each gesture about it
+(`_PivotGlyph`, see `_pivot_arrows`) in the accent color, outlined in the color of the background
+of the 3D view, such that they stand out from beams and objects. Their data are about the pivot,
+they are moved to it with `translate!`. They are
+in a scene of pixels over the 3D view, like the cards: GLMakie draws the transparent plots of the
+3D view, e.g. the beams, after all opaque ones, even after those with `overdraw`, so a beam
+through the pivot would cover a marker in the 3D view. The scene is made before the cards, which
+therefore cover it.
+"""
+function _draw_pivot!(gui::LiveView)
+    scene = Scene(gui.fig.scene; camera = Makie.campixel!, clear = false)
+    accent, outline = gui.layout.theme.accent, _pivot_outline(gui, 1.0)
+    common = (; visible = false, inspectable = false)
+    for gesture in _PIVOT_GESTURES
+        lines, heads = _pivot_arrows(gesture)
+        halo = lines!(scene, lines; color = outline, linewidth = 3.5, common...)
+        line = lines!(scene, lines; color = accent, linewidth = 1.5, common...)
+        tips = scatter!(scene, first.(heads); marker = :utriangle, rotation = last.(heads) .- π / 2,
+            markersize = 7, color = accent, strokecolor = outline, strokewidth = 1, common...)
+        gui.camera.pivot_glyphs[gesture] = _PivotGlyph(AbstractPlot[halo], AbstractPlot[line, tips])
+    end
+    # The icon is an outline, a beam behind it would show through its lens
+    badge = Point2f(11, 11)
+    gui.camera.pivot_backdrop = scatter!(scene, [badge]; marker = :rect, markersize = Vec2f(10, 8),
+        color = outline, common...)
+    gui.camera.pivot_camera = scatter!(scene, [badge]; marker = _icon(:views), markersize = 13,
+        color = accent, strokecolor = outline, strokewidth = 1, common...)
+    gui.camera.pivot = scatter!(scene, [Point2f(0, 0)]; marker = :circle, markersize = 6,
+        color = accent, strokecolor = outline, strokewidth = 1.5, common...)
+    return nothing
+end
+
+# The outline of the marker of the pivot of the `gui` at the opacity `alpha`; the `alpha` of a
+# scatter only applies to its `color`
+_pivot_outline(gui::LiveView, alpha) = RGBAf(RGBf(Makie.to_color(gui.ax.scene.backgroundcolor[])), alpha)
+
+# The pixel of the window at the `lookat` point of the camera of the `gui`, i.e. the center of
+# its 3D view
+function _pivot_px(gui::LiveView)
+    scene = gui.ax.scene
+    px = Makie.project(scene, Point3f(cameracontrols(scene).lookat[]))
+    return Point2f(px .+ Makie.origin(Makie.viewport(scene)[]))
+end
+
+"""
+    _update_pivot!(gui)
+
+Applies the opacity and the position of the marker of the pivot of the `gui` and shows the arrows
+of its gesture, see `_step_pivot!`. Hidden in the spectator mode. Attributes are only set when
+they change, such that a still view is not redrawn.
+"""
+function _update_pivot!(gui::LiveView)
+    c = gui.camera
+    isnothing(c.pivot) && return nothing
+    alpha = gui.controls.spectator[] ? 0.0 : _pivot_alpha(gui)
+    shown = alpha > 0
+    at = shown ? Vec3f(_pivot_px(gui)..., 0) : Vec3f(0)
+    _set_pivot_plot!(gui, c.pivot_backdrop, shown, alpha, at, true)
+    _set_pivot_plot!(gui, c.pivot_camera, shown, alpha, at, false)
+    _set_pivot_plot!(gui, c.pivot, shown, alpha, at, false)
+    for (gesture, glyph) in c.pivot_glyphs
+        on = shown && gesture === c.pivot_gesture
+        foreach(p -> _set_pivot_plot!(gui, p, on, alpha, at, true), glyph.halo)
+        foreach(p -> _set_pivot_plot!(gui, p, on, alpha, at, false), glyph.fg)
+    end
+    return nothing
+end
+
+# Shows the plot `p` of the marker of the pivot of the `gui` at the pixel `at` with the opacity
+# `alpha`, or hides it; a `halo` has the color of the background, the others the accent color and,
+# if they are scatters, the background as stroke
+function _set_pivot_plot!(gui::LiveView, p::AbstractPlot, shown::Bool, alpha, at, halo::Bool)
+    if shown
+        Makie.translation(p)[] == at || translate!(p, at)
+        outline = _pivot_outline(gui, alpha)
+        if halo
+            _update_attr!(p.color, outline)
+        else
+            _update_attr!(p.color, gui.layout.theme.accent)
+            p isa Makie.Scatter && _update_attr!(p.strokecolor, outline)
+        end
+    end
+    halo || _update_attr!(p.alpha, alpha)
+    _update_attr!(p.visible, shown)
+    return nothing
+end
+
+# Sets the attribute `x` of a plot to `value` if it differs, see `_update!` for observables
+_update_attr!(x, value) = (x[] == value || (x[] = value); nothing)
+
 """
     _animate_camera!(gui, eye, lookat, up)
 
@@ -270,10 +475,20 @@ function _connect_camera!(gui::LiveView)
             gui.camera.home = _current_view(gui)
             gui.camera.home_set = true
             _keep_camera!(gui)
+            # Fitting the view is no move of the user
+            gui.camera.pivot_moved = false
+            gui.camera.pivot_view = gui.camera.home
         end
         _step_camera!(gui, tick.delta_time)
+        _step_pivot!(gui, tick.delta_time)
         return nothing
     end)
+    # Camera3D sets these one after the other, the next tick shows the marker of the pivot
+    cam = cameracontrols(scene)
+    for obs in (cam.lookat, cam.eyeposition, cam.upvector)
+        push!(listeners, on(_ -> (gui.camera.pivot_moved = gui.camera.home_set; nothing), obs))
+    end
+    _draw_pivot!(gui)
     # The textboxes of the cards are connected with their cards, see `_connect_card!`, those of the
     # layout (see `_layout_boxes`) by the layout
     for obs in (cameracontrols(scene).selected, _open_observable(gui.widgets.menu), gui.widgets.views_menu.is_open)
