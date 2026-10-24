@@ -330,13 +330,26 @@ end
     _CameraState
 
 Camera tools of a `LiveView`: the `home` view `(eye, lookat, up)`, taken at the first tick
-(`home_set`), the saved `views` and the running `animation` of a camera transition.
+(`home_set`), the saved `views` and the running `animation` of a camera transition. The marker of
+the pivot (`pivot`, a `Scatter` in a scene of pixels over the 3D view, see `_draw_pivot!` and
+`_step_pivot!`) with the area in the color of the background behind it (`pivot_backdrop`), the
+arrows next to it per gesture (`pivot_glyphs`, see `_PivotGlyph`), the time
+[s] since the view last changed (`pivot_idle`), whether it changed since the last tick
+(`pivot_moved`), the gesture of the last change (`pivot_gesture`, see `_pivot_gesture`) and the
+view after it (`pivot_view`).
 """
 Base.@kwdef mutable struct _CameraState
     home::NTuple{3, Vector{Float64}} = (zeros(3), zeros(3), zeros(3))
     home_set::Bool = false
     views::Vector{Pair{String, NTuple{3, Vector{Float64}}}}
     animation::Any = nothing
+    pivot::Any = nothing
+    pivot_idle::Float64 = Inf
+    pivot_moved::Bool = false
+    pivot_backdrop::Any = nothing
+    pivot_glyphs::Dict{Symbol, Any} = Dict{Symbol, Any}()
+    pivot_gesture::Symbol = :none
+    pivot_view::NTuple{3, Vector{Float64}} = (zeros(3), zeros(3), zeros(3))
 end
 
 """

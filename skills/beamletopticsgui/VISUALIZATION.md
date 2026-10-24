@@ -75,7 +75,9 @@ the chips next to it show mode and keyboard step, clickable); the button "⋯" a
 beams, measure, show all, component menu "select component", export, `add_tool!` tools, one entry
 per `add_controls!` section, "Sliders" for `sliders`; entries with widgets open a popover; `Esc`
 closes); the mouse over the view cube shows the camera popover (home, fit `g`, views, save view,
-orthographic); the status line appears as a toast.
+orthographic); the status line appears as a toast. While the camera moves (drag, scroll, `g`, view
+cube, home, saved views), a small camera symbol marks its pivot (the `lookat` point) and fades shortly after. Arrows next to it show the motion (two arcs rotating, four arrows panning,
+arrows outwards zooming in, inwards zooming out); `g`, the view cube, home and saved views show the symbol alone.
 `layout = :app` arranges the window like an application, with the cards (selection and
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
 moves it into the 3D view next to its component, its dock button moves it back; docked pinned
@@ -92,7 +94,7 @@ layout ignores both. The tree, the card rows and the detector views follow the w
 the docked catalog are arranged again when the drag ends.
 The spectator mode (`v`, the chip "Spectator" next to the help pill, or `spectator = true` at the
 start) shows only the 3D view and the help in both layouts: tools, status, view cube, cards,
-source markers (and with the cards the detector views), panels, toolbar, sidebars and dock are hidden and come back as they were, with the selection from before; the progress window of a
+source markers, the camera pivot marker (and with the cards the detector views), panels, toolbar, sidebars and dock are hidden and come back as they were, with the selection from before; the progress window of a
 running trace stays. `Shift+V` hides the help as well (only the 3D view, for screenshots; `v` leaves), from code `spectator!(gui; help = false)`. `add_panel!`, `add_controls!` and `add_tool!` also work while it is on.
 
 Mechanics that should be visible but not traced (e.g. a housing STL) go into
