@@ -1,7 +1,7 @@
 #=
 The debug mode of the live view: what the GUI normally hides, to find errors in an optical system
 or in the GUI, see `_Debug`. Its parts are layers (`_DebugLayer`): the debug card, the bounding
-spheres and the diagnostics of the rays, each in a file of its own
+spheres, the diagnostics of the rays and the cameras of the saved views, each in a file of its own
 =#
 
 """
@@ -28,7 +28,7 @@ not depend on being called once per action.
 abstract type _DebugLayer end
 
 # The names of the layers, in the order in which they are created and shown
-const _DEBUG_LAYERS = (:hud, :spheres, :rays)
+const _DEBUG_LAYERS = (:hud, :spheres, :rays, :views)
 
 """
     _new_layer(gui, ::Val{name}) -> Union{Nothing, _DebugLayer}

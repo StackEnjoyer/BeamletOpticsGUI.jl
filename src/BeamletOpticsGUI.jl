@@ -107,6 +107,7 @@ include("LiveDebug.jl")
 include("LiveDebugHUD.jl")
 include("LiveDebugSpheres.jl")
 include("LiveDebugRays.jl")
+include("LiveDebugViews.jl")
 include("LiveDebugPage.jl")
 # agent skill of the package
 include("AgentSkill.jl")

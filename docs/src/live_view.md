@@ -757,6 +757,11 @@ While it is on, the 3D view shows:
   drawn with its surface normal, a short arrow of the same length on the screen at any zoom, towards
   the side the ray comes from (at most 2000), and components that no ray hits are marked "never
   hit";
+- a **camera per saved view** of the views menu and of the home view (gray), drawn like the
+  cameras of Blender: the frustum with the field of view of the window (a box in the orthographic
+  projection), a triangle on its upper edge, a dashed line to the point the view turns about, and
+  its name. The mouse over a camera highlights it with the area the view frames at that point, and
+  its name also gives the eye and that point in mm. The view the window looks through has no camera;
 - the page "Debug" on the cards: type, id, systems, traits, the exact position and orientation
   matrix, shapes, bounding sphere, hits and plots; for sources also the beams, rays, segments and
   the ends of the beams, for detectors the type and number of hits.

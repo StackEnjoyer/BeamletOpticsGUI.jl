@@ -305,8 +305,13 @@ function _hud_rows(gui::LiveView, ::_Debug, ::Val{:scene})
     return Pair{String, String}[
         "objects" => join((_hud_count(systems, "system"), _hud_count(objects, "object"),
             _hud_count(sources, "source"), _hud_count(detectors, "detector")), " · "),
-        "cards" => "$open open · $pinned pinned · undo $undo"]
+        "cards" => "$open open · $pinned pinned · undo $undo",
+        "views" => _hud_views(gui)]
 end
+
+# The saved views of the `gui` and the home view, whose cameras the debug mode shows (`_DebugViews`)
+_hud_views(gui::LiveView) =
+    "$(length(gui.camera.views)) saved" * (gui.camera.home_set ? " · home" : "")
 
 function _hud_rows(::LiveView, d::_Debug, ::Val{:events})
     events = d.stats.events

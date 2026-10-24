@@ -555,6 +555,20 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         settle!()
         foreach(_ -> frame!(), 1:3)
     end
+    step("debug: camera of a saved view, under the mouse") do
+        eye, lookat, up = GUI._current_view(gui)
+        GUI._save_view!(gui; io = devnull)
+        # back from it, such that its camera is in front of the window
+        GUI.set_view(gui.ax, lookat .+ 2 .* (eye .- lookat), lookat, up)
+        frame!()
+        _move!(gui, _px(gui, eye))
+        frame!()
+        v = GUI._debug_layer(gui, :views)
+        _check(v.hover > 0, "the camera of the saved view is not highlighted under the mouse")
+        _move!(gui, _free_px(gui))
+        GUI.set_view(gui.ax, eye, lookat, up)
+        frame!()
+    end
     step("debug: page Debug of the card of the mirror") do
         _click!(gui, _px(gui, _pos(fx.mirror)))
         frame!()
