@@ -215,10 +215,14 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
     # Ctrl+click adds to the selection or removes from it, see `_toggles`
     toggle = Any[_ctrl_cap(), :mouse => "click"]
     isnothing(select_modifier) || pushfirst!(toggle, _modifier_name(select_modifier))
+    # Ctrl+drag beside the selection adds the objects in a rectangle, see `_rect_select!`
+    drag_keys = Any[_ctrl_cap(), :mouse => "drag"]
+    isnothing(select_modifier) || pushfirst!(drag_keys, _modifier_name(select_modifier))
     return _HelpSection[
         "Select" => [
             _HelpEntry(click, click_help; combo = true),
             _HelpEntry(toggle, "add to or remove from the selection"; combo = true),
+            _HelpEntry(drag_keys, "add the objects in a rectangle"; combo = true),
             _HelpEntry(["Esc"], "enclosing group or deselect")],
         (move ? "Move" : "Rotate") * " the selection" => [
             _HelpEntry(["M"], "switch to $(_other_mode(mode)) mode"),
@@ -553,6 +557,10 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # whether the click of the current press adds to or removes from the selection (`Ctrl`+click),
     # see `_toggles` and `_toggle_leaf!`
     press_toggle::Bool
+    # the selection rectangle of a `Ctrl`+drag beside the selection in pixels of the 2D scene of
+    # the axis (`ax.blockscene`), shown while it is drawn, see `_rect_select!`
+    rect::Observable{Makie.Rect2f}
+    rect_visible::Observable{Bool}
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -713,6 +721,94 @@ function _grabs_selection(ctrl::KinematicController, @nospecialize(leaf))
     isnothing(sel) && return false
     chain = _chain(ctrl, leaf)
     return _has(chain, sel) || !isnothing(_selected_member(ctrl, leaf))
+end
+
+"""
+    _show_rect!(ctrl, a, b)
+
+Shows the selection rectangle of the `ctrl` between the pixels `a` and `b` of the 3D scene (see
+`_px`), drawn in pixels of the 2D scene of the axis, see `ctrl.rect`.
+"""
+function _show_rect!(ctrl::KinematicController, a, b)
+    o = Float64.(minimum(ctrl.ax.scene.viewport[]) .- minimum(ctrl.ax.blockscene.viewport[]))
+    lo = (min(a[1], b[1]) + o[1], min(a[2], b[2]) + o[2])
+    hi = (max(a[1], b[1]) + o[1], max(a[2], b[2]) + o[2])
+    ctrl.rect[] = Makie.Rect2f(lo..., (hi .- lo)...)
+    ctrl.rect_visible[] || (ctrl.rect_visible[] = true)
+    return nothing
+end
+
+"""Hides the selection rectangle of the `ctrl`, see `_show_rect!`."""
+_hide_rect!(ctrl::KinematicController) = (ctrl.rect_visible[] && (ctrl.rect_visible[] = false); nothing)
+
+"""
+    _center_px(ctrl, scene, obj) -> Union{Nothing, NTuple{2, Float64}}
+
+The center of the object `obj` of the `ctrl` in pixels of the `scene` (see `_px`): the center of
+the bounding box of its visible plots (see `_selection_bbox`), or its `position` without such
+plots; `nothing` if the center lies behind the camera.
+"""
+function _center_px(ctrl::KinematicController, scene, @nospecialize(obj))
+    plots = AbstractPlot[p for p in _object_plots(ctrl.h, obj) if p.visible[]]
+    bb = _selection_bbox(ctrl, obj, plots)
+    c = Vector{Float64}(minimum(bb)) .+ Vector{Float64}(GeometryBasics.widths(bb)) ./ 2
+    # the w coordinate of the clip space, positive in front of the camera
+    pv = scene.camera.projectionview[]
+    pv[4, 1] * c[1] + pv[4, 2] * c[2] + pv[4, 3] * c[3] + pv[4, 4] > 0 || return nothing
+    px = Makie.project(scene, :data, :pixel, Point3(c))
+    return (Float64(px[1]), Float64(px[2]))
+end
+
+"""
+    _rect_objects(ctrl, scene, a, b) -> Vector{Any}
+
+The movable top-level objects of the `ctrl` (`ctrl.movable`) whose center (see `_center_px`) lies
+in the rectangle between the pixels `a` and `b` of the `scene`, among those that a click can select
+(see `_pickable`, at least one of their leaves) and that can be one of a selection of several (see
+`_multi_selectable`).
+"""
+function _rect_objects(ctrl::KinematicController, scene, a, b)
+    xlo, xhi = minmax(a[1], b[1])
+    ylo, yhi = minmax(a[2], b[2])
+    out = Any[]
+    for obj in ctrl.movable
+        _multi_selectable(obj) || continue
+        any(leaf -> _pickable(ctrl, leaf), _leaves(obj)) || continue
+        px = _center_px(ctrl, scene, obj)
+        isnothing(px) && continue
+        (xlo <= px[1] <= xhi && ylo <= px[2] <= yhi) && push!(out, obj)
+    end
+    return out
+end
+
+"""
+    _rect_select!(ctrl, scene, a, b)
+
+The release of a `Ctrl`+drag beside the selection from the pixel `a` to the pixel `b` of the
+`scene`: adds the objects in the rectangle (see `_rect_objects`) to the selection of the `ctrl`;
+the objects of the selection stay. An object of the selection that one of them is a part of, or
+that is a part of one of them, is replaced by it, as with `_with_toggled`. Then calls `on_click`
+with the new selection, see `_selection_of`. Changes nothing if no object is added.
+"""
+function _rect_select!(ctrl::KinematicController, scene, a, b)
+    hits = _rect_objects(ctrl, scene, a, b)
+    isempty(hits) && return nothing
+    objs = Any[o for o in _selection_objects(ctrl.selected[]) if _multi_selectable(o)]
+    added = false
+    for obj in hits
+        _has(objs, obj) && continue
+        kept = Any[]
+        for o in objs
+            _related(o, obj) || push!(kept, o)
+        end
+        objs = push!(kept, obj)
+        added = true
+    end
+    added || return nothing
+    ctrl.selected[] = _selection_of(objs)
+    _update_selection_box!(ctrl)
+    ctrl.on_click(ctrl.selected[])
+    return nothing
 end
 
 """The selection after `Esc` with the selection `obj`: the enclosing group, `nothing` at the top
@@ -1397,6 +1493,7 @@ function _set_spectator!(ctrl::KinematicController, on::Bool; help::Bool = true)
     if on
         ctrl.dragging = false
         ctrl.press_kind = :none
+        _hide_rect!(ctrl)
         ctrl.drag_start = nothing
         ctrl.ring = ctrl.arrow = nothing
         ctrl.last_key_step = nothing
@@ -1819,8 +1916,11 @@ A click selects, a drag moves only what is already selected, every other drag ro
 - `Ctrl`+left-click (`Cmd` on macOS) on an object: adds its top-level object to the selection, or
   removes the object of the selection that it belongs to; on empty space it keeps the selection.
   The press of `Ctrl`+click is never passed on, hence it does not reset the camera
-  (`Camera3D`'s reset gesture) in the controls, and a `Ctrl`+drag beside the selection does nothing.
-  With a `select_modifier`, it is held as well
+  (`Camera3D`'s reset gesture) in the controls. With a `select_modifier`, it is held as well
+- `Ctrl`+left-drag on empty space or on an object that is not selected: draws a rectangle and adds
+  the movable objects whose center (of their visible bounding box) lies inside it to the selection,
+  a group as a whole; hidden objects and clip planes are not added, the camera does not move. A
+  `Ctrl`+drag on the selection moves it
 
 A selection of several objects moves and rotates as one, with the mouse, the gizmo and the keys:
 about its center, the mean of the positions of its objects when it was made, with the axes of the
@@ -1986,6 +2086,12 @@ function kinematic_controls!(
     help_pos = Makie.lift(vp -> Point2f(minimum(vp)[1] + 10, maximum(vp)[2] - 10), ax.scene.viewport)
     push!(plots, text!(ax.blockscene, help_pos; text = help_obs, space = :pixel,
         align = (:left, :top), fontsize = 14, color = :gray40))
+    # The selection rectangle of a Ctrl+drag, likewise in pixels of the 2D scene of the axis
+    rect_obs = Observable(Makie.Rect2f(0, 0, 1, 1))
+    rect_visible = Observable(false)
+    push!(plots, poly!(ax.blockscene, rect_obs; space = :pixel, visible = rect_visible,
+        color = Makie.RGBAf(0.25, 0.55, 1.0, 0.12), strokecolor = Makie.RGBAf(0.25, 0.55, 1.0, 0.9),
+        strokewidth = 1))
 
     ctrl = KinematicController(
         ax, h, movable, init_poses, Observable{Union{Nothing, _LiveMovable}}(nothing),
@@ -2001,7 +2107,7 @@ function kinematic_controls!(
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
         Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
-        center, nothing, nothing, nothing, nothing, false
+        center, nothing, nothing, nothing, nothing, false, rect_obs, rect_visible
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -2011,6 +2117,7 @@ function kinematic_controls!(
             # Neither a selection nor a deselection by the release of this press
             ctrl.press_kind, ctrl.press_leaf, ctrl.press_pos = :none, nothing, nothing
             ctrl.press_toggle = false
+            _hide_rect!(ctrl)
             return Consume(false)
         end
         if event.action == Mouse.press
@@ -2119,6 +2226,12 @@ function kinematic_controls!(
                 # Released before crossing the threshold: a click, not a drag
                 moved < ctrl.drag_threshold && click!(ctrl, ctrl.press_leaf)
                 consume = true
+            elseif kind == :rect ||
+                   (toggle && kind in (:background, :pending_select) && moved >= ctrl.drag_threshold)
+                # Ctrl+drag beside the selection: adds the objects in the rectangle
+                _hide_rect!(ctrl)
+                _rect_select!(ctrl, scene, ctrl.press_pos, cur)
+                consume = true
             elseif kind == :pending_select
                 # Only select if this was a click, not a camera rotation
                 moved < ctrl.drag_threshold && click!(ctrl, ctrl.press_leaf)
@@ -2132,6 +2245,7 @@ function kinematic_controls!(
             ctrl.press_kind = :none
             ctrl.press_leaf = nothing
             ctrl.press_pos = nothing
+            _hide_rect!(ctrl)
             if !isnothing(ctrl.ring)
                 # the gizmo follows the object again, see `_update_selection_box!`
                 ctrl.ring = nothing
@@ -2145,10 +2259,26 @@ function kinematic_controls!(
 
     l2 = on(events(scene).mouseposition, priority = 200) do _
         if !ctrl.dragging
+            if ctrl.press_kind == :rect && !isnothing(ctrl.press_pos)
+                _show_rect!(ctrl, ctrl.press_pos, _px(scene))
+                return Consume(true)
+            end
+            # the rectangle of a drag that ended otherwise, e.g. by the removal of an object
+            _hide_rect!(ctrl)
             if !(ctrl.press_kind in (:pending_drag, :pending_ring, :pending_arrow))
                 _update_hover!(ctrl, scene)
-                # A Ctrl+drag beside the selection moves neither an object nor the camera
-                return Consume(ctrl.press_toggle && ctrl.press_kind in (:background, :pending_select))
+                # A Ctrl+drag beside the selection moves neither an object nor the camera, it draws
+                # a selection rectangle, see `_rect_select!`
+                if ctrl.press_toggle && ctrl.press_kind in (:background, :pending_select)
+                    cur = _px(scene)
+                    if !isnothing(ctrl.press_pos) && hypot((cur .- ctrl.press_pos)...) >= ctrl.drag_threshold
+                        ctrl.press_kind = :rect
+                        ctrl.press_leaf = nothing
+                        _show_rect!(ctrl, ctrl.press_pos, cur)
+                    end
+                    return Consume(true)
+                end
+                return Consume(false)
             end
             cur = _px(scene)
             moved = hypot((cur .- ctrl.press_pos)...)
