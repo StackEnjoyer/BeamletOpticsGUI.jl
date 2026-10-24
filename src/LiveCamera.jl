@@ -94,10 +94,11 @@ end
 """
     _step_pivot!(gui, dt)
 
-Advances the marker of the pivot of the camera of the `gui` by `dt` [s]: a camera at the `lookat`
-point, the point `Camera3D` turns about, shown while the view changes (drags, scroll, keys, `g`,
-the view cube, home, the views menu, scripts) and faded shortly after it stops, see `_PIVOT_HOLD`
-and `_PIVOT_FADE`. Arrows next to it show the gesture of the last move, see `_pivot_gesture`.
+Advances the marker of the pivot of the camera of the `gui` by `dt` [s]: a dot at the `lookat`
+point, the point `Camera3D` turns about, with a small camera beside it, shown while the view
+changes (drags, scroll, keys, `g`, the view cube, home, the views menu, scripts) and faded shortly
+after it stops, see `_PIVOT_HOLD` and `_PIVOT_FADE`. Arrows about it show the gesture of the last
+move, see `_pivot_gesture`.
 Like the other overlays, it is never selected or traced.
 """
 function _step_pivot!(gui::LiveView, dt)
@@ -163,7 +164,7 @@ function _pivot_arrows(gesture::Symbol)
         push!(heads, (Point2f(b .* u), atan(t[2], t[1])))
     end
     # counterclockwise from `φ0` to `φ1`, the head at `φ1`
-    function arc!(φ0, φ1; r = 30)
+    function arc!(φ0, φ1; r = 15)
         append!(lines, (Point2f(r * cos(φ), r * sin(φ)) for φ in range(φ0, φ1, 16)))
         push!(lines, Point2f(NaN, NaN))
         push!(heads, (Point2f(r * cos(φ1), r * sin(φ1)), φ1 + π / 2))
@@ -173,11 +174,11 @@ function _pivot_arrows(gesture::Symbol)
         arc!(π / 6, 5π / 6)
         arc!(7π / 6, 11π / 6)
     elseif gesture === :pan
-        foreach(d -> arrow!(d, 20, 36), axes)
+        foreach(d -> arrow!(d, 10, 18), axes)
     elseif gesture === :zoom_in
-        foreach(d -> arrow!(d, 20, 36), diagonals)
+        foreach(d -> arrow!(d, 10, 18), diagonals)
     elseif gesture === :zoom_out
-        foreach(d -> arrow!(d, 36, 20), diagonals)
+        foreach(d -> arrow!(d, 18, 10), diagonals)
     end
     return lines, heads
 end
@@ -185,10 +186,11 @@ end
 """
     _draw_pivot!(gui)
 
-Draws the hidden marker of the pivot of the `gui`, see `_step_pivot!`: a camera (the icon of the
-views) and the arrows of each gesture (`_PivotGlyph`, see `_pivot_arrows`) in the accent color,
-outlined in the color of the background of the 3D view, such that they stand out from beams and
-objects. Their data are about the origin, they are moved to the pivot with `translate!`. They are
+Draws the hidden marker of the pivot of the `gui`, see `_step_pivot!`: a dot at the pivot, a small
+camera (the icon of the views) up right of it and the arrows of each gesture about it
+(`_PivotGlyph`, see `_pivot_arrows`) in the accent color, outlined in the color of the background
+of the 3D view, such that they stand out from beams and objects. Their data are about the pivot,
+they are moved to it with `translate!`. They are
 in a scene of pixels over the 3D view, like the cards: GLMakie draws the transparent plots of the
 3D view, e.g. the beams, after all opaque ones, even after those with `overdraw`, so a beam
 through the pivot would cover a marker in the 3D view. The scene is made before the cards, which
@@ -198,19 +200,22 @@ function _draw_pivot!(gui::LiveView)
     scene = Scene(gui.fig.scene; camera = Makie.campixel!, clear = false)
     accent, outline = gui.layout.theme.accent, _pivot_outline(gui, 1.0)
     common = (; visible = false, inspectable = false)
-    # The icon is an outline, a beam through the pivot would show through its lens
-    gui.camera.pivot_backdrop = scatter!(scene, [Point2f(0, 0)]; marker = :rect,
-        markersize = Vec2f(19, 15), color = outline, common...)
-    gui.camera.pivot = scatter!(scene, [Point2f(0, 0)]; marker = _icon(:views), markersize = 26,
-        color = accent, strokecolor = outline, strokewidth = 1.5, common...)
     for gesture in _PIVOT_GESTURES
         lines, heads = _pivot_arrows(gesture)
-        halo = lines!(scene, lines; color = outline, linewidth = 5, common...)
-        line = lines!(scene, lines; color = accent, linewidth = 2, common...)
+        halo = lines!(scene, lines; color = outline, linewidth = 3.5, common...)
+        line = lines!(scene, lines; color = accent, linewidth = 1.5, common...)
         tips = scatter!(scene, first.(heads); marker = :utriangle, rotation = last.(heads) .- π / 2,
-            markersize = 11, color = accent, strokecolor = outline, strokewidth = 1.5, common...)
+            markersize = 7, color = accent, strokecolor = outline, strokewidth = 1, common...)
         gui.camera.pivot_glyphs[gesture] = _PivotGlyph(AbstractPlot[halo], AbstractPlot[line, tips])
     end
+    # The icon is an outline, a beam behind it would show through its lens
+    badge = Point2f(11, 11)
+    gui.camera.pivot_backdrop = scatter!(scene, [badge]; marker = :rect, markersize = Vec2f(10, 8),
+        color = outline, common...)
+    gui.camera.pivot_camera = scatter!(scene, [badge]; marker = _icon(:views), markersize = 13,
+        color = accent, strokecolor = outline, strokewidth = 1, common...)
+    gui.camera.pivot = scatter!(scene, [Point2f(0, 0)]; marker = :circle, markersize = 6,
+        color = accent, strokecolor = outline, strokewidth = 1.5, common...)
     return nothing
 end
 
@@ -240,6 +245,7 @@ function _update_pivot!(gui::LiveView)
     shown = alpha > 0
     at = shown ? Vec3f(_pivot_px(gui)..., 0) : Vec3f(0)
     _set_pivot_plot!(gui, c.pivot_backdrop, shown, alpha, at, true)
+    _set_pivot_plot!(gui, c.pivot_camera, shown, alpha, at, false)
     _set_pivot_plot!(gui, c.pivot, shown, alpha, at, false)
     for (gesture, glyph) in c.pivot_glyphs
         on = shown && gesture === c.pivot_gesture

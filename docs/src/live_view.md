@@ -34,10 +34,10 @@ gui = live_view(system, beam; orthographic = true)
 ```
 
 While the camera is rotated, panned or zoomed (also by `g`, the view cube, home and the saved
-views), a small camera symbol marks the point the camera turns about (its `lookat` point). It fades
-shortly after the camera stops. Arrows next to the symbol show the motion: two arcs while rotating,
-four arrows while panning, arrows pointing outwards while zooming in and inwards while zooming out;
-`g`, the view cube, home and the saved views show the symbol alone.
+views), a dot with a small camera symbol beside it marks the point the camera turns about (its
+`lookat` point). It fades shortly after the camera stops. Arrows about the dot show the motion: two
+arcs while rotating, four arrows while panning, arrows pointing outwards while zooming in and
+inwards while zooming out; `g`, the view cube, home and the saved views show dot and symbol alone.
 
 With `layout = :compact` (default), the 3D view fills the window; the panels of
 [`add_panel!`](@ref), if there are any, form a column on its right. Everything else appears on

@@ -76,8 +76,8 @@ beams, measure, show all, component menu "select component", export, `add_tool!`
 per `add_controls!` section, "Sliders" for `sliders`; entries with widgets open a popover; `Esc`
 closes); the mouse over the view cube shows the camera popover (home, fit `g`, views, save view,
 orthographic); the status line appears as a toast. While the camera moves (drag, scroll, `g`, view
-cube, home, saved views), a small camera symbol marks its pivot (the `lookat` point) and fades shortly after. Arrows next to it show the motion (two arcs rotating, four arrows panning,
-arrows outwards zooming in, inwards zooming out); `g`, the view cube, home and saved views show the symbol alone.
+cube, home, saved views), a dot with a small camera symbol beside it marks its pivot (the `lookat` point) and fades shortly after. Arrows about the dot show the motion (two arcs rotating, four arrows panning,
+arrows outwards zooming in, inwards zooming out); `g`, the view cube, home and saved views show dot and symbol alone.
 `layout = :app` arranges the window like an application, with the cards (selection and
 pinned) docked in the "Properties" sidebar instead of floating; the float button of a pinned card
 moves it into the 3D view next to its component, its dock button moves it back; docked pinned
