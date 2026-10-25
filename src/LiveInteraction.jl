@@ -682,7 +682,7 @@ end
 
 Returns whether a click in the `scene` adds an object to the selection of the `ctrl` or removes it
 (see `_toggle_leaf!`): while `Ctrl` (`Cmd` on macOS) is held. Such a press never reaches the camera,
-whose `Camera3D` would reset (`center!`) on `Ctrl`+click.
+whose reset on `Ctrl`+click the controls switch off, see `kinematic_controls!`.
 """
 _toggles(::KinematicController, scene) = _modifier_held(scene, _CTRL_OR_CMD_KEYS)
 
@@ -1818,8 +1818,10 @@ A click selects, a drag moves only what is already selected, every other drag ro
 - left-click on empty space: deselects the current object
 - `Ctrl`+left-click (`Cmd` on macOS) on an object: adds its top-level object to the selection, or
   removes the object of the selection that it belongs to; on empty space it keeps the selection.
-  The press of `Ctrl`+click is never passed on, hence it does not reset the camera
-  (`Camera3D`'s reset gesture) in the controls, and a `Ctrl`+drag beside the selection does nothing.
+  The press of `Ctrl`+click is never passed on, and a `Ctrl`+drag beside the selection does
+  nothing. The controls take this gesture from the camera: the reset of a `Camera3D`
+  (`Ctrl`+left-click, `center!`) is switched off, which would otherwise also fit the view to the
+  scene at a key event of `Ctrl` while the button is held, e.g. the repetition of the held key.
   With a `select_modifier`, it is held as well
 
 A selection of several objects moves and rotates as one, with the mouse, the gizmo and the keys:
@@ -1935,6 +1937,11 @@ function kinematic_controls!(
     constraints_dict = IdDict{Any, NamedTuple}(constraints)
     _validate_constraints(constraints_dict)
     scene = Makie.get_scene(ax)
+    # Ctrl+click belongs to the selection: the reset of the camera (`center!`) would also fire at a
+    # key event of Ctrl while the button is held, which the press listener can not consume, see
+    # `_toggles`; `false` is a binding that is never pressed
+    cam = Makie.cameracontrols(scene)
+    cam isa Makie.Camera3D && (cam.controls.reset[] = false)
     movable = _LiveMovable[]
     if isnothing(objects)
         # Top-level objects, since the handles of groups belong to the objects of the group

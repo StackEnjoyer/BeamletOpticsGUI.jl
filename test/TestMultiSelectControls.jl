@@ -118,6 +118,16 @@ const GUI = BeamletOpticsGUI
         delete!(events(scene).keyboardstate, Keyboard.left_control)
         @test ctrl.selected[] === s && probe[] == 0
         @test cam.eyeposition[] == eye && cam.lookat[] == lookat
+        # a key event of Ctrl while the button is held, e.g. the repetition of the held key, does
+        # not reset the camera either (`center!` of `Camera3D`, which reacts to key events as well)
+        @test cam.controls.reset[] === false
+        ev = events(scene)
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.press)
+        _press!(scene)
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.repeat)
+        _release!(scene)
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left_control, Keyboard.release)
+        @test cam.eyeposition[] == eye && cam.lookat[] == lookat
         # a plain click on the background deselects
         _click!(scene)
         @test isnothing(ctrl.selected[])
