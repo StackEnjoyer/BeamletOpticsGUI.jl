@@ -1915,20 +1915,14 @@ A click selects, a drag moves only what is already selected, every other drag ro
 - left-click on empty space: deselects the current object
 - `Ctrl`+left-click (`Cmd` on macOS) on an object: adds its top-level object to the selection, or
   removes the object of the selection that it belongs to; on empty space it keeps the selection.
-<<<<<<< HEAD
-  The press of `Ctrl`+click is never passed on, hence it does not reset the camera
-  (`Camera3D`'s reset gesture) in the controls. With a `select_modifier`, it is held as well
+  The press of `Ctrl`+click is never passed on. The controls take this gesture from the camera: the
+  reset of a `Camera3D` (`Ctrl`+left-click, `center!`) is switched off, which would otherwise also
+  fit the view to the scene at a key event of `Ctrl` while the button is held, e.g. the repetition
+  of the held key. With a `select_modifier`, it is held as well
 - `Ctrl`+left-drag on empty space or on an object that is not selected: draws a rectangle and adds
   the movable objects whose center (of their visible bounding box) lies inside it to the selection,
   a group as a whole; hidden objects and clip planes are not added, the camera does not move. A
   `Ctrl`+drag on the selection moves it
-=======
-  The press of `Ctrl`+click is never passed on, and a `Ctrl`+drag beside the selection does
-  nothing. The controls take this gesture from the camera: the reset of a `Camera3D`
-  (`Ctrl`+left-click, `center!`) is switched off, which would otherwise also fit the view to the
-  scene at a key event of `Ctrl` while the button is held, e.g. the repetition of the held key.
-  With a `select_modifier`, it is held as well
->>>>>>> feature/multi-select
 
 A selection of several objects moves and rotates as one, with the mouse, the gizmo and the keys:
 about its center, the mean of the positions of its objects when it was made, with the axes of the
