@@ -203,9 +203,20 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test abs(GUI._pose(m2)[2][3, 2]) ≈ 1 atol = 1e-9
         @test abs(det(hcat(y2, x2, v2))) ≈ 1 atol = 1e-9
         @test x2 ≈ GUI._pose(m2)[2][:, 1]
-        # axes in general position are the local ones
+        # a tilted object: the frame stays orthonormal, e.g. after a rotation in the rotate mode; the
+        # heading comes from the local axis that lies more in the plane perpendicular to the rotation
+        # axis, here the local x-axis turned by 90°, since the local y-axis points almost upwards
         BMO.xrotate3d!(m2, 0.3)
-        @test GUI._control_axes(ctrl, m2)[1] ≈ GUI._pose(m2)[2][:, 2]
+        Rm2 = GUI._pose(m2)[2]
+        y3, x3, v3 = GUI._control_axes(ctrl, m2)
+        @test y3 ≈ cross([0, 0, 1], normalize([Rm2[1, 1], Rm2[2, 1], 0.0])) && v3 == [0, 0, 1]
+        @test abs(dot(y3, x3)) < 1e-12 && abs(dot(y3, v3)) < 1e-12 && abs(dot(x3, v3)) < 1e-12
+        @test cross(x3, y3) ≈ v3
+        # an object turned only about the rotation axis keeps its local axes
+        m3 = RoundPlanoMirror(25e-3, 5e-3)
+        BMO.zrotate3d!(m3, 0.7)
+        y4, x4, _ = GUI._control_axes(ctrl, m3)
+        @test y4 ≈ GUI._pose(m3)[2][:, 2] && x4 ≈ GUI._pose(m3)[2][:, 1]
         # the key of the x-axis moves m1 along the new axis, i.e. sideways
         ctrl.selected[] = m1
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)

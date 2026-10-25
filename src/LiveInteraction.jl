@@ -307,7 +307,8 @@ function _next_step(x::Real, dir::Int)
     return dir > 0 ? grid[findfirst(>(x), grid)] : grid[findlast(<(x), grid)]
 end
 
-# Green, red and blue axes of the controls: local y-axis, local x-axis and rotation axis
+# Green, red and blue axes of the controls: heading, the axis beside it and rotation axis, see
+# `_control_axes`
 const _AXES_COLORS = [:green, :red, :blue]
 # Symbols of the gizmo axes in the same order as _AXES_COLORS, and as accepted by `constraints`
 const _AXES_SYMS = (:y, :x, :v)
@@ -819,41 +820,19 @@ _parent_selection(::KinematicController, ::_MultiSelection) = nothing
 """
     _control_axes(ctrl, obj) -> (y, x, v)
 
-Axes of the controls of `obj`, i.e. of its gizmo, the keyboard and the mouse: its local y-axis, its
-local x-axis and the rotation axis of the `ctrl`. They must span the space, otherwise `obj` can not
-be moved in one direction. A local axis that is parallel to the rotation axis (`|a × v| < 10⁻⁶`) is
-therefore replaced by the axis perpendicular to the other local axis and the rotation axis, e.g. the
-local x-axis of a `CollimatedSource` along +y, which points along -z, by +x. The direction of the
-replaced axis stays available as the rotation axis.
+Axes of the controls of `obj`, i.e. of its gizmo, the keyboard and the mouse, an orthonormal frame
+(`x × y = v`): the heading of `obj` in the plane perpendicular to the rotation axis `v` of the
+`ctrl` (green), the axis perpendicular to it in that plane (red), and `v` (blue). The heading is the
+local y-axis of `obj` projected onto that plane, or the local x-axis turned by 90° about `v`,
+whichever is longer in the plane, e.g. for an object whose local y-axis points along `v`. For an
+object that is only turned about `v`, e.g. on a table, these are its local y- and x-axes; a tilt
+about one of the other axes does not skew them, a rotation about `v` turns them with the object.
 """
 function _control_axes(ctrl::KinematicController, @nospecialize(obj))
-    R = _pose(obj)[2]
-    y, x, v = Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), ctrl.rotation_axis
-    parallel(a) = norm(cross(a, v)) < 1e-6
-    if parallel(x) && !parallel(y)
-        x = normalize(cross(y, v))
-    elseif parallel(y) && !parallel(x)
-        y = normalize(cross(v, x))
-    end
-    return (y, x, v)
-end
-
-"""
-    _control_axes(ctrl, s::_MultiSelection) -> (y, x, v)
-
-The axes of the controls of a selection of several objects, which has no orientation of its own
-that is seen: its local y-axis projected onto the plane perpendicular to the rotation axis `v`, the
-axis perpendicular to both, and `v`, an orthonormal frame. A rotation about `v` turns the arrows
-with the selection, a tilt about one of the other axes does not skew them; the local x-axis
-replaces the y-axis if that is parallel to `v`.
-"""
-function _control_axes(ctrl::KinematicController, s::_MultiSelection)
-    R, v = _pose(s)[2], ctrl.rotation_axis
+    R, v = _pose(obj)[2], ctrl.rotation_axis
     y = Vector{Float64}(R[:, 2]) .- dot(R[:, 2], v) .* v
-    if norm(y) < 1e-6
-        x = Vector{Float64}(R[:, 1]) .- dot(R[:, 1], v) .* v
-        y = cross(v, x)
-    end
+    x = Vector{Float64}(R[:, 1]) .- dot(R[:, 1], v) .* v
+    norm(y) >= norm(x) || (y = cross(v, x))
     y = normalize(y)
     return (y, normalize(cross(y, v)), v)
 end
@@ -1870,11 +1849,13 @@ Enables mouse and keyboard controls for the objects of the live-rendered system 
 can be used as usual as long as no object is grabbed. Returns a `KinematicController`.
 
 The controls have a move and a rotate mode, which are switched with the key `m`. The selected object
-is marked by a box and three axes above the object: its local y-axis (green), its local x-axis
-(red) and the `rotation_axis` (blue). A local axis that is parallel to the `rotation_axis`, e.g. the
-local x-axis of a `CollimatedSource` along +y, is replaced by the axis perpendicular to the other
-two, such that the object can be moved in all directions. In the move mode the axes are shown as arrows, in the rotate
-mode as rings. The key `h` shows or hides an overlay of all controls.
+is marked by a box and three perpendicular axes above the object: the `rotation_axis` (blue) and,
+perpendicular to it, the heading of the object (green, its local y-axis projected onto the plane
+perpendicular to the `rotation_axis`) and the axis beside it (red). For an object that is only
+turned about the `rotation_axis`, e.g. on a table, green and red are its local y- and x-axes; a
+tilt does not skew them, and an object whose local y-axis points along the `rotation_axis` takes its
+local x-axis for red. In the move mode the axes are shown as arrows, in the rotate mode as rings.
+The key `h` shows or hides an overlay of all controls.
 
 The key `v` switches the spectator mode on or off, in which the selection is cleared and all
 mouse and keyboard input goes to the camera, such that nothing can be moved by accident. Leaving
@@ -2001,7 +1982,7 @@ the object (or subgroup) that is currently selected apply.
   drag
 - `spectator = false`: starts in the spectator mode
 - `constraints = Dict()`: maps an object to a `NamedTuple` `(; move = axes, rotate = axes)`, where
-  `axes` is a tuple of the allowed gizmo axes `:x` (red, local x), `:y` (green, local y) and `:v`
+  `axes` is a tuple of the allowed gizmo axes `:x` (red), `:y` (green, the heading) and `:v`
   (blue, `rotation_axis`); a missing field means all axes are allowed, `()` means none, see
   "Constraints"
 - `source_pick_radius = 15`: [px] screen-space pick radius of source markers, see "Mouse controls"
