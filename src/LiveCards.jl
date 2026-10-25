@@ -485,7 +485,8 @@ function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
         for (j, cell) in enumerate(row.cells)
             _add_cell!(gui, c, layout[1, j], cell)
         end
-        length(row.cells) > 1 && push!(grids, layout)
+        # also a row of a single widget, e.g. the names of a selection of several, see `_settle_cards!`
+        (length(row.cells) > 1 || any(cell -> cell isa CardWidget, row.cells)) && push!(grids, layout)
     end
     c.content_key = key
     isempty(grids) || push!(gui.cards.settle, (time(), grids))
@@ -510,8 +511,13 @@ function _settle_cards!(gui::LiveView)
     for (t0, grids) in settle
         t0 == now && continue
         for g in grids
-            # a row that was deleted meanwhile has no columns left
-            size(g)[2] > 1 && Makie.colgap!(g, 1, g.addedcolgaps[1].x + 1)
+            # a row that was deleted meanwhile has no columns left; a row of a single widget has no
+            # gap, a margin of 1 px moves it instead
+            if size(g)[2] > 1
+                Makie.colgap!(g, 1, g.addedcolgaps[1].x + 1)
+            elseif size(g)[2] == 1
+                g.alignmode[] = Makie.Outside(1, 0, 0, 0)
+            end
         end
     end
     filter!(((t0, _),) -> t0 == now, settle)
