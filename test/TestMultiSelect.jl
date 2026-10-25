@@ -46,6 +46,28 @@ const GUI = BeamletOpticsGUI
         @test_throws ArgumentError GUI._MultiSelection([m1])
     end
 
+    @testset "no NaN after many rotations, e.g. by the undo of a move" begin
+        m1, m2 = RoundPlanoMirror(25e-3, 5e-3), RoundPlanoMirror(25e-3, 5e-3)
+        translate3d!(m2, [0.1, 0, 0])
+        s = GUI._MultiSelection([m1, m2])
+        for _ in 1:2000   # the steps of a rotation drag
+            rotate3d!(s, normalize([0.0, 0.3, 1.0]), 0.0037)
+        end
+        @test norm(BMO.orientation(s)' * BMO.orientation(s) - I) < 1e-14
+        P = Vector{Float64}(position(m1))
+        GUI._set_pose!(s, GUI._pose(s)...)
+        @test position(m1) ≈ P && all(isfinite, BMO.orientation(m1))
+        # a rotation by rounding errors only is no rotation, not a small angle about a NaN axis
+        axis, angle = GUI._axis_angle_from_rotmatrix((1 - 1e-13) * Matrix(1.0I, 3, 3))
+        @test angle == 0 && all(isfinite, axis)
+        for θ in (1e-6, 0.3, 2.0, π - 1e-7)
+            a = normalize([0.2, -0.5, 1.0])
+            axis, angle = GUI._axis_angle_from_rotmatrix(BMO.rotate3d(a, θ))
+            # near π the axis comes from the symmetric part, accurate to about 10⁻⁷
+            @test angle ≈ θ && isapprox(BMO.rotate3d(axis, angle), BMO.rotate3d(a, θ); atol = 1e-6)
+        end
+    end
+
     @testset "toggling objects" begin
         m1, m2, m3 = (RoundPlanoMirror(25e-3, 5e-3) for _ in 1:3)
         @test GUI._with_toggled(nothing, m1) === m1

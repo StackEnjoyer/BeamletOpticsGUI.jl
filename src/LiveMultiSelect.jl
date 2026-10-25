@@ -50,7 +50,10 @@ function BMO.rotate3d!(::BMO.Movable, s::_MultiSelection, R::AbstractMatrix)
     for obj in s.objects
         rotate3d!(obj, R, pivot)
     end
-    s.dir = Matrix{Float64}(R * s.dir)
+    # the nearest orthonormal frame, such that the rounding errors of many steps of a drag do not
+    # add up, see `_axis_angle_from_rotmatrix`
+    F = svd(Matrix{Float64}(R * s.dir))
+    s.dir = F.U * F.Vt
     return nothing
 end
 

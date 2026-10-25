@@ -20,9 +20,13 @@ end
     _axis_angle_from_rotmatrix(R)
 
 Returns the `axis` and `angle` of the rotation matrix `R` such that `rotate3d(axis, angle) ≈ R`.
+The angle is that of the sine (the antisymmetric part of `R`) and the cosine (its trace), such that
+a matrix that differs from the identity by rounding errors only, e.g. `R * R'` of an orientation
+that was rotated many times, is no rotation, instead of a small angle without an axis (`NaN`).
 """
 function _axis_angle_from_rotmatrix(R::AbstractMatrix{T}) where {T}
-    angle = acos(clamp((tr(R) - 1) / 2, -one(T), one(T)))
+    w = [R[3, 2] - R[2, 3], R[1, 3] - R[3, 1], R[2, 1] - R[1, 2]]
+    angle = atan(norm(w) / 2, (tr(R) - 1) / 2)
     angle < 1e-8 && return [0.0, 0.0, 1.0], 0.0
     if angle > π - 1e-6
         # sin(angle) ≈ 0, use the symmetric part of R instead
@@ -35,10 +39,12 @@ function _axis_angle_from_rotmatrix(R::AbstractMatrix{T}) where {T}
             j == i && continue
             axis[j] = S[i, j] / axis[i]
         end
+        # the symmetric part leaves the sign open, the antisymmetric part still points along the
+        # axis below π
+        dot(axis, w) < 0 && (axis = -axis)
         return normalize(axis), angle
     end
-    axis = [R[3, 2] - R[2, 3], R[1, 3] - R[3, 1], R[2, 1] - R[1, 2]] ./ (2 * sin(angle))
-    return normalize(axis), angle
+    return normalize(w), angle
 end
 
 """Returns the 12 edges of the box `bb` as input for `linesegments`."""
