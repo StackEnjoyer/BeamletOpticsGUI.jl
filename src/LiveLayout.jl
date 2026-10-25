@@ -186,6 +186,8 @@ function _on_spectator!(gui::LiveView, on::Bool)
     _set_spectator_ui!(gui, on)
     _update_cards!(gui)
     _arrange_help!(gui)
+    # The layers of the debug mode hide with the UI, see `_debug_visible`
+    _debug_show!(gui)
     return nothing
 end
 

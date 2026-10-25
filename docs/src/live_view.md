@@ -731,6 +731,46 @@ the other one as well. The selection, the camera, colors, hidden objects, clip p
 history are kept per window. Closing one of the windows ends the link. A system that is open in
 another window can not be removed with [`remove_system!`](@ref); close that window first.
 
+## Debug mode
+
+The debug mode shows what the GUI and the trace are doing, to find out why a setup is slow or why a
+beam ends where it does. Start with it on, or switch it with the tool "Debug" among the tools (no key):
+
+```julia
+gui = live_view(system, beam; debug = true)
+```
+
+While it is on, the 3D view shows:
+
+- the **debug card** in the top left, with the sections "Frames" (frames per second, counted from
+  rendered frames only, frame interval, the duration of a drag step, number of plots, window size),
+  "Solve" (state, solve time with its budget, time to draw the beams, the detector views, compile
+  time (JIT) and GC/allocations, threads, the slowest source), "Rays" (beams, segments, depth, the
+  ends of the beams by reason with a color legend, hit points, components never hit), "Scene" and
+  "Events" (the last events, e.g. finished, cancelled or failed solves, added and removed
+  components);
+- the **bounding spheres** of the components: a magenta sphere per shape, and an orange main sphere
+  for objects of several shapes and for groups. Objects without a bounding sphere, e.g. a
+  `NonInteractableObject`, show none;
+- a **marker at the end of each beam**, colored by why it ends: green on an object, amber if it
+  flies on, red at a limit of the solve (the ray limit `r_max` or the depth limit). Every hit point is
+  drawn with its surface normal, a short arrow of the same length on the screen at any zoom, towards
+  the side the ray comes from (at most 2000), and components that no ray hits are marked "never
+  hit";
+- a **camera per saved view** of the views menu and of the home view (gray), drawn like the
+  cameras of Blender: the frustum with the field of view of the window (a box in the orthographic
+  projection), a triangle on its upper edge, a dashed line to the point the view turns about, and
+  its name. The mouse over a camera highlights it with the area the view frames at that point, and
+  its name also gives the eye and that point in mm. The view the window looks through has no camera;
+- the page "Debug" on the cards: type, id, systems, traits, the exact position and orientation
+  matrix, shapes, bounding sphere, hits and plots; for sources also the beams, rays, segments and
+  the ends of the beams, for detectors the type and number of hits.
+
+Everything is an overlay: it is not traced, not exported and hidden in the spectator mode.
+[`open_system`](@ref) takes the mode over to the new window. The reason why a beam ends is derived
+from the path segments of BeamletOptics; it can not yet tell apart why an object ends a beam, e.g.
+an absorber, a detector that stops it or a polarizer below its cutoff.
+
 ## Adding and removing components
 
 Components can be added to a `System` of the view and removed again at runtime, from a catalog in

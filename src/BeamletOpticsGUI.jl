@@ -103,6 +103,12 @@ include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")
 include("LiveCatalogWindow.jl")
 include("LiveCopy.jl")
+include("LiveDebug.jl")
+include("LiveDebugHUD.jl")
+include("LiveDebugSpheres.jl")
+include("LiveDebugRays.jl")
+include("LiveDebugViews.jl")
+include("LiveDebugPage.jl")
 # agent skill of the package
 include("AgentSkill.jl")
 # precompiles the live view and the interaction call paths, must come last

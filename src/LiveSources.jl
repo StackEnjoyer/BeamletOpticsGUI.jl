@@ -206,6 +206,8 @@ function _attach!(gui::LiveView, src::_Source, sys::Union{Nothing, BMO.AbstractS
     _table_include!(gui, src)
     _on_components_changed!(gui)
     _update_info!(gui)
+    _debug_event!(gui, "added $(_label(gui, src))")
+    _debug_attached!(gui, src)
     return kw
 end
 

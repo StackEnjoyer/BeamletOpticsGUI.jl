@@ -153,6 +153,8 @@ function _flip_clip_plane!(gui::LiveView, plane::LiveClipPlane)
     _push_history!(ctrl, plane, P0, R0, P1, R1)
     update_render!(ctrl.h)
     _update_selection_box!(ctrl)
+    # not through the controls, see `_apply_update!`
+    _debug_moved!(gui, plane)
     _on_clip_change!(gui, plane)
     return nothing
 end

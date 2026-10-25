@@ -330,7 +330,7 @@ function _connect_inspection!(gui::LiveView)
         try
             return _on_click!(gui, obj)
         catch e
-            gui.last_error = _log_once(e, gui.last_error, "beam inspection")
+            gui.last_error = _log_once(gui, e, gui.last_error, "beam inspection")
             return false
         end
     end

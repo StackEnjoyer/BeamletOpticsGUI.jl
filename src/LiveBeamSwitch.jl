@@ -139,6 +139,8 @@ function _render_settings!(gui::LiveView, beam; kwargs...)
     finally
         running && gui.controls.on_change(beam)
     end
+    # e.g. the ends of the final rays, which the layers of the debug mode show
+    _debug_solved!(gui)
     return nothing
 end
 
