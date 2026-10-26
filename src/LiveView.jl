@@ -361,15 +361,22 @@ Cards of a `LiveView`: the card of the `selection` next to the selected object, 
 rows and actions declared for it (see [`card_rows`](@ref)); `all` cards, including the pinned
 ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`); the
 selection card of groups (`browse`, a `_BrowseCard`, see `_browse!`), `nothing` until it is
-connected; `settle` holds the row layouts of cards whose widgets were just built, with the clock
-time of the build, until their boxes were moved once, see `_settle_cards!`.
+connected; `settle` holds the layouts of the actions and rows of cards whose widgets were just
+built, with the number of `ticks` of the render loop before the build, until a frame drew them
+(`drawn`: the number of ticks before the last frame that was drawn) and they were settled,
+`restore` the scenes of their widgets with a grown viewport until they take their size again,
+see `_settle_cards!`.
 """
 Base.@kwdef mutable struct _CardState
     selection::_ComponentCard
     all::Vector{_ComponentCard} = [selection]
     shield::Vector{Any} = Any[]
     browse::Any = nothing
-    settle::Vector{Tuple{Float64, Vector{GridLayout}}} = Tuple{Float64, Vector{GridLayout}}[]
+    ticks::Int = 0
+    drawn::Int = 0
+    settle::Vector{Tuple{Int, GridLayout, Vector{GridLayout}}} = Tuple{Int, GridLayout, Vector{GridLayout}}[]
+    restore::Vector{Tuple{Int, Vector{Tuple{Makie.Scene, Makie.Rect2i}}}} =
+        Tuple{Int, Vector{Tuple{Makie.Scene, Makie.Rect2i}}}[]
 end
 
 """
