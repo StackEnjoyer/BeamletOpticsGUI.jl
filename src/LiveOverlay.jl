@@ -277,7 +277,7 @@ with a pixel camera over the whole figure, translated to `_OVERLAY_Z`, built lik
   1) of the sliders, see `_rail_slot!`; the `sections` are the entries with their popovers right of the rail, of which the one with the index
   `open_section` is shown (0 for none)
 - `camera`: the camera popover below the view `cube` (`camera_tools`: home, fit, views and its
-  `views_menu`, save view, orthographic), shown while `camera_shown`: while the mouse is over the
+  `views_menu`, save view, orthographic, lock view), shown while `camera_shown`: while the mouse is over the
   cube or the popover, hidden by `camera_deadline` after it left both; always without a view cube
 - `toast`: the status and the info label at the bottom center, shown for `_TOAST_SECONDS` after a
   new text while `toast_shown`, see `toast_deadline`

@@ -126,6 +126,7 @@ function _open_kwargs(gui::LiveView, system, sources)
         movable_sources = markers, show_sources = gui.widgets.sources_toggle.active[],
         labels = gui.labels, catalog = gui.components.catalog,
         orthographic = gui.widgets.orthographic_toggle.active[],
+        lock_view = gui.widgets.lock_view_toggle.active[],
         view_cube = !isnothing(gui.widgets.view_cube), snap = ctrl.snap[],
         table = _table_kwarg(gui.components.table), debug = _debug_kwarg(gui.components.debug),
         # the sizes of the sidebars and the dock, see `_part_size_kwargs`

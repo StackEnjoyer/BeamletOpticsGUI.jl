@@ -53,7 +53,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `snap = false` | components snap onto the central beams, and onto the holes of a shown table, while dragged or placed with the mouse: `true`/`:position` (position only) or `:pose` (position and rotation); in the rotate mode in steps of 45° to the beam. In the window: `Tab` or the chip "Snap" cycles off, position, position and rotation; `Shift`+`Tab` backwards |
 | `table = false` | optical table below the setup, also the toggle "Table" among the tools: `true`, or `(; pitch = 25e-3, height = nothing, snap = true, shown = true)` [m]; while shown and `snap` is on, dragged and placed components and sources snap onto its holes beside the beams, rotations in steps of 45° to its rows |
 | `debug = false` | start with the debug mode on, also the tool "Debug" (no key): the debug card (frames, solve, rays, scene, events), bounding spheres, a marker at the end of each beam colored by why it ends, hit points with normals and "never hit" components, a camera per saved view and the home view (frustum, up triangle, sight line to the pivot, highlighted under the mouse), and the page "Debug" on the cards; overlays only, not traced, not exported, hidden in the spectator mode |
-| `views`, `orthographic`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
+| `views`, `orthographic`, `lock_view`, `view_cube`, `show_sources`, `movable_sources` | camera and markers |
 
 `open_system(gui, system; display = true, kwargs...)` opens a system of the view with its components
 and sources in a second window and returns its `LiveView` (in the window: the icon of two windows in the head of

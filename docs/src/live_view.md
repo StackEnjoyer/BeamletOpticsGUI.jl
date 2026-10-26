@@ -33,6 +33,17 @@ orthographic view, there `W`/`S` zoom like `U`/`O`:
 gui = live_view(system, beam; orthographic = true)
 ```
 
+The "lock view" toggle next to it keeps the direction of the camera, `lock_view = true` starts
+locked. While locked, neither the left drag on the background nor the keys `J`/`L`, `I`/`K` and
+`Q`/`E` turn the view; objects are selected, dragged and placed as before. The right drag (pan), the
+scroll wheel and the walk and zoom keys work as before. The view cube, the saved views and home still set the
+direction, and the lock stays on. The status line shows "view locked" or "view unlocked"; no key
+toggles it.
+
+```julia
+gui = live_view(system, beam; lock_view = true)
+```
+
 While the camera is rotated, panned or zoomed (also by `g`, the view cube, home and the saved
 views), a dot with a small camera symbol beside it marks the point the camera turns about (its
 `lookat` point). It fades shortly after the camera stops. Arrows about the dot show the motion: two
@@ -61,7 +72,7 @@ demand over the 3D view:
   for the `sliders`. Such an entry opens its widgets in a popover next to the rail. `Esc`, "⋯" or
   a click outside close the rail (`Esc` closes an open popover first).
 - the mouse over the view cube shows the camera popover below it: home, fit (`g`), the views menu,
-  save view and orthographic; it hides 0.3 s after the mouse left the cube and the popover
+  save view, orthographic and lock view; it hides 0.3 s after the mouse left the cube and the popover
 - the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
   for 3 s after each change
 
