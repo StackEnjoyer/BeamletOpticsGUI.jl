@@ -219,7 +219,8 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
     return _HelpSection[
         "Select" => [
             _HelpEntry(click, click_help; combo = true),
-            _HelpEntry(toggle, "add to or remove from the selection"; combo = true),
+            _HelpEntry(toggle, "add to or remove from the selection, a part of the same group too";
+                combo = true),
             _HelpEntry(drag_keys, "add the objects in a rectangle"; combo = true),
             _HelpEntry(["Esc"], "enclosing group or deselect")],
         (move ? "Move" : "Rotate") * " the selection" => [
@@ -709,7 +710,8 @@ function _sibling_or_top(ctrl::KinematicController, @nospecialize(leaf))
     objs = _selection_objects(ctrl.selected[])
     if !isempty(objs)
         P = render_parent(ctrl.h, first(objs))
-        if !isnothing(P) && all(x -> render_parent(ctrl.h, x) === P, objs)
+        same(@nospecialize x) = render_parent(ctrl.h, x) === P
+        if !isnothing(P) && all(same, objs)
             i = _index(chain, P)
             isnothing(i) || i > 1 && return chain[i - 1]
         end

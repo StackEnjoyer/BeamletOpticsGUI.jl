@@ -4,8 +4,10 @@ The keys of the groups made in the window, see `_connect_group_keys!`
 
 # The keys of grouping and ungrouping, in the help of the controls, see `_help_sections`
 const _GROUP_HELP = _HelpSection["Edit" => [
-    _HelpEntry([_ctrl_cap(), "G"], "group the selection of several objects"; combo = true),
-    _HelpEntry([_ctrl_cap(), "Shift", "G"], "ungroup a group made in the window"; combo = true)]]
+    _HelpEntry([_ctrl_cap(), "G"], "group the selection of several objects, parts of a group inside it";
+        combo = true),
+    _HelpEntry([_ctrl_cap(), "Shift", "G"], "ungroup a group made in the window, into the group that holds it";
+        combo = true)]]
 
 """
     _group_key!(gui, ungroup::Bool)

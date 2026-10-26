@@ -470,6 +470,8 @@ function _show_group!(gui, @nospecialize(g), rec::_WindowGroup, systems; label =
     # before `_attach!`, which would name them anew
     _restore_kept_names!(gui, state)
     script || (gui.components.groups[g] = rec)
+    # a group of the script is in the view again, as itself or by a group that replaces it
+    delete!(gui.components.dissolved, script ? g : rec.replaces)
     targets = isempty(systems) ? Any[nothing] : collect(Any, systems)
     for (k, sys) in enumerate(targets)
         _attach!(gui, g, sys; label = k == 1 ? label : nothing, record = false)
@@ -500,6 +502,9 @@ function _unshow_group!(gui, @nospecialize(g), systems)
     state = _kept_state(gui, Any[g]; own = g)
     _unshow!(gui, g)
     comp = gui.components
+    # the group of the script that `g` replaced leaves the view with it, see `export_changes`
+    rec = get(comp.groups, g, nothing)
+    (rec isa _WindowGroup && !isnothing(rec.replaces)) && push!(comp.dissolved, rec.replaces)
     delete!(comp.groups, g)
     i = _index(comp.added, g)
     isnothing(i) || deleteat!(comp.added, i)
