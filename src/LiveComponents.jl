@@ -299,9 +299,11 @@ function _attach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
             delete!(comp.system, obj)
         end
         _table_include!(gui, obj)
+        _debug_event!(gui, "added $(_label(gui, obj))")
     end
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
+    _debug_attached!(gui, obj)
     return nothing
 end
 
@@ -482,6 +484,9 @@ With `keep_name`, `top` keeps its name and label, e.g. for the code of `export_c
 """
 function _release!(gui::LiveView, top, parts; keep_name::Bool = false)
     ctrl = gui.controls
+    # while its name is known and its plots are there
+    _debug_event!(gui, "removed $(_label(gui, top))")
+    _debug_released!(gui, top)
     _end_browse!(gui)
     gui.objects.inspected in parts && _end_inspection!(gui)
     # A selection of several keeps its other objects, see `_without`

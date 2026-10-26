@@ -203,7 +203,8 @@ The screen rectangles [figure px] that the floating cards of the `gui` keep off,
 view cube, if any, the parts of the layout over the 3D view that are shown, see
 `_layout_obstacles`, and the window of the catalog while it is shown, see `_CatalogWindow`.
 """
-_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui); _catalog_rects(gui)]
+_obstacles(gui::LiveView) = [_obstacles(gui.widgets.view_cube); _layout_obstacles(gui); _catalog_rects(gui);
+    _debug_obstacles(gui)]
 
 """
     _layout_obstacles(gui) -> Vector{Rect2f}
@@ -1079,7 +1080,7 @@ const _INSPECTOR_SKIPPED = ("Type", "Position [m]")
 Shows the properties of `obj` (see `_inspector_rows`) in the property list of the part of the
 selection `part`, see `_selection_part!`.
 """
-_show_properties!(gui::LiveView, part, @nospecialize(obj)) = (_set_rows!(part.list, _inspector_rows(gui, obj)); nothing)
+_show_properties!(gui::LiveView, part, @nospecialize(obj)) = (_set_rows!(part.list, _list_rows(gui, part.page, obj)); nothing)
 
 """Returns the rows of the property list for `obj`, see `BeamletOptics.properties` and `_properties`."""
 function _inspector_rows(::LiveView, @nospecialize(obj))
@@ -1143,7 +1144,7 @@ _refresh_selection_part!(::LiveView, ::_AbstractCard, ::Nothing) = nothing
 _has_list(::_AbstractCard) = false
 _has_list(::_ComponentCard) = true
 # A floating card lists the properties on its page "Properties"
-_list_shown(c::_ComponentCard, @nospecialize(obj)) = c.page === :properties && _has_properties(obj)
+_list_shown(c::_ComponentCard, @nospecialize(obj)) = _shows_list(c.page) && _has_properties(obj)
 # The list of a floating card that is not shown is moved away with its part, see `_lower_parts`
 _hide_properties!(::_AbstractCard) = nothing
 
@@ -1166,7 +1167,7 @@ function _shield_cards!(gui::LiveView)
     foreach(off, gui.cards.shield)
     filter!(l -> !_has(gui.cards.shield, l), listeners)
     over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
-                 _over_catalog(gui) || _over_layout(gui)
+                 _over_catalog(gui) || _over_layout(gui) || _over_debug(gui)
     gui.cards.shield = Any[on(event -> Consume(event.action == Mouse.press && over()), ev.mousebutton; priority = 1),
         on(_ -> Consume(over()), ev.scroll; priority = 1)]
     append!(listeners, gui.cards.shield)
@@ -1196,7 +1197,8 @@ function _connect_cards!(gui::LiveView)
     ev = events(gui.ax.scene)
     over = () -> any(c -> _over_card(c, ev), gui.cards.all) || _over_browse_card(gui) ||
                  _over_catalog(gui) || _card_menu_open(gui)
-    ctrl.ignore_mouse = () -> over() || _outside_view(gui)
+    # not in `over`: a press on the debug card ends the input into the textboxes of the cards
+    ctrl.ignore_mouse = () -> over() || _over_debug(gui) || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))
     # Before the controls (200)

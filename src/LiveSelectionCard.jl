@@ -678,7 +678,7 @@ function _on_leaf_click!(gui::LiveView, @nospecialize(leaf))
         _open_menu!(gui, last(chain))
         return true
     catch e
-        gui.last_error = _log_once(e, gui.last_error, "selection card")
+        gui.last_error = _log_once(gui, e, gui.last_error, "selection card")
         return false
     end
 end

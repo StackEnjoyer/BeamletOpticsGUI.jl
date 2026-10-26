@@ -129,6 +129,13 @@ describe it as available in docs or the skill.
   (`_sync_links!` after a solve and when the beams become outdated, `_sync_structure!` after adding
   and removing, which `_attach!` and `_detach!` do for a view without changing the system).
 - `src/LiveMarkers.jl`: clip planes and source markers.
+- `src/LiveDebug.jl`: the debug mode (`debug` kwarg, tool "Debug", taken over by `open_system`): its
+  state `_Debug`, the stats (`_DebugStats`), the event log (`_debug_event!`) and the layer protocol
+  (`_DebugLayer`, `_new_layer`, hooks `_layer_show!`, `_layer_moved!`, `_layer_solved!`, ...) that
+  the layers implement; all are overlays, hidden in the spectator mode. Layers: `src/LiveDebugHUD.jl`
+  (the debug card), `src/LiveDebugSpheres.jl` (bounding spheres), `src/LiveDebugRays.jl` (beam ends
+  by reason, hit points and normals, "never hit"), `src/LiveDebugViews.jl` (a camera per saved view
+  and the home view), `src/LiveDebugPage.jl` (the page "Debug").
 - `src/LivePrecompile.jl`: the precompile workload of the package, without a Makie backend.
   `ext/BeamletOpticsGUIGLMakieExt/`: the extension for GLMakie, whose workload replays the sessions
   of simulated mouse and key actions of `session.jl` in an invisible window (`_session` per layout,
