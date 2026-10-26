@@ -384,6 +384,95 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         settle!()
         _check(flat(), "the undo did not bring back the objects")
     end
+    # The card buttons "group" (selection of several) and "ungroup" (group made in the window)
+    step("card: group and ungroup buttons, undo, redo") do
+        deselect!()
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        cards = GUI._edit_cards(gui)
+        i = findfirst(c -> !isnothing(GUI._card_widget(c, :group)), cards)
+        _check(!isnothing(i), "no card of the selection of several has the button group")
+        _click!(gui, _rect_center(GUI._card_widget(cards[i], :group)))
+        settle!()
+        _check(is_group(), "the button group did not make a group")
+        g = gui.controls.selected[]
+        cards = GUI._edit_cards(gui)
+        i = findfirst(c -> GUI._card_object(gui, c) === g && !isnothing(GUI._card_widget(c, :ungroup)), cards)
+        _check(!isnothing(i), "the card of the group has no button ungroup")
+        _click!(gui, _rect_center(GUI._card_widget(cards[i], :ungroup)))
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(is_group(), "the undo did not group again")
+        GUI._redo!(gui.controls)
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+        # the later steps find the scene of before
+        foreach(_ -> GUI._undo!(gui.controls), 1:2)
+        settle!()
+        _check(flat(), "the undo did not bring back the objects")
+    end
+    # Several parts of one group: Ctrl+click on a sibling part adds it, Ctrl+G makes the parts a group
+    # inside the group (also in a group of the script), one action of the undo history
+    function subgroup!(parts, top, undo_n)
+        GUI._select!(gui, parts[1])
+        settle!()
+        _check(gui.controls.selected[] === parts[1], "the part is not selected")
+        ctrl_click!(_px(gui, _pos(parts[2])))
+        frame!()
+        in_selection(parts[1], parts[2])
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        sub = gui.controls.selected[]
+        _check(is_group() && sub !== top &&
+               GUI._has(BMO.objects(sub), parts[1]) && GUI._has(BMO.objects(sub), parts[2]),
+            "Ctrl+G did not make the parts a group inside the group")
+        _check(length(gui.controls.undo_stack) == undo_n + 1, "the grouping is not one action of the undo history")
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, top), "the undo did not bring back the group")
+        GUI._redo!(gui.controls)
+        settle!()
+        _check(!GUI._has(fx.system.objects, top) && is_group(), "the redo did not group the parts again")
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, top), "the undo did not bring back the group")
+    end
+    step("ctrl+click a sibling part, ctrl+g (group inside a group made in the window), undo, redo") do
+        deselect!()
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.detector)))
+        frame!()
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group(), "Ctrl+G did not make the group")
+        subgroup!((fx.lens, fx.mirror), gui.controls.selected[], length(gui.controls.undo_stack))
+        # the later steps find the scene of before
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(flat(), "the undo did not bring back the objects")
+    end
+    step("ctrl+click a sibling part, ctrl+g (group inside a group of the script), undo, redo") do
+        # a group of the script: it is added without being made in the window
+        ms = [RoundPlanoMirror(10e-3, 3e-3) for _ in 1:3]
+        foreach((m, y) -> translate3d!(m, [-0.05, y, 0]), ms, (0.0, 0.04, 0.08))
+        sg = ObjectGroup(ms)
+        add_component!(gui, sg; select = false)
+        settle!()
+        _check(GUI._has(fx.system.objects, sg) && !GUI._is_window_group(gui, sg), "no group of the script")
+        subgroup!((ms[1], ms[2]), sg, length(gui.controls.undo_stack))
+        # the later steps find the scene of before: the group of the script out again
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(flat() && !GUI._has(fx.system.objects, sg), "the undo did not remove the group of the script")
+    end
     step(deselect!, "click background (deselect) after the groups")
     # Ctrl+drag beside the selection draws a rectangle, which adds the objects whose center it holds
     step("ctrl+drag a rectangle around lens and mirror") do
