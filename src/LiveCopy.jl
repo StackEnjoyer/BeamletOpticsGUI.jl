@@ -92,7 +92,7 @@ function _paste!(gui::LiveView)
         return nothing
     end
     P, R = built.origin.pose0
-    _set_pose_exact!(built.obj, P, c.rotation * R)
+    _set_pose!(built.obj, P, c.rotation * R)
     _start_placement!(gui, built.obj; origin = built.origin, system, kwargs = c.kwargs)
     return built.obj
 end

@@ -41,7 +41,7 @@ function _pose_string(gui, @nospecialize(obj))
     haskey(gui.controls.init_poses, obj) || return s
     P0, R0 = gui.controls.init_poses[obj]
     P, R = _pose(obj)
-    _, angle = _axis_angle_from_rotmatrix(R * R0')
+    _, angle = _rotation_axis_angle(R * R0')
     return s * ", moved by $(_length_string(norm(P - P0))), rotated by $(_angle_string(angle))"
 end
 

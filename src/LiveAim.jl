@@ -84,7 +84,7 @@ function _aim!(gui::LiveView, src::_Source, point)
         return false
     end
     Q = _align_rotation(Vector{Float64}(BMO.direction(src)), d, ctrl.rotation_axis)
-    axis, angle = _axis_angle_from_rotmatrix(Q)
+    axis, angle = _rotation_axis_angle(Q)
     angle > 1e-12 && _change!(() -> rotate3d!(src, axis, angle), ctrl, src)
     _commit_pose!(gui, src, P0, R0)
     return true
