@@ -2096,10 +2096,13 @@ function kinematic_controls!(
     help_pos = Makie.lift(vp -> Point2f(minimum(vp)[1] + 10, maximum(vp)[2] - 10), ax.scene.viewport)
     push!(plots, text!(ax.blockscene, help_pos; text = help_obs, space = :pixel,
         align = (:left, :top), fontsize = 14, color = :gray40))
-    # The selection rectangle of a Ctrl+drag, likewise in pixels of the 2D scene of the axis
+    # The selection rectangle of a Ctrl+drag, likewise in pixels of the 2D scene of the axis, but in
+    # a scene of its own that is drawn after the 3D scene and over its depth: in the 2D scene, which
+    # is drawn first, it would hide the objects behind it
     rect_obs = Observable(Makie.Rect2f(0, 0, 1, 1))
     rect_visible = Observable(false)
-    push!(plots, poly!(ax.blockscene, rect_obs; space = :pixel, visible = rect_visible,
+    rect_scene = Makie.Scene(ax.blockscene; camera = Makie.campixel!, clear = false)
+    push!(plots, poly!(rect_scene, rect_obs; space = :pixel, visible = rect_visible, overdraw = true,
         color = Makie.RGBAf(0.25, 0.55, 1.0, 0.12), strokecolor = Makie.RGBAf(0.25, 0.55, 1.0, 0.9),
         strokewidth = 1))
 
@@ -2379,7 +2382,15 @@ end
 function Base.close(ctrl::KinematicController)
     foreach(off, ctrl.listeners)
     empty!(ctrl.listeners)
+    # the scene of the selection rectangle goes with it, see `kinematic_controls!`
+    own = Makie.Scene[]
+    for p in ctrl.plots
+        s = p.parent
+        (s isa Makie.Scene && s !== ctrl.ax.scene && s !== ctrl.ax.blockscene && !_has(own, s)) &&
+            push!(own, s)
+    end
     foreach(p -> delete!(p.parent, p), ctrl.plots)
     empty!(ctrl.plots)
+    foreach(empty!, own)
     return nothing
 end
