@@ -179,6 +179,76 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "dissolving a nested group, $layout" for layout in (:compact, :app)
+        m1, o1 = _built(MIRROR; angle = 0.2, at = [0.0, 0.1, 0.0])
+        m2, o2 = _built(MIRROR; axis = [1.0, 2, 3], angle = 0.4, at = [0.05, 0.2, 0.01])
+        m3, o3 = _built(MIRROR; axis = [0.0, 1, 0], angle = 0.3, at = [-0.04, 0.15, 0.02])
+        sys = System([m1, m2, m3])
+        gui = _live_view(sys; layout, labels = Dict(m1 => "m1", m2 => "m2", m3 => "m3"))
+        for (m, o) in ((m1, o1), (m2, o2), (m3, o3))
+            gui.components.origin[m] = o
+        end
+        g1 = GUI._group!(gui, GUI._MultiSelection(Any[m1, m2]))
+        @test g1 isa BMO.ObjectGroup
+        _move!(gui, g1, [0.01, -0.02, 0.003])
+        _turn!(gui, g1, [0.3, 0.1, 1.0], 0.5)
+        g2 = GUI._group!(gui, GUI._MultiSelection(Any[g1, m3]))
+        @test g2 isa BMO.ObjectGroup
+        _turn!(gui, g2, [1.0, 1, 0], 0.6)
+        _move!(gui, g2, [0.02, 0.0, -0.01])
+
+        # nested, before dissolving
+        setup = _setup(_script(gui))
+        mod = _run(setup)
+        top = only(_value(mod, :system).objects)
+        @test _same_tree(top, g2)
+        @test any(o -> o isa BMO.ObjectGroup, BMO.objects(top))
+
+        pos0 = Vector{Float64}(position(g2))
+        @test GUI._ungroup!(gui, g1)
+        ng = only(sys.objects)
+        @test ng !== g2 && ng isa BMO.ObjectGroup
+        @test length(BMO.objects(ng)) == 3
+        @test all(m -> any(o -> o === m, BMO.objects(ng)), (m1, m2, m3))
+        @test norm(Vector{Float64}(position(ng)) - pos0) < 1e-9
+        _check_flat(code) = begin
+            setup = _setup(code)
+            mod = _run(setup)
+            top = only(_value(mod, :system).objects)
+            @test top isa BMO.ObjectGroup
+            @test length(BMO.objects(top)) == 3
+            @test !any(o -> o isa BMO.AbstractObjectGroup, BMO.objects(top))
+            @test _same_tree(top, ng)
+            @test norm(Vector{Float64}(position(top)) - Vector{Float64}(position(ng))) < 1e-9
+            for (k, m) in enumerate((m1, m2, m3))
+                @test _same_pose(_value(mod, Symbol("m$k")), m)
+            end
+            @test count(l -> occursin("ObjectGroup(", l), split(setup, "\n")) == 1
+        end
+        _check_flat(_script(gui))
+
+        # moved afterwards
+        _turn!(gui, ng, [0.0, 1, 1], 0.3)
+        _move!(gui, ng, [0.0, 0.01, 0.0])
+        _check_flat(_script(gui))
+
+        # undo of the dissolving: the nested structure is written again
+        # (`_change!` of the moves above is not an entry of the history, only the dissolving is)
+        @test GUI._undo!(gui.controls)
+        @test only(sys.objects) === g2
+        @test any(o -> o === g1, BMO.objects(g2))
+        @test norm(Vector{Float64}(position(g2)) - pos0) < 1e-9
+        mod = _run(_setup(_script(gui)))
+        top = only(_value(mod, :system).objects)
+        @test _same_tree(top, g2)
+        @test any(o -> o isa BMO.ObjectGroup, BMO.objects(top))
+        @test norm(Vector{Float64}(position(top)) - Vector{Float64}(position(g2))) < 1e-9
+        for (k, m) in enumerate((m1, m2, m3))
+            @test _same_pose(_value(mod, Symbol("m$k")), m)
+        end
+        close(gui)
+    end
+
     @testset "export_changes, $layout" for layout in (:compact, :app)
         # the script: `a` in `system`; `b` was added in the window, then both were grouped
         a, _ = _built(LENS)

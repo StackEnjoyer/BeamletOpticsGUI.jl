@@ -84,7 +84,8 @@ When this Skill is active:
   top-level components with the same systems (or none) qualify (no sources, clip planes, static
   objects, parts of groups, objects of a `StaticSystem`); else the status line says why.
   `Ctrl+Shift+G` ungroups a group made in the window (not one of the script): the members are
-  top-level again at their poses and selected, one undo step. The cards have the actions "group"
+  top-level again at their poses and selected, one undo step; one inside another group made in the
+  window is dissolved into it (that group is made anew, same name, label, pivot). The cards have the actions "group"
   and "ungroup". `export_script` writes the members, `g = ObjectGroup([a, b])`, `set_pivot3d!` and
   the pose of the group; `export_changes` writes the grouping of objects of the script (`delete!`
   of the members, the group, `push!` of the group).

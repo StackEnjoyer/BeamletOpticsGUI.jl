@@ -662,7 +662,10 @@ Only two or more movable top-level components with the same systems (or none) ca
 sources, clip planes, static objects, parts of groups or objects of a `StaticSystem`; otherwise the
 status line says why. `Ctrl+Shift+G` ungroups a group made in the window (not a group of the
 script): its members are top-level again in the same systems at their current poses and are
-selected as a selection of several, again as one undo step. The card of a selection of several has
+selected as a selection of several, again as one undo step. A group made in the window that is part
+of another one (selected through its parts) is dissolved into that one: its members take its place
+there, and the group that holds them is made anew, with its name, label and pivot and the axes of
+the world. The card of a selection of several has
 the action "group", the card of a group made in the window the action "ungroup". Removing such a
 group (`Delete`) and undoing it keeps it a group of the window, and linked views
 ([`open_system`](@ref)) follow grouping and ungrouping. [`export_script`](@ref) and

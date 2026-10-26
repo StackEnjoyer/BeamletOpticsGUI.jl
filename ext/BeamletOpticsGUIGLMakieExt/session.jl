@@ -342,6 +342,49 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
             "the undo did not ungroup")
     end
+    # A group made in the window that is part of another one is dissolved into it by Ctrl+Shift+G:
+    # the other group is made again, one action of the undo history
+    flat() = all(o -> GUI._has(fx.system.objects, o), (fx.lens, fx.mirror, fx.detector))
+    inner = Ref{Any}(nothing)
+    step("ctrl+g (group lens and mirror, then that group and the detector)") do
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group(), "Ctrl+G did not make the inner group")
+        inner[] = gui.controls.selected[]
+        ctrl_click!(_px(gui, _pos(fx.detector)))
+        frame!()
+        in_selection(inner[], fx.detector)
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group() && gui.controls.selected[] !== inner[], "Ctrl+G did not make the outer group")
+    end
+    step("ctrl+shift+g (dissolve the inner group), undo, redo") do
+        outer = gui.controls.selected[]
+        GUI._select!(gui, inner[])
+        settle!()
+        _check(gui.controls.selected[] === inner[], "the inner group is not selected")
+        _key!(gui, Keyboard.g, Keyboard.left_control, Keyboard.left_shift)
+        settle!()
+        sel = gui.controls.selected[]
+        _check(is_group() && sel !== outer && sel !== inner[] &&
+               Set(objectid.(BMO.objects(sel))) == Set(objectid.((fx.lens, fx.mirror, fx.detector))),
+            "Ctrl+Shift+G did not dissolve the inner group into the outer one")
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(is_group() && gui.controls.selected[] === outer, "the undo did not bring back the groups")
+        GUI._redo!(gui.controls)
+        settle!()
+        _check(is_group() && gui.controls.selected[] !== outer, "the redo did not dissolve again")
+        # the later steps find the scene of before: the dissolving and both groupings undone
+        foreach(_ -> GUI._undo!(gui.controls), 1:3)
+        settle!()
+        _check(flat(), "the undo did not bring back the objects")
+    end
+    step(deselect!, "click background (deselect) after the groups")
     # Ctrl+drag beside the selection draws a rectangle, which adds the objects whose center it holds
     step("ctrl+drag a rectangle around lens and mirror") do
         deselect!()

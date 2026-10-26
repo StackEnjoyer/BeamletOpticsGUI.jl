@@ -251,6 +251,145 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "ungrouping a group inside a group, $layout" for layout in (:compact, :app)
+        m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
+        sys = System([m1, m2, m3])
+        gui = _live_view(sys => _beam(); layout)
+        ctrl = gui.controls
+        wait_solve(gui)
+        g1 = _group_of_selection!(gui, [m1, m2])
+        g2 = _group_of_selection!(gui, [g1, m3])
+        @test g2 isa ObjectGroup && BMO.objects(g2) == (g1, m3)
+        gui.labels[g2] = "G2"
+        # a rotation of the outer group first: the poses are no longer the initial ones
+        rotate3d!(gui, g2, [0.0, 0, 1], 0.3)
+        wait_solve(gui)
+        poses = Dict(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in (m1, m2, m3))
+        pivot2 = Vector{Float64}(position(g2))
+        name2 = get(gui.objects.names, g2, nothing)
+        n = length(ctrl.undo_stack)
+
+        @test GUI._ungroup!(gui, g1)
+        @test length(ctrl.undo_stack) == n + 1
+        new = only(filter(o -> o isa ObjectGroup, sys.objects))
+        @test new !== g1 && new !== g2
+        @test length(sys.objects) == 1
+        @test BMO.objects(new) == (m1, m2, m3)
+        @test GUI._is_window_group(gui, new)
+        @test !GUI._is_window_group(gui, g1) && !GUI._is_window_group(gui, g2)
+        @test !_in(g2, sys.objects) && !_in(g1, sys.objects)
+        @test GUI._label(gui, new) == "G2"
+        @test get(gui.labels, new, nothing) == "G2" && !haskey(gui.labels, g2)
+        @test get(gui.objects.names, new, nothing) == name2
+        @test _close(position(new), pivot2)
+        @test norm(Matrix{Float64}(BMO.orientation(new)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
+        @test ctrl.selected[] === new
+        @test occursin("ungrouped", gui.status.text[])
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
+        @test all(m -> _top(gui, m) === new, (m1, m2, m3))
+        wait_solve(gui)
+        @test isnothing(gui.trace.error)
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+
+        # the new group moves as one
+        translate3d!(gui, new, [0.0, 0, 0.01])
+        @test _close(position(m1), poses[m1][1] .+ [0, 0, 0.01])
+        translate3d!(gui, new, [0.0, 0, -0.01])
+        wait_solve(gui)
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+
+        # undo (after the two moves, entries of their own): the old groups with their label,
+        # redo: the same new group
+        n = length(ctrl.undo_stack)
+        @test GUI._undo!(ctrl) && GUI._undo!(ctrl)
+        @test GUI._undo!(ctrl)
+        @test length(ctrl.undo_stack) == n - 3
+        @test _in(g2, sys.objects) && !_in(new, sys.objects) && length(sys.objects) == 1
+        @test BMO.objects(g2) == (g1, m3) && BMO.objects(g1) == (m1, m2)
+        @test GUI._is_window_group(gui, g1) && GUI._is_window_group(gui, g2)
+        @test !GUI._is_window_group(gui, new)
+        @test GUI._label(gui, g2) == "G2"
+        @test _top(gui, m1) === g2 && _top(gui, m3) === g2
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
+        @test GUI._redo!(ctrl)
+        @test GUI._redo!(ctrl) && GUI._redo!(ctrl)
+        @test length(sys.objects) == 1 && sys.objects[1] === new
+        @test BMO.objects(new) == (m1, m2, m3) && GUI._is_window_group(gui, new)
+        @test !GUI._is_window_group(gui, g2) && GUI._label(gui, new) == "G2"
+        @test ctrl.selected[] === new
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
+        wait_solve(gui)
+        @test isnothing(gui.trace.error)
+        # the dissolved group is gone: ungrouping the new one works as for any top-level group
+        @test GUI._ungroup!(gui, new)
+        @test _in(m1, sys.objects) && _in(m2, sys.objects) && _in(m3, sys.objects)
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        close(gui)
+    end
+
+    @testset "ungrouping a group inside two groups, $layout" for layout in (:compact, :app)
+        m1, m2, m3, m4 = _mirror(), _mirror(0.3), _mirror(0.5), _mirror(0.7)
+        sys = System([m1, m2, m3, m4])
+        gui = _live_view(sys => _beam(); layout)
+        ctrl = gui.controls
+        wait_solve(gui)
+        g1 = _group_of_selection!(gui, [m1, m2])
+        g2 = _group_of_selection!(gui, [g1, m3])
+        g3 = _group_of_selection!(gui, [g2, m4])
+        @test BMO.objects(g3) == (g2, m4)
+        gui.labels[g2] = "G2"
+        gui.labels[g3] = "G3"
+        rotate3d!(gui, g3, [0.0, 0, 1], 0.2)
+        wait_solve(gui)
+        poses = Dict(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in (m1, m2, m3, m4))
+        pivot2, pivot3 = Vector{Float64}(position(g2)), Vector{Float64}(position(g3))
+        n = length(ctrl.undo_stack)
+
+        @test GUI._ungroup!(gui, g1)
+        @test length(ctrl.undo_stack) == n + 1
+        @test length(sys.objects) == 1
+        top = sys.objects[1]
+        @test top isa ObjectGroup && top !== g3 && top !== g2
+        @test length(BMO.objects(top)) == 2 && BMO.objects(top)[2] === m4
+        mid = BMO.objects(top)[1]
+        @test mid isa ObjectGroup && mid !== g2 && mid !== g1
+        @test BMO.objects(mid) == (m1, m2, m3)
+        @test GUI._is_window_group(gui, top) && GUI._is_window_group(gui, mid)
+        @test !any(g -> GUI._is_window_group(gui, g), (g1, g2, g3))
+        @test GUI._label(gui, top) == "G3" && GUI._label(gui, mid) == "G2"
+        @test _close(position(top), pivot3) && _close(position(mid), pivot2)
+        @test norm(Matrix{Float64}(BMO.orientation(top)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
+        @test norm(Matrix{Float64}(BMO.orientation(mid)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
+        @test GUI._part_parent(gui, mid) === top
+        @test ctrl.selected[] === top
+        @test occursin("ungrouped", gui.status.text[])
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3, m4))
+        @test all(m -> _top(gui, m) === top, (m1, m2, m3, m4))
+
+        @test GUI._undo!(ctrl)
+        @test length(sys.objects) == 1 && sys.objects[1] === g3
+        @test BMO.objects(g3) == (g2, m4) && BMO.objects(g2) == (g1, m3) && BMO.objects(g1) == (m1, m2)
+        @test all(g -> GUI._is_window_group(gui, g), (g1, g2, g3))
+        @test !GUI._is_window_group(gui, top) && !GUI._is_window_group(gui, mid)
+        @test GUI._label(gui, g2) == "G2" && GUI._label(gui, g3) == "G3"
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3, m4))
+        @test GUI._redo!(ctrl)
+        @test length(sys.objects) == 1 && sys.objects[1] === top
+        @test BMO.objects(top) == (mid, m4) && BMO.objects(mid) == (m1, m2, m3)
+        @test GUI._is_window_group(gui, top) && GUI._is_window_group(gui, mid)
+        @test GUI._label(gui, top) == "G3" && GUI._label(gui, mid) == "G2"
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3, m4))
+        wait_solve(gui)
+        @test isnothing(gui.trace.error)
+        close(gui)
+    end
+
     @testset "objects without a system, $layout" for layout in (:compact, :app)
         h1, h2 = _mirror(0.5; x = 0.5), _mirror(0.6; x = 0.5)
         sys = System([_mirror()])

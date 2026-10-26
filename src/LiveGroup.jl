@@ -98,13 +98,31 @@ function _group!(gui, @nospecialize(sel))
     return g
 end
 
+"""
+    _window_parents(gui, g) -> Union{Nothing, Vector{Any}}
+
+The groups made in the window of the `gui` that the group `g` is a part of, from the top-level one
+down to the one that holds `g`; empty for a top-level `g`, `nothing` if one of them is not a group
+made in the window.
+"""
+function _window_parents(gui, @nospecialize(g))
+    parents = Any[]
+    p = _part_parent(gui, g)
+    while !isnothing(p)
+        _is_window_group(gui, p) || return nothing
+        pushfirst!(parents, p)
+        p = _part_parent(gui, p)
+    end
+    return parents
+end
+
 # Why the group `g` can not be ungrouped, see `_ungroup!`
 function _ungroup_reason(gui, @nospecialize(g))
     g isa BMO.AbstractObjectGroup || return "select a group made in the window to ungroup it"
     _is_window_group(gui, g) ||
         return "$(_label(gui, g)) is a group of the script, only groups made in the window are ungrouped"
-    _shown_top(gui, g) ||
-        return "$(_label(gui, g)) is part of $(_label(gui, _component_top(gui, g))), ungroup that first"
+    isnothing(_window_parents(gui, g)) &&
+        return "$(_label(gui, g)) is part of $(_label(gui, _component_top(gui, g))), a group of the script"
     return nothing
 end
 
@@ -113,8 +131,9 @@ end
 
 Ungroups the group `g` that was made in the window of the `gui` (see `_group!`), like
 `Ctrl+Shift+G`: its systems hold its members again, at their current poses, which are selected as a
-selection of several. One action of the undo history. Returns `false` with a status line if `g` is
-not a group made in the window.
+selection of several; a `g` that is part of another group made in the window is dissolved into
+that one, see `_dissolve!`. One action of the undo history. Returns `false` with a status line if
+`g` is not a group made in the window.
 """
 function _ungroup!(gui, @nospecialize(g))
     reason = _ungroup_reason(gui, g)
@@ -122,10 +141,76 @@ function _ungroup!(gui, @nospecialize(g))
         gui.status.text[] = reason
         return false
     end
+    parents = _window_parents(gui, g)
+    isempty(parents) || return _dissolve!(gui, g, parents)
     rec = gui.components.groups[g]
     label = get(gui.labels, g, nothing)
     _unrecorded(() -> _do_ungroup!(gui, g), gui)
     _record_grouping!(gui, g, rec, false, label)
+    return true
+end
+
+"""
+    _dissolve!(gui, g, parents) -> Bool
+
+Ungroups the group `g` made in the window of the `gui` that is part of the groups made in the window
+`parents`, from the top-level one down to the one that holds `g` (see `_window_parents`): its
+members take its place in that group. An `ObjectGroup` does not change its members, hence the
+`parents` are made again from the bottom up, each a new `ObjectGroup` with the name, label and pivot
+of the old one and the axes of the world, like a group made with `Ctrl+G`; the new top-level one is
+selected. One action of the undo history, whose undo brings back the old groups and redo the same
+new ones.
+"""
+function _dissolve!(gui, @nospecialize(g), parents::Vector{Any})
+    olds = Any[parents; g]
+    # ungrouping forgets the records, undo groups the old ones with them again
+    old_recs = _WindowGroup[gui.components.groups[a] for a in olds]
+    # the new groups from the bottom up, each with the members of the old one and the new one below
+    # it, or the members of `g`, in their places
+    news = Tuple{Any, _WindowGroup}[]
+    inner, replacement = g, collect(Any, BMO.objects(g))
+    for p in reverse(parents)
+        members = Any[]
+        for m in BMO.objects(p)
+            m === inner ? append!(members, replacement) : push!(members, m)
+        end
+        n = BMO.ObjectGroup(members)
+        pivot = Vector{Float64}(position(p))
+        BMO.set_pivot3d!(n, pivot)
+        poses = IdDict{Any, Tuple{Point3{Float64}, Matrix{Float64}}}()
+        foreach(m -> (poses[m] = _pose(m)), members)
+        push!(news, (n, _WindowGroup(members, pivot, poses)))
+        haskey(gui.objects.names, p) && (gui.objects.names[n] = gui.objects.names[p])
+        inner, replacement = p, Any[n]
+    end
+    # the labels of the groups, taken when they are ungrouped, given back when they are grouped
+    old_labels = Any[get(gui.labels, a, nothing) for a in olds]
+    new_labels = Any[old_labels[length(parents) - k + 1] for k in eachindex(news)]
+    function forward()
+        for (k, a) in enumerate(olds)
+            old_labels[k] = get(gui.labels, a, nothing)
+            _do_ungroup!(gui, a)
+        end
+        for (k, (n, rec)) in enumerate(news)
+            _do_group!(gui, n, rec; label = new_labels[k])
+        end
+        gui.status.text[] = "$(_label(gui, g)) ungrouped into $(_label(gui, first(first(news))))"
+        return nothing
+    end
+    function backward()
+        for k in reverse(eachindex(news))
+            new_labels[k] = get(gui.labels, news[k][1], nothing)
+            _do_ungroup!(gui, news[k][1])
+        end
+        for k in reverse(eachindex(olds))
+            _do_group!(gui, olds[k], old_recs[k]; label = old_labels[k])
+        end
+        return nothing
+    end
+    _unrecorded(forward, gui)
+    gui.components.recording &&
+        _push_action!(gui.controls, first(last(news)), () -> _unrecorded(backward, gui),
+            () -> _unrecorded(forward, gui))
     return true
 end
 
@@ -196,6 +281,8 @@ function _do_ungroup!(gui, @nospecialize(g))
     ctrl = gui.controls
     reason = _ungroup_reason(gui, g)
     isnothing(reason) || throw(ArgumentError(reason))
+    # a group inside another one is dissolved into it by making that one again, see `_dissolve!`
+    _shown_top(gui, g) || throw(ArgumentError("$(_label(gui, g)) is part of $(_label(gui, _component_top(gui, g)))"))
     name = _label(gui, g)
     members = collect(Any, BMO.objects(g))
     systems = _member_systems(gui, g)
