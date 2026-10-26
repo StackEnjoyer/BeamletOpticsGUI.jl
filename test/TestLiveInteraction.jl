@@ -34,7 +34,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test isnothing(GUI._ray_plane_intersect([0.0, 0, -5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1]))
     end
 
-    @testset "_axis_angle_from_rotmatrix round-trips through rotate3d" begin
+    @testset "_rotation_axis_angle round-trips through rotate3d" begin
         cases = [
             ([0.0, 0, 1], deg2rad(30)),
             ([1.0, 0, 0], deg2rad(90)),
@@ -44,7 +44,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         ]
         for (axis, θ) in cases
             R = BMO.rotate3d(axis, θ)
-            got_axis, got_angle = GUI._axis_angle_from_rotmatrix(R)
+            got_axis, got_angle = GUI._rotation_axis_angle(R)
             R2 = BMO.rotate3d(got_axis, got_angle)
             @test isapprox(R2, R; atol = 1e-6)
         end
@@ -60,7 +60,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         R = Matrix{Float64}(BMO.orientation(mir))
         Rd = R0 * R'
-        axis, angle = GUI._axis_angle_from_rotmatrix(Rd)
+        axis, angle = GUI._rotation_axis_angle(Rd)
         angle > 1e-12 && rotate3d!(mir, axis, angle)
         translate_to3d!(mir, P0)
 

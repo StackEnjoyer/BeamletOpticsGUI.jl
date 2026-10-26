@@ -17,34 +17,26 @@ function _ray_plane_intersect(origin, dir, plane_point, normal)
 end
 
 """
-    _axis_angle_from_rotmatrix(R)
+    _rotation_axis_angle(R)
 
-Returns the `axis` and `angle` of the rotation matrix `R` such that `rotate3d(axis, angle) ≈ R`.
-The angle is that of the sine (the antisymmetric part of `R`) and the cosine (its trace), such that
-a matrix that differs from the identity by rounding errors only, e.g. `R * R'` of an orientation
-that was rotated many times, is no rotation, instead of a small angle without an axis (`NaN`).
+Returns the `axis` and `angle` of the rotation matrix `R` such that `rotate3d(axis, angle) ≈ R`,
+accurate to the precision of `Float64` for all angles, including small ones: the angle is that of
+the sine (the antisymmetric part of `R`) and the cosine (its trace). A matrix that differs from the
+identity by rounding errors only, e.g. `R * R'` of an orientation that was rotated many times, is
+no rotation.
 """
-function _axis_angle_from_rotmatrix(R::AbstractMatrix{T}) where {T}
-    w = [R[3, 2] - R[2, 3], R[1, 3] - R[3, 1], R[2, 1] - R[1, 2]]
-    angle = atan(norm(w) / 2, (tr(R) - 1) / 2)
-    angle < 1e-8 && return [0.0, 0.0, 1.0], 0.0
-    if angle > π - 1e-6
-        # sin(angle) ≈ 0, use the symmetric part of R instead
-        S = (R + I) / 2
-        d = diag(S)
-        i = argmax(d)
-        axis = zeros(3)
-        axis[i] = sqrt(max(d[i], 0.0))
-        for j in 1:3
-            j == i && continue
-            axis[j] = S[i, j] / axis[i]
-        end
-        # the symmetric part leaves the sign open, the antisymmetric part still points along the
-        # axis below π
-        dot(axis, w) < 0 && (axis = -axis)
-        return normalize(axis), angle
-    end
-    return normalize(w), angle
+function _rotation_axis_angle(R::AbstractMatrix)
+    # sin(angle) * axis
+    v = [R[3, 2] - R[2, 3], R[1, 3] - R[3, 1], R[2, 1] - R[1, 2]] ./ 2
+    s, c = norm(v), (tr(R) - 1) / 2
+    angle = atan(s, c)
+    iszero(s) && c > 0 && return [0.0, 0.0, 1.0], 0.0
+    c > -0.5 && return v ./ s, angle
+    # Close to π, where sin(angle) is inaccurate: (R + R') / 2 = c I + (1 - c) axis axis'
+    B = (R + R') ./ 2 - c * I
+    axis = normalize(B[:, argmax(diag(B))])
+    dot(axis, v) < 0 && (axis = -axis)
+    return axis, angle
 end
 
 """Returns the 12 edges of the box `bb` as input for `linesegments`."""
@@ -843,6 +835,22 @@ function _control_axes(ctrl::KinematicController, @nospecialize(obj))
     return (y, normalize(cross(y, v)), v)
 end
 
+# A clip plane is moved along its normal (its local y-axis) and turned about its own local x-axis,
+# whatever its tilt: its axes are its local ones and the rotation axis, of which a local axis that is
+# parallel to the rotation axis (`|a × v| < 10⁻⁶`) is replaced by the axis perpendicular to the other
+# local axis and the rotation axis
+function _control_axes(ctrl::KinematicController, p::LiveClipPlane)
+    R, v = _pose(p)[2], ctrl.rotation_axis
+    y, x = Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1])
+    parallel(a) = norm(cross(a, v)) < 1e-6
+    if parallel(x) && !parallel(y)
+        x = normalize(cross(y, v))
+    elseif parallel(y) && !parallel(x)
+        y = normalize(cross(v, x))
+    end
+    return (y, x, v)
+end
+
 """Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:v`) of `obj`."""
 function _axis_vectors(ctrl::KinematicController, @nospecialize(obj), syms)
     y, x, v = _control_axes(ctrl, obj)
@@ -1098,11 +1106,11 @@ _change!(f, ::KinematicController, ::LiveClipPlane) = (f(); nothing)
     _set_pose!(obj, P, R)
 
 Sets the pose of `obj` to position `P` and orientation `R`, by rotating around the axis-angle of
-`R * orientation(obj)'` and then translating to `P`.
+`R * orientation(obj)'` (see `_rotation_axis_angle`) and then translating to `P`.
 """
 function _set_pose!(@nospecialize(obj), P, R)
-    axis, angle = _axis_angle_from_rotmatrix(R * _pose(obj)[2]')
-    angle > 1e-12 && rotate3d!(obj, axis, angle)
+    axis, angle = _rotation_axis_angle(R * _pose(obj)[2]')
+    angle > 0 && rotate3d!(obj, axis, angle)
     translate_to3d!(obj, P)
     return nothing
 end

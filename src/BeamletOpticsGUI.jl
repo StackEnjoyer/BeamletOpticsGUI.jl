@@ -33,7 +33,7 @@ using GeometryBasics: Point2, Point3, Point3f, Point3d, Vec3f, Vec3d, GLTriangle
 using Base.ScopedValues: ScopedValue, with
 import AbstractTrees
 using AbstractTrees: PreOrderDFS
-using LinearAlgebra: dot, cross, normalize, norm, svd
+using LinearAlgebra: dot, cross, normalize, norm
 
 """The 3D axes that the live view draws into."""
 const _Axis = Union{Axis3, LScene}

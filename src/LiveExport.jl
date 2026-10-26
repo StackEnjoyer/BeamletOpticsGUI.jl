@@ -2,35 +2,6 @@
 Export of the changed poses
 =#
 
-"""
-    _rotation_axis_angle(R)
-
-Returns the `axis` and `angle` of the rotation matrix `R` such that `rotate3d(axis, angle) ≈ R`.
-Unlike `_axis_angle_from_rotmatrix`, which is based on the trace of `R`, it is accurate to the
-precision of `Float64` for all angles, including small ones.
-"""
-function _rotation_axis_angle(R::AbstractMatrix)
-    # sin(angle) * axis
-    v = [R[3, 2] - R[2, 3], R[1, 3] - R[3, 1], R[2, 1] - R[1, 2]] ./ 2
-    s, c = norm(v), (tr(R) - 1) / 2
-    angle = atan(s, c)
-    iszero(s) && c > 0 && return [0.0, 0.0, 1.0], 0.0
-    c > -0.5 && return v ./ s, angle
-    # Close to π, where sin(angle) is inaccurate: (R + R') / 2 = c I + (1 - c) axis axis'
-    B = (R + R') ./ 2 - c * I
-    axis = normalize(B[:, argmax(diag(B))])
-    dot(axis, v) < 0 && (axis = -axis)
-    return axis, angle
-end
-
-"""Sets the pose of `obj` like `_set_pose!`, but with the accurate `_rotation_axis_angle`."""
-function _set_pose_exact!(@nospecialize(obj), P, R)
-    axis, angle = _rotation_axis_angle(R * _pose(obj)[2]')
-    angle > 0 && rotate3d!(obj, axis, angle)
-    translate_to3d!(obj, P)
-    return nothing
-end
-
 """Returns `true` if `s` can be used as the name of a variable."""
 _is_variable_name(s) = Base.isidentifier(s) && try
     Meta.parse(s) isa Symbol
@@ -94,7 +65,7 @@ poses of the controls `ctrl`, from the outside in.
 function _initial_copy(ctrl::KinematicController, group)
     copy = deepcopy(group)
     for (obj, c) in zip(_descendants(group), _descendants(copy))
-        haskey(ctrl.init_poses, obj) && _set_pose_exact!(c, ctrl.init_poses[obj]...)
+        haskey(ctrl.init_poses, obj) && _set_pose!(c, ctrl.init_poses[obj]...)
     end
     return copy
 end
@@ -149,7 +120,7 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
     objs = _descendants(top)
     copies = top isa BMO.AbstractObjectGroup ? _descendants(_initial_copy(ctrl, top)) : nothing
     # The objects of a group follow the group back to the pose `base`
-    isnothing(base) || isnothing(copies) || _set_pose_exact!(copies[1], base...)
+    isnothing(base) || isnothing(copies) || _set_pose!(copies[1], base...)
     n = 0
     for (i, obj) in enumerate(objs)
         own = i == 1 && !isnothing(base)
@@ -167,7 +138,7 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
         end
         angle > 0 && push!(lines, "rotate3d!($name, $(_vector_code(axis)), $(repr(angle)))")
         push!(lines, "translate_to3d!($name, $(_vector_code(P)))")
-        isnothing(copies) || _set_pose_exact!(copies[i], P, R)
+        isnothing(copies) || _set_pose!(copies[i], P, R)
     end
     return n
 end
@@ -195,7 +166,7 @@ function _grouping_copies(gui::LiveView, tops)
         isnothing(rec) && return nothing
         at = deepcopy(copy)
         for (m, c) in zip(BMO.objects(obj), BMO.objects(at))
-            haskey(rec.poses, m) && _set_pose_exact!(c, rec.poses[m]...)
+            haskey(rec.poses, m) && _set_pose!(c, rec.poses[m]...)
             visit!(m, c)
         end
         return nothing
@@ -250,7 +221,7 @@ function _export_group_lines!(lines, gui::LiveView, names, @nospecialize(g), cop
         end
         angle > 0 && push!(lines, "rotate3d!($(names[obj]), $(_vector_code(axis)), $(repr(angle)))")
         push!(lines, "translate_to3d!($(names[obj]), $(_vector_code(P)))")
-        _set_pose_exact!(b, P, R)
+        _set_pose!(b, P, R)
     end
     return n
 end
