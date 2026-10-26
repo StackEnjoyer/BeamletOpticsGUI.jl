@@ -374,14 +374,41 @@ function _export_added_code!(lines, cx, @nospecialize(obj))
 end
 
 """
+    _export_replaced_lines!(lines, cx, g)
+
+Appends to the `lines` of `export_changes` a `delete!` of the group of the script that the group
+`g` made in the window `replaces` (see `_WindowGroup` and `_remake!`) from each system that held it
+at the start, before the variable of `g` is assigned, since `g` got its label. The variable of the
+old group is its label, else the label of `g`, which `_remake!` gave it; a comment if that is no
+variable name or the name of another object, like `_export_removed_lines!`. Nothing for a group
+that replaces none, or one that was a part of another group at the start, which no system holds.
+"""
+function _export_replaced_lines!(lines, cx, @nospecialize(g))
+    (; gui, names, systems, used) = cx
+    old = gui.components.groups[g].replaces
+    isnothing(old) && return nothing
+    held = Any[s for s in get(gui.components.start_systems, old, Any[]) if haskey(systems, s)]
+    isempty(held) && return nothing
+    label = get(gui.labels, old, get(gui.labels, g, nothing))
+    named = !isnothing(label) && _is_variable_name(label) && (!(label in used) || label == names[g])
+    shown = isnothing(label) ? _label(gui, old) : label
+    for s in held
+        push!(lines, named ? "delete!($(systems[s]), $label)" :
+            "# delete!($(systems[s]), …) with the variable of $shown, which $(names[g]) replaces")
+    end
+    return nothing
+end
+
+"""
     _export_grouping_lines!(lines, cx, g) -> n
 
 Appends the lines of `export_changes` for the group `g` that was made in the window of the `gui` of
 the context `cx` (see `_export_code` and `_group!`) and returns the number `n` of changes: first its
 members in their poses when it was made, those added at runtime like `_export_added_code!`, those
-of the script by their changes of pose until then; then a `delete!` of each member of the script
-from the systems that held it at the start, the lines of `_export_group_lines!`, and a `push!` of
-`g` to each of its systems, unless it is a member of another group made in the window.
+of the script by their changes of pose until then; then a `delete!` of the group of the script that
+`g` replaces (see `_export_replaced_lines!`) and of each member of the script from the systems that
+held it at the start, the lines of `_export_group_lines!`, and a `push!` of `g` to each of its
+systems, unless it is a member of another group made in the window.
 """
 function _export_grouping_lines!(lines, cx, @nospecialize(g))
     (; gui, names, systems, copies, inside, added, written) = cx
@@ -399,6 +426,7 @@ function _export_grouping_lines!(lines, cx, @nospecialize(g))
         end
     end
     push!(lines, "", _export_heading(gui, g) * ", grouped")
+    _export_replaced_lines!(lines, cx, g)
     for m in scripted, s in get(comp.start_systems, m, Any[])
         haskey(systems, s) && push!(lines, "delete!($(systems[s]), $(names[m]))")
     end
@@ -426,7 +454,9 @@ its label is no variable name. An added component is its constructor call (the `
 was added); together they count as one change. Sources are added and removed like components: a
 removed source is a comment, an added one its constructor call, its change of pose and the
 `solve_system!` that traces it, see `_export_removed_lines!` and `_export_added_lines!`. A group
-made in the window is its members and the `ObjectGroup`, see `_export_grouping_lines!`.
+made in the window is its members and the `ObjectGroup`, see `_export_grouping_lines!`; one that
+was made anew from a group of the script deletes that one from its systems first, see
+`_export_replaced_lines!`.
 """
 function _export_code(gui::LiveView)
     ctrl = gui.controls
@@ -463,7 +493,7 @@ function _export_code(gui::LiveView)
     for g in keys(copies)
         haskey(comp.groups, g) && foreach(m -> inside[m] = g, BMO.objects(g))
     end
-    cx = (; gui, names, systems, copies, inside, added, written = Base.IdSet{Any}())
+    cx = (; gui, names, systems, used, copies, inside, added, written = Base.IdSet{Any}())
     for obj in comp.added
         n += _export_added_code!(lines, cx, obj)
     end
@@ -534,7 +564,9 @@ A group that was made in the window (`Ctrl+G`) comes at its place among the adde
 members in their poses when it was made (one that was added is its constructor call, one of the
 script its `rotate3d!` and `translate_to3d!`), a `delete!(system, name)` of each member of the
 script, `g = ObjectGroup([a, b])`, `set_pivot3d!(g, pivot)`, a `push!(system, g)` and the change of
-the pose of the group since it was made.
+the pose of the group since it was made. A group of the script that was made anew in the window,
+since a group was made of some of its parts or a group inside it was ungrouped, is written like
+such a group, after a `delete!(system, name)` of the group of the script, named after its label.
 
 The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
 that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as

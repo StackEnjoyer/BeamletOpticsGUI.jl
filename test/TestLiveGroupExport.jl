@@ -285,6 +285,88 @@ const GUI = BeamletOpticsGUI
         @test only(_value(mod, :system).objects) === _value(mod, :g)
         close(gui)
     end
+
+    @testset "a group made in a group of the script, $layout, nested = $nested" for layout in (:compact, :app),
+            nested in (false, true)
+        # the script: `sg` of `a`, `b`, `c` with its own pivot and axes, inside `top` with `d` if `nested`
+        script = """
+            using BeamletOptics
+            a = $MIRROR
+            rotate3d!(a, [0.0, 0.0, 1.0], 0.2)
+            translate_to3d!(a, [0.0, 0.1, 0.0])
+            b = $MIRROR
+            rotate3d!(b, [1.0, 0.0, 0.0], 0.4)
+            translate_to3d!(b, [0.05, 0.2, 0.01])
+            c = $MIRROR
+            translate_to3d!(c, [-0.04, 0.15, 0.02])
+            d = $MIRROR
+            translate_to3d!(d, [0.1, 0.0, 0.0])
+            sg = ObjectGroup([a, b, c])
+            set_pivot3d!(sg, [0.0, 0.12, 0.0])
+            rotate3d!(sg, [0.0, 0.0, 1.0], 0.1)
+            top = ObjectGroup([sg, d])
+            system = System([$(nested ? "top" : "sg")])
+            """
+        mod0 = _run(script)
+        a, b, c, d, sg, top, sys = (_value(mod0, x) for x in (:a, :b, :c, :d, :sg, :top, :system))
+        outer = nested ? top : sg
+        labels = Dict{Any, String}(a => "a", b => "b", c => "c", sg => "sg")
+        nested && (labels[top] = "top"; labels[d] = "d")
+        gui = _live_view(sys; layout, labels)
+        # a part of the script moved before
+        _move!(gui, a, [0.0, 0.0, 0.01])
+        before = _changes(gui)
+        @test !occursin("ObjectGroup", before)
+
+        s = GUI._group!(gui, GUI._MultiSelection(Any[a, b]))
+        @test s isa BMO.ObjectGroup
+        n = only(sys.objects)
+        @test n !== outer && GUI._is_window_group(gui, n)
+        @test gui.components.groups[n].replaces === outer
+        code = _changes(gui)
+        name = nested ? "top" : "sg"
+        # the group of the script is deleted from its system before its variable is assigned anew
+        @test occursin("\ndelete!(system, $name)\n", code)
+        @test count("delete!(", code) == 1
+        @test findfirst("delete!(system, $name)", code).start < findfirst("\n$name = ObjectGroup(", code).start
+        @test occursin("\npush!(system, $name)\n", code)
+        nested && @test occursin("\nsg = ObjectGroup([", code)
+        mod = _run(script * code)
+        @test only(_value(mod, :system).objects) === _value(mod, Symbol(name))
+        @test _same_tree(_value(mod, Symbol(name)), n)
+
+        # undo: the export is as before the grouping
+        @test GUI._undo!(gui.controls)
+        @test only(sys.objects) === outer
+        @test _changes(gui) == before
+
+        # redo, then moved as a whole and inside
+        @test GUI._redo!(gui.controls)
+        @test only(sys.objects) === n
+        _turn!(gui, n, [0.3, 0.1, 1.0], 0.5)
+        _move!(gui, n, [0.01, -0.02, 0.003])
+        _move!(gui, s, [0.0, 0.0, 0.004])
+        _turn!(gui, c, [1.0, 0, 0], 0.2)
+        code = _changes(gui)
+        @test occursin("\ndelete!(system, $name)\n", code)
+        mod = _run(script * code)
+        @test only(_value(mod, :system).objects) === _value(mod, Symbol(name))
+        @test _same_tree(_value(mod, Symbol(name)), n)
+        for (k, m) in (:a => a, :b => b, :c => c)
+            @test _same_pose(_value(mod, k), m)
+        end
+
+        # export_script: the members of the script with known constructors, no `delete!`
+        for m in (a, b, c, d)
+            gui.components.origin[m] = (; code = MIRROR, pose0 = GUI._pose(RoundPlanoMirror(25e-3, 5e-3)))
+        end
+        setup = _setup(_script(gui))
+        @test !occursin("delete!(", setup)
+        @test occursin("\nsystem = System([$name])\n", setup)
+        mod = _run(setup)
+        @test _same_tree(only(_value(mod, :system).objects), n)
+        close(gui)
+    end
 end
 
 end
