@@ -166,11 +166,12 @@ const GUI = BeamletOpticsGUI
             @test norm(dir(gui) - d0) < 1e-9
             close(screen)
 
-            # open_system of a locked view is locked
+            # the window of open_system starts unlocked, in its own home view
             gui, m, screen = fixture(layout; lock_view = true)
             new = open_system(gui, GUI._systems(gui)[1]; display = false)
-            @test toggle(new).active[]
-            @test all(==(false), rotations(new))
+            @test !toggle(new).active[]
+            @test rotations(new)[1] == Mouse.left
+            @test toggle(gui).active[]
             close(new)
             close(gui)
             close(screen)

@@ -7,7 +7,7 @@ system = System()
 # the left sidebar, the inspector with the card of the selection in the right one. `table` shows
 # the optical table, and with `snap`, components that are placed or dragged with the mouse snap
 # onto its holes and onto the beams
-gui = live_view(system; layout = :compact, size = (1600, 900), table = true, snap = true)
+gui = live_view(system; layout = :app, size = (1600, 900), table = true, snap = true)
 
 # Open the interactive window when used from the REPL or run as a script
 if isinteractive()
