@@ -494,17 +494,23 @@ The part of ungrouping that does not change the systems: the `gui` shows the mem
 `g` made in the window as members of the `systems` (without a system if there are none) instead of
 `g`, see `_show_group!`. The members keep their names, labels, hidden state, opacity, constraints
 and initial poses; `g` loses its label, its own opacity, its record in `gui.components.groups`
-and what `gui.components` records of it as added, and keeps its name, for the undo. Also for a view that follows a linked one, see
-`_follow_groups!`.
+and what `gui.components` records of it as added, and keeps its name, for the undo. A group of the
+script that `g` replaced is `dissolved` with it and gets its label, if it has none. Also for a view
+that follows a linked one, see `_follow_groups!`.
 """
 function _unshow_group!(gui, @nospecialize(g), systems)
     members = collect(Any, BMO.objects(g))
     state = _kept_state(gui, Any[g]; own = g)
+    label = get(gui.labels, g, nothing)
     _unshow!(gui, g)
     comp = gui.components
-    # the group of the script that `g` replaced leaves the view with it, see `export_changes`
+    # the group of the script that `g` replaced leaves the view with it, under the label that `g`
+    # took over from it (see `_remake!`), by which `export_changes` deletes it from its systems
     rec = get(comp.groups, g, nothing)
-    (rec isa _WindowGroup && !isnothing(rec.replaces)) && push!(comp.dissolved, rec.replaces)
+    if rec isa _WindowGroup && !isnothing(rec.replaces)
+        push!(comp.dissolved, rec.replaces)
+        (isnothing(label) || haskey(gui.labels, rec.replaces)) || (gui.labels[rec.replaces] = label)
+    end
     delete!(comp.groups, g)
     i = _index(comp.added, g)
     isnothing(i) || deleteat!(comp.added, i)

@@ -367,6 +367,69 @@ const GUI = BeamletOpticsGUI
         @test _same_tree(only(_value(mod, :system).objects), n)
         close(gui)
     end
+
+    @testset "ungrouping a group made in a group of the script, $layout" for layout in (:compact, :app)
+        script = """
+            using BeamletOptics
+            a = $MIRROR
+            translate_to3d!(a, [0.0, 0.1, 0.0])
+            b = $MIRROR
+            rotate3d!(b, [1.0, 0.0, 0.0], 0.4)
+            translate_to3d!(b, [0.05, 0.2, 0.01])
+            c = $MIRROR
+            translate_to3d!(c, [-0.04, 0.15, 0.02])
+            sg = ObjectGroup([a, b, c])
+            set_pivot3d!(sg, [0.0, 0.12, 0.0])
+            system = System([sg])
+            """
+        mod0 = _run(script)
+        a, b, c, sg, sys = (_value(mod0, x) for x in (:a, :b, :c, :sg, :system))
+        gui = _live_view(sys; layout, labels = Dict(a => "a", b => "b", c => "c", sg => "sg"))
+        # the objects of the system of the code applied to the script, in any order, are those of `sys`
+        function _replayed(code)
+            mod = _run(script * code)
+            objs = _value(mod, :system).objects
+            @test length(objs) == length(sys.objects)
+            for y in sys.objects
+                @test count(x -> _same_tree(x, y), objs) == 1
+            end
+            return mod
+        end
+
+        s = GUI._group!(gui, GUI._MultiSelection(Any[a, b]))
+        n = only(sys.objects)
+        _move!(gui, n, [0.0, 0.01, 0.0])
+        before = _changes(gui)
+        @test GUI._ungroup!(gui, n)
+        @test length(sys.objects) == 2 && any(o -> o === s, sys.objects) && any(o -> o === c, sys.objects)
+        _move!(gui, c, [0.0, 0.0, 0.005])
+        code = _changes(gui)
+        # the group of the script is deleted, its former part of the script is pushed
+        @test occursin("\ndelete!(system, sg)\n", code)
+        @test occursin("\npush!(system, c)\n", code)
+        @test !occursin("push!(system, a)", code) && !occursin("push!(system, b)", code)
+        @test findfirst("push!(system, c)", code).start < findfirst("translate_to3d!(c", code).start
+        mod = _replayed(code)
+        @test _same_pose(_value(mod, :c), c)
+
+        # undo of the ungrouping: the export is as before it
+        @test GUI._undo!(gui.controls)
+        @test only(sys.objects) === n
+        _move!(gui, c, [0.0, 0.0, -0.005])
+        @test _changes(gui) == before
+
+        # ungrouped again, then two former parts grouped anew
+        @test GUI._redo!(gui.controls)
+        g = GUI._group!(gui, GUI._MultiSelection(Any[s, c]))
+        @test g isa BMO.ObjectGroup && only(sys.objects) === g
+        _turn!(gui, g, [0.0, 0.0, 1.0], 0.3)
+        code = _changes(gui)
+        @test occursin("\ndelete!(system, sg)\n", code)
+        @test !occursin("push!(system, c)", code)
+        @test count("delete!(", code) == 1
+        _replayed(code)
+        close(gui)
+    end
 end
 
 end

@@ -400,6 +400,46 @@ function _export_replaced_lines!(lines, cx, @nospecialize(g))
 end
 
 """
+    _export_dissolved_lines!(lines, cx, shown) -> n
+
+Appends the lines of `export_changes` for the groups of the script whose group made anew in the
+window was ungrouped (`gui.components.dissolved`, see `_unshow_group!`) and returns their number
+`n`: per group a `delete!` from each system that held it at the start, named after its label like
+`_export_replaced_lines!` (a comment if it has none, which it may have lost with the group that
+replaced it), and a `push!` of each of its former parts among the top-level objects `shown` to its
+systems now, if it was not added at runtime and was a part at the start (no `start_systems`).
+Former parts inside a group made in the window are written by that group, see
+`_export_grouping_lines!`, after these lines; the poses follow, see `_export_code`.
+"""
+function _export_dissolved_lines!(lines, cx, shown)
+    (; gui, names, systems, used, added) = cx
+    comp = gui.components
+    n = 0
+    pushed = Base.IdSet{Any}()
+    for old in comp.dissolved
+        n += 1
+        push!(lines, "", _export_heading(gui, old) * ", ungrouped")
+        label = get(gui.labels, old, nothing)
+        named = !isnothing(label) && _is_variable_name(label) && !(label in used)
+        held = Any[s for s in get(comp.start_systems, old, Any[]) if haskey(systems, s)]
+        for s in held
+            push!(lines, named ? "delete!($(systems[s]), $label)" :
+                "# delete!($(systems[s]), …) with the variable of $(_label(gui, old))")
+        end
+        parts = _descendants(old)
+        for m in shown
+            (_has(parts, m) && !(m in added) && !(m in pushed) && !haskey(comp.start_systems, m)) || continue
+            push!(pushed, m)
+            name = names[m]
+            now = String[systems[s] for s in _member_systems(gui, m) if haskey(systems, s)]
+            isempty(now) && push!(lines, "# $name is in no system, i.e. not traced")
+            foreach(s -> push!(lines, "push!($s, $name)"), now)
+        end
+    end
+    return n
+end
+
+"""
     _export_grouping_lines!(lines, cx, g) -> n
 
 Appends the lines of `export_changes` for the group `g` that was made in the window of the `gui` of
@@ -494,6 +534,9 @@ function _export_code(gui::LiveView)
         haskey(comp.groups, g) && foreach(m -> inside[m] = g, BMO.objects(g))
     end
     cx = (; gui, names, systems, used, copies, inside, added, written = Base.IdSet{Any}())
+    # before the groups made in the window, which may hold their former parts: a system holds an
+    # object only once, also inside a group
+    n += _export_dissolved_lines!(lines, cx, shown)
     for obj in comp.added
         n += _export_added_code!(lines, cx, obj)
     end
