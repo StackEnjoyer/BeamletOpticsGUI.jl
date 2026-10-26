@@ -23,6 +23,7 @@ Look up the docstring of any name before use, e.g.
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `open_system`, `export_changes`, `export_script`, `retrace!` |
+| Projects (prototype) | `save_project`, `open_project` |
 | Scripting | `select!`, `spectator!`, `wait_solve` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
 | Components and systems at runtime | `add_component!`, `remove_component!`, `add_system!`, `remove_system!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |

@@ -21,7 +21,12 @@ export live_view, kinematic_controls!, view_cube!, export_changes, export_script
        add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
        add_system!, remove_system!,
        CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!,
-       spectator!, wait_solve
+       spectator!, wait_solve, save_project, open_project
+
+import BeamletOpticsProjects
+import BeamletOpticsProjects: save_project
+import NativeFileDialog
+import TOML
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -103,6 +108,7 @@ include("LiveCatalogEntries.jl")
 include("LiveCatalog.jl")
 include("LiveCatalogWindow.jl")
 include("LiveCopy.jl")
+include("LiveProject.jl")
 include("LiveDebug.jl")
 include("LiveDebugHUD.jl")
 include("LiveDebugSpheres.jl")

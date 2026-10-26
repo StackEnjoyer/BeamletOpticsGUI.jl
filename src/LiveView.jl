@@ -596,6 +596,8 @@ they are rendered, selectable and movable, but not traced, see `_live_render_ext
 `custom`, see `LiveCustom.jl`. `background_card` is the kwarg of [`live_view`](@ref): the object
 (or `gui -> object`) whose card a click on the empty background shows, see `_show_background!`.
 `links` holds the views that show systems of this one in other windows, see `_ViewLinks`.
+`project` is the folder of the project that the view was opened from or saved to (`nothing`
+before), which `Ctrl+S` saves to, see [`save_project`](@ref) and [`open_project`](@ref).
 
 The type parameter `L` is the type of the `layout`, see `AbstractLiveLayout`: `CompactView` and
 `AppView` are the `LiveView`s of `live_view(...; layout = :compact)` and `layout = :app`.
@@ -629,6 +631,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     spectator::_SpectatorState = _SpectatorState()
     background_card::Any = nothing
     links::_ViewLinks = _ViewLinks()
+    # the folder of the project that `Ctrl+S` saves to, see `save_project`
+    project::Union{Nothing, String} = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -1660,6 +1664,9 @@ function live_view(
     _connect_placement!(gui)
     # Copying and pasting of the components of the catalog, see `_copy_selected!`
     _connect_copy!(gui)
+    # Saving and opening projects with `Ctrl+S` and `Ctrl+O` and the tools "Save" and "Open", see
+    # `save_project` and `open_project`
+    _connect_project!(gui)
     # What linked views share beside their objects, see `open_system`
     _connect_links!(gui)
     # Aiming a source with the mouse, see `_start_aim!`
