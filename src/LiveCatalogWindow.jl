@@ -453,8 +453,8 @@ Connects the catalog `w` of the `gui`:
   minimizes the docked catalog and brings back one that floats.
 - the key `Insert` (`_CATALOG_KEY`) shows the window at the mouse, unless a textbox or menu takes
   the keyboard and not in the spectator mode.
-- every frame, the window follows the 3D view, and the forms are built again and settled if
-  needed, see `_flush_catalog_form!` and `_settle_catalog_form!`.
+- every frame, the window follows the 3D view, and the forms are built again if needed, see
+  `_flush_catalog_form!`.
 
 The presses on the window are kept from the controls and the camera like those on the cards, see
 `_over_catalog`.
@@ -484,10 +484,7 @@ function _connect_catalog_window!(gui::LiveView, w::_CatalogWindow)
         end)
     end
     push!(listeners, on(ev.tick) do _
-        for widget in _catalog_widgets(w)
-            _flush_catalog_form!(gui, widget)
-            _settle_catalog_form!(widget)
-        end
+        foreach(widget -> _flush_catalog_form!(gui, widget), _catalog_widgets(w))
         _arrange_catalog!(gui)
         return nothing
     end)

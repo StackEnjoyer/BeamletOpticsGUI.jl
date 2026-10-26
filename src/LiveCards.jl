@@ -489,7 +489,7 @@ function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
         push!(grids, layout)
     end
     c.content_key = key
-    push!(gui.cards.settle, (gui.cards.ticks, c.actions, grids))
+    push!(gui.cards.settle, (gui.cards.ticks, GridLayout[c.actions; grids]))
     _on_content_built!(gui, c)
     return nothing
 end
@@ -502,15 +502,16 @@ const _RESTORE_TICKS = 6
     _settle_cards!(gui)
 
 Settles the widgets of cards that were just built (`gui.cards.settle`: the number of ticks of the
-render loop before the build, `gui.cards.ticks`, the layout of the actions and those of the rows):
-a workaround for Makie 0.24, see `_settle_catalog_form!`. A widget that is created and laid out at
-once may be drawn with the camera of another size of its scene, e.g. of the default size or of the
-width before its label was set, i.e. misplaced, too large or too small: GLMakie keeps the
-projection of the first frame that drew it, until the size of the viewport of its scene changes
-after that frame. Hence, once a frame drew the widgets, the viewports of their scenes grow by a
-pixel, and `_RESTORE_TICKS` later, once a frame drew them, they take their size again
-(`gui.cards.restore`, see `_grow_viewports!`), e.g. the boxes of a page of a card that is built when
-the page is chosen, the names of a selection of several and the buttons in its head. Both in one
+render loop before the build, `gui.cards.ticks`, and the layouts of the widgets, e.g. of the actions
+and of the rows of a card, or a new form of the catalog, see `_fill_catalog_form!`): a workaround
+for Makie 0.24. A widget that is created and laid out at once may be drawn with the camera of
+another size of its scene, e.g. of the default size or of the width before its label was set, i.e.
+misplaced, too large or too small: GLMakie keeps the projection of the first frame that drew it,
+until the size of the viewport of its scene changes after that frame. Hence, once a frame drew the
+widgets, the viewports of their scenes grow by a pixel, and `_RESTORE_TICKS` later, once a frame
+drew them, they take their size again (`gui.cards.restore`, see `_grow_viewports!`), e.g. the boxes
+of a page of a card that is built when the page is chosen or of the form of the catalog, the names
+of a selection of several and the buttons in its head. Both in one
 frame are not enough: Makie does not pass on a viewport that is the same as at the last frame; and
 GLMakie also misses the size again in the frame after the growth now and then. Nothing else may
 lay out the widgets meanwhile, e.g. a move of their columns, which sets the viewports back to the
@@ -532,14 +533,13 @@ function _settle_cards!(gui::LiveView)
         end
     end
     filter!(((t, _),) -> !restore(t), cards.restore)
-    for (t0, actions, rows) in cards.settle
+    for (t0, layouts) in cards.settle
         t0 < drawn || continue
         scenes = Tuple{Scene, Makie.Rect2i}[]
-        _grow_viewports!(scenes, actions)
-        foreach(g -> _grow_viewports!(scenes, g), rows)
+        foreach(g -> _grow_viewports!(scenes, g), layouts)
         isempty(scenes) || push!(cards.restore, (cards.ticks, scenes))
     end
-    filter!(((t0, _, _),) -> t0 >= drawn, cards.settle)
+    filter!(((t0, _),) -> t0 >= drawn, cards.settle)
     return nothing
 end
 
