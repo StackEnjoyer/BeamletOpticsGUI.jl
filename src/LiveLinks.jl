@@ -498,7 +498,8 @@ shared `systems`, in the `gui` as well: a group whose members the `gui` shows at
 made there too (see `_show_group!`), one that `from` ungrouped is ungrouped (see
 `_unshow_group!`), both without changing the systems, which the views share; the `gui` records the
 groups that it does not show yet as made in the window, such that `_follow_structure!` adds them as
-such, e.g. after `from` undid their removal.
+such, e.g. after `from` undid their removal. A group of the script that `from` ungroups or groups
+again to make the groups above a subgroup anew (see `_remake!`) is ungrouped and grouped likewise.
 """
 function _follow_groups!(gui::LiveView, from::LiveView, systems)
     shared = BMO.System[sys for sys in systems if sys isa BMO.System]
@@ -516,10 +517,15 @@ function _follow_groups!(gui::LiveView, from::LiveView, systems)
         return any(h -> _has(_top_levels(h), x), (gui.system_handles..., gui.extras))
     end
     groups = gui.components.groups
-    # ungrouped in `from`: the systems hold its members instead
-    for (g, rec) in collect(groups)
-        (shown(g) && !top(g) && all(top, rec.members)) || continue
-        _unshow_group!(gui, g, _member_systems(gui, first(rec.members)))
+    # ungrouped in `from`, also a group of the script that `from` makes anew (see `_remake!`): the
+    # systems hold its members instead
+    done = Any[]
+    for h in (gui.system_handles..., gui.extras), g in collect(Any, _top_levels(h))
+        (g isa BMO.AbstractObjectGroup && !_has(done, g) && !top(g)) || continue
+        members = haskey(groups, g) ? groups[g].members : collect(Any, BMO.objects(g))
+        (!isempty(members) && all(top, members)) || continue
+        push!(done, g)
+        _unshow_group!(gui, g, _member_systems(gui, first(members)))
     end
     for (g, rec) in from.components.groups
         haskey(groups, g) && continue
@@ -529,6 +535,13 @@ function _follow_groups!(gui::LiveView, from::LiveView, systems)
         elseif inside(g) && !_shows(gui, g)
             groups[g] = rec
         end
+    end
+    # a group of the script that `from` grouped again, by the undo of `_remake!`
+    for sys in shared, g in collect(Any, sys.objects)
+        (g isa BMO.AbstractObjectGroup && !haskey(from.components.groups, g) && !shown(g)) || continue
+        members = collect(Any, BMO.objects(g))
+        (!isempty(members) && all(shown, members)) || continue
+        _show_group!(gui, g, _script_record(g), _member_systems(gui, first(members)); script = true)
     end
     return nothing
 end
