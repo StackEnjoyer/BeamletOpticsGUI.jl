@@ -430,7 +430,7 @@ const GUI = BeamletOpticsGUI
         sections = GUI._help_sections(:move, 10e-9, 10e-6)
         e = sections[1].second[2]
         @test e.keys == [GUI._ctrl_cap(), :mouse => "click"] && e.combo
-        @test e.text == "add to or remove from the selection, a part of the same group too"
+        @test e.text == "add to or remove from the selection (also a part)"
         e = GUI._help_sections(:move, 10e-9, 10e-6, Keyboard.left_shift)[1].second[2]
         @test e.keys == ["left_shift", GUI._ctrl_cap(), :mouse => "click"]
     end

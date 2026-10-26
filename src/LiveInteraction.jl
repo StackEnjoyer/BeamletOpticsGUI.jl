@@ -219,8 +219,7 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
     return _HelpSection[
         "Select" => [
             _HelpEntry(click, click_help; combo = true),
-            _HelpEntry(toggle, "add to or remove from the selection, a part of the same group too";
-                combo = true),
+            _HelpEntry(toggle, "add to or remove from the selection (also a part)"; combo = true),
             _HelpEntry(drag_keys, "add the objects in a rectangle"; combo = true),
             _HelpEntry(["Esc"], "enclosing group or deselect")],
         (move ? "Move" : "Rotate") * " the selection" => [
