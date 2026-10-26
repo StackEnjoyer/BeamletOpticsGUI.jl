@@ -917,7 +917,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         gui.widgets.measure_toggle.active[] = false
         # the spectator mode clears the selection, with which the pinned card loses step and mode
         _select!(gui, nothing)
-        # the widgets that were built move by a pixel once a frame drew them (see `_settle_cards!`)
+        # the widgets that were built are settled once a frame drew them (see `_settle_cards!`)
         _tick!(gui)
         while !isempty(gui.cards.settle)
             _tick!(gui)

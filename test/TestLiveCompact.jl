@@ -301,7 +301,7 @@ const GUI = BeamletOpticsGUI
         gui.status.text[] = "hello"
         GUI._toggle_pin!(gui, m)
         _tick!(gui)
-        # The widgets of a card that was just built move by a pixel once a frame drew them (see
+        # The widgets of a card that was just built are settled once a frame drew them (see
         # `_settle_cards!`): wait for it, such that the card has its final size
         while !isempty(gui.cards.settle)
             sleep(1e-3)
