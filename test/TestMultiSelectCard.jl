@@ -133,6 +133,19 @@ const GUI = BeamletOpticsGUI
         _w(card, :object_1).clicks[] += 1
         @test ctrl.selected[] === o.m1
         @test insp.name.text[] == "M1" && insp.pin.box.visible[]
+        # the new widgets are settled once a frame drew them (see `_settle_cards!`): their viewports
+        # grow by a pixel and take their size again
+        select!(gui, [o.m1, o.m2, o.m3, o.pd])
+        _tick!(gui)
+        @test !isempty(gui.cards.settle)
+        scenes = [s for i in 1:4 for s in _w(card, Symbol(:object_, i)).blockscene.children]
+        sizes = [Makie.widths(s.viewport[]) for s in scenes]
+        _tick!(gui)
+        @test isempty(gui.cards.settle) && !isempty(gui.cards.restore)
+        @test [Makie.widths(s.viewport[]) for s in scenes] == [w .+ 1 for w in sizes]
+        foreach(_ -> _tick!(gui), 1:GUI._RESTORE_TICKS)
+        @test isempty(gui.cards.restore)
+        @test [Makie.widths(s.viewport[]) for s in scenes] == sizes
         # the eye hides all objects and clears the selection
         select!(gui, [o.m2, o.m3])
         eye = _w(card, :hide)

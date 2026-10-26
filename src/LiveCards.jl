@@ -486,42 +486,84 @@ function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
         for (j, cell) in enumerate(row.cells)
             _add_cell!(gui, c, layout[1, j], cell)
         end
-        # also a row of a single widget, e.g. the names of a selection of several, see `_settle_cards!`
-        (length(row.cells) > 1 || any(cell -> cell isa CardWidget, row.cells)) && push!(grids, layout)
+        push!(grids, layout)
     end
     c.content_key = key
-    isempty(grids) || push!(gui.cards.settle, (time(), grids))
+    push!(gui.cards.settle, (gui.cards.ticks, GridLayout[c.actions; grids]))
     _on_content_built!(gui, c)
     return nothing
 end
 
+# Ticks from the growth of the viewports of new widgets until their size is restored, see
+# `_settle_cards!`: about 0.1 s; a restore in the next frame is missed now and then
+const _RESTORE_TICKS = 6
+
 """
     _settle_cards!(gui)
 
-Moves the widgets of the rows of cards that were just built (`gui.cards.settle`, with the clock
-time of the build) by a pixel, at the first frame with a later clock time. A workaround for
-Makie 0.24, see `_settle_catalog_form!`: a `Textbox` that is created and laid out at the same clock
-time draws its text with the camera of its default size, i.e. misplaced, until its viewport changes
-again, e.g. the boxes of a page of a card that is built when the page is chosen. Called every
-frame, see `_update_cards!`.
+Settles the widgets of cards that were just built (`gui.cards.settle`: the number of ticks of the
+render loop before the build, `gui.cards.ticks`, and the layouts of the widgets, e.g. of the actions
+and of the rows of a card, or a new form of the catalog, see `_fill_catalog_form!`): a workaround
+for Makie 0.24. A widget that is created and laid out at once may be drawn with the camera of
+another size of its scene, e.g. of the default size or of the width before its label was set, i.e.
+misplaced, too large or too small: GLMakie keeps the projection of the first frame that drew it,
+until the size of the viewport of its scene changes after that frame. Hence, once a frame drew the
+widgets, the viewports of their scenes grow by a pixel, and `_RESTORE_TICKS` later, once a frame
+drew them, they take their size again (`gui.cards.restore`, see `_grow_viewports!`), e.g. the boxes
+of a page of a card that is built when the page is chosen or of the form of the catalog, the names
+of a selection of several and the buttons in its head. Both in one
+frame are not enough: Makie does not pass on a viewport that is the same as at the last frame; and
+GLMakie also misses the size again in the frame after the growth now and then. Nothing else may
+lay out the widgets meanwhile, e.g. a move of their columns, which sets the viewports back to the
+size of the layout at once. A tick tells whether the frame before it was drawn (`gui.cards.drawn`, the
+number of ticks before that frame); the render loop skips frames in which nothing changed. Called
+every frame, see `_update_cards!`.
 """
 function _settle_cards!(gui::LiveView)
-    settle = gui.cards.settle
-    isempty(settle) && return nothing
-    now = time()
-    for (t0, grids) in settle
-        t0 == now && continue
-        for g in grids
-            # a row that was deleted meanwhile has no columns left; a row of a single widget has no
-            # gap, a margin of 1 px moves it instead
-            if size(g)[2] > 1
-                Makie.colgap!(g, 1, g.addedcolgaps[1].x + 1)
-            elseif size(g)[2] == 1
-                g.alignmode[] = Makie.Outside(1, 0, 0, 0)
-            end
+    cards = gui.cards
+    (isempty(cards.settle) && isempty(cards.restore)) && return nothing
+    drawn = cards.drawn
+    restore(t) = t < drawn && cards.ticks >= t + _RESTORE_TICKS
+    for (t, scenes) in cards.restore
+        restore(t) || continue
+        for (scene, vp) in scenes
+            # unless the layout set the viewport meanwhile, or the widget was deleted
+            (scene.viewport[] == vp && !isnothing(scene.parent) && _has(scene.parent.children, scene)) &&
+                (scene.viewport[] = Makie.Rect2i(Makie.origin(vp), Makie.widths(vp) .- 1))
         end
     end
-    filter!(((t0, _),) -> t0 == now, settle)
+    filter!(((t, _),) -> !restore(t), cards.restore)
+    for (t0, layouts) in cards.settle
+        t0 < drawn || continue
+        scenes = Tuple{Scene, Makie.Rect2i}[]
+        foreach(g -> _grow_viewports!(scenes, g), layouts)
+        isempty(scenes) || push!(cards.restore, (cards.ticks, scenes))
+    end
+    filter!(((t0, _),) -> t0 >= drawn, cards.settle)
+    return nothing
+end
+
+"""
+    _grow_viewports!(scenes, g::GridLayout)
+    _grow_viewports!(scenes, scene::Scene)
+
+Makes the viewport of the `scene` and its children, or of the scenes of the blocks in the layout
+`g`, a pixel wider and higher, such that their pixel cameras are set again, and adds each scene
+with its new viewport to `scenes`, see `_settle_cards!`.
+"""
+function _grow_viewports!(scenes::Vector{Tuple{Scene, Makie.Rect2i}}, g::GridLayout)
+    for c in g.content
+        x = c.content
+        x isa GridLayout ? _grow_viewports!(scenes, x) :
+            x isa Makie.Block && _grow_viewports!(scenes, x.blockscene)
+    end
+    return nothing
+end
+function _grow_viewports!(scenes::Vector{Tuple{Scene, Makie.Rect2i}}, scene::Scene)
+    vp = scene.viewport[]
+    scene.viewport[] = Makie.Rect2i(Makie.origin(vp), Makie.widths(vp) .+ 1)
+    push!(scenes, (scene, scene.viewport[]))
+    foreach(s -> _grow_viewports!(scenes, s), scene.children)
     return nothing
 end
 
@@ -1204,7 +1246,12 @@ function _connect_cards!(gui::LiveView)
     # not in `over`: a press on the debug card ends the input into the textboxes of the cards
     ctrl.ignore_mouse = () -> over() || _over_debug(gui) || _outside_view(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
-    push!(ctrl.listeners, on(_ -> _update_cards!(gui), ev.tick))
+    push!(ctrl.listeners, on(ev.tick) do tick
+        # a tick tells whether the frame before it was drawn, see `_settle_cards!`
+        tick.state == Makie.RegularRenderTick && (gui.cards.drawn = gui.cards.ticks)
+        _update_cards!(gui)
+        gui.cards.ticks += 1
+    end)
     # Before the controls (200)
     push!(ctrl.listeners, on(ev.mousebutton, priority = 250) do event
         event.action == Mouse.press && !over() && foreach(_defocus_card!, gui.cards.all)
