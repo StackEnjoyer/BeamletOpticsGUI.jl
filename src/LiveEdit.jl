@@ -164,7 +164,7 @@ function _replace!(gui::LiveView, old, new, origin)
     P0, R0 = old_snap.origin.pose0
     Pn, Rn = origin.pose0
     ΔR = R * R0'
-    _set_pose_exact!(new, Point3{Float64}(Vector{Float64}(P) .+ ΔR * (Vector{Float64}(Pn) .- Vector{Float64}(P0))),
+    _set_pose!(new, Point3{Float64}(Vector{Float64}(P) .+ ΔR * (Vector{Float64}(Pn) .- Vector{Float64}(P0))),
         ΔR * Rn)
     new_snap = Ref{Any}(_replacement_snapshot(gui, old, new, origin, old_snap))
     old_state = Ref{Any}(old_snap)

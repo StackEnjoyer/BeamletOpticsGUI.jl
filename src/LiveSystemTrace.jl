@@ -26,13 +26,15 @@ end
     _affected_systems(gui, obj) -> Union{Nothing, Vector}
 
 The systems of the `gui` that a change of `obj` affects: those that hold it, of a source the one
-it is traced through. `nothing` if they are not known, i.e. all of them, e.g. after a slider.
+it is traced through, of a selection of several those of its objects (none if they have none, e.g.
+extras). `nothing` if they are not known, i.e. all of them, e.g. after a slider.
 """
 _affected_systems(::LiveView, ::Nothing) = nothing
 function _affected_systems(gui::LiveView, @nospecialize(obj))
     systems = _systems_of(gui, obj)
     return isempty(systems) ? nothing : systems
 end
+_affected_systems(gui::LiveView, s::_MultiSelection) = _systems_of(gui, s)
 
 # The systems `affected` (all for `nothing`) of the `gui` with and without auto tracing
 function _split_auto(gui::LiveView, affected)

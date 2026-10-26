@@ -41,6 +41,7 @@ const _Axis = Union{Axis3, LScene}
 # include order dependant!
 include("API.jl")
 include("LiveHandles.jl")
+include("LiveMultiSelect.jl")
 include("LiveMarkers.jl")
 include("LiveInteraction.jl")
 include("LiveTree.jl")

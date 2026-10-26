@@ -158,7 +158,7 @@ function _update_placement!(gui::LiveView)
     (isnothing(p) || !_placement_mouse_in_view(gui, p)) && return nothing
     P, R, snapped = _placement_pose(gui, p)
     # Not traced, hence no solve is cancelled, see `_change!`
-    _set_pose_exact!(p.obj, P, R)
+    _set_pose!(p.obj, P, R)
     p.snapped = snapped
     update_render!(p.ghost)
     return nothing
@@ -250,7 +250,7 @@ function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrG
     n = _placement_normal(gui.ax.scene, ctrl)
     lookat = Vector{Float64}(cameracontrols(gui.ax.scene).lookat[])
     R0 = _pose(obj)[2]
-    _set_pose_exact!(obj, fixed ? zeros(3) : lookat .- dot(lookat .- plane_point, n) .* n, R0)
+    _set_pose!(obj, fixed ? zeros(3) : lookat .- dot(lookat .- plane_point, n) .* n, R0)
     _show_placed_markers!(gui, obj)
     ghost = _ghost!(gui, obj, system)
     gui.components.placement = _Placement(obj, ghost, system, origin, kwargs, R0, plane_point,

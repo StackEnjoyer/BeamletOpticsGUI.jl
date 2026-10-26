@@ -340,6 +340,25 @@ function _show_pencil!(e::_TitleEdit, renamable::Bool)
     return nothing
 end
 
+"""
+Shows the pin of the floating card `c` among its tools, left of its chevron, or takes it out of the
+tools, e.g. on the card of a selection of several objects, see `_pinnable`. Only a change updates
+the layout.
+"""
+function _show_pin_button!(c::_ComponentCard, shown::Bool)
+    box = c.pin_button.box
+    gc = Makie.GridLayoutBase.gridcontent(box)
+    attached = !isnothing(gc) && !isnothing(gc.parent)
+    attached == shown && return nothing
+    if shown
+        col = first(Makie.GridLayoutBase.gridcontent(c.collapse_button.box).span.cols) - 1
+        _view_attach!(c.tools, 1, col, box, true)
+    else
+        _view_detach!(box)
+    end
+    return nothing
+end
+
 # Whether the point `p` [figure px] is over the pencil or the textbox of the line of the title `e`
 function _over_name_widget(e::_TitleEdit, p::Point2f)
     x = e.editing ? e.box : e.renamable ? e.pencil.box : nothing

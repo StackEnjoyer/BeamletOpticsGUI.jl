@@ -450,11 +450,15 @@ _step_box(::AppLayout, w, _) = w.step_box
 Connections and status
 =#
 
-# The inspector follows the selection via `_update_inspector!`, called right before
+# The inspector follows the selection via `_update_inspector!`, called right before. The rows of all
+# objects of a selection of several are shown and highlighted, see `_selection_objects`
 function _on_selected!(gui::AppView)
-    obj = gui.controls.selected[]
-    _reveal!(gui, obj)
-    _set_selected!(gui.layout.tree, obj)
+    sel = gui.controls.selected[]
+    objs = _selection_objects(sel)
+    for obj in objs
+        _reveal!(gui, obj)
+    end
+    _set_selected!(gui.layout.tree, _is_multi(sel) ? objs : sel)
     return nothing
 end
 
@@ -504,6 +508,7 @@ function _connect_layout!(gui::AppView)
     # Object tree
     tree = layout.tree
     push!(listeners, on(key -> _tree_click!(gui, key), tree.clicked))
+    push!(listeners, on(key -> _tree_toggle!(gui, key), tree.toggled))
     push!(listeners, on(key -> _toggle_hidden!(gui, key), tree.eye_clicked))
     push!(listeners, on(key -> _toggle_expanded!(gui, key), tree.expand_clicked))
     push!(listeners, on(((key, button),) -> _tree_button!(gui, key, button), tree.button_clicked))

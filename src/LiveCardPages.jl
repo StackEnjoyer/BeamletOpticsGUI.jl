@@ -26,6 +26,8 @@ _has_page(@nospecialize(obj), ::Val{:results}) = _has_view(obj)
 _has_page(@nospecialize(obj), ::Val{:properties}) = _has_properties(obj)
 # A system has one page, the system widget, and hence no page bar, see `_system_rows`
 _has_page(::BMO.AbstractSystem, ::Val{:properties}) = false
+# A selection of several objects has one page, the names of its objects (see `_MultiSelection`)
+_has_page(::_MultiSelection, ::Val{:properties}) = false
 
 """
     _has_step(obj) -> Bool

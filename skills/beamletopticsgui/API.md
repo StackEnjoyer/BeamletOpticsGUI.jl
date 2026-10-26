@@ -147,7 +147,10 @@ mouse drag on a ring of the gizmo (highlighted under the cursor) rotates the sel
 that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) can not be dragged, a
 drag elsewhere on the selection rotates around `rotation_axis` as before. In the move mode a drag on
 an arrow of the gizmo moves the component along that arrow only, a drag elsewhere on the selection
-in the plane of the view.
+in the plane of the view. `Ctrl`+click (`Cmd` on macOS) on a component adds its top-level object to
+the selection or removes it (no camera reset on `Ctrl`+click in the controls; with a `select_modifier`
+set, a toggle needs that modifier and `Ctrl`); a plain click on an object of the selection selects it
+alone, `Ctrl`+click on the background keeps the selection.
 
 ## Scripting a window
 
@@ -160,6 +163,7 @@ static objects throw `ArgumentError`):
 translate3d!(gui, lens, [0, 1e-3, 0]);  translate_to3d!(gui, lens, [0, 0.12, 0])
 rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))   # or rotate3d!(gui, mirror, R)
 select!(gui, lens); select!(gui, nothing)       # like a click
+select!(gui, [lens, mirror])                    # like Ctrl+click on each: moved, rotated, hidden, removed as one
 spectator!(gui, true)                           # like the key v
 wait_solve(gui)                                 # solve in the background shown, deferred solves done, also of linked windows
 ```

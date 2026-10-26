@@ -19,6 +19,20 @@ _shows(::LiveView, ::Nothing) = false
 _shows(gui::LiveView, @nospecialize(obj)) = any(p -> p.second === obj, gui.pairs) ||
                              any(leaf -> !isnothing(_child_handle(gui.controls.h, leaf)), _leaves(obj))
 
+"""
+The part of the changed `obj` of a linked view that the `gui` shows (see `_shows`): `obj` itself or
+`nothing`; of a selection of several objects (see `_MultiSelection`) those that the `gui` shows, see
+`_selection_of`.
+"""
+_shown_part(gui::LiveView, @nospecialize(obj)) = _shows(gui, obj) ? obj : nothing
+function _shown_part(gui::LiveView, s::_MultiSelection)
+    shown = Any[]
+    for obj in s.objects
+        _shows(gui, obj) && push!(shown, obj)
+    end
+    return length(shown) == length(s.objects) ? s : _selection_of(shown)
+end
+
 """The name of the `theme` kwarg of `live_view` with the color tokens `tokens`, see `_app_theme`."""
 function _theme_name(tokens)
     name = _index(_APP_THEMES, tokens)
@@ -53,6 +67,14 @@ function _systems_of(gui::LiveView, @nospecialize(obj))
     top = _component_top(gui, obj)
     return BMO.AbstractSystem[rendered(h) for h in gui.system_handles
                               if _has(rendered(h).objects, top)]
+end
+# Those of all objects of a selection of several, see `_MultiSelection`
+function _systems_of(gui::LiveView, s::_MultiSelection)
+    systems = BMO.AbstractSystem[]
+    for obj in s.objects, sys in _systems_of(gui, obj)
+        _has(systems, sys) || push!(systems, sys)
+    end
+    return systems
 end
 
 # Records that the `systems` of the `gui` are outdated, see `_note_stale!`
@@ -378,7 +400,9 @@ function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool
     # `from` traced only some of its systems, see `_trace_set`
     (stale || isnothing(traced)) || filter!(sys -> _has(traced, sys), systems)
     isempty(systems) && return nothing
-    foreign = !isnothing(obj) && !_shows(gui, obj)
+    # the objects of a selection of several that the `gui` shows, see `_shown_part`
+    mine = _shown_part(gui, obj)
+    foreign = !isnothing(obj) && isnothing(mine)
     (foreign && (stale || !gui.trace.stale)) && return nothing
     # The changes pause for both, see `_on_idle!`
     gui.trace.last_change = time()
@@ -386,14 +410,14 @@ function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool
     _follow_switches!(gui, from, systems)
     update_render!(gui.controls.h)
     _update_selection_box!(gui.controls)
-    _shows(gui, obj) && _table_include!(gui, obj)
+    isnothing(mine) || _table_include!(gui, mine)
     # not through the controls of the `gui`, see `_apply_update!`
-    _debug_moved!(gui, _shows(gui, obj) ? obj : nothing)
+    _debug_moved!(gui, mine)
     if stale
         _follow_stale!(gui)
         # A detector that `from` moved has no hits, unless `from` solves it in the background,
         # whose detectors nothing else reads meanwhile
-        (_shows(gui, obj) && !_running(from)) && _detectors_moved!(gui, obj)
+        (!isnothing(mine) && !_running(from)) && _detectors_moved!(gui, mine)
     else
         _follow_solved!(gui, from, systems, obj; preview)
     end
@@ -522,12 +546,7 @@ function _follow_solved!(gui::LiveView, from::LiveView, systems, @nospecialize(o
             foreach(state -> state.window_changed = now, states)
         end
     end
-    try
-        gui.on_change(gui, _shows(gui, obj) ? obj : nothing)
-        gui.last_error = nothing
-    catch e
-        gui.last_error = _log_once(gui, e, gui.last_error, "`on_change` callback")
-    end
+    _user_on_change!(gui, _shown_part(gui, obj))
     _update_user_panels!(gui)
     _on_solved!(gui)
     # The layers of the debug mode show the beams that `from` traced
