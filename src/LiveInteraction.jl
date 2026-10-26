@@ -698,6 +698,26 @@ whose reset on `Ctrl`+click the controls switch off, see `kinematic_controls!`.
 _toggles(::KinematicController, scene) = _modifier_held(scene, _CTRL_OR_CMD_KEYS)
 
 """
+    _sibling_or_top(ctrl, leaf)
+
+The object that a `Ctrl`+click on `leaf` adds to the selection of the `ctrl`: if all its objects are
+parts of one group `P` (same `render_parent`) that lies in `_chain(ctrl, leaf)`, the child of `P` in
+that chain (a sibling part), else the top-level object of `leaf`.
+"""
+function _sibling_or_top(ctrl::KinematicController, @nospecialize(leaf))
+    chain = _chain(ctrl, leaf)
+    objs = _selection_objects(ctrl.selected[])
+    if !isempty(objs)
+        P = render_parent(ctrl.h, first(objs))
+        if !isnothing(P) && all(x -> render_parent(ctrl.h, x) === P, objs)
+            i = _index(chain, P)
+            isnothing(i) || i > 1 && return chain[i - 1]
+        end
+    end
+    return last(chain)
+end
+
+"""
     _toggle_leaf!(ctrl, leaf)
 
 `Ctrl`+click on the rendered object `leaf`: removes the object of the selection that `leaf` is a
@@ -707,7 +727,7 @@ part of or is (see `_selected_member`) from the selection, otherwise adds the to
 """
 function _toggle_leaf!(ctrl::KinematicController, @nospecialize(leaf))
     member = _selected_member(ctrl, leaf)
-    obj = isnothing(member) ? last(_chain(ctrl, leaf)) : member
+    obj = isnothing(member) ? _sibling_or_top(ctrl, leaf) : member
     sel = _with_toggled(ctrl.selected[], obj)
     ctrl.selected[] === sel || (ctrl.selected[] = sel)
     _update_selection_box!(ctrl)

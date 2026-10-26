@@ -91,6 +91,46 @@ const GUI = BeamletOpticsGUI
         close(ctrl)
     end
 
+    @testset "Ctrl+click on a sibling part of the selected part of a group" begin
+        a, b, c = (RoundPlanoMirror(0.025, 0.005) for _ in 1:3)
+        translate3d!(b, [0.1, 0, 0])
+        translate3d!(c, [0, 0.1, 0])
+        o = RoundPlanoMirror(0.025, 0.005)
+        translate3d!(o, [0, 0, 0.1])
+        g = ObjectGroup([a, b, c])
+        fig = Figure()
+        ax = LScene(fig[1, 1])
+        h = live_render!(ax, System([g, o]))
+        find_handle(hh, obj) = only(oh for oh in render_children(hh) if rendered(oh) === obj)
+        target = Ref{Any}(a)
+        pick = ax2 -> (render_plots(find_handle(h, target[]))[1], 0)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick)
+        scene = ax.scene
+        events(scene).mouseposition[] = (100.0, 100.0)
+        ctrl.selected[] = a
+        # a sibling part is added, not the group
+        target[] = b
+        _ctrl_click!(scene)
+        s = ctrl.selected[]
+        @test s isa GUI._MultiSelection && s.objects == Any[a, b]
+        # again: removed
+        _ctrl_click!(scene)
+        @test ctrl.selected[] === a
+        # the third sibling, then the first removed
+        target[] = c
+        _ctrl_click!(scene)
+        @test ctrl.selected[].objects == Any[a, c]
+        target[] = a
+        _ctrl_click!(scene)
+        @test ctrl.selected[] === c
+        # an object outside the group: its top-level object is added, the part stays
+        ctrl.selected[] = a
+        target[] = o
+        _ctrl_click!(scene)
+        @test ctrl.selected[].objects == Any[a, o]
+        close(ctrl)
+    end
+
     @testset "Ctrl+click on the background keeps the selection and the camera" begin
         f = _fixture()
         ctrl, scene = f.ctrl, f.scene
