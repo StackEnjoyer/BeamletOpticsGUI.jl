@@ -395,8 +395,6 @@ or toggle (`Val(true)`, initially `active`) with the `tooltip`, like the toolbar
 function _camera_tool!(o::_CompactOverlay, col::Int, ::Val{T}, icon, tooltip, active::Bool) where {T}
     kw = (; _icon_theme(o.theme)..., size = _OVERLAY_TOOL, icon_size = _OVERLAY_ICON, icon, tooltip)
     b = T ? _IconToggle(o.camera_tools[1, col]; active, kw...) : _IconButton(o.camera_tools[1, col]; kw...)
-    # The tooltip relative to the translation of the overlay, like on the cards
-    _fix_tooltip!(b)
     return b
 end
 

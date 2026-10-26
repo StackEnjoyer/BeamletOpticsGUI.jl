@@ -330,13 +330,28 @@ end
     _CameraState
 
 Camera tools of a `LiveView`: the `home` view `(eye, lookat, up)`, taken at the first tick
-(`home_set`), the saved `views` and the running `animation` of a camera transition.
+(`home_set`), the saved `views` and the running `animation` of a camera transition. The marker of
+the pivot (`pivot`, a dot, a `Scatter` in a scene of pixels over the 3D view, see `_draw_pivot!`
+and `_step_pivot!`), the camera beside it (`pivot_camera`) with the area in the color of the
+background behind it (`pivot_backdrop`), the arrows about it per gesture (`pivot_glyphs`, see
+`_PivotGlyph`), the time
+[s] since the view last changed (`pivot_idle`), whether it changed since the last tick
+(`pivot_moved`), the gesture of the last change (`pivot_gesture`, see `_pivot_gesture`) and the
+view after it (`pivot_view`).
 """
 Base.@kwdef mutable struct _CameraState
     home::NTuple{3, Vector{Float64}} = (zeros(3), zeros(3), zeros(3))
     home_set::Bool = false
     views::Vector{Pair{String, NTuple{3, Vector{Float64}}}}
     animation::Any = nothing
+    pivot::Any = nothing
+    pivot_idle::Float64 = Inf
+    pivot_moved::Bool = false
+    pivot_camera::Any = nothing
+    pivot_backdrop::Any = nothing
+    pivot_glyphs::Dict{Symbol, Any} = Dict{Symbol, Any}()
+    pivot_gesture::Symbol = :none
+    pivot_view::NTuple{3, Vector{Float64}} = (zeros(3), zeros(3), zeros(3))
 end
 
 """
@@ -471,6 +486,8 @@ Base.@kwdef mutable struct _ComponentState
     aim::Any = nothing
     # the optical table of the view (a `_Table`), see `_set_table!`
     table::Any = nothing
+    # the debug mode of the view (a `_Debug`), see `_set_debug!`
+    debug::Any = nothing
     window::Any = nothing
     # the groups made in the window (an `ObjectGroup` => its `_WindowGroup`), see `_group!`
     const groups::IdDict{Any, Any} = IdDict{Any, Any}()
@@ -665,6 +682,7 @@ function Base.close(gui::LiveView)
     # The linked views no longer follow it, and it stops only its own solve
     _unlink!(gui)
     _cancel_solve!(gui)
+    _close_debug!(gui)
     _end_placement!(gui)
     _end_member_pick!(gui)
     _close_layout!(gui)
@@ -680,6 +698,17 @@ function _log_once(e, last_error, source::String)
     if msg != last_error
         @error "live_view: $source failed" exception = (e, catch_backtrace())
     end
+    return msg
+end
+
+"""
+Logs the error `e` of the `source` of the `gui` once per distinct message like
+`_log_once(e, last_error, source)`, and records it as an event of the debug mode, see
+`_debug_event!`.
+"""
+function _log_once(gui::LiveView, e, last_error, source::String)
+    msg = _log_once(e, last_error, source)
+    msg == last_error || _debug_event!(gui, "error in $source: $(_error_line(e))")
     return msg
 end
 
@@ -1333,6 +1362,16 @@ show the same objects and follow each other: what is moved, added, removed or ed
 them changes in the other one as well, and only the window in which something changed solves.
 A system that is open in another window can not be removed, see "Systems".
 
+# Debug mode
+
+The toggle "Debug" among the tools (or the `debug` kwarg) shows what the window normally hides, to
+find errors in an optical system or in the GUI: a debug card in the top left corner of the 3D view
+(frames, the durations of the last solves with the time compiled, the rays of the last solve, the
+scene and the last events), the bounding spheres of the objects, where and why the beams end, the
+hit points with their surface normals as short arrows, the components that no ray hit, and a page "Debug" on the
+cards of the objects. The spectator mode hides it. A window opened with [`open_system`](@ref)
+takes the mode over. Only while it is on, the compile time of Julia is measured.
+
 # Keyword args
 
 - `layout = :compact`: arrangement of the widgets, `:compact` or `:app`, see "Compact layout" and "App layout"
@@ -1419,6 +1458,7 @@ A system that is open in another window can not be removed, see "Systems".
   lowest point of the components), `snap = true` (whether components snap onto its holes while the
   snapping is switched on, see `snap`; `false` for a table that is only shown) and
   `shown = true`
+- `debug = false`: whether the debug mode is on at the start, see "Debug mode"
 - all other kwargs are passed to [`kinematic_controls!`](@ref), e.g. `fine_step`, `plane_normal`
   or `rotation_axis`
 """
@@ -1455,6 +1495,7 @@ function live_view(
         catalog = component_catalog(),
         snap::Union{Bool, Symbol} = false,
         table = false,
+        debug::Bool = false,
         kwargs...
     )
     # One compiled method for all systems, sources and keyword arguments
@@ -1549,6 +1590,8 @@ function live_view(
     change = function (obj)
         @nospecialize obj
         gui = gui_ref[]
+        # Before the solve, whose rays the layers of the debug mode show then
+        _debug_moved!(gui, obj)
         _on_moved!(gui, obj)
         # The table grows with the setup, see `_Table`
         _table_include!(gui, obj)
@@ -1585,6 +1628,11 @@ function live_view(
     # Objects must not change while a solve in the background traces them, also one of a linked
     # view; a view that follows a linked one stops none, see `_follow!`
     controls.before_change = () -> gui.links.following || _cancel_solve!(gui)
+    # The duration of each update of the controls, e.g. a step of a drag, for the debug mode
+    controls.after_update = function (obj, dt)
+        @nospecialize obj
+        return _debug_updated!(gui_ref[], obj, dt)
+    end
     for (point, normal) in clip_specs
         _add_clip_plane!(gui, point, normal; select = false)
     end
@@ -1626,6 +1674,8 @@ function live_view(
     _set_snap!(controls, snap)
     # The optical table, onto whose holes they snap beside the beams, see the `table` kwarg
     _build_table!(gui, table_spec)
+    # The debug mode, see the `debug` kwarg
+    _build_debug!(gui, debug)
     # The info label and the colors of the controls, shared by all layouts
     _connect_theme!(gui)
     # The cards of the detectors of the `detectors` kwarg start pinned, before the initial solve,

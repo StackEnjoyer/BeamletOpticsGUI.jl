@@ -344,6 +344,7 @@ function _set_hidden!(gui::LiveView, @nospecialize(obj), hide::Bool)
         end
         hide || _restore_opacity!(gui, leaf, get(gui.objects.opacity, leaf, nothing))
     end
+    _debug_hidden!(gui)
     return nothing
 end
 

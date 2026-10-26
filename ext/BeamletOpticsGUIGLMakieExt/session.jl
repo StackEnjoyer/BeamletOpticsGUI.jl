@@ -367,13 +367,29 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         a = _free_px(gui)
         _drag!(gui, a, a .+ (40, 20))
         frame!()
+        _check(!isnothing(gui.camera.pivot) && gui.camera.pivot.visible[], "the drag did not show the pivot")
+        _check(gui.camera.pivot_gesture == :rotate, "the left drag is not the gesture :rotate")
+    end
+    step("camera: pivot fades") do
+        for _ in 1:600
+            gui.camera.pivot.visible[] || break
+            _tick!(gui)
+        end
+        frame!()
+        _check(!gui.camera.pivot.visible[], "the pivot did not fade")
     end
     step("camera: pan (right drag)") do
         a = _free_px(gui)
         _drag!(gui, a, a .+ (40, 20); button = Mouse.right)
         frame!()
+        _check(gui.camera.pivot_gesture == :pan, "the right drag is not the gesture :pan")
     end
-    step(() -> (_move!(gui, _free_px(gui)); _events(gui).scroll[] = (0.0, 1.0); frame!()), "camera: zoom (scroll)")
+    step("camera: zoom (scroll)") do
+        _move!(gui, _free_px(gui))
+        _events(gui).scroll[] = (0.0, 1.0)
+        frame!()
+        _check(gui.camera.pivot_gesture in (:zoom_in, :zoom_out), "the scroll is not a zoom gesture")
+    end
     step(home!, "camera: home after the drags")
 
     cube = gui.widgets.view_cube
@@ -625,6 +641,51 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
     end
     step(() -> (_key!(gui, Keyboard.delete); settle!()), "delete selected")
     step(() -> (_key!(gui, Keyboard.v); frame!(); _key!(gui, Keyboard.v); frame!()), "key v (spectator mode)")
+
+    # The debug mode: its toggle among the tools, the debug card (its rows refresh with the ticks),
+    # the bounding spheres, the ends of the beams and the hit points after a drag and a solve, the
+    # page "Debug" of a card, the spectator mode with the mode on
+    debug_toggle() = GUI._debug(gui).toggle
+    step("debug: on") do
+        debug_toggle().active[] = true
+        frame!()
+        _check(GUI._debug_on(gui), "the toggle did not switch the debug mode on")
+    end
+    step("debug: drag mirror, solve") do
+        a = _px(gui, _pos(fx.mirror))
+        _drag!(gui, a, a .+ (15, 5))
+        settle!()
+        foreach(_ -> frame!(), 1:3)
+    end
+    step("debug: camera of a saved view, under the mouse") do
+        eye, lookat, up = GUI._current_view(gui)
+        GUI._save_view!(gui; io = devnull)
+        # back from it, such that its camera is in front of the window
+        GUI.set_view(gui.ax, lookat .+ 2 .* (eye .- lookat), lookat, up)
+        frame!()
+        _move!(gui, _px(gui, eye))
+        frame!()
+        v = GUI._debug_layer(gui, :views)
+        _check(v.hover > 0, "the camera of the saved view is not highlighted under the mouse")
+        _move!(gui, _free_px(gui))
+        GUI.set_view(gui.ax, eye, lookat, up)
+        frame!()
+    end
+    step("debug: page Debug of the card of the mirror") do
+        _click!(gui, _px(gui, _pos(fx.mirror)))
+        frame!()
+        _selected(gui, fx.mirror)
+        c = last(filter(c -> GUI._card_object(gui, c) === fx.mirror, GUI._edit_cards(gui)))
+        GUI._set_page!(gui, c, :debug)
+        frame!()
+        deselect!()
+    end
+    step(() -> (_key!(gui, Keyboard.v); frame!(); _key!(gui, Keyboard.v); frame!()), "debug: spectator mode")
+    step("debug: off") do
+        debug_toggle().active[] = false
+        frame!()
+        _check(!GUI._debug_on(gui), "the toggle did not switch the debug mode off")
+    end
 
     if layout == :app
         tree = gui.layout.tree
