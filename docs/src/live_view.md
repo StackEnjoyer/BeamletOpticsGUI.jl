@@ -646,8 +646,9 @@ the arrow and page keys) and rotated (rotate mode, rings, keys) as one, about th
 positions of its objects, with the axes of the world as its gizmo axes. It does not snap onto beams
 or the table grid, and only the axes that all its objects allow are free. One drag, one run of key
 steps and one `Backspace` (which resets all its objects to their initial poses) are one undo step,
-and `on_change` is called once per object of a moved selection. `Ctrl+C` copies nothing while
-several objects are selected. Its card (compact layout) or the inspector (app layout) shows "N
+and `on_change` is called once per object of a moved selection. `Ctrl+C` copies them if all
+their components are from the catalog, see [Changing, undoing and the whole script](@ref).
+Its card (compact layout) or the inspector (app layout) shows "N
 objects" with the subtitle "Selection" and one row per object with its name, where a click selects
 that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
 hidden) and remove (all removable objects as one undo step; the others stay selected and the status

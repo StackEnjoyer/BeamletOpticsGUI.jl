@@ -201,6 +201,13 @@ of the selection, else the first one, `Esc` cancels, and each further `Ctrl+V` p
 also in another window. Objects that the view started with can not be copied, for the same reason;
 the status line says so.
 
+A group whose components are all from the catalog is copied with its structure: `Ctrl+V` builds its
+components and groups (also groups inside it) again, with their poses relative to each other and the
+pivots and axes of the groups, and attaches the new group to the mouse by its pivot. It is dropped
+as a group made in the window (`Ctrl+Shift+G` ungroups it) and is one undo step. Several selected
+objects are copied the same way and follow the mouse together, without snapping onto beams or the
+table; they are dropped as separate objects. A source is only copied on its own.
+
 Adding, removing and changing are part of the undo history of the controls, together with the
 moves: `Ctrl+Z` takes the last step back, `Ctrl+Y` (or `Ctrl+Shift+Z`) does it again, e.g. a removed
 component comes back in its pose, with its label. How a source is drawn (color, opacity, line

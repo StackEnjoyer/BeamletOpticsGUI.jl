@@ -244,12 +244,184 @@ const GUI = BeamletOpticsGUI
         @test !ctrl.spectator[]
         # listed in the help of a view with a catalog
         help(g) = repr(GUI._merge_sections(GUI._HelpSection[], g.controls.help_extra))
-        @test occursin("copy the selected component or source", help(gui))
+        @test occursin("copy the selection (also a group)", help(gui))
         @test occursin("paste it at the mouse", help(gui))
         close(gui)
         bare = _live_view(System() => _beam(); catalog = CatalogEntry[])
-        @test !occursin("copy the selected", help(bare)) && !occursin("paste it", help(bare))
+        @test !occursin("copy the selection", help(bare)) && !occursin("paste it", help(bare))
         close(bare)
+    end
+
+    # Components of the catalog added to `gui` at the positions `at`, turned by `angle` about z
+    function _added!(gui, names_at; angle = 0.0)
+        objs = Any[]
+        for (name, at) in names_at
+            c = _built(name)
+            angle == 0 || rotate3d!(c.obj, [0.0, 0, 1], angle)
+            translate_to3d!(c.obj, at)
+            add_component!(gui, c.obj; origin = c.origin)
+            push!(objs, c.obj)
+        end
+        return objs
+    end
+    function _grouped!(gui, objs)
+        g = GUI._group!(gui, GUI._MultiSelection(objs))
+        @test !isnothing(g)
+        return g
+    end
+    _turn!(gui, obj, axis, angle) = GUI._change!(() -> rotate3d!(obj, normalize(axis), angle), gui.controls, obj)
+    # The same tree of types, the same orientations and the same positions relative to the top
+    function _same_shape(a, b; atol = 1e-9)
+        da, db = GUI._descendants(a), GUI._descendants(b)
+        length(da) == length(db) || return false
+        Pa, Pb = GUI._pose(a)[1], GUI._pose(b)[1]
+        return all(zip(da, db)) do (x, y)
+            (Px, Rx), (Py, Ry) = GUI._pose(x), GUI._pose(y)
+            x !== y && typeof(x) == typeof(y) && norm(Rx - Ry) < atol && norm((Px - Pa) - (Py - Pb)) < atol
+        end
+    end
+    # The objects of the system of the setup of `export_script`, evaluated
+    function _exported_objects(gui)
+        code = BeamletOpticsGUI.export_script(gui; io = devnull)
+        mod = Module()
+        include_string(mod, String(first(split(code, "\n# Live view\n"))))
+        return Core.eval(mod, :system).objects
+    end
+
+    @testset "a group, $layout" for layout in (:compact, :app)
+        GUI._CLIPBOARD[] = nothing
+        sys = System()
+        gui = _live_view(sys => _beam(); layout)
+        ctrl = gui.controls
+        a, b, c = _added!(gui, ("Thin lens" => [0.0, 0.1, 0], "Round mirror" => [0.02, 0.15, 0.01],
+            "Thin lens" => [-0.01, 0.2, 0]); angle = 0.3)
+        inner = _grouped!(gui, [a, b])
+        _turn!(gui, inner, [1.0, 2, 3], 0.4)
+        outer = _grouped!(gui, [inner, c])
+        _turn!(gui, outer, [0.0, 0, 1], 0.5)
+        n_groups = length(gui.components.groups)
+        n_history = length(ctrl.undo_stack)
+
+        # Ctrl+C keeps the tree, Ctrl+V builds it again and attaches it to the mouse
+        _select!(gui, outer)
+        _ctrl!(gui, Keyboard.c)
+        kept = GUI._CLIPBOARD[]
+        @test kept isa GUI._GroupCopy && !kept.several && kept.name == GUI._label(gui, outer)
+        @test occursin("copied", gui.status.text[]) && length(ctrl.undo_stack) == n_history
+        _ctrl!(gui, Keyboard.v)
+        @test GUI._placing(gui) && occursin("pasting", gui.status.text[])
+        p = gui.components.placement
+        new = p.obj
+        @test new isa ObjectGroup && p.system === sys
+        @test _same_shape(new, outer)
+        # nothing is recorded before the drop
+        @test length(gui.components.groups) == n_groups && length(sys.objects) == 1
+
+        # `Esc` cancels it
+        _key!(gui, Keyboard.escape)
+        @test !GUI._placing(gui) && length(sys.objects) == 1
+        @test length(gui.components.groups) == n_groups
+
+        # dropped: groups made in the window of components of the catalog, one step of the history
+        _ctrl!(gui, Keyboard.v)
+        new = gui.components.placement.obj
+        GUI._drop_placement!(gui)
+        @test length(sys.objects) == 2 && sys.objects[end] === new
+        @test _same_shape(new, outer)
+        new_inner = first(BMO.objects(new))
+        @test GUI._is_window_group(gui, new) && GUI._is_window_group(gui, new_inner)
+        @test all(leaf -> GUI._editable(gui, leaf), GUI._leaves(new))
+        @test ctrl.selected[] === new
+        @test length(ctrl.undo_stack) == n_history + 1
+        # the original is as it was
+        @test only(BMO.objects(outer)[1:1]) === inner && GUI._is_window_group(gui, outer)
+
+        # the export builds both like the window
+        exported = _exported_objects(gui)
+        @test length(exported) == 2
+        @test all(((x, y),) -> _same_shape(x, y) && norm(GUI._pose(x)[1] - GUI._pose(y)[1]) < 1e-9,
+            zip(exported, sys.objects))
+
+        # moved and turned as one after the drop: still exported like the window
+        _turn!(gui, new, [1.0, 0, 0], 0.2)
+        exported = _exported_objects(gui)
+        @test all(((x, y),) -> _same_shape(x, y) && norm(GUI._pose(x)[1] - GUI._pose(y)[1]) < 1e-9,
+            zip(exported, sys.objects))
+
+        # undo removes the whole copy, redo adds it again as a group made in the window
+        while length(ctrl.undo_stack) > n_history + 1
+            GUI._undo!(ctrl)
+        end
+        @test GUI._undo!(ctrl)
+        @test length(sys.objects) == 1 && only(sys.objects) === outer
+        @test GUI._redo!(ctrl)
+        @test length(sys.objects) == 2 && sys.objects[end] === new
+        @test GUI._is_window_group(gui, new) && GUI._is_window_group(gui, new_inner)
+        close(gui)
+    end
+
+    @testset "several objects" begin
+        GUI._CLIPBOARD[] = nothing
+        sys = System()
+        gui = _live_view(sys => _beam())
+        ctrl = gui.controls
+        a, b, c = _added!(gui, ("Thin lens" => [0.0, 0.1, 0], "Round mirror" => [0.02, 0.15, 0.01],
+            "Thin lens" => [-0.01, 0.2, 0]))
+        g = _grouped!(gui, [b, c])
+        n_history = length(ctrl.undo_stack)
+        sel = GUI._MultiSelection([a, g])
+        _select!(gui, sel)
+        _ctrl!(gui, Keyboard.c)
+        kept = GUI._CLIPBOARD[]
+        @test kept isa GUI._GroupCopy && kept.several && kept.name == "2 objects"
+
+        # they follow the mouse together, without snapping
+        _ctrl!(gui, Keyboard.v)
+        p = gui.components.placement
+        @test !GUI._placed_snaps(p.origin)
+        holder = p.obj
+        GUI._drop_placement!(gui)
+        # dropped as separate objects, not grouped
+        @test length(sys.objects) == 4
+        new_a, new_g = sys.objects[3], sys.objects[4]
+        @test !any(o -> o === holder, sys.objects)
+        @test typeof(new_a) == typeof(a) && GUI._editable(gui, new_a)
+        @test GUI._is_window_group(gui, new_g) && _same_shape(new_g, g)
+        @test norm((GUI._pose(new_a)[1] - GUI._pose(new_g)[1]) - (GUI._pose(a)[1] - GUI._pose(g)[1])) < 1e-9
+        @test ctrl.selected[] isa GUI._MultiSelection &&
+              Set(objectid.(ctrl.selected[].objects)) == Set(objectid.((new_a, new_g)))
+        @test occursin("2 objects pasted", gui.status.text[])
+        # one step of the history
+        @test length(ctrl.undo_stack) == n_history + 1
+        @test GUI._undo!(ctrl)
+        @test length(sys.objects) == 2
+        @test GUI._redo!(ctrl)
+        @test length(sys.objects) == 4 && GUI._is_window_group(gui, new_g)
+        close(gui)
+    end
+
+    @testset "groups that can not be copied" begin
+        GUI._CLIPBOARD[] = nothing
+        m = RoundPlanoMirror(25e-3, 5e-3)
+        translate3d!(m, [0, 0.2, 0])
+        sys = System([m])
+        beam = _beam()
+        gui = _live_view(sys => beam)
+        (lens,) = _added!(gui, ("Thin lens" => [0.0, 0.1, 0],))
+        _select!(gui, lens)
+        _ctrl!(gui, Keyboard.c)
+        kept = GUI._CLIPBOARD[]
+        # a group with an object of the script
+        g = _grouped!(gui, [m, lens])
+        _select!(gui, g)
+        _ctrl!(gui, Keyboard.c)
+        @test GUI._CLIPBOARD[] === kept
+        @test occursin("can not be copied", gui.status.text[]) && occursin("is not from the catalog", gui.status.text[])
+        # a selection with a source
+        _select!(gui, GUI._MultiSelection([beam, g]))
+        _ctrl!(gui, Keyboard.c)
+        @test GUI._CLIPBOARD[] === kept && occursin("copied only on its own", gui.status.text[])
+        close(gui)
     end
 end
 

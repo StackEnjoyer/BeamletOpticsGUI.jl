@@ -771,6 +771,45 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         settle!()
         _check(length(fx.system.objects) == n + 1, "the copy was not dropped")
     end
+    copied = Ref{Any}(nothing)
+    # Ctrl+V of what Ctrl+C kept of the selection, dropped at the mouse
+    function paste_drop!(n)
+        _key!(gui, Keyboard.c, Keyboard.left_control)
+        frame!()
+        _key!(gui, Keyboard.v, Keyboard.left_control)
+        _move!(gui, _free_px(gui))
+        frame!()
+        _click!(gui)
+        settle!()
+        _check(length(fx.system.objects) == n, "the copy was not dropped")
+        return nothing
+    end
+    step("copy + paste + drop a group, undo") do
+        copied[] = gui.controls.selected[]
+        n = length(fx.system.objects)
+        GUI._group!(gui, GUI._MultiSelection([placed[], copied[]]))
+        settle!()
+        _check(GUI._is_window_group(gui, gui.controls.selected[]), "the copies were not grouped")
+        paste_drop!(n)
+        _check(GUI._is_window_group(gui, last(fx.system.objects)), "the group was not pasted as a group")
+        # the paste, then the grouping
+        GUI._undo!(gui.controls)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, copied[]), "the undo did not ungroup the copies")
+    end
+    step("copy + paste + drop several, undo") do
+        n = length(fx.system.objects)
+        GUI._select!(gui, GUI._MultiSelection([placed[], copied[]]))
+        frame!()
+        paste_drop!(n + 2)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(length(fx.system.objects) == n, "the undo did not remove the copies")
+        # the copy of before for the next step
+        GUI._select!(gui, copied[])
+        frame!()
+    end
     step(() -> (_key!(gui, Keyboard.delete); settle!()), "delete selected")
     step(() -> (_key!(gui, Keyboard.v); frame!(); _key!(gui, Keyboard.v); frame!()), "key v (spectator mode)")
 

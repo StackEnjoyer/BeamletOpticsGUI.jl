@@ -67,7 +67,10 @@ When this Skill is active:
   script. Adding, removing and changing are undone with
   `Ctrl+Z` and redone with `Ctrl+Y`. `Ctrl+C` and `Ctrl+V` copy and paste the selected component or
   source from the catalog, in the window only (the copy is placed with the mouse); from code, construct
-  the object again and call `add_component!`.
+  the object again and call `add_component!`. A group whose components are all from the catalog, or
+  several selected objects, are copied with their structure and relative poses; a pasted group is a
+  group made in the window, several pasted objects stay separate; one undo step. A source is copied
+  only on its own.
 - Several objects can be selected: `Ctrl`+click (`Cmd` on macOS) in the 3D view or on a row of the
   tree (app layout) toggles an object, `Ctrl`+drag from the background or an unselected object draws a rectangle that adds
   the visible, movable top-level objects whose center is inside (a drag on a selected object moves the
@@ -76,7 +79,7 @@ When this Skill is active:
   snapping, only on the axes that all allow; one drag, run of keys or `Backspace` is one undo step,
   and `on_change` is called once per object. Their card (compact) or the inspector (app) shows "N
   objects" ("Selection"), one row per object (click: that object alone), hide and remove, no pages and
-  no pin. `Ctrl+C` copies nothing. `gui.controls.selected[]` then holds an internal value, not a
+  no pin. `Ctrl+C` copies them if all their components are from the catalog. `gui.controls.selected[]` then holds an internal value, not a
   component.
 - `Ctrl+G` (`Cmd+G`) makes a selection of several an `ObjectGroup`: the systems hold the group
   instead of the objects, it is selected, moved, rotated, hidden and browsed like a group of the
