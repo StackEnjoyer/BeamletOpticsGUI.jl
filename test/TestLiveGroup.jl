@@ -51,6 +51,9 @@ const GUI = BeamletOpticsGUI
     _close(a, b) = norm(Vector{Float64}(a) .- Vector{Float64}(b)) < 1e-9
     _same_pose(obj, pose) = _close(position(obj), pose[1]) && norm(BMO.orientation(obj) .- pose[2]) < 1e-9
     _group_of_selection!(gui, objs) = (select!(gui, objs); GUI._group!(gui, gui.controls.selected[]))
+    # the poses of the objects, to compare after grouping, undo and redo
+    _poses(ms) = IdDict{Any, Any}(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in ms)
+    _identity(g) = norm(Matrix{Float64}(BMO.orientation(g)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
 
     @testset "grouping and ungrouping, $layout" for layout in (:compact, :app)
         fx = _fixture(; layout)
@@ -64,7 +67,7 @@ const GUI = BeamletOpticsGUI
 
         g = _group_of_selection!(gui, [m, pd])
         @test g isa ObjectGroup
-        @test BMO.objects(g) == (m, pd)
+        @test Tuple(BMO.objects(g)) == (m, pd)
         # the system holds the group instead of its members
         @test _in(g, sys.objects) && !_in(m, sys.objects) && !_in(pd, sys.objects)
         @test length(sys.objects) == 2
@@ -245,7 +248,7 @@ const GUI = BeamletOpticsGUI
         @test isempty(gui.components.groups)
         # a group of the script is grouped with another object, but not ungrouped
         g = GUI._group!(gui, GUI._MultiSelection(Any[m1, sg]))
-        @test g isa ObjectGroup && BMO.objects(g) == (m1, sg)
+        @test g isa ObjectGroup && Tuple(BMO.objects(g)) == (m1, sg)
         @test !GUI._ungroup!(gui, sg)
         @test occursin("script", gui.status.text[])
         close(gui)
@@ -259,73 +262,73 @@ const GUI = BeamletOpticsGUI
         wait_solve(gui)
         g1 = _group_of_selection!(gui, [m1, m2])
         g2 = _group_of_selection!(gui, [g1, m3])
-        @test g2 isa ObjectGroup && BMO.objects(g2) == (g1, m3)
+        @test g2 isa ObjectGroup && Tuple(BMO.objects(g2)) == (g1, m3)
+        gui.labels[g1] = "G1"
         gui.labels[g2] = "G2"
-        # a rotation of the outer group first: the poses are no longer the initial ones
+        # a rotation of the outer group first: its axes are no longer those of the world
         rotate3d!(gui, g2, [0.0, 0, 1], 0.3)
         wait_solve(gui)
-        poses = Dict(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in (m1, m2, m3))
-        pivot2 = Vector{Float64}(position(g2))
+        poses = _poses((m1, m2, m3, g2))
         name2 = get(gui.objects.names, g2, nothing)
         n = length(ctrl.undo_stack)
 
         @test GUI._ungroup!(gui, g1)
         @test length(ctrl.undo_stack) == n + 1
-        new = only(filter(o -> o isa ObjectGroup, sys.objects))
-        @test new !== g1 && new !== g2
-        @test length(sys.objects) == 1
-        @test BMO.objects(new) == (m1, m2, m3)
-        @test GUI._is_window_group(gui, new)
-        @test !GUI._is_window_group(gui, g1) && !GUI._is_window_group(gui, g2)
-        @test !_in(g2, sys.objects) && !_in(g1, sys.objects)
-        @test GUI._label(gui, new) == "G2"
-        @test get(gui.labels, new, nothing) == "G2" && !haskey(gui.labels, g2)
-        @test get(gui.objects.names, new, nothing) == name2
-        @test _close(position(new), pivot2)
-        @test norm(Matrix{Float64}(BMO.orientation(new)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
-        @test ctrl.selected[] === new
+        # the outer group is changed in place: the members of `g1` take its place
+        @test length(sys.objects) == 1 && sys.objects[1] === g2
+        @test Tuple(BMO.objects(g2)) == (m1, m2, m3)
+        @test GUI._is_window_group(gui, g2) && !GUI._is_window_group(gui, g1)
+        @test gui.components.groups[g2].members == [m1, m2, m3]
+        @test _in(g2, gui.components.added) && !_in(g1, gui.components.added)
+        @test GUI._label(gui, g2) == "G2" && !haskey(gui.labels, g1)
+        @test get(gui.objects.names, g2, nothing) == name2
+        @test _same_pose(g2, poses[g2])
+        @test all(m -> GUI._part_parent(gui, m) === g2, (m1, m2, m3))
+        @test !haskey(gui.objects.parents, g1)
+        # the members of `g1` are selected
+        sel = ctrl.selected[]
+        @test sel isa GUI._MultiSelection && Set(objectid.(sel.objects)) == Set(objectid.((m1, m2)))
         @test occursin("ungrouped", gui.status.text[])
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
-        @test all(m -> _top(gui, m) === new, (m1, m2, m3))
+        @test all(m -> _top(gui, m) === g2, (m1, m2, m3))
         wait_solve(gui)
         @test isnothing(gui.trace.error)
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
 
-        # the new group moves as one
-        translate3d!(gui, new, [0.0, 0, 0.01])
+        # the outer group moves as one
+        translate3d!(gui, g2, [0.0, 0, 0.01])
         @test _close(position(m1), poses[m1][1] .+ [0, 0, 0.01])
-        translate3d!(gui, new, [0.0, 0, -0.01])
+        translate3d!(gui, g2, [0.0, 0, -0.01])
         wait_solve(gui)
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
 
-        # undo (after the two moves, entries of their own): the old groups with their label,
-        # redo: the same new group
+        # undo (after the two moves, entries of their own): `g1` is a part of `g2` again, with its
+        # label; redo: dissolved again
         n = length(ctrl.undo_stack)
         @test GUI._undo!(ctrl) && GUI._undo!(ctrl)
         @test GUI._undo!(ctrl)
         @test length(ctrl.undo_stack) == n - 3
-        @test _in(g2, sys.objects) && !_in(new, sys.objects) && length(sys.objects) == 1
-        @test BMO.objects(g2) == (g1, m3) && BMO.objects(g1) == (m1, m2)
+        @test sys.objects[1] === g2 && Tuple(BMO.objects(g2)) == (g1, m3) && Tuple(BMO.objects(g1)) == (m1, m2)
         @test GUI._is_window_group(gui, g1) && GUI._is_window_group(gui, g2)
-        @test !GUI._is_window_group(gui, new)
-        @test GUI._label(gui, g2) == "G2"
-        @test _top(gui, m1) === g2 && _top(gui, m3) === g2
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test gui.components.groups[g2].members == [g1, m3]
+        @test _in(g1, gui.components.added)
+        @test GUI._label(gui, g1) == "G1" && GUI._label(gui, g2) == "G2"
+        @test GUI._part_parent(gui, g1) === g2 && GUI._part_parent(gui, m1) === g1
+        @test ctrl.selected[] === g1
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, g2))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
         @test GUI._redo!(ctrl)
+        @test sys.objects[1] === g2 && Tuple(BMO.objects(g2)) == (m1, m2, m3)
+        @test !GUI._is_window_group(gui, g1) && GUI._label(gui, g2) == "G2"
         @test GUI._redo!(ctrl) && GUI._redo!(ctrl)
-        @test length(sys.objects) == 1 && sys.objects[1] === new
-        @test BMO.objects(new) == (m1, m2, m3) && GUI._is_window_group(gui, new)
-        @test !GUI._is_window_group(gui, g2) && GUI._label(gui, new) == "G2"
-        @test ctrl.selected[] === new
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, g2))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
         wait_solve(gui)
         @test isnothing(gui.trace.error)
-        # the dissolved group is gone: ungrouping the new one works as for any top-level group
-        @test GUI._ungroup!(gui, new)
-        @test _in(m1, sys.objects) && _in(m2, sys.objects) && _in(m3, sys.objects)
+        # ungrouping the outer group works as for any top-level group
+        @test GUI._ungroup!(gui, g2)
+        @test all(m -> _in(m, sys.objects), (m1, m2, m3))
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
         close(gui)
     end
@@ -339,51 +342,42 @@ const GUI = BeamletOpticsGUI
         g1 = _group_of_selection!(gui, [m1, m2])
         g2 = _group_of_selection!(gui, [g1, m3])
         g3 = _group_of_selection!(gui, [g2, m4])
-        @test BMO.objects(g3) == (g2, m4)
+        @test Tuple(BMO.objects(g3)) == (g2, m4)
         gui.labels[g2] = "G2"
         gui.labels[g3] = "G3"
         rotate3d!(gui, g3, [0.0, 0, 1], 0.2)
         wait_solve(gui)
-        poses = Dict(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in (m1, m2, m3, m4))
-        pivot2, pivot3 = Vector{Float64}(position(g2)), Vector{Float64}(position(g3))
+        poses = _poses((m1, m2, m3, m4, g2, g3))
+        rec3 = gui.components.groups[g3]
         n = length(ctrl.undo_stack)
 
         @test GUI._ungroup!(gui, g1)
         @test length(ctrl.undo_stack) == n + 1
-        @test length(sys.objects) == 1
-        top = sys.objects[1]
-        @test top isa ObjectGroup && top !== g3 && top !== g2
-        @test length(BMO.objects(top)) == 2 && BMO.objects(top)[2] === m4
-        mid = BMO.objects(top)[1]
-        @test mid isa ObjectGroup && mid !== g2 && mid !== g1
-        @test BMO.objects(mid) == (m1, m2, m3)
-        @test GUI._is_window_group(gui, top) && GUI._is_window_group(gui, mid)
-        @test !any(g -> GUI._is_window_group(gui, g), (g1, g2, g3))
-        @test GUI._label(gui, top) == "G3" && GUI._label(gui, mid) == "G2"
-        @test _close(position(top), pivot3) && _close(position(mid), pivot2)
-        @test norm(Matrix{Float64}(BMO.orientation(top)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
-        @test norm(Matrix{Float64}(BMO.orientation(mid)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
-        @test GUI._part_parent(gui, mid) === top
-        @test ctrl.selected[] === top
+        # the groups above are the same objects with the same poses, `g2` holds the members of `g1`
+        @test length(sys.objects) == 1 && sys.objects[1] === g3
+        @test Tuple(BMO.objects(g3)) == (g2, m4) && Tuple(BMO.objects(g2)) == (m1, m2, m3)
+        @test GUI._is_window_group(gui, g3) && GUI._is_window_group(gui, g2) && !GUI._is_window_group(gui, g1)
+        @test gui.components.groups[g3] === rec3
+        @test GUI._label(gui, g3) == "G3" && GUI._label(gui, g2) == "G2"
+        @test _same_pose(g2, poses[g2]) && _same_pose(g3, poses[g3])
+        @test GUI._part_parent(gui, g2) === g3 && GUI._part_parent(gui, m1) === g2
         @test occursin("ungrouped", gui.status.text[])
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3, m4))
-        @test all(m -> _top(gui, m) === top, (m1, m2, m3, m4))
+        @test all(m -> _top(gui, m) === g3, (m1, m2, m3, m4))
 
         @test GUI._undo!(ctrl)
         @test length(sys.objects) == 1 && sys.objects[1] === g3
-        @test BMO.objects(g3) == (g2, m4) && BMO.objects(g2) == (g1, m3) && BMO.objects(g1) == (m1, m2)
+        @test Tuple(BMO.objects(g3)) == (g2, m4) && Tuple(BMO.objects(g2)) == (g1, m3) &&
+              Tuple(BMO.objects(g1)) == (m1, m2)
         @test all(g -> GUI._is_window_group(gui, g), (g1, g2, g3))
-        @test !GUI._is_window_group(gui, top) && !GUI._is_window_group(gui, mid)
         @test GUI._label(gui, g2) == "G2" && GUI._label(gui, g3) == "G3"
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4))
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4, g2, g3))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3, m4))
         @test GUI._redo!(ctrl)
-        @test length(sys.objects) == 1 && sys.objects[1] === top
-        @test BMO.objects(top) == (mid, m4) && BMO.objects(mid) == (m1, m2, m3)
-        @test GUI._is_window_group(gui, top) && GUI._is_window_group(gui, mid)
-        @test GUI._label(gui, top) == "G3" && GUI._label(gui, mid) == "G2"
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4))
+        @test sys.objects[1] === g3 && Tuple(BMO.objects(g2)) == (m1, m2, m3)
+        @test !GUI._is_window_group(gui, g1)
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, m4, g2, g3))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3, m4))
         wait_solve(gui)
         @test isnothing(gui.trace.error)
@@ -473,10 +467,6 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    # the poses of the mirrors, to compare after grouping, undo and redo
-    _poses(ms) = Dict(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in ms)
-    _identity(g) = norm(Matrix{Float64}(BMO.orientation(g)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
-
     @testset "grouping within a group made in the window, $layout" for layout in (:compact, :app)
         m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
         sys = System([m1, m2, m3])
@@ -487,60 +477,57 @@ const GUI = BeamletOpticsGUI
         gui.labels[g1] = "G1"
         rotate3d!(gui, g1, [0.0, 0, 1], 0.3)
         wait_solve(gui)
-        poses = _poses((m1, m2, m3))
-        pivot1 = Vector{Float64}(position(g1))
+        poses = _poses((m1, m2, m3, g1))
         name1 = get(gui.objects.names, g1, nothing)
         n = length(ctrl.undo_stack)
 
-        s = _group_of_selection!(gui, [m1, m2])
-        @test s isa ObjectGroup && BMO.objects(s) == (m1, m2)
+        # the new group takes the place of the first of its parts
+        s = _group_of_selection!(gui, [m2, m3])
+        @test s isa ObjectGroup && Tuple(BMO.objects(s)) == (m2, m3)
         @test length(ctrl.undo_stack) == n + 1
-        @test length(sys.objects) == 1
-        new = sys.objects[1]
-        @test new isa ObjectGroup && new !== g1 && new !== s
-        @test BMO.objects(new) == (s, m3)
-        @test GUI._is_window_group(gui, new) && GUI._is_window_group(gui, s)
-        @test !GUI._is_window_group(gui, g1)
-        @test isnothing(gui.components.groups[new].replaces)
-        @test GUI._label(gui, new) == "G1" && get(gui.labels, new, nothing) == "G1" && !haskey(gui.labels, g1)
-        @test get(gui.objects.names, new, nothing) == name1
-        @test _close(position(new), pivot1) && _identity(new)
-        @test _close(position(s), (poses[m1][1] .+ poses[m2][1]) ./ 2) && _identity(s)
-        @test GUI._part_parent(gui, s) === new
+        @test length(sys.objects) == 1 && sys.objects[1] === g1
+        @test Tuple(BMO.objects(g1)) == (m1, s)
+        @test GUI._is_window_group(gui, g1) && GUI._is_window_group(gui, s)
+        @test gui.components.groups[g1].members == [m1, s]
+        @test _in(s, gui.components.added)
+        @test GUI._label(gui, g1) == "G1" && get(gui.objects.names, g1, nothing) == name1
+        # the outer group keeps its pose, the new one has the mean of its parts and the world axes
+        @test _same_pose(g1, poses[g1])
+        @test _close(position(s), (poses[m2][1] .+ poses[m3][1]) ./ 2) && _identity(s)
+        @test GUI._part_parent(gui, s) === g1 && GUI._part_parent(gui, m2) === s
+        @test haskey(gui.objects.names, s) && haskey(ctrl.init_poses, s)
         @test ctrl.selected[] === s
         @test occursin("grouped", gui.status.text[])
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
-        @test all(m -> _top(gui, m) === new, (m1, m2, m3))
+        @test all(m -> _top(gui, m) === g1, (m1, m2, m3))
         wait_solve(gui)
         @test isnothing(gui.trace.error)
 
-        # undo: the old group with its parts, redo: the same new groups
+        # undo: the parts as before, in their order; redo: the same new group
         @test GUI._undo!(ctrl)
         @test length(ctrl.undo_stack) == n
-        @test length(sys.objects) == 1 && sys.objects[1] === g1
-        @test BMO.objects(g1) == (m1, m2, m3)
-        @test GUI._is_window_group(gui, g1)
-        @test !GUI._is_window_group(gui, new) && !GUI._is_window_group(gui, s)
+        @test sys.objects[1] === g1 && Tuple(BMO.objects(g1)) == (m1, m2, m3)
+        @test GUI._is_window_group(gui, g1) && !GUI._is_window_group(gui, s)
+        @test gui.components.groups[g1].members == [m1, m2, m3]
+        @test !_in(s, gui.components.added) && !haskey(gui.objects.parents, s)
         @test GUI._label(gui, g1) == "G1"
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, g1))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
-        @test all(m -> _top(gui, m) === g1, (m1, m2, m3))
+        @test all(m -> GUI._part_parent(gui, m) === g1, (m1, m2, m3))
         @test GUI._redo!(ctrl)
-        @test length(sys.objects) == 1 && sys.objects[1] === new
-        @test BMO.objects(new) == (s, m3) && BMO.objects(s) == (m1, m2)
-        @test GUI._is_window_group(gui, new) && GUI._is_window_group(gui, s) && !GUI._is_window_group(gui, g1)
-        @test GUI._label(gui, new) == "G1"
+        @test sys.objects[1] === g1 && Tuple(BMO.objects(g1)) == (m1, s) && Tuple(BMO.objects(s)) == (m2, m3)
+        @test GUI._is_window_group(gui, s) && _in(s, gui.components.added)
         @test ctrl.selected[] === s
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, g1))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
         wait_solve(gui)
         @test isnothing(gui.trace.error)
 
-        # the subgroup moves on its own
+        # the new group moves on its own
         translate3d!(gui, s, [0.0, 0, 0.01])
-        @test _close(position(m1), poses[m1][1] .+ [0, 0, 0.01])
-        @test _close(position(m3), poses[m3][1])
+        @test _close(position(m2), poses[m2][1] .+ [0, 0, 0.01])
+        @test _close(position(m1), poses[m1][1])
         close(gui)
     end
 
@@ -552,56 +539,54 @@ const GUI = BeamletOpticsGUI
         ctrl = gui.controls
         wait_solve(gui)
         gui.labels[sg] = "SG"
-        poses = _poses((m1, m2, m3))
-        pivot0 = Vector{Float64}(position(sg))
-        name0 = get(gui.objects.names, sg, nothing)
+        poses = _poses((m1, m2, m3, sg))
         added = copy(gui.components.added)
         n = length(ctrl.undo_stack)
 
-        s = _group_of_selection!(gui, [m1, m2])
-        @test s isa ObjectGroup && BMO.objects(s) == (m1, m2)
+        # not neighbors: the new group takes the place of `m1`, `m2` follows it
+        s = _group_of_selection!(gui, [m3, m1])
+        @test s isa ObjectGroup && Tuple(BMO.objects(s)) == (m1, m3)
         @test length(ctrl.undo_stack) == n + 1
-        @test length(sys.objects) == 1
-        new = sys.objects[1]
-        @test new isa ObjectGroup && new !== sg && BMO.objects(new) == (s, m3)
-        @test GUI._is_window_group(gui, new) && GUI._is_window_group(gui, s)
-        @test gui.components.groups[new].replaces === sg
-        @test isnothing(gui.components.groups[s].replaces)
-        @test !GUI._is_window_group(gui, sg)
-        @test GUI._label(gui, new) == "SG"
-        @test get(gui.objects.names, new, nothing) == name0
-        @test _close(position(new), pivot0) && _identity(new)
-        @test ctrl.selected[] === s
-        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
-        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
-        @test all(m -> _top(gui, m) === new, (m1, m2, m3))
-        wait_solve(gui)
-        @test isnothing(gui.trace.error)
-
-        # undo: the group of the script is in the system as it was, no group made in the window
-        @test GUI._undo!(ctrl)
-        @test length(ctrl.undo_stack) == n
         @test length(sys.objects) == 1 && sys.objects[1] === sg
-        @test BMO.objects(sg) == (m1, m2, m3)
-        @test !GUI._is_window_group(gui, sg) && !GUI._is_window_group(gui, new) && !GUI._is_window_group(gui, s)
-        @test isempty(gui.components.groups)
-        @test !_in(sg, gui.components.added) && !_in(new, gui.components.added) && !_in(s, gui.components.added)
-        @test gui.components.added == added
-        @test !haskey(gui.components.start_systems, new)
+        @test Tuple(BMO.objects(sg)) == (s, m2)
+        # the group of the script stays one, with its parts at the start for the export
+        @test !GUI._is_window_group(gui, sg) && GUI._is_window_group(gui, s)
+        @test gui.components.start_parts[sg] == [m1, m2, m3]
+        @test _in(s, gui.components.added) && !_in(sg, gui.components.added)
         @test GUI._label(gui, sg) == "SG"
+        @test _same_pose(sg, poses[sg])
+        @test ctrl.selected[] === s
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
         @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
         @test all(m -> _top(gui, m) === sg, (m1, m2, m3))
+        wait_solve(gui)
+        @test isnothing(gui.trace.error)
+
+        # undo: the group of the script as it was, no group made in the window
+        @test GUI._undo!(ctrl)
+        @test length(ctrl.undo_stack) == n
+        @test sys.objects[1] === sg && Tuple(BMO.objects(sg)) == (m1, m2, m3)
+        @test isempty(gui.components.groups)
+        @test gui.components.added == added
+        @test GUI._label(gui, sg) == "SG"
+        @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3, sg))
+        @test all(m -> _drawn(gui, m) == 1, (m1, m2, m3))
+        @test all(m -> GUI._part_parent(gui, m) === sg, (m1, m2, m3))
         @test GUI._redo!(ctrl)
-        @test length(sys.objects) == 1 && sys.objects[1] === new
-        @test BMO.objects(new) == (s, m3) && gui.components.groups[new].replaces === sg
+        @test sys.objects[1] === sg && Tuple(BMO.objects(sg)) == (s, m2) && GUI._is_window_group(gui, s)
         @test ctrl.selected[] === s
         @test all(m -> _same_pose(m, poses[m]), (m1, m2, m3))
         wait_solve(gui)
         @test isnothing(gui.trace.error)
+        # removing the group of the script forgets the group made in it, undo brings both back
+        @test GUI._remove_selected!(gui, sg)
+        @test !_in(s, gui.components.added) && _in(sg, gui.components.removed)
+        @test GUI._undo!(ctrl)
+        @test sys.objects[1] === sg && GUI._is_window_group(gui, s) && _in(s, gui.components.added)
+        @test !_in(sg, gui.components.removed)
         # and back once more
         @test GUI._undo!(ctrl)
-        @test sys.objects[1] === sg && isempty(gui.components.groups)
+        @test Tuple(BMO.objects(sg)) == (m1, m2, m3) && isempty(gui.components.groups)
         close(gui)
     end
 
@@ -628,48 +613,42 @@ const GUI = BeamletOpticsGUI
             rotate3d!(gui, outer, [0.0, 0, 1], 0.2)
             wait_solve(gui)
             ms = (m1, m2, m3, m4, m5)
-            poses = _poses(ms)
-            pivot_in, pivot_out = Vector{Float64}(position(inner)), Vector{Float64}(position(outer))
+            poses = _poses((ms..., inner, outer))
             n = length(ctrl.undo_stack)
 
             s = _group_of_selection!(gui, [m1, m2])
-            @test s isa ObjectGroup && BMO.objects(s) == (m1, m2)
+            @test s isa ObjectGroup && Tuple(BMO.objects(s)) == (m1, m2)
             @test length(ctrl.undo_stack) == n + 1
-            @test length(sys.objects) == 1
-            top = sys.objects[1]
-            @test top isa ObjectGroup && top !== outer && length(BMO.objects(top)) == 3
-            mid = BMO.objects(top)[1]
-            @test mid isa ObjectGroup && mid !== inner && BMO.objects(top)[2:3] == (m4, m5)
-            @test BMO.objects(mid) == (s, m3)
-            @test all(g -> GUI._is_window_group(gui, g), (top, mid, s))
-            @test !GUI._is_window_group(gui, inner) && !GUI._is_window_group(gui, outer)
-            @test gui.components.groups[top].replaces === (script ? outer : nothing)
-            @test gui.components.groups[mid].replaces === (script ? inner : nothing)
-            @test GUI._label(gui, top) == "OUT" && GUI._label(gui, mid) == "IN"
-            @test _close(position(top), pivot_out) && _close(position(mid), pivot_in)
-            @test _identity(top) && _identity(mid) && _identity(s)
-            @test GUI._part_parent(gui, s) === mid && GUI._part_parent(gui, mid) === top
+            @test length(sys.objects) == 1 && sys.objects[1] === outer
+            @test Tuple(BMO.objects(outer)) == (inner, m4, m5) && Tuple(BMO.objects(inner)) == (s, m3)
+            @test GUI._is_window_group(gui, s)
+            @test GUI._is_window_group(gui, inner) == !script && GUI._is_window_group(gui, outer) == !script
+            @test haskey(gui.components.start_parts, inner) == script
+            @test !haskey(gui.components.start_parts, outer)
+            @test GUI._label(gui, outer) == "OUT" && GUI._label(gui, inner) == "IN"
+            @test _same_pose(inner, poses[inner]) && _same_pose(outer, poses[outer]) && _identity(s)
+            @test GUI._part_parent(gui, s) === inner && GUI._part_parent(gui, inner) === outer
             @test ctrl.selected[] === s
             @test all(m -> _same_pose(m, poses[m]), ms)
             @test all(m -> _drawn(gui, m) == 1, ms)
-            @test all(m -> _top(gui, m) === top, ms)
+            @test all(m -> _top(gui, m) === outer, ms)
             wait_solve(gui)
             @test isnothing(gui.trace.error)
 
             @test GUI._undo!(ctrl)
             @test length(ctrl.undo_stack) == n
-            @test length(sys.objects) == 1 && sys.objects[1] === outer
-            @test BMO.objects(outer) == (inner, m4, m5) && BMO.objects(inner) == (m1, m2, m3)
-            @test !any(g -> GUI._is_window_group(gui, g), (top, mid, s))
+            @test sys.objects[1] === outer
+            @test Tuple(BMO.objects(outer)) == (inner, m4, m5) && Tuple(BMO.objects(inner)) == (m1, m2, m3)
+            @test !GUI._is_window_group(gui, s)
             @test GUI._is_window_group(gui, inner) == !script && GUI._is_window_group(gui, outer) == !script
             @test GUI._label(gui, inner) == "IN" && GUI._label(gui, outer) == "OUT"
-            @test all(m -> _same_pose(m, poses[m]), ms)
+            @test all(m -> _same_pose(m, poses[m]), (ms..., inner, outer))
             @test all(m -> _drawn(gui, m) == 1, ms)
             @test GUI._redo!(ctrl)
-            @test sys.objects[1] === top && BMO.objects(top)[1] === mid && BMO.objects(mid) == (s, m3)
-            @test all(g -> GUI._is_window_group(gui, g), (top, mid, s))
+            @test sys.objects[1] === outer && Tuple(BMO.objects(inner)) == (s, m3)
+            @test GUI._is_window_group(gui, s)
             @test ctrl.selected[] === s
-            @test all(m -> _same_pose(m, poses[m]), ms)
+            @test all(m -> _same_pose(m, poses[m]), (ms..., inner, outer))
             wait_solve(gui)
             @test isnothing(gui.trace.error)
             close(gui)
@@ -696,7 +675,7 @@ const GUI = BeamletOpticsGUI
         @test length(ctrl.undo_stack) == n
         @test sys.objects == objects
         @test isempty(gui.components.groups)
-        @test BMO.objects(g1) == (m1, m2) && BMO.objects(g2) == (m3, m4)
+        @test Tuple(BMO.objects(g1)) == (m1, m2) && Tuple(BMO.objects(g2)) == (m3, m4)
         close(gui)
     end
 
@@ -712,24 +691,31 @@ const GUI = BeamletOpticsGUI
         @test all(t -> t === sg, _tops(new))
 
         s = _group_of_selection!(gui, [m1, m2])
-        top = sys.objects[1]
-        @test top !== sg && BMO.objects(top) == (s, m3)
-        @test all(t -> t === top, _tops(new)) && all(t -> t === top, _tops(gui))
-        @test GUI._is_window_group(new, top) && GUI._is_window_group(new, s)
-        @test !GUI._is_window_group(new, sg)
+        @test sys.objects[1] === sg && Tuple(BMO.objects(sg)) == (s, m3)
+        @test all(t -> t === sg, _tops(new)) && all(t -> t === sg, _tops(gui))
+        @test GUI._is_window_group(new, s) && !GUI._is_window_group(new, sg)
+        @test GUI._part_parent(new, s) === sg && GUI._part_parent(new, m1) === s
+        @test _in(s, new.components.added)
+        @test new.components.start_parts[sg] == [m1, m2, m3]
         @test all(m -> _drawn(new, m) == 1, ms)
         wait_solve(gui)
 
         @test GUI._undo!(gui.controls)
-        @test sys.objects[1] === sg
-        @test all(t -> t === sg, _tops(new)) && all(t -> t === sg, _tops(gui))
-        @test !GUI._is_window_group(new, top) && !GUI._is_window_group(new, s)
+        @test sys.objects[1] === sg && Tuple(BMO.objects(sg)) == (m1, m2, m3)
+        @test !GUI._is_window_group(new, s) && !_in(s, new.components.added)
+        @test all(m -> GUI._part_parent(new, m) === sg, ms)
+        @test !haskey(new.objects.parents, s)
         @test all(m -> _drawn(new, m) == 1, ms)
         @test GUI._redo!(gui.controls)
-        @test sys.objects[1] === top
-        @test all(t -> t === top, _tops(new)) && all(t -> t === top, _tops(gui))
-        @test GUI._is_window_group(new, top) && GUI._is_window_group(new, s)
+        @test Tuple(BMO.objects(sg)) == (s, m3)
+        @test GUI._is_window_group(new, s) && GUI._part_parent(new, m1) === s
         @test all(m -> _drawn(new, m) == 1, ms)
+
+        # dissolving in the linked view is followed as well
+        @test GUI._ungroup!(new, s)
+        @test Tuple(BMO.objects(sg)) == (m1, m2, m3)
+        @test !GUI._is_window_group(gui, s) && all(m -> GUI._part_parent(gui, m) === sg, ms)
+        @test !haskey(gui.objects.parents, s)
         wait_solve(gui)
         @test isnothing(gui.trace.error)
         close(new)

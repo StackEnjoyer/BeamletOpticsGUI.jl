@@ -154,8 +154,11 @@ poses when the group was made, then the `ObjectGroup`, its pivot and its change 
 Copies for the export of the groups made in the window of the `gui` (see `_WindowGroup`) among the
 top-level objects `tops` and inside them: a copy of each such top-level group in its current pose,
 and a copy of each member of such a group (also of a group inside one) in its pose when the group
-was made, which the exported code moves it to before it builds the `ObjectGroup`. The objects of a
-group follow it. Empty if the `tops` hold no group made in the window.
+was made (see `_WindowGroup`), which the exported code moves it to before it builds the
+`ObjectGroup`. The objects of a group follow it. A group made in the window as a part of a group of
+the script (see `_subgroup!`) is copied in its initial pose and its objects in theirs (see
+`_initial_copy`), since the changes of the poses of the group of the script follow its new parts,
+see `_export_regrouped_lines!`. Empty if the `tops` hold no group made in the window.
 """
 function _grouping_copies(gui::LiveView, tops)
     groups = gui.components.groups
@@ -163,7 +166,7 @@ function _grouping_copies(gui::LiveView, tops)
     function visit!(@nospecialize(obj), @nospecialize(copy))
         copies[obj] = copy
         rec = get(groups, obj, nothing)
-        isnothing(rec) && return nothing
+        isnothing(rec) && return scripted!(obj)
         at = deepcopy(copy)
         for (m, c) in zip(BMO.objects(obj), BMO.objects(at))
             haskey(rec.poses, m) && _set_pose!(c, rec.poses[m]...)
@@ -171,8 +174,15 @@ function _grouping_copies(gui::LiveView, tops)
         end
         return nothing
     end
+    function scripted!(@nospecialize(obj))
+        obj isa BMO.AbstractObjectGroup || return nothing
+        for m in BMO.objects(obj)
+            haskey(groups, m) ? visit!(m, _initial_copy(gui.controls, m)) : scripted!(m)
+        end
+        return nothing
+    end
     for top in tops
-        haskey(groups, top) && visit!(top, deepcopy(top))
+        haskey(groups, top) ? visit!(top, deepcopy(top)) : scripted!(top)
     end
     return copies
 end
@@ -374,68 +384,43 @@ function _export_added_code!(lines, cx, @nospecialize(obj))
 end
 
 """
-    _export_replaced_lines!(lines, cx, g)
+    _export_regrouped_lines!(lines, cx, shown) -> n
 
-Appends to the `lines` of `export_changes` a `delete!` of the group of the script that the group
-`g` made in the window `replaces` (see `_WindowGroup` and `_remake!`) from each system that held it
-at the start, before the variable of `g` is assigned, since `g` got its label. The variable of the
-old group is its label, else the label of `g`, which `_remake!` gave it; a comment if that is no
-variable name or the name of another object, like `_export_removed_lines!`. Nothing for a group
-that replaces none, or one that was a part of another group at the start, which no system holds.
+Appends the lines of `export_changes` for the groups of the script among the top-level objects
+`shown` and inside them whose parts were changed in place (see `_regroup!` and
+`gui.components.start_parts`) and returns the number `n` of changes: per group, inner ones first,
+a `delete!` of each part at the start that is no part any more, the code of each new part (a group
+made in the window, see `_export_grouping_lines!`) and one `push!` of the new parts. Before the
+other changes, which use the groups as they are now: a new part ends in its initial pose and its
+objects in theirs, from which the changes of the poses of the group of the script follow, see
+`_grouping_copies`.
 """
-function _export_replaced_lines!(lines, cx, @nospecialize(g))
-    (; gui, names, systems, used) = cx
-    old = gui.components.groups[g].replaces
-    isnothing(old) && return nothing
-    held = Any[s for s in get(gui.components.start_systems, old, Any[]) if haskey(systems, s)]
-    isempty(held) && return nothing
-    label = get(gui.labels, old, get(gui.labels, g, nothing))
-    named = !isnothing(label) && _is_variable_name(label) && (!(label in used) || label == names[g])
-    shown = isnothing(label) ? _label(gui, old) : label
-    for s in held
-        push!(lines, named ? "delete!($(systems[s]), $label)" :
-            "# delete!($(systems[s]), …) with the variable of $shown, which $(names[g]) replaces")
-    end
-    return nothing
-end
-
-"""
-    _export_dissolved_lines!(lines, cx, shown) -> n
-
-Appends the lines of `export_changes` for the groups of the script whose group made anew in the
-window was ungrouped (`gui.components.dissolved`, see `_unshow_group!`) and returns their number
-`n`: per group a `delete!` from each system that held it at the start, named after its label like
-`_export_replaced_lines!` (a comment if it has none, which it may have lost with the group that
-replaced it), and a `push!` of each of its former parts among the top-level objects `shown` to its
-systems now, if it was not added at runtime and was a part at the start (no `start_systems`).
-Former parts inside a group made in the window are written by that group, see
-`_export_grouping_lines!`, after these lines; the poses follow, see `_export_code`.
-"""
-function _export_dissolved_lines!(lines, cx, shown)
-    (; gui, names, systems, used, added) = cx
-    comp = gui.components
+function _export_regrouped_lines!(lines, cx, shown)
+    (; gui, names) = cx
+    start = gui.components.start_parts
     n = 0
-    pushed = Base.IdSet{Any}()
-    for old in comp.dissolved
+    function visit!(@nospecialize(g))
+        g isa BMO.AbstractObjectGroup || return nothing
+        foreach(visit!, BMO.objects(g))
+        haskey(start, g) || return nothing
+        before, now = start[g], collect(Any, BMO.objects(g))
+        gone = Any[o for o in before if !_has(now, o)]
+        new = Any[o for o in now if !_has(before, o)]
+        (isempty(gone) && isempty(new)) && return nothing
         n += 1
-        push!(lines, "", _export_heading(gui, old) * ", ungrouped")
-        label = get(gui.labels, old, nothing)
-        named = !isnothing(label) && _is_variable_name(label) && !(label in used)
-        held = Any[s for s in get(comp.start_systems, old, Any[]) if haskey(systems, s)]
-        for s in held
-            push!(lines, named ? "delete!($(systems[s]), $label)" :
-                "# delete!($(systems[s]), …) with the variable of $(_label(gui, old))")
+        push!(lines, "", _export_heading(gui, g) * ", parts changed")
+        foreach(o -> push!(lines, "delete!($(names[g]), $(names[o]))"), gone)
+        # a new part is a group made in the window, unless the view forgot it, e.g. when `g` was
+        # removed and added again by code: then its code is not known
+        known = Any[o for o in new if _exports_as_group(gui, cx.copies, o)]
+        foreach(o -> (n += _export_added_code!(lines, cx, o)), known)
+        for o in new
+            _has(known, o) || push!(lines, "# push!($(names[g]), …) of $(_label(gui, o)), whose code is not known")
         end
-        parts = _descendants(old)
-        for m in shown
-            (_has(parts, m) && !(m in added) && !(m in pushed) && !haskey(comp.start_systems, m)) || continue
-            push!(pushed, m)
-            name = names[m]
-            now = String[systems[s] for s in _member_systems(gui, m) if haskey(systems, s)]
-            isempty(now) && push!(lines, "# $name is in no system, i.e. not traced")
-            foreach(s -> push!(lines, "push!($s, $name)"), now)
-        end
+        isempty(known) || push!(lines, "push!($(names[g]), $(join((names[o] for o in known), ", ")))")
+        return nothing
     end
+    foreach(visit!, shown)
     return n
 end
 
@@ -445,10 +430,9 @@ end
 Appends the lines of `export_changes` for the group `g` that was made in the window of the `gui` of
 the context `cx` (see `_export_code` and `_group!`) and returns the number `n` of changes: first its
 members in their poses when it was made, those added at runtime like `_export_added_code!`, those
-of the script by their changes of pose until then; then a `delete!` of the group of the script that
-`g` replaces (see `_export_replaced_lines!`) and of each member of the script from the systems that
-held it at the start, the lines of `_export_group_lines!`, and a `push!` of `g` to each of its
-systems, unless it is a member of another group made in the window.
+of the script by their changes of pose until then; then a `delete!` of each member of the script
+from the systems that held it at the start, the lines of `_export_group_lines!`, and a `push!` of `g`
+to each of its systems, unless it is a part of another group, see `_export_regrouped_lines!`.
 """
 function _export_grouping_lines!(lines, cx, @nospecialize(g))
     (; gui, names, systems, copies, inside, added, written) = cx
@@ -466,7 +450,6 @@ function _export_grouping_lines!(lines, cx, @nospecialize(g))
         end
     end
     push!(lines, "", _export_heading(gui, g) * ", grouped")
-    _export_replaced_lines!(lines, cx, g)
     for m in scripted, s in get(comp.start_systems, m, Any[])
         haskey(systems, s) && push!(lines, "delete!($(systems[s]), $(names[m]))")
     end
@@ -494,9 +477,8 @@ its label is no variable name. An added component is its constructor call (the `
 was added); together they count as one change. Sources are added and removed like components: a
 removed source is a comment, an added one its constructor call, its change of pose and the
 `solve_system!` that traces it, see `_export_removed_lines!` and `_export_added_lines!`. A group
-made in the window is its members and the `ObjectGroup`, see `_export_grouping_lines!`; one that
-was made anew from a group of the script deletes that one from its systems first, see
-`_export_replaced_lines!`.
+made in the window is its members and the `ObjectGroup`, see `_export_grouping_lines!`; a group of
+the script whose parts were changed in place is changed before, see `_export_regrouped_lines!`.
 """
 function _export_code(gui::LiveView)
     ctrl = gui.controls
@@ -531,12 +513,15 @@ function _export_code(gui::LiveView)
     copies = _grouping_copies(gui, shown)
     inside = IdDict{Any, Any}()
     for g in keys(copies)
-        haskey(comp.groups, g) && foreach(m -> inside[m] = g, BMO.objects(g))
+        haskey(comp.groups, g) || continue
+        foreach(m -> inside[m] = g, BMO.objects(g))
+        # a part of a group of the script, see `_subgroup!`
+        p = _part_parent(gui, g)
+        (isnothing(p) || haskey(comp.groups, p)) || (inside[g] = p)
     end
     cx = (; gui, names, systems, used, copies, inside, added, written = Base.IdSet{Any}())
-    # before the groups made in the window, which may hold their former parts: a system holds an
-    # object only once, also inside a group
-    n += _export_dissolved_lines!(lines, cx, shown)
+    # before the other changes, which use the groups as they are now
+    n += _export_regrouped_lines!(lines, cx, shown)
     for obj in comp.added
         n += _export_added_code!(lines, cx, obj)
     end
@@ -607,9 +592,10 @@ A group that was made in the window (`Ctrl+G`) comes at its place among the adde
 members in their poses when it was made (one that was added is its constructor call, one of the
 script its `rotate3d!` and `translate_to3d!`), a `delete!(system, name)` of each member of the
 script, `g = ObjectGroup([a, b])`, `set_pivot3d!(g, pivot)`, a `push!(system, g)` and the change of
-the pose of the group since it was made. A group of the script that was made anew in the window,
-since a group was made of some of its parts or a group inside it was ungrouped, is written like
-such a group, after a `delete!(system, name)` of the group of the script, named after its label.
+the pose of the group since it was made. A group of the script whose parts were changed in the
+window, since a group was made of some of its parts or a group inside it was ungrouped, comes
+first: a `delete!(group, part)` of each part that it lost, the code of its new parts, groups made
+in the window, and a `push!(group, parts...)` of them.
 
 The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
 that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as

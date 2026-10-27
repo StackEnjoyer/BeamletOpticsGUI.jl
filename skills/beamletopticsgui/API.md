@@ -101,10 +101,10 @@ per system, `systemN = System()`, and `add_component!(gui, x; system = :none)` f
 system). A group made in the window with `Ctrl+G` is exported as `g = ObjectGroup([a, b])`,
 `set_pivot3d!(g, [...])` and its pose change, listed in the `System`; `export_changes` writes the
 grouping of objects of the script (`delete!` of the members, the group, `push!` of the group). A
-subgroup made with `Ctrl+G` on parts of a group (also of the script) makes the groups above it anew
-as groups made in the window; `export_changes` writes `delete!(system, sg)` of a replaced script
-group (named by its label or that of the new group) before the new groups, the outer one again as
-`sg = ObjectGroup([...])`, also after the new group was ungrouped (then `push!` of the parts).
+subgroup made with `Ctrl+G` on parts of a group (also of the script), or a group dissolved into its
+parent with `Ctrl+Shift+G`, changes the parent in place (it and the groups above stay the same
+objects); `export_changes` of a changed group of the script writes `delete!(sg, part)` for the parts
+it lost, builds the new group(s), and `push!(sg, new)`; the group keeps its variable and its systems.
 
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and

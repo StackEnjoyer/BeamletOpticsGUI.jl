@@ -241,6 +241,11 @@ function _link!(gui::LiveView, new::LiveView, system)
                 (to.start_systems[m] = Any[s for s in from.start_systems[m] if s === system])
         end
     end
+    # the parts of the groups of the script at the start, whose parts were changed, see `_regroup!`
+    for (g, parts) in from.start_parts
+        any(top -> _has(_descendants(top), g), system.objects) || continue
+        to.start_parts[g] = copy(parts)
+    end
     init = new.controls.init_poses
     for (obj, pose) in gui.controls.init_poses
         haskey(init, obj) && (init[obj] = pose)
@@ -498,8 +503,8 @@ shared `systems`, in the `gui` as well: a group whose members the `gui` shows at
 made there too (see `_show_group!`), one that `from` ungrouped is ungrouped (see
 `_unshow_group!`), both without changing the systems, which the views share; the `gui` records the
 groups that it does not show yet as made in the window, such that `_follow_structure!` adds them as
-such, e.g. after `from` undid their removal. A group of the script that `from` ungroups or groups
-again to make the groups above a subgroup anew (see `_remake!`) is ungrouped and grouped likewise.
+such, e.g. after `from` undid their removal. The groups whose parts `from` changed in place (see
+`_regroup!`) get the records of `from` and are shown as they are now, see `_restructured!`.
 """
 function _follow_groups!(gui::LiveView, from::LiveView, systems)
     shared = BMO.System[sys for sys in systems if sys isa BMO.System]
@@ -517,12 +522,11 @@ function _follow_groups!(gui::LiveView, from::LiveView, systems)
         return any(h -> _has(_top_levels(h), x), (gui.system_handles..., gui.extras))
     end
     groups = gui.components.groups
-    # ungrouped in `from`, also a group of the script that `from` makes anew (see `_remake!`): the
-    # systems hold its members instead
+    # ungrouped in `from`: the systems hold its members instead
     done = Any[]
     for h in (gui.system_handles..., gui.extras), g in collect(Any, _top_levels(h))
-        (g isa BMO.AbstractObjectGroup && !_has(done, g) && !top(g)) || continue
-        members = haskey(groups, g) ? groups[g].members : collect(Any, BMO.objects(g))
+        (haskey(groups, g) && !_has(done, g) && !top(g)) || continue
+        members = groups[g].members
         (!isempty(members) && all(top, members)) || continue
         push!(done, g)
         _unshow_group!(gui, g, _member_systems(gui, first(members)))
@@ -536,14 +540,59 @@ function _follow_groups!(gui::LiveView, from::LiveView, systems)
             groups[g] = rec
         end
     end
-    # a group of the script that `from` grouped again, by the undo of `_remake!`
-    for sys in shared, g in collect(Any, sys.objects)
-        (g isa BMO.AbstractObjectGroup && !haskey(from.components.groups, g) && !shown(g)) || continue
-        members = collect(Any, BMO.objects(g))
-        (!isempty(members) && all(shown, members)) || continue
-        _show_group!(gui, g, _script_record(g), _member_systems(gui, first(members)); script = true)
+    # the parts changed in place: the records of `from`, the groups that are no parts any more go
+    for (g, rec) in from.components.groups
+        (haskey(groups, g) && groups[g] !== rec && inside(g)) && (groups[g] = rec)
+    end
+    for (g, parts) in from.components.start_parts
+        haskey(gui.components.start_parts, g) || (gui.components.start_parts[g] = copy(parts))
+    end
+    st = gui.objects
+    for h in (gui.system_handles..., gui.extras), t in collect(Any, _top_levels(h))
+        (t isa BMO.AbstractObjectGroup && top(t)) || continue
+        _same_parts(gui, t) && continue
+        now = _descendants(t)
+        # the groups that were parts of `t`, also inside a group that is gone
+        gone = Any[g for g in keys(st.parents)
+                   if g isa BMO.AbstractObjectGroup && !_has(now, g) && _was_part(st, g, t)]
+        for g in gone
+            delete!(groups, g)
+        end
+        for d in now
+            rec = get(from.components.groups, d, nothing)
+            (isnothing(rec) || haskey(groups, d)) || (groups[d] = rec)
+        end
+        # the entries of the history of the `gui` on the groups of `t` no longer apply
+        _drop_history!(gui.controls, Any[gone..., (d for d in now if d isa BMO.AbstractObjectGroup)...])
+        _restructured!(gui, t, gone)
     end
     return nothing
+end
+
+# Whether the part `g` belonged to `t` as the `_ObjectState` `st` maps the parts, see `_map_parts!`
+function _was_part(st, @nospecialize(g), @nospecialize(t))
+    p = get(st.parents, g, nothing)
+    seen = Base.IdSet{Any}()
+    while !isnothing(p) && !(p in seen)
+        p === t && return true
+        push!(seen, p)
+        p = get(st.parents, p, nothing)
+    end
+    return false
+end
+
+# Whether the `gui` shows the parts of the groups of the top-level object `t` as they are, see
+# `_map_parts!`, i.e. whether no other view changed them in place, see `_regroup!`
+function _same_parts(gui::LiveView, @nospecialize(t))
+    st = gui.objects
+    for d in _descendants(t), c in _children(d)
+        get(st.parents, c, nothing) === d || return false
+    end
+    for (g, p) in st.parents
+        (g isa BMO.AbstractObjectGroup && p isa BMO.AbstractObjectGroup && !_has(_children(p), g) &&
+         _has(_descendants(t), p)) && return false
+    end
+    return true
 end
 
 """

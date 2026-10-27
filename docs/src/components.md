@@ -230,14 +230,12 @@ A group made in the window (`Ctrl+G`, see [`live_view`](@ref)) is written
 as its members, then `g = ObjectGroup([a, b])`, `set_pivot3d!(g, [...])` and the change of the pose
 of the group, and `g` is listed in the `System` instead of its members. [`export_changes`](@ref)
 writes the grouping of objects of the script: `delete!` of the members from the system, the group
-and `push!` of the group. If a group of the script got a subgroup in the window, it was made anew as
-a group made in the window; [`export_changes`](@ref) then writes a `delete!(system, sg)` of the
-replaced group of the script from each system that held it at the start, named by its label (or
-the label of the new group, which took it over; a comment if that is no free variable name), before
-the new groups, the outer one again under that name, e.g. `sg = ObjectGroup([obj2, c])`. If the new
-group is ungrouped later, `export_changes` still deletes the replaced group and pushes its former
-parts to the systems. [`export_script`](@ref) writes such groups like the other groups made in the
-window, with the objects of the script as comments, since their constructors are not known.
+and `push!` of the group. If the parts of a group of the script were changed in the window (a
+subgroup made of some of them, or a group inside it ungrouped), the group stays the same object,
+and [`export_changes`](@ref) changes it in the script: `delete!(sg, part)` of each part that it
+lost, the code of the new groups and `push!(sg, s)`, such that `sg` keeps its variable and its
+systems. [`export_script`](@ref) writes a group of the script as a comment, since its constructor
+is not known.
 
 An object that is built in code, e.g. by a tool or an agent, is exported with its constructor as
 well if it is added with the keyword `code` of [`add_component!`](@ref), its constructor call as

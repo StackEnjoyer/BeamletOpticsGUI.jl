@@ -308,14 +308,29 @@ end
 The objects for which `gui.components` records that `obj` was added or removed (see
 `_ComponentState`): `obj` itself; for a group made in the window (see `_group!`) also its members
 (before it), which [`export_changes`](@ref) and [`export_script`](@ref) write, and those of a member
-that is such a group in turn.
+that is such a group in turn; for a group of the script the groups made in the window among its
+parts (see `_subgroup!`), which the script does not know, with theirs, but not its other parts.
 """
 function _record_units(gui::LiveView, @nospecialize(obj))
     rec = get(gui.components.groups, obj, nothing)
-    isnothing(rec) && return Any[obj]
     units = Any[]
-    foreach(m -> append!(units, _record_units(gui, m)), rec.members)
+    if isnothing(rec)
+        obj isa BMO.AbstractObjectGroup &&
+            foreach(m -> append!(units, _window_units(gui, m)), BMO.objects(obj))
+    else
+        foreach(m -> append!(units, _record_units(gui, m)), rec.members)
+    end
     push!(units, obj)
+    return units
+end
+
+# The units of the part `obj` of a group of the script, see `_record_units`
+function _window_units(gui::LiveView, @nospecialize(obj))
+    units = Any[]
+    obj isa BMO.AbstractObjectGroup || return units
+    # the parts of the script are known to the script, also those of a group made in the window
+    foreach(m -> append!(units, _window_units(gui, m)), BMO.objects(obj))
+    _is_window_group(gui, obj) && push!(units, obj)
     return units
 end
 

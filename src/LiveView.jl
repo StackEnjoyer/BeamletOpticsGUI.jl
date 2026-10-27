@@ -464,9 +464,11 @@ its pose as constructed, or `nothing` if it is not known (see `export_changes`);
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
 likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
 `window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog;
-the `groups` made in the window, with their `_WindowGroup`, see `_group!`; the groups of the script
-that a group made in the window replaced (see `_remake!`) and that left the view with it when it
-was ungrouped, `dissolved`: `export_changes` deletes them from their systems.
+the `groups` made in the window, with their `_WindowGroup`, see `_group!`; the parts of the groups
+of the script whose parts were changed in place (see `_regroup!`) before the first change,
+`start_parts`, from which `export_changes` writes the change; the initial poses and constraints of
+the groups that are no parts any more, `forgotten`, which they get back by an undo, see
+`_forget_part!`.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -500,8 +502,10 @@ Base.@kwdef mutable struct _ComponentState
     window::Any = nothing
     # the groups made in the window (an `ObjectGroup` => its `_WindowGroup`), see `_group!`
     const groups::IdDict{Any, Any} = IdDict{Any, Any}()
-    # the groups of the script whose replacement made in the window was ungrouped, see `_unshow_group!`
-    const dissolved::Base.IdSet{Any} = Base.IdSet{Any}()
+    # the parts of the groups of the script before their parts were changed in place, see `_regroup!`
+    const start_parts::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the initial poses and constraints of the groups that are no parts any more, see `_forget_part!`
+    const forgotten::IdDict{Any, Any} = IdDict{Any, Any}()
 end
 
 """

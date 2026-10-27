@@ -665,8 +665,9 @@ status line says why. `Ctrl+Shift+G` ungroups a group made in the window (not a 
 script): its members are top-level again in the same systems at their current poses and are
 selected as a selection of several, again as one undo step. A group made in the window that is part
 of another one (selected through its parts) is dissolved into that one: its members take its place
-there, and the group that holds them is made anew, with its name, label and pivot and the axes of
-the world.
+there, and that group is changed in place: it and the groups above it stay the same objects with
+their pose, axes, name and label, and a group of the script stays a group of the script. The members
+of the dissolved group are selected as a selection of several.
 
 `Ctrl+G` on several, but not all, parts of one group, a group made in the window or a group of the
 script (an `ObjectGroup`, not an own assembly type), makes them a new group inside it. `Ctrl`+click
@@ -674,11 +675,12 @@ on a part of the same group in the 3D view adds it to the selection or removes i
 of one group are selected (otherwise `Ctrl`+click selects the top-level object as before); in the
 object tree of the app layout, `Ctrl`/`Cmd`+click on part rows does the same. The new group takes the
 place of the first of the parts in its group, its pivot is the mean of the positions of the parts,
-its axes are those of the world, and it is selected. Since an `ObjectGroup` can not change its
-objects, the group that holds it and every group above that are made anew: each new one has the
-name, label and pivot of the old one and the axes of the world. A new group is a group made in the
-window, also one that replaces a group of the script, which `Ctrl+Shift+G` can then ungroup. It is
-one undo step; undoing it brings back the old groups, a group of the script as such. Parts of
+its axes are those of the world, and it is selected. The group that holds it is changed in place
+(`push!` and `delete!` of BeamletOptics on the `ObjectGroup`): it and the groups above it stay the
+same objects with their pose, axes, name and label, in the same systems, and a group of the script
+stays a group of the script. The new group is a group made in the window, which `Ctrl+Shift+G` can
+ungroup. It is one undo step; undoing it gives the group its parts back in their order. A group
+that is built by its code (added from the catalog) refuses this; the status line says so. Parts of
 different groups, a part together with a top-level object, and a single part can not be grouped; the
 status line says why.
 

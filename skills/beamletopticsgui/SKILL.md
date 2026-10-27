@@ -88,17 +88,19 @@ When this Skill is active:
   objects, parts of groups, objects of a `StaticSystem`); else the status line says why.
   `Ctrl+Shift+G` ungroups a group made in the window (not one of the script): the members are
   top-level again at their poses and selected, one undo step; one inside another group made in the
-  window is dissolved into it (that group is made anew, same name, label, pivot). `Ctrl+G` on several
+  window is dissolved into it: that group is changed in place (it and the groups above stay the same
+  objects with pose, name and label; a group of the script stays one) and the members are selected. `Ctrl+G` on several
   (not all) parts of one group (made in the window, or an `ObjectGroup` of the script) makes them a
-  group inside it (pivot: mean of their positions, world axes, selected); the groups above are made
-  anew (same name, label, pivot, world axes) as groups made in the window, also one that replaced a
-  group of the script (`Ctrl+Shift+G` can ungroup it); one undo step, which brings the old groups
-  back. `Ctrl`+click in the 3D view on a part of the same group, or on part rows of the tree
+  group inside it (pivot: mean of their positions, world axes, selected); the group that holds it is
+  changed in place (`push!`/`delete!` on the `ObjectGroup`; it and the groups above stay the same
+  objects, a group of the script stays one); one undo step, which gives it its parts back. A group
+  built by its code (from the catalog) refuses this. `Ctrl`+click in the 3D view on a part of the same group, or on part rows of the tree
   (app layout), adds or removes it while parts of one group are selected. The cards have the actions "group"
   and "ungroup". `export_script` writes the members, `g = ObjectGroup([a, b])`, `set_pivot3d!` and
   the pose of the group; `export_changes` writes the grouping of objects of the script (`delete!`
-  of the members, the group, `push!` of the group; for a script group that was made anew also
-  `delete!(system, sg)` of the old one before the new groups, also after the new group was ungrouped).
+  of the members, the group, `push!` of the group; for a changed group of the script
+  `delete!(sg, part)` of the parts it lost, the new group(s), `push!(sg, new)`; the group keeps its variable
+  and its systems).
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
   `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
   cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"

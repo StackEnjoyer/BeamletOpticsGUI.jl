@@ -343,9 +343,10 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
             "the undo did not ungroup")
     end
     # A group made in the window that is part of another one is dissolved into it by Ctrl+Shift+G:
-    # the other group is made again, one action of the undo history
+    # the other group stays the same object and gets the members, one action of the undo history
     flat() = all(o -> GUI._has(fx.system.objects, o), (fx.lens, fx.mirror, fx.detector))
     inner = Ref{Any}(nothing)
+    outer = Ref{Any}(nothing)
     step("ctrl+g (group lens and mirror, then that group and the detector)") do
         _click!(gui, _px(gui, _pos(fx.lens)))
         frame!()
@@ -361,24 +362,32 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _key!(gui, Keyboard.g, Keyboard.left_control)
         settle!()
         _check(is_group() && gui.controls.selected[] !== inner[], "Ctrl+G did not make the outer group")
+        outer[] = gui.controls.selected[]
     end
     step("ctrl+shift+g (dissolve the inner group), undo, redo") do
-        outer = gui.controls.selected[]
+        out = outer[]
+        parts() = collect(Any, BMO.objects(out))
+        three() = parts() == Any[fx.lens, fx.mirror, fx.detector]
         GUI._select!(gui, inner[])
         settle!()
         _check(gui.controls.selected[] === inner[], "the inner group is not selected")
+        _check(parts() == Any[inner[], fx.detector], "the outer group does not hold the inner group")
+        n = length(gui.controls.undo_stack)
         _key!(gui, Keyboard.g, Keyboard.left_control, Keyboard.left_shift)
         settle!()
-        sel = gui.controls.selected[]
-        _check(is_group() && sel !== outer && sel !== inner[] &&
-               Set(objectid.(BMO.objects(sel))) == Set(objectid.((fx.lens, fx.mirror, fx.detector))),
-            "Ctrl+Shift+G did not dissolve the inner group into the outer one")
+        _check(length(gui.controls.undo_stack) == n + 1, "the dissolving is not one action of the undo history")
+        _check(GUI._has(fx.system.objects, out) && three(),
+            "Ctrl+Shift+G did not dissolve the inner group into the same outer group")
+        in_selection(fx.lens, fx.mirror)
         GUI._undo!(gui.controls)
         settle!()
-        _check(is_group() && gui.controls.selected[] === outer, "the undo did not bring back the groups")
+        _check(GUI._has(fx.system.objects, out) && parts() == Any[inner[], fx.detector] &&
+               gui.controls.selected[] === inner[],
+            "the undo did not bring back the inner group in the same outer group")
         GUI._redo!(gui.controls)
         settle!()
-        _check(is_group() && gui.controls.selected[] !== outer, "the redo did not dissolve again")
+        _check(GUI._has(fx.system.objects, out) && three(), "the redo did not dissolve again")
+        in_selection(fx.lens, fx.mirror)
         # the later steps find the scene of before: the dissolving and both groupings undone
         foreach(_ -> GUI._undo!(gui.controls), 1:3)
         settle!()
@@ -425,22 +434,29 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         ctrl_click!(_px(gui, _pos(parts[2])))
         frame!()
         in_selection(parts[1], parts[2])
+        before = collect(Any, BMO.objects(top))
+        kind = GUI._is_window_group(gui, top)
         _key!(gui, Keyboard.g, Keyboard.left_control)
         settle!()
         sub = gui.controls.selected[]
-        _check(is_group() && sub !== top &&
+        _check(is_group() && sub !== top && GUI._has(fx.system.objects, top) &&
+               BMO.objects(top)[1] === sub && !GUI._has(BMO.objects(top), parts[1]) &&
                GUI._has(BMO.objects(sub), parts[1]) && GUI._has(BMO.objects(sub), parts[2]),
-            "Ctrl+G did not make the parts a group inside the group")
+            "Ctrl+G did not make the parts a group inside the same group")
         _check(length(gui.controls.undo_stack) == undo_n + 1, "the grouping is not one action of the undo history")
         GUI._undo!(gui.controls)
         settle!()
-        _check(GUI._has(fx.system.objects, top), "the undo did not bring back the group")
+        _check(GUI._has(fx.system.objects, top) && collect(Any, BMO.objects(top)) == before,
+            "the undo did not bring back the parts of the group")
         GUI._redo!(gui.controls)
         settle!()
-        _check(!GUI._has(fx.system.objects, top) && is_group(), "the redo did not group the parts again")
+        _check(GUI._has(fx.system.objects, top) && BMO.objects(top)[1] === sub && is_group(),
+            "the redo did not group the parts again")
+        _check(GUI._is_window_group(gui, top) == kind, "the grouping changed the kind of the group")
         GUI._undo!(gui.controls)
         settle!()
-        _check(GUI._has(fx.system.objects, top), "the undo did not bring back the group")
+        _check(GUI._has(fx.system.objects, top) && collect(Any, BMO.objects(top)) == before,
+            "the undo did not bring back the group")
     end
     step("ctrl+click a sibling part, ctrl+g (group inside a group made in the window), undo, redo") do
         deselect!()
