@@ -575,6 +575,23 @@ end
 _ViewLinks() = _ViewLinks(Any[], false)
 
 """
+    _ProjectSync
+
+What the view knows of the files of its project, which an agent may change while it is open, see
+`LiveProjectSync.jl`: the `stamp` of the files (`BeamletOpticsProjects.project_stamp`) and the text
+of `system.jl` of its setup (`code`) when it was opened or saved; the stamp on disk that the
+watcher saw once and waits to see again (`pending`), the last one it reacted to (`handled`) and the
+`timer` of the watcher.
+"""
+Base.@kwdef mutable struct _ProjectSync
+    stamp::Union{Nothing, String} = nothing
+    code::Union{Nothing, String} = nothing
+    pending::Union{Nothing, String} = nothing
+    handled::Union{Nothing, String} = nothing
+    timer::Union{Nothing, Timer} = nothing
+end
+
+"""
     LiveView
 
 Interactive window returned by [`live_view`](@ref). The `Figure` is stored in `fig`, the `LScene`
@@ -597,7 +614,8 @@ they are rendered, selectable and movable, but not traced, see `_live_render_ext
 (or `gui -> object`) whose card a click on the empty background shows, see `_show_background!`.
 `links` holds the views that show systems of this one in other windows, see `_ViewLinks`.
 `project` is the folder of the project that the view was opened from or saved to (`nothing`
-before), which `Ctrl+S` saves to, see [`save_project`](@ref) and [`open_project`](@ref).
+before), which `Ctrl+S` saves to, see [`save_project`](@ref) and [`open_project`](@ref); `sync`
+what the view knows of its files, which an agent may change meanwhile, see `_ProjectSync`.
 
 The type parameter `L` is the type of the `layout`, see `AbstractLiveLayout`: `CompactView` and
 `AppView` are the `LiveView`s of `live_view(...; layout = :compact)` and `layout = :app`.
@@ -633,6 +651,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     links::_ViewLinks = _ViewLinks()
     # the folder of the project that `Ctrl+S` saves to, see `save_project`
     project::Union{Nothing, String} = nothing
+    # the files of the project when it was opened or saved, see `_ProjectSync`
+    sync::_ProjectSync = _ProjectSync()
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -682,6 +702,7 @@ end
 function Base.close(gui::LiveView)
     # The linked views no longer follow it, and it stops only its own solve
     _unlink!(gui)
+    _stop_watching!(gui)
     _cancel_solve!(gui)
     _close_debug!(gui)
     _end_placement!(gui)

@@ -14,7 +14,8 @@ const _VIEW_TOML = "view.toml"
 const _PROJECT_HELP = _HelpSection["Edit" => [
     _HelpEntry([_ctrl_cap(), "S"], "save the project"; combo = true),
     _HelpEntry([_ctrl_cap(), "Shift", "S"], "save as a new project with a name"; combo = true),
-    _HelpEntry([_ctrl_cap(), "O"], "open a project (.bmo)"; combo = true)]]
+    _HelpEntry([_ctrl_cap(), "O"], "open a project (.bmo)"; combo = true),
+    _HelpEntry([_ctrl_cap(), "R"], "reload the project from its files"; combo = true)]]
 
 # The filter of the dialogs: the project files, see `BeamletOpticsProjects.project_marker`
 const _BMO_FILTER = "bmo"
@@ -400,7 +401,7 @@ sources without a system, the names of the project as labels, the origins of the
 code, with which they are saved again and, from the catalog, edited and copied), and `view.toml`.
 The `kwargs` of `live_view` win over those of `view.toml`.
 """
-function _open_from(project; kwargs...)
+function _open_from(project; view = _read_view(project), kwargs...)
     @nospecialize
     byname = Dict{Symbol, Any}(e.name => e.object for e in project.entries)
     in_system = Set{Symbol}()
@@ -415,7 +416,6 @@ function _open_from(project; kwargs...)
     labels = IdDict{Any, String}()
     foreach(e -> labels[e.object] = String(e.name), project.entries)
     foreach(s -> labels[s.object] = String(s.name), project.systems)
-    view = _read_view(project)
     vk = _view_kwargs(view, byname, paired)
     gui = live_view(args...; labels, vk.kwargs..., kwargs...)
     origins = IdDict{Any, Any}(e.object => _project_origin(gui, e) for e in project.entries)
@@ -437,6 +437,9 @@ function _open_from(project; kwargs...)
         set_view(gui.ax, _view_tuple(view["camera"])...)
     end
     gui.project = project.path
+    # What `Ctrl+S` and the watcher compare with, see `_ProjectSync`
+    gui.sync.stamp = project.stamp
+    gui.sync.code = BMOP.system_code(_collect_project(gui, project.path))
     gui.status.text[] = "project $(project.name) opened from $(project.path)"
     return gui
 end
@@ -459,6 +462,7 @@ function open_project(path::AbstractString; display::Bool = true, kwargs...)
     if display
         title = basename(project.path)
         _multi_light_backend() ? Base.display(gui; title) : Base.display(gui)
+        _start_watching!(gui)
     end
     return gui
 end
@@ -478,14 +482,21 @@ BeamletOpticsGUI and GLMakie. How the view looks is written to `view.toml`. An o
 constructor is not known, e.g. one that the script gave to `live_view`, is not saved: a warning and
 the status line name it. The names of the project become the labels of the view, and `dir` its
 project, which `Ctrl+S` saves to. `Ctrl+Shift+S` asks for a place and a name, see `_save_as_key!`.
+
+Throws `BeamletOpticsProjects.ProjectChanged` and saves nothing if the files of the project of the
+view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`; `Ctrl+S` shows
+a card that offers to load them, to overwrite them or to save as, see `_ProjectConflict`.
 """
-function save_project(gui::LiveView, dir::AbstractString)
+function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     dir = abspath(dir)
     parts = _project_parts(gui, dir)
-    path = save_project(parts.project; packages = _project_packages())
+    # The files as the view knows them: only of its own project
+    dir == gui.project && (parts.project.stamp = gui.sync.stamp)
+    path = save_project(parts.project; packages = _project_packages(), force)
     _write_view_toml(gui, parts.project, parts.names)
     _apply_project_names!(gui, parts.names)
     gui.project = dir
+    _saved!(gui, parts.project)
     msg = "project saved to $dir"
     if !isempty(parts.skipped)
         list = join(parts.skipped, ", ")
@@ -496,10 +507,10 @@ function save_project(gui::LiveView, dir::AbstractString)
     return path
 end
 
-function save_project(gui::LiveView)
+function save_project(gui::LiveView; force::Bool = false)
     isnothing(gui.project) &&
         throw(ArgumentError("the live view has no project folder yet, use save_project(gui, dir)"))
-    return save_project(gui, gui.project)
+    return save_project(gui, gui.project; force)
 end
 
 #=
@@ -509,12 +520,16 @@ Keys, tools and dialogs
 # The first line of the message of the error `e`
 _message_line(e) = first(split(sprint(showerror, e), '\n'))
 
-"""Saves the `gui` to `dir`; an error is logged and shown in the status line."""
-function _save_to!(gui::LiveView, dir::AbstractString)
+"""
+Saves the `gui` to `dir`; if the files changed meanwhile, the card of the conflict instead (see
+`_ProjectConflict`), any other error is logged and shown in the status line.
+"""
+function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
     try
-        save_project(gui, dir)
+        save_project(gui, dir; force)
     catch e
         e isa InterruptException && rethrow()
+        e isa BMOP.ProjectChanged && return _show_conflict!(gui)
         @error "save_project failed" exception = (e, catch_backtrace())
         gui.status.text[] = "project not saved: $(_message_line(e))"
     end
@@ -600,17 +615,14 @@ function _open_key!(gui::LiveView)
         path = _ask_path(gui, _OPEN_DIALOG)
         isnothing(path) && return nothing
         try
-            open_project(path; layout = _layout_name(gui.layout), theme = _theme_name(gui.layout.theme))
+            open_project(path; _window_kwargs(gui)...)
         catch e
             e isa InterruptException && rethrow()
             @error "open_project failed" exception = (e, catch_backtrace())
             gui.status.text[] = "project not opened: $(_message_line(e))"
             return nothing
         end
-        # Never inside the event callback of its own screen: this task runs after it returned
-        screen = Makie.getscreen(gui.fig.scene)
-        close(gui)
-        isnothing(screen) || close(screen)
+        _close_window!(gui)
         return nothing
     end
     return nothing
@@ -629,11 +641,13 @@ function _connect_project!(gui::LiveView)
         (event.action == Keyboard.press && _modifier_held(scene, _CTRL_OR_CMD_KEYS)) ||
             return Consume(false)
         key = _layout_key(event.key)
-        key in (Keyboard.s, Keyboard.o) || return Consume(false)
         ctrl.ignore_keys() && return Consume(false)
         ctrl.spectator[] && return Consume(true)
+        key in (Keyboard.s, Keyboard.o, Keyboard.r) || return Consume(false)
         if key == Keyboard.o
             _open_key!(gui)
+        elseif key == Keyboard.r
+            _reload_key!(gui)
         else
             _shift_pressed(scene) ? _save_as_key!(gui) : _save_key!(gui)
         end

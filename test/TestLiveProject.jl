@@ -340,6 +340,83 @@ const GUI = BeamletOpticsGUI
         @test isnothing(GUI._save_target(joinpath(parent, ".bmo")).dir)
     end
 
+    @testset "files changed outside" begin
+        dir = mktempdir()
+        t = _setup(:compact)
+        gui = t.gui
+        save_project(gui, dir)
+        system = joinpath(dir, "system.jl")
+        check!(g) = GUI._check_files!(g; const_kw...)
+        # an agent appends a line (a function of its own code), the GUI saves in the meantime
+        agent_line = "@component L9 = extra_lens(0.2) pos = (0.0, 0.3, 0.0)\n"
+        name = BeamletOpticsProjects.project_name(dir)
+        own = joinpath(dir, "src", name * ".jl")
+        @test check!(gui).status === :none
+        save_project(gui)
+        @test check!(gui).status === :none
+        # only the files changed: reloaded, after the second look, with the view state of the window
+        set_view(gui.ax, [0.4, -0.3, 0.2], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0])
+        cam = GUI._current_view(gui)
+        GUI._set_beam_opacity!(gui, t.b2, 0.25)
+        write(own, "module $name\nusing BeamletOptics\nexport extra_lens\n" *
+                   "extra_lens(f) = SphericalLens(f, -f, 0.004, 0.0254, 1.5)\nend\n")
+        write(system, read(system, String) * agent_line)
+        r = check!(gui)
+        @test r.status === :pending && r.gui === gui
+        r = check!(gui)
+        @test r.status === :reloaded && r.gui !== gui
+        gui2 = r.gui
+        @test gui2.project == dir && haskey(_byname(gui2), :L9)
+        @test all(abs.(reduce(vcat, GUI._current_view(gui2)) .- reduce(vcat, cam)) .< 1e-6)
+        b2 = _byname(gui2)[:laser_2]
+        @test GUI._snapshot(gui2, b2).kwargs.alpha == 0.25
+        @test check!(gui2).status === :none
+        # the setup changed here and there: the card, once; Ctrl+S does not overwrite
+        translate3d!(gui2, _byname(gui2)[:spare], [0.0, 0.0, 0.01])
+        agent_text = read(system, String) * "@component L10 = extra_lens(0.3)\n"
+        write(system, agent_text)
+        @test check!(gui2).status === :pending
+        @test check!(gui2).status === :conflict
+        @test GUI._info_card(gui2).obj isa GUI._ProjectConflict
+        @test occursin("choose on the card", gui2.status.text[])
+        @test check!(gui2).status === :none && check!(gui2).status === :none
+        GUI._release_info!(gui2, GUI._ProjectConflict)
+        GUI._save_to!(gui2, dir)
+        @test read(system, String) == agent_text
+        @test GUI._info_card(gui2).obj isa GUI._ProjectConflict
+        @test_throws BeamletOpticsProjects.ProjectChanged save_project(gui2)
+        # "Overwrite": the setup of the window
+        GUI._resolve_conflict!(gui2, :overwrite)
+        @test isnothing(GUI._info_card(gui2)) || !(GUI._info_card(gui2).obj isa GUI._ProjectConflict)
+        @test !occursin("L10", read(system, String)) && check!(gui2).status === :none
+        # a syntax error while the agent writes: the window stays, the line is named; then fixed
+        good = read(system, String)
+        write(system, good * "@component L11 = extra_lens(\n")
+        @test check!(gui2).status === :pending
+        r = check!(gui2)
+        @test r.status === :failed && r.gui === gui2
+        @test occursin(r"project not reloaded: .*system\.jl:\d+", gui2.status.text[])
+        write(system, good * "@component L11 = extra_lens(0.4)\n")
+        @test check!(gui2).status === :pending
+        r = check!(gui2)
+        @test r.status === :reloaded && haskey(_byname(r.gui), :L11)
+        gui3 = r.gui
+        # "Load from disk" through _reload!: the change here is lost
+        translate3d!(gui3, _byname(gui3)[:spare], [0.0, 0.0, 0.01])
+        moved = BeamletOptics.position(_byname(gui3)[:spare])
+        gui4 = GUI._reload!(gui3; display = false, const_kw...)
+        @test BeamletOptics.position(_byname(gui4)[:spare]) == moved .- [0.0, 0.0, 0.01]
+        @test !GUI._setup_changed(gui4)
+        # Ctrl+R without a project, and close stops the watcher
+        gui5 = _live_view(System())
+        GUI._reload_key!(gui5)
+        @test startswith(gui5.status.text[], "no project to reload")
+        close(gui5)
+        gui4.sync.timer = Timer(100)
+        close(gui4)
+        @test isnothing(gui4.sync.timer)
+    end
+
     @testset "end-to-end" begin
         dir = mktempdir()
         t = _setup(:app)
