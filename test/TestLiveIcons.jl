@@ -9,7 +9,7 @@ const GUI = BeamletOpticsGUI
 @testset "Live view icons" begin
 
     @testset "icon set" begin
-        names = (:trace, :auto_trace, :home, :fit, :views, :save_view, :orthographic, :clip,
+        names = (:trace, :auto_trace, :home, :fit, :views, :save_view, :orthographic, :lock, :clip,
             :clip_beams, :sources, :measure, :export, :panel_left, :panel_right, :panel_bottom,
             :help, :eye, :eye_off, :expand, :collapse, :lens, :mirror, :detector, :source, :group,
             :clip_plane, :mesh, :object, :system, :beamsplitter, :polarizer, :pin, :pinned, :chart,

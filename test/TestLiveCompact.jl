@@ -74,7 +74,8 @@ const GUI = BeamletOpticsGUI
         # the fields of `_LayoutWidgets` are unchanged, see `AbstractLiveLayout`
         @test fieldnames(GUI._LayoutWidgets) == (:trace_button, :auto_trace_toggle,
             :clip_beams_toggle, :orthographic_toggle, :sources_toggle, :measure_toggle,
-            :export_button, :home_button, :save_view_button, :show_all_button, :step_box, :menu,
+            :export_button, :home_button, :save_view_button, :lock_view_toggle, :show_all_button,
+            :step_box, :menu,
             :views_menu, :view_cube, :info)
         @test fieldtype(GUI._LayoutWidgets, :step_box) == Makie.Textbox
         @test fieldtype(GUI._LayoutWidgets, :menu) == Union{Nothing, Makie.Menu}
@@ -125,7 +126,7 @@ const GUI = BeamletOpticsGUI
         w = gui.widgets
         roles = [s.role for s in GUI._tools(gui.layout)]
         @test roles == [:trace_button, :auto_trace_toggle, :show_all_button, :home_button,
-            :fit_button, :views_button, :save_view_button, :orthographic_toggle,
+            :fit_button, :views_button, :save_view_button, :lock_view_toggle, :orthographic_toggle,
             :clip_beams_toggle, :sources_toggle, :measure_toggle, :export_button]
         widget(role) = role === :fit_button ? o.fit_button :
                        role === :views_button ? o.views_button : getfield(w, role)
@@ -138,7 +139,7 @@ const GUI = BeamletOpticsGUI
             :show_all_button, :export_button)]
         @test issorted(rows)
         @test all(r -> _grid(widget(r).box) === o.camera_tools, (:home_button, :fit_button,
-            :views_button, :save_view_button, :orthographic_toggle))
+            :views_button, :save_view_button, :orthographic_toggle, :lock_view_toggle))
         @test _grid(_grid(w.menu)) === o.rail_tools
         @test _grid(w.views_menu) === o.camera_tools
         # toggles and buttons like Makie's, initialized from the kwargs

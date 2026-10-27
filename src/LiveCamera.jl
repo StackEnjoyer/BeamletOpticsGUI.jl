@@ -582,6 +582,38 @@ function _connect_projection!(gui::LiveView, orthographic::Bool)
     return nothing
 end
 
+# The bindings of `Camera3D` that rotate the camera: the left drag and the keys J/L, I/K, Q/E
+const _ROTATION_CONTROLS = (:rotation_button, :pan_left_key, :pan_right_key, :tilt_up_key,
+    :tilt_down_key, :roll_clockwise_key, :roll_counterclockwise_key)
+
+"""
+    _connect_view_lock!(gui)
+
+Connects the "lock view" toggle of the `gui` and applies its initial state: while it is on, the
+bindings of `Camera3D` that rotate the camera (see `_ROTATION_CONTROLS`) are `false`, a binding
+that is never pressed, and get their values back when it is switched off. The pan, the zoom and
+the reset of `Camera3D` (which keeps the direction) are not touched, nor are the camera tools,
+which move the camera directly, e.g. the view cube, "home" and the saved views.
+"""
+function _connect_view_lock!(gui::LiveView)
+    controls = cameracontrols(gui.ax.scene).controls
+    bindings = Dict{Symbol, Any}(k => controls[k][] for k in _ROTATION_CONTROLS)
+    function set_lock!(locked::Bool)
+        for k in _ROTATION_CONTROLS
+            controls[k][] = locked ? false : bindings[k]
+        end
+        return nothing
+    end
+    toggle = gui.widgets.lock_view_toggle
+    push!(gui.controls.listeners, on(toggle.active) do locked
+        set_lock!(locked)
+        gui.status.text[] = locked ? "view locked" : "view unlocked"
+        return nothing
+    end)
+    set_lock!(toggle.active[])
+    return nothing
+end
+
 """Returns the center and radius of the bounding sphere of the plots of the 3D view of the `gui`."""
 function _scene_bounds(gui::LiveView)
     bb = Makie.data_limits(gui.ax.scene)

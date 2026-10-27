@@ -440,6 +440,8 @@ const _BUILTIN_TOOLS = (
     _ToolSpec(:fit_button, false, :fit, "fit (g)", "Fit to selection (g)", :camera),
     _ToolSpec(:views_button, false, :views, "views", "Views", :camera),
     _ToolSpec(:save_view_button, false, :save_view, "save view", "Save view", :camera),
+    _ToolSpec(:lock_view_toggle, true, :lock, "lock view", "Lock view direction", :camera,
+        :lock_view),
     _ToolSpec(:orthographic_toggle, true, :orthographic, "orthographic", "Orthographic", :display,
         :orthographic),
     _ToolSpec(:clip_toggle, true, :clip, "clipping (c)", "Clipping (c)", :display, true),

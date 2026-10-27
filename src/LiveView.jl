@@ -59,8 +59,8 @@ and implements
 
 - `_build_layout(layout::L, fig, spec) -> NamedTuple`: creates the widgets in the `Figure` `fig`,
   which `_figure(layout, size)` created. `spec` holds the inputs of `live_view`: `slider_specs`,
-  `labels`, `lighting`, `view_cube`, `auto_trace`, `clip_beams`, `orthographic`, `show_sources`,
-  `view_specs` and `part_sizes`, the result of `_part_sizes`. The result has the fields
+  `labels`, `lighting`, `view_cube`, `auto_trace`, `clip_beams`, `orthographic`, `lock_view`,
+  `show_sources`, `view_specs` and `part_sizes`, the result of `_part_sizes`. The result has the fields
   - `ax`: the `LScene` of the 3D view, with `studio_lighting!` applied, and `cube`: its view cube
     or `nothing`
   - `sliders`: a `SliderGrid` of `spec.slider_specs` or `nothing`, `status`: the `Label` of the
@@ -541,7 +541,7 @@ widgets: buttons have `clicks::Observable{Int}`, toggles `active::Observable{Boo
 - buttons: `trace_button`, `export_button` (see [`export_changes`](@ref)), `home_button`,
   `save_view_button`, `show_all_button` (or `nothing`)
 - toggles: `auto_trace_toggle`, `clip_beams_toggle`, `orthographic_toggle`, `sources_toggle` (the
-  markers of the movable sources, also the key `1`), `measure_toggle`
+  markers of the movable sources, also the key `1`), `measure_toggle`, `lock_view_toggle`
 - `step_box`: the `Textbox` of the keyboard step (replaced when another card becomes the card of
   the selection, see `_use_card!`); `menu`: the component menu (or `nothing`),
   `views_menu`: the saved views; `view_cube`: the view cube of the 3D view (or `nothing`)
@@ -557,6 +557,7 @@ Base.@kwdef mutable struct _LayoutWidgets
     export_button::Any
     home_button::Any
     save_view_button::Any
+    lock_view_toggle::Any
     show_all_button::Any
     step_box::Textbox
     menu::Union{Nothing, Menu}
@@ -913,6 +914,13 @@ of the `views`, "save view" adds the current view as `"view n"` and prints it as
 is fitted to the scene when the window is shown and kept afterwards, also when plots are added,
 e.g. the generating beams or the polarization curve of a beam, a clip plane or a measurement.
 
+The toggle "lock view" keeps the view direction, e.g. while a setup is built in a top view: no drag
+and no key rotates the camera, i.e. a left drag on the background does nothing and the keys
+`J`/`L`, `I`/`K` and `Q`/`E` of `Camera3D` are off, while the right drag pans and the scroll wheel
+zooms as before. Objects are selected, dragged and placed as without the lock. The view cube,
+"home" and the saved views still set the direction, which the lock then keeps. `lock_view = true`
+starts with the lock on.
+
 # Adaptive tracing
 
 If solving the systems takes longer than `trace_budget`, the objects still follow the mouse and the
@@ -1039,7 +1047,7 @@ With `layout = :app`, the same live view is arranged as an application window, a
 actions in the 3D view are unchanged:
 
 - toolbar (icons with tooltips): trace and auto trace, home, fit (`g`), views, save view,
-  orthographic, clipping (`c`), clip beams, sources (`1`), measure, export, the toggles of the
+  lock view, orthographic, clipping (`c`), clip beams, sources (`1`), measure, export, the toggles of the
   sidebars and the dock
 - left sidebar: the object tree and, below it, the sliders ("Parameters") and the catalog
   ("Components", see "Adding and removing components"). The tree lists each
@@ -1115,7 +1123,7 @@ appears on demand over the 3D view:
   the `sliders`. Such an entry opens its widgets in a popover next to the rail. `Esc`, "⋯" or a
   click outside close the rail (`Esc` closes an open popover first).
 - the mouse over the view cube shows the camera popover below it: home, fit (`g`), the views menu,
-  save view and orthographic; it hides 0.3 s after the mouse left the cube and the popover
+  save view, orthographic and lock view; it hides 0.3 s after the mouse left the cube and the popover
 - the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
   for 3 s after each change
 
@@ -1437,6 +1445,8 @@ takes the mode over. Only while it is on, the compile time of Julia is measured.
   face, edge or corner switches to the corresponding standard view, see [`view_cube!`](@ref)
 - `orthographic = false`: starts the 3D view with orthographic instead of perspective projection,
   can be switched with the "orthographic" toggle of the camera popover
+- `lock_view = false`: starts with the view direction locked, can be switched with the "lock view"
+  toggle, see "Camera tools"
 - `lighting = :studio`: lighting rig of the 3D view, see `BeamletOptics.studio_lighting!`, `:none`
   keeps the default lights of Makie
 - `edges = nothing`: draws the feature edges of the components, by default depending on the look,
@@ -1489,6 +1499,7 @@ function live_view(
         clip_beams::Bool = false,
         view_cube::Bool = true,
         orthographic::Bool = false,
+        lock_view::Bool = false,
         lighting::Symbol = :studio,
         edges::Union{Nothing, Bool} = nothing,
         preview::Bool = true,
@@ -1539,7 +1550,7 @@ function live_view(
     part_sizes = _part_sizes(lay, sidebar_width, dock_height, fig_size)
     fig = _figure(lay, fig_size)
     w = _build_layout(lay, fig, (; slider_specs, labels, lighting, view_cube, auto_trace,
-        clip_beams, orthographic, show_sources, view_specs, part_sizes))
+        clip_beams, orthographic, lock_view, show_sources, view_specs, part_sizes))
     ax = w.ax
     # Pose, keyboard step and hide button of the selected object, next to it in the 3D view
     card = _ComponentCard(fig, lay, _card_z(1))
@@ -1611,7 +1622,7 @@ function live_view(
     menus = _build_menus(lay, w, _menu_options(labels_dict, entries), _views_options(view_specs))
     widgets = _LayoutWidgets(; w.trace_button, w.auto_trace_toggle, w.clip_beams_toggle,
         w.orthographic_toggle, w.sources_toggle, w.measure_toggle, w.export_button, w.home_button,
-        w.save_view_button, w.show_all_button, step_box = _step_box(lay, w, card), menus.menu,
+        w.save_view_button, w.lock_view_toggle, w.show_all_button, step_box = _step_box(lay, w, card), menus.menu,
         menus.views_menu, view_cube = w.cube, w.info)
     trace = _TraceState(; auto = w.auto_trace_toggle.active, budget = trace_budget, idle_delay,
         preview_enabled = preview, progress = _ProgressOverlay(ax, lay.theme), progress_delay)
@@ -1652,6 +1663,7 @@ function live_view(
     push!(controls.listeners, on(v -> v == gui.clip.beams || _set_clip_beams!(gui, v),
         gui.widgets.clip_beams_toggle.active))
     _connect_projection!(gui, orthographic)
+    _connect_view_lock!(gui)
     _connect_sources!(gui)
     _connect_layout!(gui)
     # The catalog of components that can be added to the systems, see `add_component!`, and their

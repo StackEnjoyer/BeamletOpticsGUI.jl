@@ -17,7 +17,7 @@ parts appear on demand in an overlay over the 3D view (see `_CompactOverlay` in 
   of [`add_controls!`](@ref) and one for the `sliders`, which opens their widgets in a popover
   next to the rail
 - the camera popover below the view cube, shown while the mouse is over the cube or the popover:
-  home, fit, the views menu, save view and orthographic
+  home, fit, the views menu, save view, orthographic and lock view
 - a toast at the bottom, which shows each new status text and the info label for a few seconds
 
 The widgets are drawn in the colors of the `theme` tokens like the whole window and the cards.
@@ -146,7 +146,7 @@ menu (`:search`) is added by `_build_menus`.
 const _RAIL_TOOLS = (:trace, :auto_trace, :sources, :clip_beams, :measure, :eye, :search, :export)
 
 """The icons of the tools of the camera popover in their order, the views menu after `:views`."""
-const _CAMERA_TOOLS = (:home, :fit, :views, :save_view, :orthographic)
+const _CAMERA_TOOLS = (:home, :fit, :views, :save_view, :orthographic, :lock)
 
 # The column of the tool with the `icon` in the camera popover; the views menu takes the one after
 # the views icon

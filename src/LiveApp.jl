@@ -425,7 +425,7 @@ function _build_layout(layout::AppLayout, fig, spec)
     return (; ax, cube, sliders, status, tb.trace_button, tb.auto_trace_toggle,
         tb.clip_beams_toggle, tb.orthographic_toggle, tb.sources_toggle, inspector.step_box,
         tb.export_button, tb.show_all_button, tb.measure_toggle, tb.home_button,
-        tb.save_view_button, info)
+        tb.save_view_button, tb.lock_view_toggle, info)
 end
 
 """

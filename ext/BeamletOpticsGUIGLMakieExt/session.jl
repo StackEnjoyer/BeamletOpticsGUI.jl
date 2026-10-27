@@ -345,6 +345,25 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         step(home!, "camera: home after the view cube")
     end
 
+    step("camera: lock the view, drag, unlock") do
+        lock = gui.widgets.lock_view_toggle
+        direction() = (v = GUI._current_view(gui); (v[1] .- v[2]) ./ sqrt(sum(abs2, v[1] .- v[2])))
+        _check(!lock.active[], "the view starts locked")
+        _click!(gui, _rect_center(lock))
+        frame!()
+        _check(lock.active[], "the click did not lock the view")
+        d = direction()
+        a = _free_px(gui)
+        _drag!(gui, a, a .+ (40, 20))
+        frame!()
+        _check(maximum(abs, direction() .- d) < 1e-9, "the left drag turned the locked view")
+        _click!(gui, _rect_center(lock))
+        frame!()
+        _check(!lock.active[], "the click did not unlock the view")
+        settle!()
+    end
+    step(home!, "camera: home after the lock")
+
     step("click beam (inspect)") do
         _click!(gui, _px(gui, [0, 0.025, 0]))
         frame!()
