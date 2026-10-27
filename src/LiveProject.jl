@@ -43,37 +43,85 @@ Names
 _is_project_name(s::AbstractString) = _is_variable_name(s) && !_is_taken_name(s) &&
                                       !Base.isexported(BMOP, Symbol(s))
 
-"""`s` with every character that is not allowed in a name replaced by `_`, e.g. `Mirror_1`."""
-function _sanitized_name(s::AbstractString)
-    t = replace(strip(s), r"[^\p{L}\p{N}_]+" => "_")
-    t = strip(t, '_')
-    isempty(t) && return "obj"
-    return isletter(first(t)) ? String(t) : "obj_" * t
+"""
+    _project_ids(gui, items) -> IdDict{Any, Tuple{Symbol, String}}
+
+The readable id and the machine id of the objects, sources and systems `items` of the `gui` in a
+project: those it has in `gui.sync.ids` (see `_ProjectSync`), else a new id of the prefix of its
+type (see `BeamletOpticsProjects.id_prefix` and `next_id`) and a new uid. Every id in
+`gui.sync.ids` is reserved first, also of an item later in `items` or of an object that is not in
+the view anymore, such that a new one never takes it: after `L5` the next lens is `L6`. An id or a
+uid that an item before took already is given anew, an empty uid too.
+"""
+function _project_ids(gui::LiveView, items)
+    known = gui.sync.ids
+    out = IdDict{Any, Tuple{Symbol, String}}()
+    # The ids that are taken, as systems of a project for `next_id`
+    taken = BMOP.Project(pwd(), "taken")
+    reserve!(id) = (push!(taken.systems, BMOP.SystemEntry(id, Symbol[])); id)
+    foreach(k -> reserve!(first(k)), values(known))
+    used = Set{Symbol}()
+    uids = Set{String}()
+    for x in items
+        k = get(known, x, nothing)
+        (isnothing(k) || first(k) in used) && continue
+        id, uid = k
+        (isempty(uid) || uid in uids) && (uid = BMOP.new_uid())
+        push!(used, id)
+        push!(uids, uid)
+        out[x] = (id, uid)
+    end
+    for x in items
+        haskey(out, x) && continue
+        prefix = BMOP.id_prefix(x)
+        id = BMOP.next_id(taken, prefix)
+        while !_is_project_name(String(id))
+            reserve!(id)
+            id = BMOP.next_id(taken, prefix)
+        end
+        reserve!(id)
+        k = get(known, x, nothing)
+        uid = isnothing(k) || isempty(last(k)) || last(k) in uids ? BMOP.new_uid() : last(k)
+        push!(uids, uid)
+        out[x] = (id, uid)
+    end
+    return out
 end
 
 """
-    _project_names(gui, items) -> IdDict{Any, Symbol}
-
-The names of the objects, sources and systems `items` of the `gui` in a project: the label (see
-`_label`) if it is a free variable name (see `_is_project_name`) that no item before took, else the
-label with the characters of no name replaced by `_` (see `_sanitized_name`), with `_2`, `_3`, …
-appended while it is taken.
+The `label` of an entry of `x` with the readable `id`: the label of `x` in the `gui` (see
+`_ProjectSync`) if it has one and it is not the id, else `nothing`. The automatic names of the tree
+(e.g. "Lens 2") are no labels.
 """
-function _project_names(gui::LiveView, items)
-    names = IdDict{Any, Symbol}()
-    used = Set{String}()
-    for x in items
-        label = _label(gui, x)
-        base = _is_project_name(label) ? label : _sanitized_name(label)
-        name, k = base, 1
-        while name in used || !_is_project_name(name)
-            k += 1
-            name = "$(base)_$k"
+function _project_label(gui::LiveView, @nospecialize(x), id::Symbol)
+    label = get(gui.labels, x, nothing)
+    return (isnothing(label) || label == String(id)) ? nothing : String(label)
+end
+
+"""
+    _file_order(base, entries, systems) -> (entries, systems)
+
+The `entries` and `systems` of a project in the order of the project `base` (the state that the view
+and the files last agreed on, see `_ProjectSync`): each by the place of the entry or system of the
+same uid in `base`, else of the same readable id; the others after those, in their order. `system_code`
+writes the components before the sources, so a new one is written at the end of its kind. Without
+`base`, as they are.
+"""
+function _file_order(base, entries, systems)
+    isnothing(base) && return entries, systems
+    function order(xs, old)
+        by_uid = Dict{String, Int}()
+        by_name = Dict{Symbol, Int}()
+        for (i, o) in enumerate(old)
+            isnothing(o.uid) || get!(by_uid, o.uid, i)
+            get!(by_name, o.name, i)
         end
-        push!(used, name)
-        names[x] = Symbol(name)
+        # The uid of a line of an agent is given in the view, the file has none yet
+        place(x) = !isnothing(x.uid) && haskey(by_uid, x.uid) ? by_uid[x.uid] :
+                   get(by_name, x.name, typemax(Int))
+        return xs[sortperm([place(x) for x in xs]; alg = Base.Sort.DEFAULT_STABLE)]
     end
-    return names
+    return order(entries, base.entries), order(systems, base.systems)
 end
 
 #=
@@ -122,13 +170,14 @@ function _project_meta(origin)
 end
 
 """
-    _project_parts(gui, dir) -> (; project, names, skipped)
+    _project_parts(gui, dir; name = project_name(dir)) -> (; project, names, ids, skipped)
 
-The `project` of the `gui` in the folder `dir` (see `_collect_project`), the `names` of its
-objects, sources and systems and the labels of the objects and sources that were `skipped`, since
-their constructor is not known.
+The `project` of the `gui` in the folder `dir` with the module `name` (see `_collect_project`), the
+readable ids (`names`) and the readable and machine `ids` of its objects, sources and systems (see
+`_project_ids`) and the labels of the objects and sources that were `skipped`, since their
+constructor is not known.
 """
-function _project_parts(gui::LiveView, dir::AbstractString)
+function _project_parts(gui::LiveView, dir::AbstractString; name::AbstractString = BMOP.project_name(dir))
     comp = gui.components
     # A system without members and sources that has no name, e.g. the one of an empty view
     systems = Any[sys for sys in _systems(gui)
@@ -148,22 +197,27 @@ function _project_parts(gui::LiveView, dir::AbstractString)
             push!(saved, x)
         end
     end
-    names = _project_names(gui, Any[saved..., systems...])
+    ids = _project_ids(gui, Any[saved..., systems...])
+    names = IdDict{Any, Symbol}(x => first(v) for (x, v) in ids)
     entries = BMOP.Entry[]
     for x in saved
         origin = comp.origin[x]
         pos, rot = _project_pose(x, origin)
         P0, R0 = origin.pose0
-        push!(entries, BMOP.Entry(_entry_kind(x), names[x], Meta.parse(origin.code), x; pos, rot,
-            pose0 = (Vector{Float64}(P0), Matrix{Float64}(R0)), meta = _project_meta(origin)))
+        id, uid = ids[x]
+        push!(entries, BMOP.Entry(_entry_kind(x), id, Meta.parse(origin.code), x; pos, rot,
+            pose0 = (Vector{Float64}(P0), Matrix{Float64}(R0)), meta = _project_meta(origin),
+            label = _project_label(gui, x, id), uid))
     end
     is_saved = Base.IdSet{Any}(saved)
     system_entries = BMOP.SystemEntry[BMOP.SystemEntry(names[sys],
         Symbol[names[obj] for obj in sys.objects if obj in is_saved],
         Symbol[names[src] for src in _sources_of(gui, sys) if src in is_saved];
-        static = _static_system(sys), object = sys) for sys in systems]
-    project = BMOP.Project(dir, BMOP.project_name(dir); entries, systems = system_entries)
-    return (; project, names, skipped)
+        static = _static_system(sys), object = sys, label = _project_label(gui, sys, names[sys]),
+        uid = last(ids[sys])) for sys in systems]
+    entries, system_entries = _file_order(gui.sync.base, entries, system_entries)
+    project = BMOP.Project(dir, name; entries, systems = system_entries)
+    return (; project, names, ids, skipped)
 end
 
 """
@@ -187,31 +241,35 @@ function _project_packages()
     return mods
 end
 
-# The handle of a system has the name of the system, see `_rename_system!`
-function _name_handle!(gui::LiveView, sys::BMO.AbstractSystem, name::String)
-    h = _system_handle(gui, sys)
-    isnothing(h) || (gui.objects.names[h] = name)
+"""
+    _apply_project_names!(gui, project)
+
+Writes the readable ids and the machine ids of the entries and systems of the saved `project` into
+`gui.sync.ids` (see `_ProjectSync`), such that the next save gives the same ones; the uids that
+`BeamletOpticsProjects.save_project` gave are those of the entries in `project`. The labels of the
+`gui` stay as they are.
+"""
+function _apply_project_names!(gui::LiveView, project)
+    ids = gui.sync.ids
+    for e in Iterators.flatten((project.entries, project.systems))
+        isnothing(e.object) && continue
+        ids[e.object] = (e.name, something(e.uid, BMOP.new_uid()))
+    end
     return nothing
 end
-_name_handle!(::LiveView, @nospecialize(x), ::String) = nothing
 
 """
-Writes the `names` of a saved project into the labels of the `gui`, such that the next save gives
-the same names.
+    _move_id!(gui, old, new)
+
+Gives the readable id and the machine id of `old` to `new`, which takes its place in the `gui`,
+e.g. on the page "Edit" (see `_replace!`): the project sees the same entry with other code.
 """
-function _apply_project_names!(gui::LiveView, names)
-    changed = false
-    for (x, name) in names
-        s = String(name)
-        get(gui.labels, x, nothing) == s && continue
-        changed = true
-        gui.labels[x] = gui.objects.names[x] = s
-        _name_handle!(gui, x, s)
-    end
-    changed || return nothing
-    _refresh_names!(gui)
-    _refresh_catalog!(gui)
-    _refresh_links!(gui)
+function _move_id!(gui::LiveView, @nospecialize(old), @nospecialize(new))
+    ids = gui.sync.ids
+    k = get(ids, old, nothing)
+    isnothing(k) && return nothing
+    delete!(ids, old)
+    ids[new] = k
     return nothing
 end
 
@@ -397,9 +455,10 @@ end
 
 The live view of a loaded `project` (see `BeamletOpticsProjects.load_project`), without showing it:
 its systems with their sources, a `System()` for a project without systems, the objects and
-sources without a system, the names of the project as labels, the origins of the objects (their
-code, with which they are saved again and, from the catalog, edited and copied), and `view.toml`.
-The `kwargs` of `live_view` win over those of `view.toml`.
+sources without a system, their labels (else their readable ids), their ids and uids (see
+`_ProjectSync`), the origins of the objects (their code, with which they are saved again and, from
+the catalog, edited and copied), and `view.toml`. The `kwargs` of `live_view` win over those of
+`view.toml`. The `project` becomes the `base` of the sync.
 """
 function _open_from(project; view = _read_view(project), kwargs...)
     @nospecialize
@@ -413,16 +472,23 @@ function _open_from(project; view = _read_view(project), kwargs...)
     end
     isempty(args) && push!(args, BMO.System())
     paired = Base.IdSet{Any}(a.second for a in args if a isa Pair)
+    # The label of each, else its readable id
     labels = IdDict{Any, String}()
-    foreach(e -> labels[e.object] = String(e.name), project.entries)
-    foreach(s -> labels[s.object] = String(s.name), project.systems)
+    for e in Iterators.flatten((project.entries, project.systems))
+        labels[e.object] = something(e.label, String(e.name))
+    end
     vk = _view_kwargs(view, byname, paired)
     gui = live_view(args...; labels, vk.kwargs..., kwargs...)
+    # The readable id and the uid of each; a line of an agent without a uid gets one, which the
+    # next save writes (`diff_projects` pairs it with its line by the readable id meanwhile)
+    for e in Iterators.flatten((project.entries, project.systems))
+        gui.sync.ids[e.object] = (e.name, something(e.uid, BMOP.new_uid()))
+    end
     origins = IdDict{Any, Any}(e.object => _project_origin(gui, e) for e in project.entries)
     _unrecorded(gui) do
         for e in project.entries
             e.name in in_system && continue
-            _add_loose!(gui, e.object, String(e.name), origins[e.object], vk.beam_kwargs)
+            _add_loose!(gui, e.object, labels[e.object], origins[e.object], vk.beam_kwargs)
         end
         for src in vk.off
             src in paired || _set_beam_on!(gui, src, false)
@@ -438,8 +504,7 @@ function _open_from(project; view = _read_view(project), kwargs...)
     end
     gui.project = project.path
     # What `Ctrl+S` and the watcher compare with, see `_ProjectSync`
-    gui.sync.stamp = project.stamp
-    gui.sync.code = BMOP.system_code(_collect_project(gui, project.path))
+    _saved!(gui, project)
     gui.status.text[] = "project $(project.name) opened from $(project.path)"
     return gui
 end
@@ -450,7 +515,7 @@ end
 Opens the project in the folder `path`, or of its project file `path` (`<name>.bmo`), see
 `BeamletOpticsProjects.load_project`, in a live view
 and shows it if `display` is `true`: its systems with their sources, the objects and sources
-without a system, the names of the project as labels and how the view looked when it was saved
+without a system, their labels (else their ids) and how the view looked when it was saved
 (`view.toml`: camera, saved views, clip planes, table, the colors of the beams, ...). The `kwargs`
 are those of [`live_view`](@ref) and win over `view.toml`. `Ctrl+S` saves it there again, see
 [`save_project`](@ref). The components and sources from the catalog can be edited and copied.
@@ -472,6 +537,21 @@ Saving
 =#
 
 """
+    _set_title!(gui, title)
+
+Sets the title of the window of the `gui`, e.g. to the name of the folder of its project after
+"Save as". Nothing if the `gui` is not shown or its backend has no window titles: the method per
+backend is `_set_screen_title!(screen, title)`, of GLMakie in its extension.
+"""
+function _set_title!(gui::LiveView, title::AbstractString)
+    _set_screen_title!(Makie.getscreen(gui.fig.scene), String(title))
+    return nothing
+end
+
+"""Sets the title of the window of the `screen` of a backend, see `_set_title!`; nothing by default."""
+_set_screen_title!(@nospecialize(screen), ::String) = nothing
+
+"""
     save_project(gui::LiveView, dir = gui.project) -> String
 
 Saves the setup of the live view `gui` as the project in the folder `dir` and returns the path of
@@ -480,8 +560,16 @@ system, each with its constructor call and its pose, see `BeamletOpticsProjects`
 not a project yet becomes one, with the versions of BeamletOptics, BeamletOpticsProjects,
 BeamletOpticsGUI and GLMakie. How the view looks is written to `view.toml`. An object whose
 constructor is not known, e.g. one that the script gave to `live_view`, is not saved: a warning and
-the status line name it. The names of the project become the labels of the view, and `dir` its
-project, which `Ctrl+S` saves to. `Ctrl+Shift+S` asks for a place and a name, see `_save_as_key!`.
+the status line name it. Each object, source and system keeps its readable id (e.g. `L1`) and its
+machine id (uid) across saves; a new one gets the next free id of its kind and a new uid, and its
+label in the view, if it has one, is saved as its `label`. The entries stay in the order of the
+file, new ones at the end of their kind. `dir` becomes the project of the view, which `Ctrl+S`
+saves to, and the title of its window. `Ctrl+Shift+S` asks for a place and a name, see
+`_save_as_key!`.
+
+Saving a view that has a project to another folder ("save as") copies the own code of the project
+(`src/`) there first, without overwriting a file, and keeps the name of its module, such that the
+copy loads.
 
 Throws `BeamletOpticsProjects.ProjectChanged` and saves nothing if the files of the project of the
 view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`; `Ctrl+S` shows
@@ -489,15 +577,26 @@ a card that offers to load them, to overwrite them or to save as, see `_ProjectC
 """
 function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     dir = abspath(dir)
-    parts = _project_parts(gui, dir)
+    from = gui.project
+    save_as = !isnothing(from) && dir != from
+    # A new folder of "save as" gets the own code and the module of the project
+    name = save_as && !isfile(joinpath(dir, "Project.toml")) ? BMOP.project_name(from) :
+           BMOP.project_name(dir)
+    parts = _project_parts(gui, dir; name)
     # The files as the view knows them: only of its own project
-    dir == gui.project && (parts.project.stamp = gui.sync.stamp)
+    dir == from && (parts.project.stamp = gui.sync.stamp)
+    if save_as
+        # Before checking whether the folder is a project: the copy must not miss its module
+        BMOP.copy_code(from, dir)
+    end
     path = save_project(parts.project; packages = _project_packages(), force)
     _write_view_toml(gui, parts.project, parts.names)
-    _apply_project_names!(gui, parts.names)
+    # The uids that the save gave are those of `parts.project`
+    _apply_project_names!(gui, parts.project)
     gui.project = dir
     _saved!(gui, parts.project)
-    msg = "project saved to $dir"
+    dir == from || _set_title!(gui, basename(dir))
+    msg = save_as ? "project saved as $dir" : "project saved to $dir"
     if !isempty(parts.skipped)
         list = join(parts.skipped, ", ")
         @warn "save_project: $(length(parts.skipped)) objects without a recipe were not saved: $list"

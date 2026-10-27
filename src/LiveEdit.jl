@@ -171,6 +171,8 @@ function _replace!(gui::LiveView, old, new, origin)
     swap!(out, out_state, in, in_state) = begin
         out_state[] = _remove_unrecorded!(gui, out)
         delete!(comp.edits, out)
+        # the same entry of the project, see `_move_id!`
+        _move_id!(gui, out, in)
         _restore!(gui, in, in_state[])
         _show_edit_page!(gui, in)
         return nothing

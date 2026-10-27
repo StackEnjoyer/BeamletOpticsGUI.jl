@@ -49,13 +49,13 @@ const GUI = BeamletOpticsGUI
             obj = Core.eval(M, e.code)
             pose0 = BMOP.pose_of(obj)
             BMOP.apply_pose!(obj, e.pos, e.rot)
-            push!(entries, BMOP.Entry(e.kind, e.name, e.code, obj; e.pos, e.rot, pose0, e.meta))
+            push!(entries, BMOP.Entry(e.kind, e.name, e.code, obj; e.pos, e.rot, pose0, e.meta, e.label, e.uid))
         end
         byname = Dict(e.name => e.object for e in entries)
         systems = map(p.systems) do s
             objs = Any[byname[n] for n in s.members]
             sys = s.static ? StaticSystem(objs) : isempty(objs) ? System() : System(objs)
-            BMOP.SystemEntry(s.name, s.members, s.sources; s.static, object = sys)
+            BMOP.SystemEntry(s.name, s.members, s.sources; s.static, object = sys, s.label, s.uid)
         end
         return BMOP.Project(p.path, p.name; entries, systems)
     end
@@ -90,7 +90,9 @@ const GUI = BeamletOpticsGUI
             b2 = b2.obj, b3 = b3.obj)
     end
 
-    _byname(gui) = Dict(Symbol(l) => x for (x, l) in gui.labels)
+    # The objects, sources and systems of a view by their readable ids, see `_ProjectSync`
+    _byid(gui) = Dict(first(v) => x for (x, v) in gui.sync.ids)
+    _prefix(x) = BMOP.id_prefix(x)
 
     @testset "collect and open, $layout" for layout in (:compact, :app)
         GUI._CLIPBOARD[] = nothing
@@ -113,13 +115,21 @@ const GUI = BeamletOpticsGUI
         names = parts.names
         @test isempty(parts.skipped)
         @test p.path == abspath(dir) && Base.isidentifier(p.name)
-        @test [e.name for e in p.entries][[1, 3, 4, 5, 6]] == [:L1, :spare, :B1, :laser_2, :B3]
+        # readable ids by the kind of each, the labels of the view as labels (not if they are the id)
+        @test [e.name for e in p.entries] ==
+              [:L1, Symbol(_prefix(t.prism), 1), Symbol("M", _prefix(t.prism) == "M" ? 2 : 1), :B1, :B2, :B3]
+        @test [e.label for e in p.entries] == [nothing, nothing, "spare", nothing, "laser 2", nothing]
         @test [e.kind for e in p.entries] == [:component, :component, :component, :source, :source, :source]
-        @test [s.name for s in p.systems] == [:Transmitter, :Receiver]
+        @test [s.name for s in p.systems] == [:S1, :S2]
+        @test [s.label for s in p.systems] == ["Transmitter", "Receiver"]
         @test p.systems[1].members == [names[t.lens]] && p.systems[1].sources == [:B1]
-        @test p.systems[2].members == [names[t.lens], names[t.prism]] && p.systems[2].sources == [:laser_2]
+        @test p.systems[2].members == [names[t.lens], names[t.prism]] && p.systems[2].sources == [:B2]
         @test all(!s.static for s in p.systems)
-        # names are free variable names
+        # a uid each, all different
+        uids = [x.uid for x in [p.entries; p.systems]]
+        @test all(u -> u isa String && length(u) == 36, uids) && allunique(uids)
+        @test parts.ids[t.lens] == (:L1, p.entries[1].uid)
+        # ids are free variable names
         @test all(e -> Base.isidentifier(String(e.name)), p.entries)
         e_lens = p.entries[1]
         @test e_lens.meta == [:catalog => ("Thin lens", ["80", "-60", "30", "N-SF11"])]
@@ -129,16 +139,23 @@ const GUI = BeamletOpticsGUI
         @test isnothing(p.entries[4].rot)
         GUI._write_view_toml(gui, p, names)
         view = TOML.parsefile(joinpath(dir, "view.toml"))
-        @test view["beams"]["laser_2"]["color"] == _hex(:orange)
-        @test view["beams"]["laser_2"]["alpha"] == 0.5 && view["beams"]["laser_2"]["linewidth"] == 3.0
+        @test view["beams"]["B2"]["color"] == _hex(:orange)
+        @test view["beams"]["B2"]["alpha"] == 0.5 && view["beams"]["B2"]["linewidth"] == 3.0
         @test view["beams_off"] == ["B1"] && view["snap"] == "pose"
 
         # open: a project as `load_project` returns it
         p2 = _reload(p)
         gui2 = GUI._open_from(p2; layout)
         @test gui2.project == abspath(dir)
-        by = _byname(gui2)
-        @test Set([e.name for e in p.entries]) ∪ Set([:Transmitter, :Receiver]) ⊆ Set(keys(by))
+        by = _byid(gui2)
+        @test Set(keys(by)) == Set([e.name for e in p.entries]) ∪ Set([:S1, :S2])
+        # the ids and uids of the files; the labels of the files, else the ids
+        for e in [p2.entries; p2.systems]
+            @test gui2.sync.ids[e.object] == (e.name, e.uid)
+            @test gui2.labels[e.object] == something(e.label, String(e.name))
+        end
+        @test gui2.labels[by[:S1]] == "Transmitter" && gui2.labels[by[:B2]] == "laser 2"
+        @test gui2.sync.base === p2
         old = Dict(names[x] => x for x in keys(names))
         for e in p2.entries
             a, b = old[e.name], e.object
@@ -146,18 +163,19 @@ const GUI = BeamletOpticsGUI
             @test position(b) == position(a)
             @test maximum(abs, GUI._pose(b)[2] - GUI._pose(a)[2]) < 1e-12
         end
-        S1, S2 = by[:Transmitter], by[:Receiver]
+        S1, S2 = by[:S1], by[:S2]
         @test GUI._systems(gui2) == [S1, S2]
         lens2 = by[names[t.lens]]
         @test _in(lens2, S1.objects) && _in(lens2, S2.objects) && length(S2.objects) == 2
-        @test GUI._sources_of(gui2, S1) == [by[:B1]] && GUI._sources_of(gui2, S2) == [by[:laser_2]]
+        @test GUI._sources_of(gui2, S1) == [by[:B1]] && GUI._sources_of(gui2, S2) == [by[:B2]]
         @test by[:B3] in gui2.beams.unassigned
-        @test _in(by[:spare], GUI.rendered(gui2.extras).objects)
+        spare = by[names[t.free]]
+        @test _in(spare, GUI.rendered(gui2.extras).objects)
         @test isempty(gui2.controls.undo_stack) && isempty(gui2.controls.redo_stack)
         # view.toml
-        @test _hex(gui2.beams.kwargs[by[:laser_2]].color) == _hex(:orange)
-        @test GUI._beam_opacity(gui2, by[:laser_2]) == 0.5
-        @test GUI._beam_linewidth(gui2, by[:laser_2]) == 3.0
+        @test _hex(gui2.beams.kwargs[by[:B2]].color) == _hex(:orange)
+        @test GUI._beam_opacity(gui2, by[:B2]) == 0.5
+        @test GUI._beam_linewidth(gui2, by[:B2]) == 3.0
         @test !GUI._beam_on(gui2, by[:B1])
         @test length(gui2.clip.planes) == 1 && collect(gui2.clip.planes[1].pos) == [0.0, 0.05, 0.0]
         @test gui2.clip.beams
@@ -173,12 +191,13 @@ const GUI = BeamletOpticsGUI
         for (e2, e3) in zip(p2.entries, p3.entries)
             @test e2.name === e3.name && isequal(e2.pos, e3.pos) && isequal(e2.rot, e3.rot)
             @test e2.meta == e3.meta && e2.code == e3.code
+            @test e2.label == e3.label && e2.uid == e3.uid
         end
         # a moved one gets its new pose
-        translate3d!(by[:spare], [0.0, 0.0, 0.01])
+        translate3d!(spare, [0.0, 0.0, 0.01])
         p4 = GUI._collect_project(gui2, dir)
-        e = only(e for e in p4.entries if e.name === :spare)
-        @test e.pos == Tuple(Float64.(position(by[:spare])))
+        e = only(e for e in p4.entries if e.object === spare)
+        @test e.pos == Tuple(Float64.(position(spare)))
 
         # a loaded catalog lens can be edited and copied
         @test GUI._editable(gui2, lens2)
@@ -190,11 +209,20 @@ const GUI = BeamletOpticsGUI
         new = only(o for o in S1.objects)
         @test new !== lens2 && _in(new, S2.objects) && GUI._editable(gui2, new)
         @test GUI._label(gui2, new) == String(names[t.lens])
+        # ... keeps the id and the uid of the one it replaced ...
+        lens_id = (names[t.lens], p2.entries[1].uid)
+        @test gui2.sync.ids[new] == lens_id && !haskey(gui2.sync.ids, lens2)
         # ... and is saved with its new code
         p5 = GUI._collect_project(gui2, dir)
         e = only(e for e in p5.entries if e.name === names[t.lens])
+        @test e.object === new && e.uid == lens_id[2]
         @test last(only(e.meta))[2][1] == "120"
         @test position(new) ≈ position(lens2) atol = 1e-12
+        # undo gives the id back to the old one, redo to the new one
+        GUI._undo!(gui2.controls)
+        @test gui2.sync.ids[lens2] == lens_id && !haskey(gui2.sync.ids, new)
+        GUI._redo!(gui2.controls)
+        @test gui2.sync.ids[new] == lens_id && !haskey(gui2.sync.ids, lens2)
         close(gui2)
         close(gui)
     end
@@ -274,8 +302,9 @@ const GUI = BeamletOpticsGUI
             rm(joinpath(dir, "system.jl"))
             _ctrl!(gui, Keyboard.s)
             @test calls[] == 2 && isfile(joinpath(dir, "system.jl"))
-            # the names became the labels
-            @test Base.isidentifier(gui.labels[t.prism]) && gui.labels[t.b2] == "laser_2"
+            # the ids are kept, the labels stay as they are
+            @test first(gui.sync.ids[t.b2]) === :B2 && gui.labels[t.b2] == "laser 2"
+            @test !haskey(gui.labels, t.prism)
             # "Save as" always asks; the name of an existing folder is refused
             saved[] = joinpath(parent, "Laser bench.bmo")
             _ctrl_shift!(gui, Keyboard.s)
@@ -295,6 +324,9 @@ const GUI = BeamletOpticsGUI
             _wait()
             copy = joinpath(parent, "copy")
             @test calls[] == 5 && gui.project == copy && isfile(joinpath(copy, "copy.bmo"))
+            @test gui.status.text[] == "project saved as $copy"
+            # the copy keeps the module of the project
+            @test load_project(copy).name == "Laser_bench" && isfile(joinpath(copy, "src", "Laser_bench.jl"))
             rm(joinpath(copy, "system.jl"))
             _ctrl!(gui, Keyboard.s)
             @test calls[] == 5 && isfile(joinpath(copy, "system.jl"))
@@ -340,81 +372,127 @@ const GUI = BeamletOpticsGUI
         @test isnothing(GUI._save_target(joinpath(parent, ".bmo")).dir)
     end
 
-    @testset "files changed outside" begin
+    @testset "ids, labels and uids across saves" begin
         dir = mktempdir()
         t = _setup(:compact)
         gui = t.gui
         save_project(gui, dir)
-        system = joinpath(dir, "system.jl")
-        check!(g) = GUI._check_files!(g; const_kw...)
-        # an agent appends a line (a function of its own code), the GUI saves in the meantime
-        agent_line = "@component L9 = extra_lens(0.2) pos = (0.0, 0.3, 0.0)\n"
-        name = BeamletOpticsProjects.project_name(dir)
-        own = joinpath(dir, "src", name * ".jl")
-        @test check!(gui).status === :none
+        p = load_project(dir)
+        text = read(joinpath(dir, "system.jl"), String)
+        ids = Dict(e.name => e.uid for e in [p.entries; p.systems])
+        @test all(u -> u isa String, values(ids))
+        @test occursin("label = \"spare\"", text) && occursin("label = \"Transmitter\"", text)
+        # the uid is the last keyword of a line
+        @test all(l -> occursin(r"uid = \"[0-9a-f-]{36}\"$", l), filter(startswith("@"), split(text, '\n')))
+        # the view knows them
+        known = Dict(first(v) => last(v) for (x, v) in gui.sync.ids)
+        @test all(known[n] == u for (n, u) in ids)
+        # renaming in the view: a label, the id and the uid stay
+        GUI._rename_object!(gui, t.lens, "Kollimator")
+        GUI._rename_system!(gui, t.s2, "Empfänger")
         save_project(gui)
-        @test check!(gui).status === :none
-        # only the files changed: reloaded, after the second look, with the view state of the window
-        set_view(gui.ax, [0.4, -0.3, 0.2], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0])
-        cam = GUI._current_view(gui)
-        GUI._set_beam_opacity!(gui, t.b2, 0.25)
+        p2 = load_project(dir)
+        e = only(e for e in p2.entries if e.name === :L1)
+        @test e.label == "Kollimator" && e.uid == ids[:L1]
+        s2 = only(s for s in p2.systems if s.name === :S2)
+        @test s2.label == "Empfänger" && s2.uid == ids[:S2]
+        @test Dict(e.name => e.uid for e in [p2.entries; p2.systems]) == ids
+        # a new object gets the next id of its kind and a new uid, which stay
+        c = _built("Thin lens")
+        add_component!(gui, c.obj; system = t.s1, origin = c.origin, select = false)
+        save_project(gui)
+        p3 = load_project(dir)
+        e3 = only(e for e in p3.entries if !haskey(ids, e.name))
+        @test e3.name === :L2 && isnothing(e3.label) && !(e3.uid in values(ids))
+        @test gui.sync.ids[c.obj] == (:L2, e3.uid)
+        save_project(gui)
+        @test only(e for e in load_project(dir).entries if e.name === :L2).uid == e3.uid
+        # opening shows the labels, else the ids
+        gui2 = open_project(dir; display = false, const_kw...)
+        by = _byid(gui2)
+        @test gui2.labels[by[:L1]] == "Kollimator" && gui2.labels[by[:L2]] == "L2"
+        @test gui2.labels[by[:S2]] == "Empfänger" && gui2.labels[by[:B1]] == "B1"
+        close(gui2)
+        # an id that the view knows is never given again, also of an object later in the order
+        gui.sync.ids[t.free] = (:L7, gui.sync.ids[t.free][2])
+        c2 = _built("Thin lens")
+        add_component!(gui, c2.obj; system = t.s1, origin = c2.origin, select = false)
+        parts = GUI._project_parts(gui, dir)
+        @test parts.names[c2.obj] === :L8 && parts.names[t.free] === :L7
+        @test parts.ids[c2.obj][2] != parts.ids[c.obj][2]
+        close(gui)
+    end
+
+    @testset "file order and lines of an agent" begin
+        dir = mktempdir()
+        t = _setup(:compact)
+        save_project(t.gui, dir)
+        close(t.gui)
+        file = joinpath(dir, "system.jl")
+        lines = split(chomp(read(file, String)), '\n')
+        comps = filter(startswith("@component"), lines)
+        srcs = filter(startswith("@source"), lines)
+        systems = filter(startswith("@system"), lines)
+        # an agent reorders the lines and adds a lens and a mirror without uid
+        agent = ["@component L5 = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5) pos = (0.0, 0.3, 0.0) label = \"agent lens\"",
+                 "@component M9 = RoundPlanoMirror(0.0254, 0.005)"]
+        order = [lines[1]; reverse(comps); agent; reverse(srcs); reverse(systems)]
+        write(file, join(order, '\n') * '\n')
+        gui = open_project(dir; display = false, const_kw...)
+        by = _byid(gui)
+        @test gui.labels[by[:L5]] == "agent lens" && gui.labels[by[:M9]] == "M9"
+        # a lens added in the view: after L5, the largest id of the lenses
+        c = _built("Thin lens")
+        add_component!(gui, c.obj; system = :none, origin = c.origin, select = false)
+        save_project(gui)
+        saved = split(chomp(read(file, String)), '\n')
+        name(l) = match(r"^@\w+ (\w+) =", l).captures[1]
+        @test name.(filter(startswith("@component"), saved)) ==
+              [name.(reverse(comps)); "L5"; "M9"; "L6"]
+        @test name.(filter(startswith("@source"), saved)) == name.(reverse(srcs))
+        @test name.(filter(startswith("@system"), saved)) == name.(reverse(systems))
+        # the lines of the agent got a uid, the others kept theirs
+        p = load_project(dir)
+        @test all(e -> !isnothing(e.uid), p.entries)
+        old = Dict(name(l) => match(r"uid = \"(.*)\"", l).captures[1] for l in [comps; srcs; systems])
+        @test all(e -> !haskey(old, String(e.name)) || old[String(e.name)] == e.uid, p.entries)
+        @test gui.sync.ids[by[:L5]] == (:L5, only(e for e in p.entries if e.name === :L5).uid)
+        close(gui)
+    end
+
+    @testset "save as" begin
+        dir = mktempdir()
+        t = _setup(:compact)
+        save_project(t.gui, dir)
+        close(t.gui)
+        name = BMOP.project_name(dir)
+        own = joinpath(dir, "src", name * ".jl")
         write(own, "module $name\nusing BeamletOptics\nexport extra_lens\n" *
                    "extra_lens(f) = SphericalLens(f, -f, 0.004, 0.0254, 1.5)\nend\n")
-        write(system, read(system, String) * agent_line)
-        r = check!(gui)
-        @test r.status === :pending && r.gui === gui
-        r = check!(gui)
-        @test r.status === :reloaded && r.gui !== gui
-        gui2 = r.gui
-        @test gui2.project == dir && haskey(_byname(gui2), :L9)
-        @test all(abs.(reduce(vcat, GUI._current_view(gui2)) .- reduce(vcat, cam)) .< 1e-6)
-        b2 = _byname(gui2)[:laser_2]
-        @test GUI._snapshot(gui2, b2).kwargs.alpha == 0.25
-        @test check!(gui2).status === :none
-        # the setup changed here and there: the card, once; Ctrl+S does not overwrite
-        translate3d!(gui2, _byname(gui2)[:spare], [0.0, 0.0, 0.01])
-        agent_text = read(system, String) * "@component L10 = extra_lens(0.3)\n"
-        write(system, agent_text)
-        @test check!(gui2).status === :pending
-        @test check!(gui2).status === :conflict
-        @test GUI._info_card(gui2).obj isa GUI._ProjectConflict
-        @test occursin("choose on the card", gui2.status.text[])
-        @test check!(gui2).status === :none && check!(gui2).status === :none
-        GUI._release_info!(gui2, GUI._ProjectConflict)
-        GUI._save_to!(gui2, dir)
-        @test read(system, String) == agent_text
-        @test GUI._info_card(gui2).obj isa GUI._ProjectConflict
-        @test_throws BeamletOpticsProjects.ProjectChanged save_project(gui2)
-        # "Overwrite": the setup of the window
-        GUI._resolve_conflict!(gui2, :overwrite)
-        @test isnothing(GUI._info_card(gui2)) || !(GUI._info_card(gui2).obj isa GUI._ProjectConflict)
-        @test !occursin("L10", read(system, String)) && check!(gui2).status === :none
-        # a syntax error while the agent writes: the window stays, the line is named; then fixed
-        good = read(system, String)
-        write(system, good * "@component L11 = extra_lens(\n")
-        @test check!(gui2).status === :pending
-        r = check!(gui2)
-        @test r.status === :failed && r.gui === gui2
-        @test occursin(r"project not reloaded: .*system\.jl:\d+", gui2.status.text[])
-        write(system, good * "@component L11 = extra_lens(0.4)\n")
-        @test check!(gui2).status === :pending
-        r = check!(gui2)
-        @test r.status === :reloaded && haskey(_byname(r.gui), :L11)
-        gui3 = r.gui
-        # "Load from disk" through _reload!: the change here is lost
-        translate3d!(gui3, _byname(gui3)[:spare], [0.0, 0.0, 0.01])
-        moved = BeamletOptics.position(_byname(gui3)[:spare])
-        gui4 = GUI._reload!(gui3; display = false, const_kw...)
-        @test BeamletOptics.position(_byname(gui4)[:spare]) == moved .- [0.0, 0.0, 0.01]
-        @test !GUI._setup_changed(gui4)
-        # Ctrl+R without a project, and close stops the watcher
-        gui5 = _live_view(System())
-        GUI._reload_key!(gui5)
-        @test startswith(gui5.status.text[], "no project to reload")
-        close(gui5)
-        gui4.sync.timer = Timer(100)
-        close(gui4)
-        @test isnothing(gui4.sync.timer)
+        write(joinpath(dir, "system.jl"), read(joinpath(dir, "system.jl"), String) *
+                                           "@component L9 = extra_lens(0.2) pos = (0.0, 0.3, 0.0)\n")
+        gui = open_project(dir; display = false, const_kw...)
+        screen = GLMakie.Screen(visible = false)
+        display(screen, gui.fig)
+        title() = unsafe_string(ccall((:glfwGetWindowTitle, GLMakie.GLFW.libglfw), Cstring,
+            (GLMakie.GLFW.Window,), screen.glscreen))
+        target = joinpath(mktempdir(), "Bench copy")
+        save_project(gui, target)
+        @test gui.project == abspath(target)
+        @test gui.status.text[] == "project saved as $(abspath(target))"
+        @test title() == "Bench copy"
+        # the own code is copied, the module kept: the copy loads
+        @test read(joinpath(target, "src", name * ".jl"), String) == read(own, String)
+        p = load_project(target)
+        @test p.name == name && any(e -> e.name === :L9, p.entries)
+        # Ctrl+S saves to the copy, the original stays
+        before = read(joinpath(dir, "system.jl"), String)
+        translate3d!(_byid(gui)[:L9], [0.0, 0.0, 0.01])
+        save_project(gui)
+        @test read(joinpath(dir, "system.jl"), String) == before
+        @test position(load_project(target)[:L9]) ≈ [0.0, 0.3, 0.01]
+        close(screen)
+        close(gui)
     end
 
     @testset "end-to-end" begin

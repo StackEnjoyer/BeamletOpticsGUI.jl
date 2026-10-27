@@ -578,16 +578,30 @@ _ViewLinks() = _ViewLinks(Any[], false)
     _ProjectSync
 
 What the view knows of the files of its project, which an agent may change while it is open, see
-`LiveProjectSync.jl`: the `stamp` of the files (`BeamletOpticsProjects.project_stamp`) and the text
-of `system.jl` of its setup (`code`) when it was opened or saved; the stamp on disk that the
-watcher saw once and waits to see again (`pending`), the last one it reacted to (`handled`) and the
-`timer` of the watcher.
+`LiveProjectSync.jl`:
+- `base`: the project (`BeamletOpticsProjects.Project`) of the state that the view and the files
+  last agreed on (opened, saved or merged), and `stamp`, the stamp of its files
+  (`BeamletOpticsProjects.project_stamp`);
+- `ids`: the readable id and the machine id of each object, source and system of the view that is
+  in the project;
+- `marks`: the times and sizes of the files at the last look of the watcher, `src` those of `src/`
+  when `base` was taken, `changed_at` the time the files last changed (`nothing`: settled);
+- `handled`: the stamp of the files that the view last reacted to, `failed` whether that failed
+  (e.g. a syntax error, shown in the status line), `conflicts` the names of the objects changed
+  both in the view and in the files, and `theirs` the project of the files of that conflict;
+- `timer`: the watcher.
 """
 Base.@kwdef mutable struct _ProjectSync
+    base::Any = nothing
     stamp::Union{Nothing, String} = nothing
-    code::Union{Nothing, String} = nothing
-    pending::Union{Nothing, String} = nothing
+    ids::IdDict{Any, Tuple{Symbol, String}} = IdDict{Any, Tuple{Symbol, String}}()
+    marks::Vector{Tuple{String, Float64, Int}} = Tuple{String, Float64, Int}[]
+    src::Vector{Tuple{String, Float64, Int}} = Tuple{String, Float64, Int}[]
+    changed_at::Union{Nothing, Float64} = nothing
     handled::Union{Nothing, String} = nothing
+    failed::Bool = false
+    conflicts::Vector{String} = String[]
+    theirs::Any = nothing
     timer::Union{Nothing, Timer} = nothing
 end
 
