@@ -27,9 +27,9 @@ function opened()
 end
 
 obj(gui, id) = first(x for (x, (name, _)) in gui.sync.ids if name === id)
-session(dir) = read(joinpath(dir, ".bmo", "session.md"), String)
+session(dir) = read(GUI._session_file(dir), String)
 
-@testset "session.md" begin
+@testset "session file" begin
     @testset "no file without a project" begin
         gui = live_view(BeamletOptics.System(); trace_budget = Inf, throttle = false, detectors = [])
         @test GUI._write_session!(gui) === nothing
@@ -38,7 +38,7 @@ session(dir) = read(joinpath(dir, ".bmo", "session.md"), String)
     end
 
     gui, dir = opened()
-    file = joinpath(dir, ".bmo", "session.md")
+    file = GUI._session_file(dir)
     sys = joinpath(dir, "system.jl")
 
     @testset "connect, selection" begin
@@ -46,7 +46,9 @@ session(dir) = read(joinpath(dir, ".bmo", "session.md"), String)
         GUI._connect_session!(gui)
         @test length(gui.sync.session) == 1
         text = session(dir)
-        @test startswith(text, "# Window of the project \"$(basename(dir))\", ")
+        p = GUI._person()
+        @test basename(file) == "session-$(p.id).md"
+        @test startswith(text, "# Window of $(p.name) ($(p.host)) on the project \"$(basename(dir))\", ")
         @test occursin("Selected: nothing", text)
         @test occursin("Recent changes by the person: none", text)
         @test !occursin("Open conflict", text)
@@ -85,7 +87,7 @@ session(dir) = read(joinpath(dir, ".bmo", "session.md"), String)
         old = gui.project
         gui.project = bad
         try
-            @test_logs (:warn, "could not write session.md") GUI._write_session!(gui)
+            @test_logs (:warn, "could not write the session file") GUI._write_session!(gui)
             @test_logs GUI._write_session!(gui)
             @test (gui.controls.selected[] = obj(gui, :M1)) !== nothing
         finally
@@ -153,13 +155,37 @@ session(dir) = read(joinpath(dir, ".bmo", "session.md"), String)
     end
 
     @testset "closed" begin
+        @test isfile(file)
         GUI._session_closed!(gui)
         @test isempty(gui.sync.session)
-        text = session(dir)
-        @test occursin("No window is open on this project.", text)
-        @test !occursin("Selected", text)
+        @test !isfile(file)
+        @test GUI._session_closed!(gui) === nothing   # a missing file is fine
         gui.controls.selected[] = obj(gui, :M1)
-        @test !occursin("Selected", session(dir))
+        @test !isfile(file)
+    end
+
+    @testset "one file per person" begin
+        dir2 = mktempdir()
+        new_project(dir2; name = "Bench")
+        write(joinpath(dir2, "system.jl"), START)
+        open_as(who) = withenv(() -> open_project(dir2; display = false, const_kw...), "BMO_PERSON" => who)
+        ga, gb = open_as("anna"), open_as("ben")
+        fa = withenv(() -> GUI._session_file(dir2), "BMO_PERSON" => "anna")
+        fb = withenv(() -> GUI._session_file(dir2), "BMO_PERSON" => "ben")
+        @test fa != fb
+        withenv("BMO_PERSON" => "anna") do
+            GUI._write_session!(ga)
+        end
+        withenv("BMO_PERSON" => "ben") do
+            GUI._write_session!(gb)
+        end
+        @test startswith(read(fa, String), "# Window of anna (")
+        @test startswith(read(fb, String), "# Window of ben (")
+        withenv("BMO_PERSON" => "anna") do
+            GUI._session_closed!(ga)
+        end
+        @test !isfile(fa)
+        @test isfile(fb)
     end
 end
 

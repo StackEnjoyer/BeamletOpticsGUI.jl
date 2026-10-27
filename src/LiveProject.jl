@@ -1,13 +1,14 @@
 #=
 Projects: saving a view to a project folder and opening one (see BeamletOpticsProjects). The setup
 is `system.jl` of the folder, written and read by BeamletOpticsProjects; how the view looks (camera,
-saved views, clip planes, table, the colors of the beams, ...) is `view.toml`, which the GUI writes
-and reads itself.
+saved views, clip planes, table, the colors of the beams, ...) is `.bmo/view-<person>.toml`, one per
+person, which the GUI writes and reads itself; `view.toml` of the folder is only the default for a
+person without a file.
 =#
 
 const BMOP = BeamletOpticsProjects
 
-# The file of the folder of a project that holds how the view looks
+# The default view of the folder of a project; the view of a person is `_view_file`
 const _VIEW_TOML = "view.toml"
 
 # The keys of saving and opening, in the help of the controls, see `_help_sections`
@@ -274,7 +275,7 @@ function _move_id!(gui::LiveView, @nospecialize(old), @nospecialize(new))
 end
 
 #=
-view.toml
+.bmo/view-<person>.toml (default: view.toml)
 =#
 
 # The color of a beam in view.toml: "wavelength" or "#rrggbb"; `nothing` for any other
@@ -288,7 +289,7 @@ _toml_color_value(s::AbstractString) = s == "wavelength" ? :wavelength : RGBf(Ma
 """
     _view_dict(gui, names) -> Dict
 
-What `view.toml` holds of the `gui`: the `camera`, the saved `views`, the `clip_planes` and
+What the view file holds of the `gui`: the `camera`, the saved `views`, the `clip_planes` and
 `clip_beams`, the `table`, `auto_trace`, `orthographic`, `show_sources`, `snap`, per source (by its
 name in `names`) the `color`, `alpha` and `linewidth` of its beam, and the sources that are off.
 """
@@ -328,19 +329,38 @@ function _view_dict(gui::LiveView, names)
     return d
 end
 
-"""Writes `view.toml` of the `gui` into the folder of the `project`, with the `names` of its sources."""
-function _write_view_toml(gui::LiveView, project, names)
-    path = BMOP.project_file(project, _VIEW_TOML)
+"""The view file of the person of this window in the folder `dir`: `.bmo/view-<id>.toml`."""
+_view_file(dir) = joinpath(dir, ".bmo", "view-$(_person().id).toml")
+
+# Writes `text` to `path` atomically
+function _put_atomic(path::AbstractString, text::AbstractString)
     mkpath(dirname(path))
+    tmp = path * ".tmp"
+    write(tmp, text)
+    mv(tmp, path; force = true)
+    return nothing
+end
+
+"""
+Writes the view of the `gui` to `.bmo/view-<id>.toml` of the person, in the folder of the `project`,
+with the `names` of its sources. `view.toml` in the folder is written only if it does not exist: it is
+the default for a person who has no view file yet.
+"""
+function _write_view_toml(gui::LiveView, project, names)
+    path = _view_file(project.path)
     text = sprint(io -> TOML.print(io, _view_dict(gui, names); sorted = true))
-    write(path, text)
+    _put_atomic(path, text)
+    default = BMOP.project_file(project, _VIEW_TOML)
+    isfile(default) || _put_atomic(default, text)
     return path
 end
 
-"""`view.toml` of the `project`, an empty `Dict` without one."""
+"""The view of the person in the `project` (`.bmo/view-<id>.toml`), else `view.toml`, else an empty `Dict`."""
 function _read_view(project)
-    path = BMOP.project_file(project, _VIEW_TOML)
-    return isfile(path) ? TOML.parsefile(path) : Dict{String, Any}()
+    for path in (_view_file(project.path), BMOP.project_file(project, _VIEW_TOML))
+        isfile(path) && return TOML.parsefile(path)
+    end
+    return Dict{String, Any}()
 end
 
 _view_tuple(d) = (Vector{Float64}(d["eye"]), Vector{Float64}(d["lookat"]), Vector{Float64}(d["up"]))
@@ -348,7 +368,7 @@ _view_tuple(d) = (Vector{Float64}(d["eye"]), Vector{Float64}(d["lookat"]), Vecto
 """
     _view_kwargs(view, byname, paired) -> (kwargs, beam_kwargs, off)
 
-The kwargs of `live_view` from the `view` (of `view.toml`), with the objects of the project by name
+The kwargs of `live_view` from the `view` (of the view file), with the objects of the project by name
 in `byname`; `paired` are the sources of the pairs of the view. Also the `beam_kwargs` per source and
 the sources that are `off`, of which those without a system are set after `live_view`.
 """
@@ -457,8 +477,8 @@ The live view of a loaded `project` (see `BeamletOpticsProjects.load_project`), 
 its systems with their sources, a `System()` for a project without systems, the objects and
 sources without a system, their labels (else their readable ids), their ids and uids (see
 `_ProjectSync`), the origins of the objects (their code, with which they are saved again and, from
-the catalog, edited and copied), and `view.toml`. The `kwargs` of `live_view` win over those of
-`view.toml`. The `project` becomes the `base` of the sync.
+the catalog, edited and copied), and the view file of the person (`.bmo/view-<person>.toml`, else `view.toml`). The `kwargs` of `live_view` win over those of
+the view file. The `project` becomes the `base` of the sync.
 """
 function _open_from(project; view = _read_view(project), kwargs...)
     @nospecialize
@@ -516,11 +536,13 @@ Opens the project in the folder `path`, or of its project file `path` (`<name>.b
 `BeamletOpticsProjects.load_project`, in a live view
 and shows it if `display` is `true`: its systems with their sources, the objects and sources
 without a system, their labels (else their ids) and how the view looked when it was saved
-(`view.toml`: camera, saved views, clip planes, table, the colors of the beams, ...). The `kwargs`
-are those of [`live_view`](@ref) and win over `view.toml`. While it is shown, the window writes
+(`.bmo/view-<person>.toml` of the person, else `view.toml`: camera, saved views, clip planes,
+table, the colors of the beams, ...). The `kwargs` are those of [`live_view`](@ref) and win over
+the view file. While it is shown, the window writes
 every finished change of the person to the files (autosave), applies the changes that others make
-to them (e.g. an agent) and notes the selection and the recent changes of the person in
-`.bmo/session.md`. `Ctrl+S` saves a version of the project (a git commit with a message), see
+to them (an agent or the window of another person), notes the selection and the recent changes
+of the person in `.bmo/session-<person>.md` and shows where the others work (see
+`LiveProjectPresence.jl`). `Ctrl+S` saves a version of the project (a git commit with a message), see
 [`save_project`](@ref). The components and sources from the catalog can be edited and copied.
 `Ctrl+O` or the tool "Open" of a window opens a project chosen in a dialog and closes the window.
 """
@@ -561,7 +583,7 @@ Saves the setup of the live view `gui` as the project in the folder `dir` and re
 its `system.jl`: each system with its members and sources, the objects and sources without a
 system, each with its constructor call and its pose, see `BeamletOpticsProjects`. A folder that is
 not a project yet becomes one, with the versions of BeamletOptics, BeamletOpticsProjects,
-BeamletOpticsGUI and GLMakie. How the view looks is written to `view.toml`. An object whose
+BeamletOpticsGUI and GLMakie. How the view looks is written to `.bmo/view-<person>.toml` (per person; `view.toml` only as the default of new people). An object whose
 constructor is not known, e.g. one that the script gave to `live_view`, is not saved: a warning and
 the status line name it. Each object, source and system keeps its readable id (e.g. `L1`) and its
 machine id (uid) across saves; a new one gets the next free id of its kind and a new uid, and its
@@ -571,14 +593,13 @@ of its window and `Ctrl+S` save to, and the title of its window. `Ctrl+Shift+S` 
 a name, see `_save_as_key!`.
 
 A shown window saves itself: every finished change of the person is written to the files (see
-`_autosave!`) and noted in `.bmo/session.md`. `Ctrl+S` writes what is still pending and then saves a
+`_autosave!`) and noted in `.bmo/session-<person>.md`. `Ctrl+S` writes what is still pending and then saves a
 version of the project, a git commit whose message the card of the version asks for (see
 `_save_key!`).
 
 Saving a view that has a project to another folder ("save as") copies the own code of the project
 (`src/`) there first, without overwriting a file, and keeps the name of its module, such that the
-copy loads. A shown window notes in `.bmo/session.md` of the old folder that no window is open on
-it any more.
+copy loads. A shown window removes its session and presence files from the old folder.
 
 Throws `BeamletOpticsProjects.ProjectChanged` and saves nothing if the files of the project of the
 view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`. The autosave
@@ -604,15 +625,16 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     _write_view_toml(gui, parts.project, parts.names)
     # The uids that the save gave are those of `parts.project`
     _apply_project_names!(gui, parts.project)
-    # A window that writes `.bmo/session.md` (see `_connect_session!`) leaves the old folder: its
-    # `session.md` says that no window is open, and its journal is not of the new project
+    # A shown window (see `_connect_session!`) leaves the old folder: its session and presence
+    # files go, and its journal is not of the new project
     connected = save_as && !isempty(gui.sync.session)
     if connected
         try
             _session_closed!(gui)
+            _presence_closed!(gui)
         catch e
             e isa InterruptException && rethrow()
-            @warn "could not write session.md of $from" exception = e
+            @warn "could not remove the session or presence file of $from" exception = e
         end
     end
     save_as && empty!(gui.sync.journal)
@@ -738,7 +760,7 @@ end
 
 """
 `Ctrl+S` and the tool "Save" of the `gui`: saves a version of its project. What the autosave has
-not written yet is written to the files first, without waiting, and noted in `.bmo/session.md` (see
+not written yet is written to the files first, without waiting, and noted in the session file (see
 `_autosave!` with `force`); then the card of the version asks for its message, filled with what
 changed since the last version (see `_ask_version!`), or the status line says that nothing changed.
 Nothing is saved while a conflict is open (see `_ProjectConflict`), whose card is shown, or when the

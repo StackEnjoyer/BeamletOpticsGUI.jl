@@ -1,13 +1,15 @@
 #=
-The file `.bmo/session.md` of a project: what the person sees and did in the open window, for the
-agents that work on the same project (see plans/projects-reverse-sync.md). The window writes it
-when the selection changes and when the autosave saved changes of the person (`_journal!`).
+The file `.bmo/session-<person>.md` of a project: what the person sees and did in the open window,
+for the agents that work on the same project (see plans/projects-reverse-sync.md and
+plans/projects-people.md). Every window has its own file, which is deleted at closing. The window
+writes it when the selection changes and when the autosave saved changes of the person (`_journal!`).
 =#
 
 # How many changes of the person `session.md` lists
 const _JOURNAL_MAX = 20
 
-_session_file(dir::AbstractString) = joinpath(dir, ".bmo", "session.md")
+# The session file of the person of this window, see `_person`
+_session_file(dir::AbstractString) = joinpath(dir, ".bmo", "session-$(_person().id).md")
 
 # A position in m with 4 significant digits, e.g. `(0.0, 0.105, 0.0)`
 _session_pos(p) = "(" * join((string(round(Float64(x); sigdigits = 4)) for x in p), ", ") * ")"
@@ -68,7 +70,7 @@ end
     _journal!(gui, changes)
 
 Adds the changes of the person to the journal of the `gui` (`gui.sync.journal`, the last
-`$(_JOURNAL_MAX)`) and writes `.bmo/session.md`. `changes` is the result of
+`$(_JOURNAL_MAX)`) and writes the session file. `changes` is the result of
 `BeamletOpticsProjects.diff_projects` from the state before an autosave to the one it saved.
 """
 function _journal!(gui::LiveView, changes)
@@ -161,10 +163,13 @@ function _session_text(gui::LiveView)
     return String(take!(io))
 end
 
-_session_header(dir) = "# Window of the project \"$(basename(abspath(dir)))\", " *
-                       Libc.strftime("%Y-%m-%d %H:%M:%S", time())
+function _session_header(dir)
+    p = _person()
+    return "# Window of $(p.name) ($(p.host)) on the project \"$(basename(abspath(dir)))\", " *
+           Libc.strftime("%Y-%m-%d %H:%M:%S", time())
+end
 
-# Writes `text` to `.bmo/session.md` atomically
+# Writes `text` to the session file atomically
 function _put_session(dir::AbstractString, text::AbstractString)
     file = _session_file(dir)
     mkpath(dirname(file))
@@ -177,7 +182,7 @@ end
 """
     _write_session!(gui)
 
-Writes `.bmo/session.md` of the project of the `gui` now: selection, open conflicts, load failure
+Writes the session file of the project of the `gui` now: selection, open conflicts, load failure
 and the journal. Does nothing without a project. An error of writing never propagates; it is
 logged once per distinct message.
 """
@@ -190,7 +195,7 @@ function _write_session!(gui::LiveView)
         msg = sprint(showerror, e)
         if msg != _SESSION_WARNED[]
             _SESSION_WARNED[] = msg
-            @warn "could not write session.md" exception = e
+            @warn "could not write the session file" exception = e
         end
     end
     return nothing
@@ -202,7 +207,7 @@ const _SESSION_WARNED = Ref("")
 """
     _connect_session!(gui)
 
-Starts writing `.bmo/session.md` whenever the selection of the `gui` changes, and writes it once.
+Starts writing the session file whenever the selection of the `gui` changes, and writes it once.
 Does nothing if it is connected already.
 """
 function _connect_session!(gui::LiveView)
@@ -218,7 +223,8 @@ end
 """
     _session_closed!(gui)
 
-Removes the listener of the `gui` and writes `.bmo/session.md` with the note that no window is open.
+Removes the listener of the `gui` and deletes its session file (a missing file is fine). An error of
+deleting never propagates; it is logged once per distinct message.
 """
 function _session_closed!(gui::LiveView)
     for l in gui.sync.session
@@ -226,6 +232,15 @@ function _session_closed!(gui::LiveView)
     end
     empty!(gui.sync.session)
     isnothing(gui.project) && return nothing
-    _put_session(gui.project, _session_header(gui.project) * "\nNo window is open on this project.\n")
+    try
+        rm(_session_file(gui.project); force = true)
+    catch e
+        e isa InterruptException && rethrow()
+        msg = sprint(showerror, e)
+        if msg != _SESSION_WARNED[]
+            _SESSION_WARNED[] = msg
+            @warn "could not delete the session file" exception = e
+        end
+    end
     return nothing
 end

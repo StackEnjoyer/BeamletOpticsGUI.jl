@@ -233,7 +233,7 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
         # Its own write is no change of the files
         @test tick!(gui) === :none
         @test last(gui.sync.journal)[2] == "moved L1 to (0.0, 0.1, 0.01)"
-        @test occursin("moved L1", read(joinpath(dir, ".bmo", "session.md"), String))
+        @test occursin("moved L1", read(GUI._session_file(dir), String))
     end
 
     @testset "nothing to write" begin
@@ -332,13 +332,39 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
         @test GUI._autosave!(gui) === :pending
         close(gui)
         @test occursin("pos = (0.0, 0.2, 0.03)", pos_line(dir, "M1"))
-        @test occursin("No window is open", read(joinpath(dir, ".bmo", "session.md"), String))
+        @test !isfile(GUI._session_file(dir)) && !isfile(GUI._presence_file(dir, GUI._person().id))
         # No watcher starts again, also not by that save
         @test isnothing(gui.sync.timer) && gui.sync.closed
     end
 end
 
 @testset "Corner cases of the autosave and the merge" begin
+    @testset "a shared drive: dotfiles, the window of another person" begin
+        gui, dir = opened()
+        # macOS writes ._X files beside the files on a shared drive
+        write(joinpath(dir, "src", "._Bench.jl"), "\0\0 not julia")
+        @test GUI._file_marks(dir) == gui.sync.marks
+        @test tick!(gui) === :none
+        # The window of Anna wrote the next state of the files and published its stamp
+        edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.1, 0.0)" => "pos = (0.0, 0.15, 0.0)"), text, "L1"), dir)
+        write(GUI._presence_file(dir, "Anna@pc2"), """
+            name = "Anna"
+            host = "pc2"
+            beat = 1
+            selected = ""
+            selected_id = ""
+            written = "$(project_stamp(dir))"
+            """)
+        GUI._check_presence!(gui)
+        @test tick!(gui) === :applied
+        @test startswith(gui.status.text[], "Anna: moved")
+        # Without a match it was an agent
+        edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.15, 0.0)" => "pos = (0.0, 0.16, 0.0)"), text, "L1"), dir)
+        @test tick!(gui) === :applied
+        @test startswith(gui.status.text[], "agent: moved")
+        close(gui)
+    end
+
     @testset "a write that leaves the times and sizes of the files as they were" begin
         gui, dir = opened()
         l1 = obj(gui, :L1)
@@ -357,7 +383,7 @@ end
         translate3d!(gui, obj(gui, :L1), [0.0, 0.0, 0.01])
         close(gui)
         @test read(system(dir), String) == before
-        @test !isfile(joinpath(dir, ".bmo", "session.md"))
+        @test !isfile(GUI._session_file(dir))
     end
 
     @testset "an object gliding to a pose of the files" begin

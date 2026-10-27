@@ -422,7 +422,7 @@ const GUI = BeamletOpticsGUI
         gui = t.gui
         save_project(gui, dir)
         _messages() = [v.message for v in versions(dir)]
-        _session() = read(joinpath(dir, ".bmo", "session.md"), String)
+        _session() = read(GUI._session_file(dir), String)
         GUI._connect_session!(gui)
         lens = string(first(gui.sync.ids[t.lens]))
         prism = string(first(gui.sync.ids[t.prism]))
@@ -485,13 +485,13 @@ const GUI = BeamletOpticsGUI
         lens = first(gui.sync.ids[t.lens])
         translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
         @test GUI._autosave!(gui; force = true) === :saved
-        @test occursin("moved $lens", read(joinpath(dir, ".bmo", "session.md"), String))
+        @test occursin("moved $lens", read(GUI._session_file(dir), String))
         target = joinpath(mktempdir(), "copy")
         save_project(gui, target)
-        @test occursin("No window is open on this project.", read(joinpath(dir, ".bmo", "session.md"), String))
+        @test !isfile(GUI._session_file(dir))
         # the new project starts without the journal of the old one, and its session is connected
         @test isempty(gui.sync.journal) && !isempty(gui.sync.session)
-        new = read(joinpath(target, ".bmo", "session.md"), String)
+        new = read(GUI._session_file(target), String)
         @test !occursin("moved $lens", new) && occursin("Recent changes by the person: none", new)
         close(gui)
     end
@@ -649,6 +649,46 @@ const GUI = BeamletOpticsGUI
         @test read(joinpath(dir, "view.toml"), String) == view
         @test count(x -> GUI._editable(gui2, x), collect(keys(gui2.components.origin))) == 6
         close(gui2)
+    end
+
+    @testset "view per person" begin
+        dir = mktempdir()
+        eye_a, eye_b = [0.4, -0.3, 0.2], [-0.3, 0.5, 0.25]
+        file(id) = joinpath(dir, ".bmo", "view-$id.toml")
+        id_a = withenv(() -> GUI._person().id, "BMO_PERSON" => "a")
+        id_b = withenv(() -> GUI._person().id, "BMO_PERSON" => "b")
+        @test id_a != id_b
+        # a saves: own file and the default
+        t = _setup(:app)
+        set_view(t.gui.ax, eye_a, [0.0, 0.1, 0.0], [0.0, 0.0, 1.0])
+        withenv("BMO_PERSON" => "a") do
+            save_project(t.gui, dir)
+        end
+        close(t.gui)
+        @test isfile(file(id_a)) && !isfile(file(id_b)) && isfile(joinpath(dir, "view.toml"))
+        default = read(joinpath(dir, "view.toml"), String)
+        # b opens: no own file yet, takes the default (the camera of a)
+        gb = withenv("BMO_PERSON" => "b") do
+            open_project(project_marker(dir); display = false, const_kw...)
+        end
+        @test maximum(abs, GUI._current_view(gb)[1] - eye_a) < 1e-6
+        # b moves the camera and saves: only the own file changes, the default stays
+        set_view(gb.ax, eye_b, [0.0, 0.1, 0.0], [0.0, 0.0, 1.0])
+        withenv("BMO_PERSON" => "b") do
+            save_project(gb)
+        end
+        close(gb)
+        @test isfile(file(id_b))
+        @test read(joinpath(dir, "view.toml"), String) == default
+        @test TOML.parsefile(file(id_a))["camera"] != TOML.parsefile(file(id_b))["camera"]
+        # each person gets the own camera back
+        for (who, eye) in (("a", eye_a), ("b", eye_b))
+            g = withenv("BMO_PERSON" => who) do
+                open_project(project_marker(dir); display = false, const_kw...)
+            end
+            @test maximum(abs, GUI._current_view(g)[1] - eye) < 1e-6
+            close(g)
+        end
     end
 end
 

@@ -736,7 +736,8 @@ Opens a new project in the empty folder `dir`, with a repository of its own, in 
 and works on it like a person with an agent: drags the lens, which the autosave writes to the
 files; changes the files like an agent, which the window merges and glides; `Ctrl+S` with the card
 of the version, closed by a typed message and `Enter`, by `Esc`, by the button "Cancel" and by the
-button "Save version". The steps call the autosave and the watcher themselves, with times that do
+button "Save version"; another participant (a presence file) works on the mirror, shown with its
+name, and leaves. The steps call the autosave and the watcher themselves, with times that do
 not depend on how long a step takes: the watcher of the window never starts, and the step of the
 agent waits until the mirror has glided. Returns the live view and its screen, which the caller
 closes.
@@ -823,6 +824,25 @@ function _project_session(step; dir = mktempdir())
         frame!()
         _check(isnothing(GUI._version_card(gui)), "Save version did not close the card of the version")
         _check(length(GUI.BMOP.versions(dir)) == 3, "Save version did not save a version")
+    end
+    step("project: another participant works on the mirror, then leaves") do
+        file = GUI._presence_file(dir, "Anna@pc2")
+        mkpath(dirname(file))
+        write(file, """
+            name = "Anna"
+            host = "pc2"
+            beat = 1
+            selected = "$(gui.sync.ids[mirror][2])"
+            selected_id = "$(gui.sync.ids[mirror][1])"
+            written = ""
+            """)
+        GUI._check_presence!(gui)
+        frame!()
+        _check(!isempty(gui.sync.presence), "the mirror of the other participant is not shown")
+        rm(file)
+        GUI._check_presence!(gui)
+        frame!()
+        _check(isempty(gui.sync.presence), "the other participant did not leave")
     end
     return gui, screen
 end

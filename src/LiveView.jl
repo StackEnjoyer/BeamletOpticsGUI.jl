@@ -597,6 +597,9 @@ What the view knows of the files of its project, which an agent may change while
 - `journal`: the recent changes of the person in the view, `(time, line)`, newest last, and
   `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`;
 - `gliding`: the objects that glide to a pose of the files, `obj => (P, R, entry)`, see `_glide!`;
+- `others`: the other people who have the project open (by the id of their presence file, see
+  `LiveProjectPresence.jl`), `presence` the plots that show their selection, `beat_at` the time
+  the view last wrote its own presence file;
 - `timer`: the watcher, and `closed` whether the view was closed (no watcher starts again).
 """
 Base.@kwdef mutable struct _ProjectSync
@@ -618,6 +621,9 @@ Base.@kwdef mutable struct _ProjectSync
     session::Vector{Any} = Any[]
     gliding::IdDict{Any, Any} = IdDict{Any, Any}()
     skipped::Vector{String} = String[]
+    others::Dict{String, Any} = Dict{String, Any}()
+    presence::Vector{Any} = Any[]
+    beat_at::Float64 = 0.0
     timer::Union{Nothing, Timer} = nothing
     closed::Bool = false
 end

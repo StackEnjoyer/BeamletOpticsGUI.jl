@@ -36,7 +36,8 @@ end
 
 """
 The times and sizes of the files of the project in `dir` that define the setup: `system.jl` and
-the `.jl` files of `src/`. Cheap enough to be looked at often, see `_check_files!`.
+the `.jl` files of `src/`, without names that start with `.` (e.g. `._X.jl` that macOS writes on
+a shared drive), like `project_stamp`. Cheap enough to be looked at often, see `_check_files!`.
 """
 function _file_marks(dir::AbstractString)
     marks = Tuple{String, Float64, Int}[]
@@ -44,10 +45,13 @@ function _file_marks(dir::AbstractString)
     isfile(file) && push!(marks, ("system.jl", mtime(file), filesize(file)))
     src = joinpath(dir, "src")
     if isdir(src)
-        for (root, _, names) in walkdir(src), n in names
-            endswith(n, ".jl") || continue
-            path = joinpath(root, n)
-            push!(marks, (relpath(path, dir), mtime(path), filesize(path)))
+        for (root, dirs, names) in walkdir(src)
+            filter!(d -> !startswith(d, "."), dirs)
+            for n in names
+                (endswith(n, ".jl") && !startswith(n, ".")) || continue
+                path = joinpath(root, n)
+                push!(marks, (relpath(path, dir), mtime(path), filesize(path)))
+            end
         end
     end
     return sort!(marks)
@@ -62,7 +66,8 @@ Records that the `gui` and the files of the `project` agree, after it was opened
 files were merged: `project` becomes the `base` of the comparisons (see `_ProjectSync`), a conflict
 is over, the states that the window wrote are remembered (unless `written` is `false`, e.g. for
 files that `Ctrl+R` took in; see `_stale`), `.bmo/session.md` is written if the view writes it,
-and the watcher starts if the `gui` is shown.
+the watcher starts if the `gui` is shown, and a watched view publishes the stamp of the files in
+its presence file (the others name it as the writer, see `_writer`).
 """
 function _saved!(gui::LiveView, project; written::Bool = true)
     s = gui.sync
@@ -81,6 +86,7 @@ function _saved!(gui::LiveView, project; written::Bool = true)
     written && _remember_written!(s, before)
     _note_session!(gui)
     _start_watching!(gui)
+    isnothing(s.timer) || _write_presence!(gui)
     return nothing
 end
 
@@ -122,20 +128,33 @@ end
 
 """
 Starts the watcher of the files of the project of the `gui` if it is shown, which calls
-`_check_files!` and `_autosave!` every `_WATCH_INTERVAL` seconds until the window is closed, and
-the file `.bmo/session.md` (see `_connect_session!`). A view that is not shown (e.g. in the tests
-or of a script) is not watched and writes no `session.md`; the functions can be called instead.
+`_check_files!`, `_autosave!` and `_check_presence!` every `_WATCH_INTERVAL` seconds until the
+window is closed, the file `.bmo/session.md` (see `_connect_session!`) and the presence file of the
+window, written again when the selection changes (see `LiveProjectPresence.jl`). A view that is
+not shown (e.g. in the tests or of a script) is not watched and writes neither; the functions can
+be called instead.
 """
 function _start_watching!(gui::LiveView)
     s = gui.sync
     (isnothing(s.timer) && !s.closed && !isnothing(gui.project) && _shown(gui)) || return nothing
     _connect_session!(gui)
+    _write_presence!(gui)
+    push!(gui.controls.listeners, on(gui.controls.selected) do _
+        try
+            isnothing(gui.sync.timer) || _write_presence!(gui)
+        catch e
+            e isa InterruptException && rethrow()
+            @debug "could not write the presence file" exception = e
+        end
+        return nothing
+    end)
     last_error = Ref("")
     s.timer = Timer(_WATCH_INTERVAL; interval = _WATCH_INTERVAL) do _
         _shown(gui) || return _stop_watching!(gui)
         try
             _check_files!(gui)
             _autosave!(gui)
+            _check_presence!(gui)
         catch e
             e isa InterruptException && rethrow()
             last_error[] = _log_once(e, last_error[], "watching the project")
@@ -146,9 +165,9 @@ end
 
 """
 Stops the watcher of the `gui` (see `_start_watching!`) when it is closed: if it was watched, saves
-what the person changed last, without waiting (`_autosave!` with `force`), and notes in
-`.bmo/session.md` that no window is open. A view that was not watched saves nothing. No watcher
-starts again afterwards, also not by that save.
+what the person changed last, without waiting (`_autosave!` with `force`), and removes its session
+and presence files (`_session_closed!`, `_presence_closed!`). A view that was not watched saves
+nothing. No watcher starts again afterwards, also not by that save.
 """
 function _stop_watching!(gui::LiveView)
     s = gui.sync
@@ -162,6 +181,12 @@ function _stop_watching!(gui::LiveView)
         catch e
             e isa InterruptException && rethrow()
             @error "saving the project at closing failed" exception = (e, catch_backtrace())
+        end
+        try
+            _presence_closed!(gui)
+        catch e
+            e isa InterruptException && rethrow()
+            @error "removing the presence file at closing failed" exception = (e, catch_backtrace())
         end
     end
     isempty(s.session) && return nothing
@@ -444,7 +469,8 @@ Loads the project of the `gui` from its files and merges it into the open window
 applied (`_adopt!`, moved objects glide if `animate`), conflicting ones are left and shown on a
 card (`_ProjectConflict`), also changes back to an older state of the window (see `_stale`) and
 the conflicts still open from before, unless the files now agree with the window there. The files
-become the new `base`. Returns `:applied`, `:conflict` or `:failed` (the reason in the status line
+become the new `base`; the status line names the person whose window wrote them (`_writer`), else
+"agent". Returns `:applied`, `:conflict` or `:failed` (the reason in the status line
 and in `load_error`, the window as it was).
 """
 function _sync!(gui::LiveView; animate::Bool = _shown(gui))
@@ -485,7 +511,9 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
     s.theirs = disk
     if isempty(conflicts)
         _release_info!(gui, _ProjectConflict)
-        isempty(done) || (gui.status.text[] = "agent: " * join(done, ", "))
+        # The other person whose window wrote these files, else an agent
+        who = something(_writer(gui, disk.stamp), "agent")
+        isempty(done) || (gui.status.text[] = "$who: " * join(done, ", "))
         _note_session!(gui)
         return :applied
     end
