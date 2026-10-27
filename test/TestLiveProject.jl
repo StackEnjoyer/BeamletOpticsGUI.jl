@@ -298,10 +298,13 @@ const GUI = BeamletOpticsGUI
             @test isfile(joinpath(dir, "Laser bench.bmo")) && isfile(joinpath(dir, "system.jl"))
             @test load_project(joinpath(dir, "Laser bench.bmo")).name == "Laser_bench"
             @test gui.status.text[] == "project saved to $dir"
-            # with a project: saved without the dialog
-            rm(joinpath(dir, "system.jl"))
+            # the new project has its first version
+            @test [v.message for v in versions(dir)] == ["New project"]
+            # with a project: saved without the dialog, then the card of the version
+            translate3d!(gui, t.b3, [0.0, 0.0, 0.01])
             _ctrl!(gui, Keyboard.s)
-            @test calls[] == 2 && isfile(joinpath(dir, "system.jl"))
+            @test calls[] == 2 && position(load_project(dir)[first(gui.sync.ids[t.b3])]) ≈ position(t.b3)
+            GUI._cancel_version!(gui)
             # the ids are kept, the labels stay as they are
             @test first(gui.sync.ids[t.b2]) === :B2 && gui.labels[t.b2] == "laser 2"
             @test !haskey(gui.labels, t.prism)
@@ -327,9 +330,11 @@ const GUI = BeamletOpticsGUI
             @test gui.status.text[] == "project saved as $copy"
             # the copy keeps the module of the project
             @test load_project(copy).name == "Laser_bench" && isfile(joinpath(copy, "src", "Laser_bench.jl"))
-            rm(joinpath(copy, "system.jl"))
+            translate3d!(gui, t.b3, [0.0, 0.0, 0.01])
             _ctrl!(gui, Keyboard.s)
-            @test calls[] == 5 && isfile(joinpath(copy, "system.jl"))
+            @test calls[] == 5 && position(load_project(copy)[first(gui.sync.ids[t.b3])]) ≈ position(t.b3)
+            @test position(load_project(dir)[first(gui.sync.ids[t.b3])]) ≉ position(t.b3)
+            GUI._cancel_version!(gui)
             # the tool "Save as" does the same as the keys
             saved[] = ""
             GUI._save_as_key!(gui)
@@ -358,6 +363,137 @@ const GUI = BeamletOpticsGUI
             GUI._SAVE_DIALOG[] = dir -> GUI.NativeFileDialog.save_file(dir; filterlist = GUI._BMO_FILTER)
             GUI._OPEN_DIALOG[] = dir -> GUI.NativeFileDialog.pick_file(dir; filterlist = GUI._BMO_FILTER)
         end
+    end
+
+    @testset "Ctrl+S saves a version" begin
+        dir = joinpath(mktempdir(), "bench")
+        t = _setup(:compact)
+        gui = t.gui
+        save_project(gui, dir)
+        @test length(versions(dir)) == 1
+        _messages() = [v.message for v in versions(dir)]
+        # nothing changed since the last version: no card
+        GUI._save_key!(gui)
+        @test isnothing(GUI._version_card(gui))
+        @test gui.status.text[] == "no changes since the last version"
+        # a move: written to the files, then the card with the summary in its focused box
+        lens = first(gui.sync.ids[t.lens])
+        translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
+        GUI._save_key!(gui)
+        c = GUI._version_card(gui)
+        @test !isnothing(c)
+        box = GUI._version_box(gui)
+        @test box.displayed_string[] == "moved $lens" == version_summary(dir)
+        @test box.focused[] && gui.controls.ignore_keys()
+        @test position(load_project(dir)[lens]) ≈ position(t.lens)
+        # Esc: no version
+        events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.escape, Keyboard.press)
+        @test isnothing(GUI._version_card(gui)) && !box.focused[]
+        @test length(versions(dir)) == 1 && gui.status.text[] == "no version saved"
+        # the button "Cancel" does the same
+        GUI._save_key!(gui)
+        GUI._cancel_version!(gui)
+        @test isnothing(GUI._version_card(gui)) && length(versions(dir)) == 1
+        # Enter in the box: a version with the typed message
+        GUI._save_key!(gui)
+        box = GUI._version_box(gui)
+        box.displayed_string[] = "lens moved up"
+        box.stored_string[] = "lens moved up"
+        @test isnothing(GUI._version_card(gui))
+        @test _messages() == ["lens moved up", "New project"]
+        @test gui.status.text[] == "version saved: lens moved up"
+        GUI._save_key!(gui)
+        @test isnothing(GUI._version_card(gui))
+        @test gui.status.text[] == "no changes since the last version"
+        # the button "Save version": the text of the box
+        translate3d!(gui, t.lens, [0.0, 0.0, -0.01])
+        GUI._save_key!(gui)
+        @test GUI._version_box(gui).displayed_string[] == "moved $lens"
+        GUI._save_version!(gui)
+        @test _messages() == ["moved $lens", "lens moved up", "New project"]
+        @test gui.status.text[] == "version saved: moved $lens"
+        @test !gui.controls.ignore_keys()
+        close(gui)
+    end
+
+    @testset "Ctrl+S: journal, conflict, message of the version" begin
+        dir = joinpath(mktempdir(), "bench")
+        t = _setup(:compact)
+        gui = t.gui
+        save_project(gui, dir)
+        _messages() = [v.message for v in versions(dir)]
+        _session() = read(joinpath(dir, ".bmo", "session.md"), String)
+        GUI._connect_session!(gui)
+        lens = string(first(gui.sync.ids[t.lens]))
+        prism = string(first(gui.sync.ids[t.prism]))
+        # a move that the autosave has not written yet: Ctrl+S writes it and notes it in the journal
+        translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
+        GUI._save_key!(gui)
+        @test any(l -> occursin("moved $lens", l[2]), gui.sync.journal)
+        @test occursin("moved $lens", _session())
+        # the caret is at the end of the summary: typing adds to it
+        box = GUI._version_box(gui)
+        @test box.editor.cursors[] == [Makie.EditCursor(length("moved $lens"))]
+        events(gui.ax.scene).unicode_input[] = '!'
+        @test box.displayed_string[] == "moved $(lens)!"
+        # the refreshes of the cards keep what was typed, also when the box lost the focus
+        Makie.defocus!(box)
+        GUI._update_inspector!(gui; force = true)
+        @test box.displayed_string[] == "moved $(lens)!"
+        GUI._cancel_version!(gui)
+        # the summary left as it was is computed again when the version is saved: the prism that
+        # moved while the card was open is in the message
+        GUI._save_key!(gui)
+        @test GUI._version_box(gui).displayed_string[] == "moved $lens"
+        translate3d!(gui, t.prism, [0.0, 0.0, 0.01])
+        @test GUI._autosave!(gui; force = true) === :saved
+        GUI._save_version!(gui)
+        @test occursin(lens, first(_messages())) && occursin(prism, first(_messages()))
+        # a typed message is kept
+        translate3d!(gui, t.prism, [0.0, 0.0, 0.01])
+        GUI._save_key!(gui)
+        translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
+        @test GUI._autosave!(gui; force = true) === :saved
+        GUI._save_version!(gui, "prism up")
+        @test first(_messages()) == "prism up"
+        # an open conflict: Ctrl+S saves nothing and asks to decide on the card first
+        n = length(versions(dir))
+        file = read(joinpath(dir, "system.jl"), String)
+        translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
+        GUI._show_info!(gui, GUI._ProjectConflict(Point3f(0), ["$lens"]))
+        GUI._save_key!(gui)
+        @test gui.status.text[] == "decide on the card first: $lens"
+        @test GUI._info_card(gui).obj isa GUI._ProjectConflict
+        @test read(joinpath(dir, "system.jl"), String) == file && length(versions(dir)) == n
+        # also while the card is not shown
+        GUI._release_info!(gui, GUI._ProjectConflict)
+        push!(gui.sync.conflicts, "$prism")
+        GUI._save_key!(gui)
+        @test gui.status.text[] == "decide on the card first: $prism"
+        @test isnothing(GUI._version_card(gui))
+        @test read(joinpath(dir, "system.jl"), String) == file && length(versions(dir)) == n
+        empty!(gui.sync.conflicts)
+        close(gui)
+    end
+
+    @testset "save as closes the session of the old folder" begin
+        dir = joinpath(mktempdir(), "bench")
+        t = _setup(:compact)
+        gui = t.gui
+        save_project(gui, dir)
+        GUI._connect_session!(gui)
+        lens = first(gui.sync.ids[t.lens])
+        translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
+        @test GUI._autosave!(gui; force = true) === :saved
+        @test occursin("moved $lens", read(joinpath(dir, ".bmo", "session.md"), String))
+        target = joinpath(mktempdir(), "copy")
+        save_project(gui, target)
+        @test occursin("No window is open on this project.", read(joinpath(dir, ".bmo", "session.md"), String))
+        # the new project starts without the journal of the old one, and its session is connected
+        @test isempty(gui.sync.journal) && !isempty(gui.sync.session)
+        new = read(joinpath(target, ".bmo", "session.md"), String)
+        @test !occursin("moved $lens", new) && occursin("Recent changes by the person: none", new)
+        close(gui)
     end
 
     @testset "target of save as" begin

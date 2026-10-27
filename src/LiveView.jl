@@ -587,9 +587,17 @@ What the view knows of the files of its project, which an agent may change while
 - `marks`: the times and sizes of the files at the last look of the watcher, `src` those of `src/`
   when `base` was taken, `changed_at` the time the files last changed (`nothing`: settled);
 - `handled`: the stamp of the files that the view last reacted to, `failed` whether that failed
-  (e.g. a syntax error, shown in the status line), `conflicts` the names of the objects changed
+  (e.g. a syntax error, shown in the status line) and `load_error` the reason, `conflicts` the names of the objects changed
   both in the view and in the files, and `theirs` the project of the files of that conflict;
-- `timer`: the watcher.
+- `written`: per machine id the last states of an entry that the view itself wrote, each after the
+  state it overwrote, `nothing` for a removal (the guard against an agent that writes from an older
+  read, see `_stale`), `text` the `system.jl` text of the view at the last look of the autosave and
+  `edited_at` the time it last changed, `skipped` the objects without a recipe that the last save
+  left out (warned once);
+- `journal`: the recent changes of the person in the view, `(time, line)`, newest last, and
+  `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`;
+- `gliding`: the objects that glide to a pose of the files, `obj => (P, R, entry)`, see `_glide!`;
+- `timer`: the watcher, and `closed` whether the view was closed (no watcher starts again).
 """
 Base.@kwdef mutable struct _ProjectSync
     base::Any = nothing
@@ -600,9 +608,18 @@ Base.@kwdef mutable struct _ProjectSync
     changed_at::Union{Nothing, Float64} = nothing
     handled::Union{Nothing, String} = nothing
     failed::Bool = false
+    load_error::String = ""
     conflicts::Vector{String} = String[]
     theirs::Any = nothing
+    written::Dict{String, Vector{Any}} = Dict{String, Vector{Any}}()
+    text::Union{Nothing, String} = nothing
+    edited_at::Union{Nothing, Float64} = nothing
+    journal::Vector{Tuple{Float64, String}} = Tuple{Float64, String}[]
+    session::Vector{Any} = Any[]
+    gliding::IdDict{Any, Any} = IdDict{Any, Any}()
+    skipped::Vector{String} = String[]
     timer::Union{Nothing, Timer} = nothing
+    closed::Bool = false
 end
 
 """

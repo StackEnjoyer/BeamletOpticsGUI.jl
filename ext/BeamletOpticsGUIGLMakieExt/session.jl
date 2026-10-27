@@ -718,11 +718,120 @@ function _catalog_session(step, entries = component_catalog())
     return gui, screen
 end
 
+const _PROJECT_SYSTEM = """
+    @component L1 = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5) pos = (0.0, 0.05, 0.0)
+    @component M1 = RoundPlanoMirror(0.025, 0.005) pos = (0.0, 0.1, 0.0) rot = (0.0, 0.0, 45.0)
+    @source B1 = Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0e-6)
+    @system S1 = [L1, M1] sources = [B1]
+    """
+
+# The position of `obj` of a project in the record of the `gui`, which a merge updates after the
+# glide of `obj` (see `_update_record!`)
+_project_pos(gui, @nospecialize(obj)) = collect(Float64, gui.components.origin[obj].project.pos)
+
+"""
+    _project_session(step; dir = mktempdir()) -> (gui, screen)
+
+Opens a new project in the empty folder `dir`, with a repository of its own, in an invisible window
+and works on it like a person with an agent: drags the lens, which the autosave writes to the
+files; changes the files like an agent, which the window merges and glides; `Ctrl+S` with the card
+of the version, closed by a typed message and `Enter`, by `Esc`, by the button "Cancel" and by the
+button "Save version". The steps call the autosave and the watcher themselves, with times that do
+not depend on how long a step takes: the watcher of the window never starts, and the step of the
+agent waits until the mirror has glided. Returns the live view and its screen, which the caller
+closes.
+"""
+function _project_session(step; dir = mktempdir())
+    file = joinpath(dir, "system.jl")
+    gui = step("project: open") do
+        # The versions go into this repository, not into one that encloses `dir`, e.g. a
+        # repository of the home folder that holds the temporary folders on Windows
+        mkpath(dir)
+        close(GUI.BMOP.LibGit2.init(dir))
+        GUI.BMOP.new_project(dir; name = "Bench")
+        write(file, _PROJECT_SYSTEM)
+        g = open_project(dir; display = false)
+        # A closed timer in place of the watcher, such that `_start_watching!` does not start it
+        t = Timer(3600.0)
+        close(t)
+        g.sync.timer = t
+        g
+    end
+    isnothing(gui) && return nothing, nothing
+    screen = _screen()
+    display(screen, gui.fig)
+    frame!() = _frame!(gui, screen)
+    settle!() = _settle!(gui, screen)
+    settle!()
+    lens = only(o for (o, (id, _)) in gui.sync.ids if id === :L1)
+    mirror = only(o for (o, (id, _)) in gui.sync.ids if id === :M1)
+    # Drags the lens and lets the autosave write it to the files
+    function drag_lens!()
+        a = _px(gui, _pos(lens))
+        _click!(gui, a)
+        _drag!(gui, a, a .+ (14, 4))
+        settle!()
+        t = time()
+        GUI._autosave!(gui; now = t)
+        _check(GUI._autosave!(gui; now = t + 1) === :saved, "the autosave did not save the drag")
+    end
+    function ask_version!()
+        _key!(gui, Keyboard.s, Keyboard.left_control)
+        frame!()
+        _check(!isnothing(GUI._version_box(gui)), "Ctrl+S did not show the card of the version")
+    end
+    button(name) = _rect_center(GUI._card_widget(GUI._version_card(gui), name))
+    step("project: drag the lens, autosave") do
+        drag_lens!()
+    end
+    step("project: an agent moves the mirror") do
+        write(file, replace(read(file, String), "pos = (0.0, 0.1, 0.0)" => "pos = (0.0, 0.12, 0.0)"))
+        t = time()
+        GUI._check_files!(gui; now = t)
+        _check(GUI._check_files!(gui; now = t + 1) === :applied, "the window did not merge the file")
+        # the mirror glides in a task of its own, which ends with its record
+        target = [0.0, 0.12, 0.0]
+        timedwait(() -> _project_pos(gui, mirror) ≈ target, 60.0; pollint = 0.01)
+        _check(_project_pos(gui, mirror) ≈ target && _pos(mirror) ≈ target, "the mirror did not glide")
+        settle!()
+    end
+    step("project: Ctrl+S, the card of the version, Enter") do
+        ask_version!()
+        foreach(char -> (_events(gui).unicode_input[] = char), " ok")
+        _key!(gui, Keyboard.enter)
+        frame!()
+        _check(length(GUI.BMOP.versions(dir)) == 2, "Enter did not save a version")
+    end
+    step("project: Ctrl+S, Esc") do
+        drag_lens!()
+        ask_version!()
+        _key!(gui, Keyboard.escape)
+        frame!()
+        _check(isnothing(GUI._version_card(gui)), "Esc did not close the card of the version")
+        _check(length(GUI.BMOP.versions(dir)) == 2, "Esc saved a version")
+    end
+    step("project: Ctrl+S, Cancel") do
+        ask_version!()
+        _click!(gui, button(:version_cancel))
+        frame!()
+        _check(isnothing(GUI._version_card(gui)), "Cancel did not close the card of the version")
+        _check(length(GUI.BMOP.versions(dir)) == 2, "Cancel saved a version")
+    end
+    step("project: Ctrl+S, Save version") do
+        ask_version!()
+        _click!(gui, button(:version_save))
+        frame!()
+        _check(isnothing(GUI._version_card(gui)), "Save version did not close the card of the version")
+        _check(length(GUI.BMOP.versions(dir)) == 3, "Save version did not save a version")
+    end
+    return gui, screen
+end
+
 """
     _precompile_sessions(step)
 
 The sessions of the workload: `_session` in both layouts, with a beam and with a Gaussian beamlet,
-and `_catalog_session`. Closes their windows.
+`_catalog_session` and `_project_session`. Closes their windows.
 """
 function _precompile_sessions(step)
     # Without an OpenGL context, e.g. on a headless machine, no window opens: the error is thrown
@@ -734,6 +843,7 @@ function _precompile_sessions(step)
         _close!(_session(step, layout, fixture)...)
     end
     _close!(_catalog_session(step)...)
+    _close!(_project_session(step)...)
     return nothing
 end
 

@@ -12,7 +12,7 @@ const _VIEW_TOML = "view.toml"
 
 # The keys of saving and opening, in the help of the controls, see `_help_sections`
 const _PROJECT_HELP = _HelpSection["Edit" => [
-    _HelpEntry([_ctrl_cap(), "S"], "save the project"; combo = true),
+    _HelpEntry([_ctrl_cap(), "S"], "save a version"; combo = true),
     _HelpEntry([_ctrl_cap(), "Shift", "S"], "save as a new project with a name"; combo = true),
     _HelpEntry([_ctrl_cap(), "O"], "open a project (.bmo)"; combo = true),
     _HelpEntry([_ctrl_cap(), "R"], "reload the project from its files"; combo = true)]]
@@ -517,7 +517,10 @@ Opens the project in the folder `path`, or of its project file `path` (`<name>.b
 and shows it if `display` is `true`: its systems with their sources, the objects and sources
 without a system, their labels (else their ids) and how the view looked when it was saved
 (`view.toml`: camera, saved views, clip planes, table, the colors of the beams, ...). The `kwargs`
-are those of [`live_view`](@ref) and win over `view.toml`. `Ctrl+S` saves it there again, see
+are those of [`live_view`](@ref) and win over `view.toml`. While it is shown, the window writes
+every finished change of the person to the files (autosave), applies the changes that others make
+to them (e.g. an agent) and notes the selection and the recent changes of the person in
+`.bmo/session.md`. `Ctrl+S` saves a version of the project (a git commit with a message), see
 [`save_project`](@ref). The components and sources from the catalog can be edited and copied.
 `Ctrl+O` or the tool "Open" of a window opens a project chosen in a dialog and closes the window.
 """
@@ -563,17 +566,25 @@ constructor is not known, e.g. one that the script gave to `live_view`, is not s
 the status line name it. Each object, source and system keeps its readable id (e.g. `L1`) and its
 machine id (uid) across saves; a new one gets the next free id of its kind and a new uid, and its
 label in the view, if it has one, is saved as its `label`. The entries stay in the order of the
-file, new ones at the end of their kind. `dir` becomes the project of the view, which `Ctrl+S`
-saves to, and the title of its window. `Ctrl+Shift+S` asks for a place and a name, see
-`_save_as_key!`.
+file, new ones at the end of their kind. `dir` becomes the project of the view, which the autosave
+of its window and `Ctrl+S` save to, and the title of its window. `Ctrl+Shift+S` asks for a place and
+a name, see `_save_as_key!`.
+
+A shown window saves itself: every finished change of the person is written to the files (see
+`_autosave!`) and noted in `.bmo/session.md`. `Ctrl+S` writes what is still pending and then saves a
+version of the project, a git commit whose message the card of the version asks for (see
+`_save_key!`).
 
 Saving a view that has a project to another folder ("save as") copies the own code of the project
 (`src/`) there first, without overwriting a file, and keeps the name of its module, such that the
-copy loads.
+copy loads. A shown window notes in `.bmo/session.md` of the old folder that no window is open on
+it any more.
 
 Throws `BeamletOpticsProjects.ProjectChanged` and saves nothing if the files of the project of the
-view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`; `Ctrl+S` shows
-a card that offers to load them, to overwrite them or to save as, see `_ProjectConflict`.
+view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`. The autosave
+and `Ctrl+S` merge such changes into the window first and save again; objects that were changed
+differently in both places get a card with "Take theirs", "Keep mine" and "Save as…", see
+`_ProjectConflict`.
 """
 function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     dir = abspath(dir)
@@ -593,8 +604,21 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     _write_view_toml(gui, parts.project, parts.names)
     # The uids that the save gave are those of `parts.project`
     _apply_project_names!(gui, parts.project)
+    # A window that writes `.bmo/session.md` (see `_connect_session!`) leaves the old folder: its
+    # `session.md` says that no window is open, and its journal is not of the new project
+    connected = save_as && !isempty(gui.sync.session)
+    if connected
+        try
+            _session_closed!(gui)
+        catch e
+            e isa InterruptException && rethrow()
+            @warn "could not write session.md of $from" exception = e
+        end
+    end
+    save_as && empty!(gui.sync.journal)
     gui.project = dir
     _saved!(gui, parts.project)
+    connected && _connect_session!(gui)
     dir == from || _set_title!(gui, basename(dir))
     msg = save_as ? "project saved as $dir" : "project saved to $dir"
     if !isempty(parts.skipped)
@@ -620,19 +644,37 @@ Keys, tools and dialogs
 _message_line(e) = first(split(sprint(showerror, e), '\n'))
 
 """
-Saves the `gui` to `dir`; if the files changed meanwhile, the card of the conflict instead (see
-`_ProjectConflict`), any other error is logged and shown in the status line.
+Saves the `gui` to `dir`; if the files changed meanwhile, they are merged first (see `_sync!`) and
+saved again if that left no conflict, else the card of the conflict is shown (see
+`_ProjectConflict`); any other error, also of the second save, is logged and shown in the status
+line. Whether the files hold the window afterwards: `false` after an error, a conflict or files
+that do not load.
 """
 function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
     try
         save_project(gui, dir; force)
     catch e
         e isa InterruptException && rethrow()
-        e isa BMOP.ProjectChanged && return _show_conflict!(gui)
-        @error "save_project failed" exception = (e, catch_backtrace())
-        gui.status.text[] = "project not saved: $(_message_line(e))"
+        e isa BMOP.ProjectChanged || return _save_failed!(gui, e)
+        gui.sync.changed_at = nothing
+        # Without gliding: the save right after must see the poses of the files
+        _sync!(gui; animate = false) === :applied || return false
+        (isempty(gui.sync.conflicts) && !gui.sync.failed) || return false
+        try
+            save_project(gui, dir; force)
+        catch e2
+            e2 isa InterruptException && rethrow()
+            return _save_failed!(gui, e2)
+        end
     end
-    return nothing
+    return true
+end
+
+# Logs the error `e` of saving the `gui` and shows it in the status line; returns `false`
+function _save_failed!(gui::LiveView, e)
+    @error "save_project failed" exception = (e, catch_backtrace())
+    gui.status.text[] = "project not saved: $(_message_line(e))"
+    return false
 end
 
 """
@@ -695,11 +737,148 @@ function _save_as_key!(gui::LiveView)
 end
 
 """
-`Ctrl+S` and the tool "Save" of the `gui`: saves to its project, or, without one, like "Save as"
-(see `_save_as_key!`).
+`Ctrl+S` and the tool "Save" of the `gui`: saves a version of its project. What the autosave has
+not written yet is written to the files first, without waiting, and noted in `.bmo/session.md` (see
+`_autosave!` with `force`); then the card of the version asks for its message, filled with what
+changed since the last version (see `_ask_version!`), or the status line says that nothing changed.
+Nothing is saved while a conflict is open (see `_ProjectConflict`), whose card is shown, or when the
+flush ends in a conflict, in files that do not load or in an error. Without a project, like "Save
+as" (see `_save_as_key!`), whose new project has its first version.
 """
 function _save_key!(gui::LiveView)
-    isnothing(gui.project) ? _save_as_key!(gui) : _save_to!(gui, gui.project)
+    isnothing(gui.project) && return _save_as_key!(gui)
+    _conflict_open!(gui) && return nothing
+    _autosave!(gui; force = true) in (:none, :saved) || return nothing
+    summary = try
+        BMOP.version_summary(gui.project)
+    catch e
+        e isa InterruptException && rethrow()
+        @error "version_summary failed" exception = (e, catch_backtrace())
+        gui.status.text[] = "no version saved: $(_message_line(e))"
+        return nothing
+    end
+    isempty(summary) ? (gui.status.text[] = "no changes since the last version") : _ask_version!(gui, summary)
+    return nothing
+end
+
+"""
+Whether a conflict of the `gui` waits for a decision on its card (see `_ProjectConflict`), for
+`_save_key!`: the card is shown again if another one replaced it, and the status line asks to
+decide on it first.
+"""
+function _conflict_open!(gui::LiveView)
+    s = gui.sync
+    c = _info_card(gui)
+    shown = !isnothing(c) && c.obj isa _ProjectConflict
+    (shown || !isempty(s.conflicts)) || return false
+    if !shown && !isnothing(s.theirs)
+        _show_conflict!(gui, s.conflicts)
+        c = _info_card(gui)
+    end
+    names = (!isnothing(c) && c.obj isa _ProjectConflict) ? c.obj.names : s.conflicts
+    gui.status.text[] = "decide on the card first: $(join(names, ", "))"
+    return true
+end
+
+"""
+    _VersionCard
+
+The card of `Ctrl+S` that saves a version of the project (see `_save_key!`): a text box with the
+message of the version and the buttons "Save version" and "Cancel"; `Enter` in the box saves, `Esc`
+cancels, see `_save_version!` and `_cancel_version!`. `message` is what changed since the last
+version when the card was shown, which `_ask_version!` puts in the box once (the refreshes of the
+cards leave the box alone, it holds what the person typed).
+"""
+struct _VersionCard <: _InfoItem
+    point::Point3f
+    message::String
+end
+
+_points(x::_VersionCard) = [x.point]
+_title(::_VersionCard) = "Save a version"
+_tree_kind(::_VersionCard) = :save
+_keep_plots!(::LiveView, ::_VersionCard) = nothing
+_keepable(::_VersionCard) = false
+card_rows(::_VersionCard) = (
+    CardRow(CardWidget(Textbox; name = :version_message, placeholder = "message of the version",
+        width = 280, halign = :left,
+        on = (gui, _, v) -> _save_version!(gui, v))),
+    CardRow(
+        CardWidget(Button; name = :version_save, label = "Save version",
+            on = (gui, _, _) -> _save_version!(gui)),
+        CardWidget(Button; name = :version_cancel, label = "Cancel",
+            on = (gui, _, _) -> _cancel_version!(gui))))
+
+"""The card of the version of the `gui` if it is shown (see `_VersionCard`), else `nothing`."""
+function _version_card(gui::LiveView)
+    c = _info_card(gui)
+    return (isnothing(c) || !(c.obj isa _VersionCard)) ? nothing : c
+end
+
+"""The text box of the message on the card of the version of the `gui`, or `nothing`."""
+function _version_box(gui::LiveView)
+    c = _version_card(gui)
+    return isnothing(c) ? nothing : _card_widget(c, :version_message)
+end
+
+"""
+    _ask_version!(gui, message)
+
+Shows the card of a version of the project of the `gui` (see `_VersionCard`) with the `message` in
+its text box, which has the focus with the caret at the end, such that typing adds to it: the keys
+of the window are left to it meanwhile.
+"""
+function _ask_version!(gui::LiveView, message::AbstractString)
+    _show_info!(gui, _VersionCard(_error_anchor(gui), String(message)))
+    box = _version_box(gui)
+    if !isnothing(box)
+        _set_box!(box, String(message))
+        Makie.focus!(box)
+        box.editor.cursors[] = [Makie.EditCursor(length(message))]
+    end
+    gui.status.text[] = "save a version: Enter saves, Esc cancels"
+    return nothing
+end
+
+"""
+    _save_version!(gui, message = text of the box)
+
+Saves a version of the project of the `gui` with the `message` (see
+`BeamletOpticsProjects.save_version`) and closes the card of the version; the result or the error
+(e.g. changes outside the project that are staged in its repository) in the status line. A message
+that is still the summary that the card showed is computed again (`version_summary`), since the
+files may have changed while the card was open; a typed message is kept.
+"""
+function _save_version!(gui::LiveView, message = nothing)
+    box = _version_box(gui)
+    if isnothing(message)
+        message = isnothing(box) ? "" : box.displayed_string[]
+    end
+    message = String(strip(String(message)))
+    c = _version_card(gui)
+    shown = isnothing(c) ? nothing : strip(c.obj.message)
+    isnothing(box) || Makie.defocus!(box)
+    _release_info!(gui, _VersionCard)
+    isnothing(gui.project) && return nothing
+    try
+        message == shown && (message = String(strip(BMOP.version_summary(gui.project))))
+        id = BMOP.save_version(gui.project; message)
+        gui.status.text[] = isnothing(id) ? "no changes since the last version" : "version saved: $message"
+    catch e
+        e isa InterruptException && rethrow()
+        @error "save_version failed" exception = (e, catch_backtrace())
+        gui.status.text[] = "version not saved: $(_message_line(e))"
+    end
+    return nothing
+end
+
+"""Closes the card of the version of the `gui` without saving a version, e.g. by `Esc`."""
+function _cancel_version!(gui::LiveView)
+    box = _version_box(gui)
+    isnothing(box) && return nothing
+    Makie.defocus!(box)
+    _release_info!(gui, _VersionCard)
+    gui.status.text[] = "no version saved"
     return nothing
 end
 
@@ -731,7 +910,7 @@ end
 Connects `Ctrl+S`, `Ctrl+Shift+S` and `Ctrl+O` (`Cmd` on macOS) of the `gui` and the tools "Save",
 "Save as" and "Open", see `_save_key!`, `_save_as_key!` and `_open_key!`, like `_connect_copy!`: by
 the letters of the keys in the keyboard layout, before the camera, which takes `s` and `o`; left to
-a focused text box, nothing in the spectator mode.
+a focused text box, nothing in the spectator mode. `Esc` closes the card of a version.
 """
 function _connect_project!(gui::LiveView)
     scene = gui.ax.scene
@@ -752,10 +931,18 @@ function _connect_project!(gui::LiveView)
         end
         return Consume(true)
     end)
+    # Esc closes the card of a version, also while its text box has the keyboard, before the box
+    # and the other keys of the window, see `_cancel_version!`
+    push!(ctrl.listeners, on(events(scene).keyboardbutton; priority = 210) do event
+        (event.action == Keyboard.press && event.key == Keyboard.escape) || return Consume(false)
+        isnothing(_version_card(gui)) && return Consume(false)
+        _cancel_version!(gui)
+        return Consume(true)
+    end)
     append!(ctrl.help_extra, _PROJECT_HELP)
     _update_help!(ctrl)
     add_tool!(_save_key!, gui, "Save"; icon = :save,
-        tooltip = "Save the project ($(_ctrl_cap())+S)")
+        tooltip = "Save a version ($(_ctrl_cap())+S)")
     add_tool!(_save_as_key!, gui, "Save as"; icon = :save_as,
         tooltip = "Save as a new project with a name ($(_ctrl_cap())+Shift+S)")
     add_tool!(_open_key!, gui, "Open"; icon = :open,
