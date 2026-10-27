@@ -26,7 +26,7 @@ BeamletOpticsGUIGLMakieExt = "GLMakie"
 
 [sources]
 BeamletOptics = {url = "https://github.com/JuliaPhysics/BeamletOptics.jl", rev = "master"}
-BeamletOpticsProjects = {path = "../BeamletOpticsProjects"}
+BeamletOpticsProjects = {url = "https://github.com/StackEnjoyer/BeamletOpticsProjects.jl", rev = "main"}
 
 [compat]
 AbstractTrees = "0.4"
