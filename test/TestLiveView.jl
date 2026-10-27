@@ -1120,8 +1120,21 @@ _points(h) = only(render_plots(h))[1][]
         @test (settings.clipping_mode[], cam.near[], cam.far[]) == perspective_depth
         shift, scale = _walk(Keyboard.w)
         @test norm(shift) > 0 && scale ≈ 1
-        @test cam.controls.forward_key[] == Keyboard.w
-        @test cam.controls.zoom_in_key[] == Keyboard.u
+        @test GUI._keyboard_buttons(cam.controls.forward_key[]) == (Keyboard.w,)
+        @test GUI._keyboard_buttons(cam.controls.zoom_in_key[]) == (Keyboard.u,)
+        # Ctrl+S (save), Ctrl+O and Ctrl+R do not move the camera (the keys are held, without
+        # their events, which would open the dialogs)
+        held = events(scene).keyboardstate
+        for key in (Keyboard.s, Keyboard.o, Keyboard.r)
+            eye = cam.eyeposition[]
+            push!(held, Keyboard.left_control, key)
+            Makie.on_pulse(scene, cam, 0.1)
+            @test cam.eyeposition[] == eye
+            delete!(held, Keyboard.left_control)
+            Makie.on_pulse(scene, cam, 0.1)
+            @test cam.eyeposition[] != eye
+            delete!(held, key)
+        end
         close(gui)
 
         m, pd = _fixture()

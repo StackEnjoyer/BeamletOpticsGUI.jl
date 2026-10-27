@@ -524,6 +524,7 @@ Moving along the view direction does not change an orthographic view at all, so 
 function _connect_projection!(gui::LiveView, orthographic::Bool)
     cam = cameracontrols(gui.ax.scene)
     settings, controls = cam.settings, cam.controls
+    _without_ctrl!(controls)
     perspective_depth = (settings.clipping_mode[], cam.near[], cam.far[])
     walk_keys = (controls.forward_key[], controls.backward_key[], controls.zoom_in_key[],
         controls.zoom_out_key[])
@@ -578,6 +579,21 @@ function _connect_projection!(gui::LiveView, orthographic::Bool)
         end)
     end
     set_projection!(orthographic)
+    return nothing
+end
+
+"""
+The keys that move, turn and zoom the camera (`forward_key` etc. of `Camera3D`) only act while no
+`Ctrl` or `Cmd` is held: otherwise `Ctrl`+`S`, `Ctrl`+`O` and `Ctrl`+`R` of the window would also
+move the camera, by the frames that `S`, `O` or `R` is held.
+"""
+function _without_ctrl!(controls)
+    ctrl = reduce(|, _CTRL_OR_CMD_KEYS)
+    for k in keys(controls)
+        (endswith(String(k), "_key") && !startswith(String(k), "fix_")) || continue
+        binding = Makie.to_value(controls[k])
+        binding isa Bool || (controls[k][] = binding & !ctrl)
+    end
     return nothing
 end
 
