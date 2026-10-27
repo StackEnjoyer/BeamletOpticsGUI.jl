@@ -12,14 +12,24 @@ const _VIEW_TOML = "view.toml"
 
 # The keys of saving and opening, in the help of the controls, see `_help_sections`
 const _PROJECT_HELP = _HelpSection["Edit" => [
-    _HelpEntry([_ctrl_cap(), "S"], "save the setup as a project folder"; combo = true),
-    _HelpEntry([_ctrl_cap(), "O"], "open a project folder"; combo = true)]]
+    _HelpEntry([_ctrl_cap(), "S"], "save the project"; combo = true),
+    _HelpEntry([_ctrl_cap(), "Shift", "S"], "save as a new project with a name"; combo = true),
+    _HelpEntry([_ctrl_cap(), "O"], "open a project (.bmo)"; combo = true)]]
+
+# The filter of the dialogs: the project files, see `BeamletOpticsProjects.project_marker`
+const _BMO_FILTER = "bmo"
 
 """
-The dialog that picks a folder, `path -> folder`, which returns `""` (or `nothing`) if it was
-cancelled: the native dialog of NativeFileDialog, replaced by the tests.
+The dialog of "Save as", `folder -> path`: the user goes to a folder and types a name; `""` (or
+`nothing`) if it was cancelled. The native dialog of NativeFileDialog, replaced by the tests.
 """
-const _PICK_FOLDER = Ref{Any}(path -> NativeFileDialog.pick_folder(path))
+const _SAVE_DIALOG = Ref{Any}(dir -> NativeFileDialog.save_file(dir; filterlist = _BMO_FILTER))
+
+"""
+The dialog of "Open", `folder -> path` of a project file `*.bmo`; `""` (or `nothing`) if it was
+cancelled. The native dialog of NativeFileDialog, replaced by the tests.
+"""
+const _OPEN_DIALOG = Ref{Any}(dir -> NativeFileDialog.pick_file(dir; filterlist = _BMO_FILTER))
 
 # The task of the last dialog of `Ctrl+S` or `Ctrl+O`, which runs after the key callback returned
 const _DIALOG_TASK = Ref{Any}(nothing)
@@ -432,9 +442,10 @@ function _open_from(project; kwargs...)
 end
 
 """
-    open_project(dir; display = true, kwargs...) -> LiveView
+    open_project(path; display = true, kwargs...) -> LiveView
 
-Opens the project in the folder `dir` (see `BeamletOpticsProjects.load_project`) in a live view
+Opens the project in the folder `path`, or of its project file `path` (`<name>.bmo`), see
+`BeamletOpticsProjects.load_project`, in a live view
 and shows it if `display` is `true`: its systems with their sources, the objects and sources
 without a system, the names of the project as labels and how the view looked when it was saved
 (`view.toml`: camera, saved views, clip planes, table, the colors of the beams, ...). The `kwargs`
@@ -442,11 +453,12 @@ are those of [`live_view`](@ref) and win over `view.toml`. `Ctrl+S` saves it the
 [`save_project`](@ref). The components and sources from the catalog can be edited and copied.
 `Ctrl+O` or the tool "Open" of a window opens a project chosen in a dialog and closes the window.
 """
-function open_project(dir::AbstractString; display::Bool = true, kwargs...)
-    project = BMOP.load_project(dir)
+function open_project(path::AbstractString; display::Bool = true, kwargs...)
+    project = BMOP.load_project(path)
     gui = _open_from(project; kwargs...)
     if display
-        _multi_light_backend() ? Base.display(gui; title = project.name) : Base.display(gui)
+        title = basename(project.path)
+        _multi_light_backend() ? Base.display(gui; title) : Base.display(gui)
     end
     return gui
 end
@@ -465,7 +477,7 @@ not a project yet becomes one, with the versions of BeamletOptics, BeamletOptics
 BeamletOpticsGUI and GLMakie. How the view looks is written to `view.toml`. An object whose
 constructor is not known, e.g. one that the script gave to `live_view`, is not saved: a warning and
 the status line name it. The names of the project become the labels of the view, and `dir` its
-project, which `Ctrl+S` saves to.
+project, which `Ctrl+S` saves to. `Ctrl+Shift+S` asks for a place and a name, see `_save_as_key!`.
 """
 function save_project(gui::LiveView, dir::AbstractString)
     dir = abspath(dir)
@@ -510,52 +522,85 @@ function _save_to!(gui::LiveView, dir::AbstractString)
 end
 
 """
-The folder that the dialog picks, starting at the project of the `gui`; `nothing` if it was
-cancelled or failed, the reason of a failure in the status line.
+The path that the `dialog` (`_SAVE_DIALOG` or `_OPEN_DIALOG`) returns, starting in the folder that
+holds the project of the `gui`; `nothing` if it was cancelled or failed, the reason of a failure in
+the status line.
 """
-function _pick_folder(gui::LiveView)
-    dir = try
-        _PICK_FOLDER[](something(gui.project, ""))
+function _ask_path(gui::LiveView, dialog::Ref)
+    start = isnothing(gui.project) ? "" : dirname(gui.project)
+    path = try
+        dialog[](start)
     catch e
         e isa InterruptException && rethrow()
-        gui.status.text[] = "no folder dialog: $(_message_line(e)), use save_project/open_project"
+        gui.status.text[] = "no file dialog: $(_message_line(e)), use save_project/open_project"
         return nothing
     end
-    (isnothing(dir) || isempty(dir)) && return nothing
-    return String(dir)
+    (isnothing(path) || isempty(path)) && return nothing
+    return String(path)
+end
+
+"""
+    _save_target(path) -> (; dir, message)
+
+The folder that "Save as" saves to, from the `path` of its dialog, a folder and a typed name
+(`.bmo` or not): the folder of the project whose project file the user picked (the dialog asked
+whether to overwrite it), else a new or empty folder with the name next to it. A `dir` of `nothing`
+and the reason in `message` for any other path, e.g. a folder of that name that exists already.
+"""
+function _save_target(path::AbstractString)
+    path = abspath(path)
+    file = basename(path)
+    name = endswith(lowercase(file), BMOP.EXTENSION) ? file[1:(end - length(BMOP.EXTENSION))] : file
+    parent = dirname(path)
+    isempty(strip(name)) && return (; dir = nothing, message = "project not saved: no name given")
+    isfile(joinpath(parent, name * BMOP.EXTENSION)) && isfile(joinpath(parent, "Project.toml")) &&
+        return (; dir = parent, message = "")
+    dir = joinpath(parent, name)
+    (!ispath(dir) || (isdir(dir) && isempty(readdir(dir)))) && return (; dir, message = "")
+    return (; dir = nothing,
+        message = "project not saved: \"$dir\" exists already; to overwrite a project, pick its .bmo file")
 end
 
 # Runs `f` after the key callback returned, e.g. a dialog, which blocks
 _run_later(f) = (_DIALOG_TASK[] = @async f())
 
 """
-`Ctrl+S` and the tool "Save" of the `gui`: saves to its project, or, without one, to the folder
-that the dialog picks (a cancelled dialog does nothing).
+`Ctrl+Shift+S` and the tool "Save as" of the `gui`: the dialog asks for a folder and a name, and the
+setup is saved as the project in the folder of that name there, see `_save_target`, which becomes
+the project of the `gui`. A cancelled dialog does nothing.
 """
-function _save_key!(gui::LiveView)
-    if isnothing(gui.project)
-        _run_later() do
-            dir = _pick_folder(gui)
-            isnothing(dir) || _save_to!(gui, dir)
-            return nothing
-        end
-    else
-        _save_to!(gui, gui.project)
+function _save_as_key!(gui::LiveView)
+    _run_later() do
+        path = _ask_path(gui, _SAVE_DIALOG)
+        isnothing(path) && return nothing
+        target = _save_target(path)
+        isnothing(target.dir) ? (gui.status.text[] = target.message) : _save_to!(gui, target.dir)
+        return nothing
     end
     return nothing
 end
 
 """
-`Ctrl+O` and the tool "Open" of the `gui`: opens the project that the dialog picks in a new window
-with the layout and the theme of the `gui`, then closes the `gui` and its window. A cancelled dialog
-does nothing, an error shows its message in the status line and keeps the `gui`.
+`Ctrl+S` and the tool "Save" of the `gui`: saves to its project, or, without one, like "Save as"
+(see `_save_as_key!`).
+"""
+function _save_key!(gui::LiveView)
+    isnothing(gui.project) ? _save_as_key!(gui) : _save_to!(gui, gui.project)
+    return nothing
+end
+
+"""
+`Ctrl+O` and the tool "Open" of the `gui`: opens the project of the project file (`*.bmo`) that the
+dialog picks in a new window with the layout and the theme of the `gui`, then closes the `gui` and
+its window. A cancelled dialog does nothing, an error shows its message in the status line and
+keeps the `gui`.
 """
 function _open_key!(gui::LiveView)
     _run_later() do
-        dir = _pick_folder(gui)
-        isnothing(dir) && return nothing
+        path = _ask_path(gui, _OPEN_DIALOG)
+        isnothing(path) && return nothing
         try
-            open_project(dir; layout = _layout_name(gui.layout), theme = _theme_name(gui.layout.theme))
+            open_project(path; layout = _layout_name(gui.layout), theme = _theme_name(gui.layout.theme))
         catch e
             e isa InterruptException && rethrow()
             @error "open_project failed" exception = (e, catch_backtrace())
@@ -572,10 +617,10 @@ function _open_key!(gui::LiveView)
 end
 
 """
-Connects `Ctrl+S` and `Ctrl+O` (`Cmd` on macOS) of the `gui` and the tools "Save" and "Open", see
-`_save_key!` and `_open_key!`, like `_connect_copy!`: by the letters of the keys in the keyboard
-layout, before the camera, which takes `s` and `o`; left to a focused text box, nothing in the
-spectator mode.
+Connects `Ctrl+S`, `Ctrl+Shift+S` and `Ctrl+O` (`Cmd` on macOS) of the `gui` and the tools "Save",
+"Save as" and "Open", see `_save_key!`, `_save_as_key!` and `_open_key!`, like `_connect_copy!`: by
+the letters of the keys in the keyboard layout, before the camera, which takes `s` and `o`; left to
+a focused text box, nothing in the spectator mode.
 """
 function _connect_project!(gui::LiveView)
     scene = gui.ax.scene
@@ -587,14 +632,20 @@ function _connect_project!(gui::LiveView)
         key in (Keyboard.s, Keyboard.o) || return Consume(false)
         ctrl.ignore_keys() && return Consume(false)
         ctrl.spectator[] && return Consume(true)
-        key == Keyboard.s ? _save_key!(gui) : _open_key!(gui)
+        if key == Keyboard.o
+            _open_key!(gui)
+        else
+            _shift_pressed(scene) ? _save_as_key!(gui) : _save_key!(gui)
+        end
         return Consume(true)
     end)
     append!(ctrl.help_extra, _PROJECT_HELP)
     _update_help!(ctrl)
     add_tool!(_save_key!, gui, "Save"; icon = :save,
-        tooltip = "Save the setup as a project folder ($(_ctrl_cap())+S)")
+        tooltip = "Save the project ($(_ctrl_cap())+S)")
+    add_tool!(_save_as_key!, gui, "Save as"; icon = :save_as,
+        tooltip = "Save as a new project with a name ($(_ctrl_cap())+Shift+S)")
     add_tool!(_open_key!, gui, "Open"; icon = :open,
-        tooltip = "Open a project folder ($(_ctrl_cap())+O)")
+        tooltip = "Open a project, its .bmo file ($(_ctrl_cap())+O)")
     return nothing
 end

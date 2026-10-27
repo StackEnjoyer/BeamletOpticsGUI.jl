@@ -32,7 +32,7 @@ const GUI = BeamletOpticsGUI
             # the tool that adds a system
             :add_system,
             # the tools that save and open a project
-            :save, :open)
+            :save, :save_as, :open)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)

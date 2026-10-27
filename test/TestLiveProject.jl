@@ -240,52 +240,104 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "keys and dialogs" begin
-        picked = Ref{Any}("")
+        saved = Ref{Any}("")
+        opened = Ref{Any}("")
         calls = Ref(0)
-        GUI._PICK_FOLDER[] = path -> (calls[] += 1; picked[])
+        GUI._SAVE_DIALOG[] = dir -> (calls[] += 1; saved[])
+        GUI._OPEN_DIALOG[] = dir -> (calls[] += 1; opened[])
+        _wait() = wait(GUI._DIALOG_TASK[])
+        function _ctrl_shift!(gui, key)
+            state = events(gui.ax.scene).keyboardstate
+            push!(state, Keyboard.left_shift)
+            _ctrl!(gui, key)
+            delete!(state, Keyboard.left_shift)
+            return nothing
+        end
         try
-            dir = mktempdir()
+            parent = mktempdir()
             t = _setup(:compact)
             gui = t.gui
-            # without a project: the dialog; cancelled, nothing happens
+            # without a project: the dialog of "Save as"; cancelled, nothing happens
             _ctrl!(gui, Keyboard.s)
-            wait(GUI._DIALOG_TASK[])
-            @test calls[] == 1 && isnothing(gui.project) && !isfile(joinpath(dir, "system.jl"))
-            # a folder: saved there
-            picked[] = dir
+            _wait()
+            @test calls[] == 1 && isnothing(gui.project) && isempty(readdir(parent))
+            # a place and a name: a new folder of that name with its project file
+            saved[] = joinpath(parent, "Laser bench")
             _ctrl!(gui, Keyboard.s)
-            wait(GUI._DIALOG_TASK[])
-            @test calls[] == 2 && gui.project == abspath(dir)
-            @test isfile(joinpath(dir, "system.jl")) && isfile(joinpath(dir, "Project.toml"))
-            @test gui.status.text[] == "project saved to $(abspath(dir))"
+            _wait()
+            dir = joinpath(parent, "Laser bench")
+            @test calls[] == 2 && gui.project == dir
+            @test isfile(joinpath(dir, "Laser bench.bmo")) && isfile(joinpath(dir, "system.jl"))
+            @test load_project(joinpath(dir, "Laser bench.bmo")).name == "Laser_bench"
+            @test gui.status.text[] == "project saved to $dir"
             # with a project: saved without the dialog
             rm(joinpath(dir, "system.jl"))
-            gui.status.text[] = ""
             _ctrl!(gui, Keyboard.s)
             @test calls[] == 2 && isfile(joinpath(dir, "system.jl"))
-            @test gui.status.text[] == "project saved to $(abspath(dir))"
             # the names became the labels
             @test Base.isidentifier(gui.labels[t.prism]) && gui.labels[t.b2] == "laser_2"
-            # open: cancelled, and a folder that is no project
-            picked[] = ""
+            # "Save as" always asks; the name of an existing folder is refused
+            saved[] = joinpath(parent, "Laser bench.bmo")
+            _ctrl_shift!(gui, Keyboard.s)
+            _wait()
+            @test calls[] == 3 && gui.project == dir
+            @test startswith(gui.status.text[], "project not saved: \"$dir\" exists already")
+            # picking the project file of a project overwrites it
+            rm(joinpath(dir, "system.jl"))
+            saved[] = joinpath(dir, "Laser bench.bmo")
+            _ctrl_shift!(gui, Keyboard.s)
+            _wait()
+            @test calls[] == 4 && gui.project == dir && isfile(joinpath(dir, "system.jl"))
+            @test !isdir(joinpath(dir, "Laser bench"))
+            # another name: the window belongs to the new project, Ctrl+S saves there
+            saved[] = joinpath(parent, "copy.bmo")
+            _ctrl_shift!(gui, Keyboard.s)
+            _wait()
+            copy = joinpath(parent, "copy")
+            @test calls[] == 5 && gui.project == copy && isfile(joinpath(copy, "copy.bmo"))
+            rm(joinpath(copy, "system.jl"))
+            _ctrl!(gui, Keyboard.s)
+            @test calls[] == 5 && isfile(joinpath(copy, "system.jl"))
+            # the tool "Save as" does the same as the keys
+            saved[] = ""
+            GUI._save_as_key!(gui)
+            _wait()
+            @test calls[] == 6 && gui.project == copy
+            # open: cancelled, and a file that is no project
+            opened[] = ""
+            gui.status.text[] = "before"
             _ctrl!(gui, Keyboard.o)
-            wait(GUI._DIALOG_TASK[])
-            @test calls[] == 3 && gui.status.text[] == "project saved to $(abspath(dir))"
-            picked[] = mktempdir()
+            _wait()
+            @test calls[] == 7 && gui.status.text[] == "before"
+            opened[] = joinpath(mktempdir(), "nothing.bmo")
             @test_logs (:error,) match_mode = :any begin
                 _ctrl!(gui, Keyboard.o)
-                wait(GUI._DIALOG_TASK[])
+                _wait()
             end
             @test startswith(gui.status.text[], "project not opened")
             # the spectator mode ignores the keys
             gui.controls.spectator[] = true
             _ctrl!(gui, Keyboard.s)
-            @test calls[] == 4
+            _ctrl_shift!(gui, Keyboard.s)
+            @test calls[] == 8
             gui.controls.spectator[] = false
             close(gui)
         finally
-            GUI._PICK_FOLDER[] = path -> GUI.NativeFileDialog.pick_folder(path)
+            GUI._SAVE_DIALOG[] = dir -> GUI.NativeFileDialog.save_file(dir; filterlist = GUI._BMO_FILTER)
+            GUI._OPEN_DIALOG[] = dir -> GUI.NativeFileDialog.pick_file(dir; filterlist = GUI._BMO_FILTER)
         end
+    end
+
+    @testset "target of save as" begin
+        parent = mktempdir()
+        @test GUI._save_target(joinpath(parent, "a")).dir == joinpath(parent, "a")
+        @test GUI._save_target(joinpath(parent, "a.bmo")).dir == joinpath(parent, "a")
+        @test GUI._save_target(joinpath(parent, "A.BMO")).dir == joinpath(parent, "A")
+        mkdir(joinpath(parent, "empty"))
+        @test GUI._save_target(joinpath(parent, "empty")).dir == joinpath(parent, "empty")
+        write(joinpath(parent, "file"), "x")
+        @test isnothing(GUI._save_target(joinpath(parent, "file")).dir)
+        @test isnothing(GUI._save_target(joinpath(parent, ".bmo")).dir)
     end
 
     @testset "end-to-end" begin
@@ -299,7 +351,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
         code = read(joinpath(dir, "system.jl"), String)
         view = read(joinpath(dir, "view.toml"), String)
-        gui2 = open_project(dir; display = false, const_kw...)
+        gui2 = open_project(project_marker(dir); display = false, const_kw...)
         @test gui2.project == abspath(dir)
         save_project(gui2)
         @test read(joinpath(dir, "system.jl"), String) == code
