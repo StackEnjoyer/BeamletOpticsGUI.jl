@@ -2,9 +2,12 @@
 Claims of the people in a window of a project: whoever edits an object holds its claim, and the
 others do not change it meanwhile (see `BeamletOpticsProjects.claim!`). The window of a person
 claims an object implicitly, with the first gesture that changes it (a drag, a key step, an input
-on a card, "Apply" of the page "Edit", grouping), and releases it when it is deselected or
-`_CLAIM_HOLD` seconds after the last gesture. A gesture on an object that another participant
-claims is refused, and the status line names the holder. The claims of the others are drawn at
+on a card, "Apply" of the page "Edit", grouping, a rename, the click that aims a source, an undo or
+redo onto it), and releases it when it is deselected or `_CLAIM_HOLD` seconds after the last
+gesture, but not while a drag holds it. A gesture on an object that another participant claims is
+refused, and the status line names the holder; a gesture on an object that still glides to a pose
+of the files lands it first (see `_land_glides!`). A window of `open_system` claims for the window
+of the project that it is linked with, see `_project_view`. The claims of the others are drawn at
 their objects with the boxes and names of the presence (see `_draw_presence!`): a lock and
 "editing".
 
@@ -69,6 +72,28 @@ function _claims(gui::LiveView)
     return c
 end
 
+"""
+    _project_view(gui) -> Union{Nothing, LiveView}
+
+The view whose project the claims of the `gui` go by: the `gui` itself in a window of a project,
+else the view of a project that it is linked with, e.g. the `gui` is a window of
+[`open_system`](@ref), which shows the same objects (see `_ViewLinks`); `nothing` without a project.
+"""
+function _project_view(gui::LiveView)
+    isnothing(gui.project) || return gui
+    for v in gui.links.views
+        isnothing(v.project) || return v
+    end
+    return nothing
+end
+
+# The views that claim for the view `pg` of a project (see `_project_view`): `pg` and the views
+# linked with it
+function _claiming_views(pg::LiveView)
+    isempty(pg.links.views) && return LiveView[pg]
+    return LiveView[v for v in pg.links.views if _project_view(v) === pg]
+end
+
 # The participant id of the holder `by` of a claim, as in its presence file: as given if it has a
 # host (`"anna@pc2"`), else an agent (`"w1@agent"`), see `BeamletOpticsProjects.claim!`
 _holder_pid(by::AbstractString) = occursin('@', by) ? String(by) : string(by, "@agent")
@@ -100,17 +125,22 @@ end
 The objects of the project that a gesture on the selection `sel` of the `gui` (an object, a
 selection of several, a vector of objects or `nothing`) claims (D2): per object the innermost item
 with an id that holds it (else the object itself), and the objects with an id of a group,
-recursively.
+recursively. Those of the project of a linked view in a window of `open_system`, see
+`_project_view`; none without a project.
 """
 function _claim_objects(gui::LiveView, @nospecialize(sel))
     out = Any[]
-    xs = sel isa AbstractVector ? sel : _selection_objects(sel)
-    for x in xs
+    pg = _project_view(gui)
+    isnothing(pg) && return out
+    for x in _gesture_objects(sel)
         # a group without an id yet, e.g. one just made in the window: its members
-        _with_members!(out, gui, something(_id_holder(gui, x), x))
+        _with_members!(out, pg, something(_id_holder(pg, x), x))
     end
     return out
 end
+
+# The objects of the selection `sel` of a gesture, see `_claim_objects`
+_gesture_objects(@nospecialize(sel)) = sel isa AbstractVector ? sel : _selection_objects(sel)
 
 # Adds `x` if it has an id and the members of a group `x` (recursively) to `out`
 function _with_members!(out, gui::LiveView, @nospecialize(x))
@@ -133,10 +163,13 @@ end
     _claim_keys(gui, sel) -> Dict{String, Symbol}
 
 The keys of the lines (see `_claim_key`) of the objects that a gesture on `sel` claims (see
-`_claim_objects`) => their readable ids.
+`_claim_objects`) => their readable ids; empty without a project.
 """
-_claim_keys(gui::LiveView, @nospecialize(sel)) =
-    Dict{String, Symbol}(_claim_key(gui, x) => gui.sync.ids[x][1] for x in _claim_objects(gui, sel))
+function _claim_keys(gui::LiveView, @nospecialize(sel))
+    pg = _project_view(gui)
+    isnothing(pg) && return Dict{String, Symbol}()
+    return Dict{String, Symbol}(_claim_key(pg, x) => pg.sync.ids[x][1] for x in _claim_objects(pg, sel))
+end
 
 # The claim of an other on the object `x` of the project, `nothing` if none
 function _other_claim(gui::LiveView, @nospecialize(x))
@@ -162,11 +195,12 @@ end
 # The name of the holder and the readable id of the first object of a gesture on `sel` that an
 # other claims, `nothing` if none
 function _claim_holder(gui::LiveView, @nospecialize(sel))
-    (isnothing(gui.project) || isempty(_claims(gui).others)) && return nothing
-    for x in _claim_objects(gui, sel)
-        c = _other_claim(gui, x)
+    pg = _project_view(gui)
+    (isnothing(pg) || isempty(_claims(pg).others)) && return nothing
+    for x in _claim_objects(pg, sel)
+        c = _other_claim(pg, x)
         isnothing(c) && continue
-        return (; name = _holder_name(gui, c.by), id = gui.sync.ids[x][1])
+        return (; name = _holder_name(pg, c.by), id = pg.sync.ids[x][1])
     end
     return nothing
 end
@@ -176,11 +210,41 @@ end
 
 Why a gesture on the selection `sel` of the `gui` is refused, for the status line: an object of it
 is claimed by another participant (`"Anna is editing L1"`), see `_claimed_by`; `nothing` if it is
-not. Reads only the cache of the claims, never a file.
+not. Reads only the cache of the claims, never a file. The start of a gesture: an object of `sel`
+that still glides to a pose of the files lands first, see `_land_glides!`.
 """
 function _claim_refusal(gui::LiveView, @nospecialize(sel))
-    r = _claim_holder(gui, sel)
+    pg = _project_view(gui)
+    isnothing(pg) && return nothing
+    _land_glides!(pg, sel)
+    r = _claim_holder(pg, sel)
     return isnothing(r) ? nothing : "$(r.name) is editing $(r.id)"
+end
+
+"""
+    _land_glides!(gui, sel)
+
+Lands the objects of the `gui` that glide to the poses of the files (see `_finish_glides!`) if an
+object of the selection `sel` of a gesture glides, as a part of a group that glides or with a part
+that glides: the gesture starts from the pose of the files, which its entry of the undo history
+records, and no frame of the glide sets the pose over its steps.
+"""
+function _land_glides!(gui::LiveView, @nospecialize(sel))
+    gliding = gui.sync.gliding
+    isempty(gliding) && return nothing
+    glides(y) = haskey(gliding, y)
+    for x in _gesture_objects(sel)
+        chain = try
+            _chain(gui.controls, x)
+        catch
+            Any[x]
+        end
+        (any(glides, chain) || (x isa BMO.AbstractObjectGroup && any(glides, _descendants(x)))) ||
+            continue
+        _finish_glides!(gui)
+        return nothing
+    end
+    return nothing
 end
 
 """
@@ -189,17 +253,19 @@ end
 The start of a gesture of the person on the selection `sel` of the `gui` that changes it (a drag, a
 key step, an undo onto it, an input on a card, see `gesture` of `KinematicController`): `false` with
 the reason in the status line if an object of it is claimed by another participant (see
-`_claim_refusal`), else `true`, and the objects are claimed (see `_claim!`). Without a project, every
-gesture is allowed and nothing is claimed.
+`_claim_refusal`), else `true`, and the objects are claimed (see `_claim!`). In a window of
+`open_system`, those of the project of the view that it is linked with (see `_project_view`).
+Without a project, every gesture is allowed and nothing is claimed.
 """
 function _gesture!(gui::LiveView, @nospecialize(sel); now::Real = time())
-    isnothing(gui.project) && return true
-    reason = _claim_refusal(gui, sel)
+    pg = _project_view(gui)
+    isnothing(pg) && return true
+    reason = _claim_refusal(pg, sel)
     if !isnothing(reason)
         gui.status.text[] = reason
         return false
     end
-    _claim!(gui, sel; now)
+    _claim!(pg, sel; now)
     return true
 end
 
@@ -209,11 +275,12 @@ end
 Claims the objects that a gesture on `sel` claims (see `_claim_objects`) for the person of the
 `gui`, from `now` on: they are queued, and the next run of `_claims_tick!` writes the claim files
 in the background. Each gesture holds them `_CLAIM_HOLD` seconds longer. Does nothing without a
-project.
+project; claims for the project of a linked view, see `_project_view`.
 """
 function _claim!(gui::LiveView, @nospecialize(sel); now::Real = time())
-    isnothing(gui.project) && return nothing
-    _hold!(gui, _claim_keys(gui, sel); now)
+    pg = _project_view(gui)
+    isnothing(pg) && return nothing
+    _hold!(pg, _claim_keys(pg, sel); now)
     return nothing
 end
 
@@ -225,7 +292,9 @@ Adds the claims `keys` (key => readable id, see `_claim_keys`) to those that the
 `_apply_edit!`).
 """
 function _hold!(gui::LiveView, keys::AbstractDict; now::Real = time())
-    (isnothing(gui.project) || isempty(keys)) && return nothing
+    pg = _project_view(gui)
+    (isnothing(pg) || isempty(keys)) && return nothing
+    pg === gui || return _hold!(pg, keys; now)
     c = _claims(gui)
     c.gesture_at = Float64(now)
     changed = false
@@ -253,6 +322,9 @@ lines): queued like `_claim!`. Called when the selection changes (see `_claims_s
 `_CLAIM_HOLD` seconds after the last gesture (see `_claims_tick!`).
 """
 function _release!(gui::LiveView; keep = nothing)
+    pg = _project_view(gui)
+    isnothing(pg) && return nothing
+    pg === gui || return _release!(pg; keep)
     c = _claims(gui)
     isempty(c.held) && return nothing
     n = length(c.held)
@@ -266,12 +338,19 @@ end
 
 The selection of the `gui` changed: the claims of the objects that are no longer selected are
 released (D3), those of the new selection are kept, e.g. of the members of a group that was just
-made of them.
+made of them. Also those of the selections of the views that claim for the same project, e.g. a
+window of `open_system`, see `_project_view`.
 """
 function _claims_selected!(gui::LiveView)
-    c = gui.sync.claim
+    pg = _project_view(gui)
+    isnothing(pg) && return nothing
+    c = pg.sync.claim
     (c isa _ClaimState && !isempty(c.held)) || return nothing
-    _release!(gui; keep = keys(_claim_keys(gui, gui.controls.selected[])))
+    keep = Set{String}()
+    for v in _claiming_views(pg)
+        union!(keep, keys(_claim_keys(pg, v.controls.selected[])))
+    end
+    _release!(pg; keep)
     return nothing
 end
 
@@ -321,7 +400,8 @@ function _claim_files(dir::AbstractString, by::AbstractString, want::Dict{String
     refused = Symbol[]
     if !isempty(add)
         ids = unique!([want[k] for k in add])
-        if BMOP.claim!(dir; by, ids)
+        # Not the presence file, which only the looks of the window write, see `_take_look!`
+        if BMOP.claim!(dir; by, ids, refresh = false)
             foreach(k -> (filed[k] = want[k]), add)
         else
             refused = ids
@@ -343,9 +423,10 @@ const _CLAIM_FILES = Ref{Function}(_claim_files)
 One step of the claims of the `gui`, at every look of the watcher (see `_check_presence!`): takes
 the result of the file work that ran in the background (see `_claim_files`): the claims of the
 others and, if another participant held an object first, the status line `"Anna is editing L1"`;
-releases the claims `_CLAIM_HOLD` seconds after the last gesture; then starts the next run if the
-claims of the person changed or the last one is `_CLAIM_READ` seconds ago. Returns the task of
-the run that it started, else `nothing`. Does nothing without a project.
+releases the claims `_CLAIM_HOLD` seconds after the last gesture, unless a drag in the `gui` or in
+a view linked with it holds them; then starts the next run if the claims of the person changed or
+the last one is `_CLAIM_READ` seconds ago. Returns the task of the run that it started, else
+`nothing`. Does nothing without a project.
 """
 function _claims_tick!(gui::LiveView; now::Real = time())
     dir = gui.project
@@ -372,7 +453,15 @@ function _claims_tick!(gui::LiveView; now::Real = time())
             c.dirty = true
         end
     end
-    !isempty(c.held) && now - c.gesture_at >= _CLAIM_HOLD && _release!(gui)
+    if !isempty(c.held)
+        if any(v -> v.controls.dragging, _claiming_views(gui))
+            # A drag holds its claims until it ends: it asks `gesture` of the controls only when
+            # it starts
+            c.gesture_at = max(c.gesture_at, Float64(now))
+        elseif now - c.gesture_at >= _CLAIM_HOLD
+            _release!(gui)
+        end
+    end
     (c.dirty || c.held != c.filed || now - c.run_at >= _CLAIM_READ) || return nothing
     c.dirty = false
     c.run_at = Float64(now)

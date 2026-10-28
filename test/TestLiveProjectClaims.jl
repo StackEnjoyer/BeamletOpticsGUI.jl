@@ -241,6 +241,202 @@ mine(dir, me) = sort!([String(c.id) for c in values(BMOP.claims(dir)) if c.by ==
             @test isempty(GUI._claims(gui).locks)
         end
 
+        @testset "a drag holds its claims" begin
+            ctrl.selected[] = M2
+            @test GUI._gesture!(gui, M2; now = 2000.0)
+            look!(gui; now = 2000.1)
+            @test mine(dir, me) == ["M2"]
+            # longer than the hold after its start
+            ctrl.dragging = true
+            look!(gui; now = 2000.0 + 2 * GUI._CLAIM_HOLD)
+            @test mine(dir, me) == ["M2"]
+            # held from its end on
+            ctrl.dragging = false
+            look!(gui; now = 2000.0 + 2.5 * GUI._CLAIM_HOLD)
+            @test mine(dir, me) == ["M2"]
+            look!(gui; now = 2000.0 + 3.5 * GUI._CLAIM_HOLD)
+            @test isempty(mine(dir, me))
+            ctrl.selected[] = nothing
+        end
+
+        @testset "rename, the system card, aim and align are gestures" begin
+            S1, B1 = obj(gui, :S1), obj(gui, :B1)
+            @test BMOP.claim!(dir; by = "bob@PC9", ids = [:L1, :B1, :S1])
+            look!(gui)
+            # the pencil of a card
+            gui.status.text[] = ""
+            GUI._rename_object!(gui, L1, "collimator")
+            @test GUI._label(gui, L1) == "L1"
+            @test gui.status.text[] == "Bob is editing L1"
+            gui.status.text[] = ""
+            GUI._rename_system!(gui, S1, "bench")
+            @test GUI._label(gui, S1) == "S1"
+            @test gui.status.text[] == "Bob is editing S1"
+            # "+" and "Remove system" of the card of the system
+            GUI._inspect!(gui, S1)
+            card = gui isa GUI.AppView ? gui.layout.inspector.card : gui.cards.selection
+            push(name) = (GUI._card_widget(card, name).clicks[] += 1; nothing)
+            gui.status.text[] = ""
+            push(:member_add)
+            @test isnothing(GUI._member_pick(gui))
+            @test gui.status.text[] == "Bob is editing S1"
+            push(:remove)
+            @test !isnothing(GUI._system_handle(gui, S1))
+            # the click that aims a source, also when it was claimed after the aiming started
+            P = GUI._pose(B1)
+            gui.status.text[] = ""
+            @test !GUI._aim!(gui, B1, [0.1, 0.1, 0.0])
+            @test GUI._pose(B1) == P
+            @test gui.status.text[] == "Bob is editing B1"
+            # "onto beam" and "face beam"
+            P = pose(L1)
+            gui.status.text[] = ""
+            @test !GUI._center_on_beam!(gui, L1)
+            @test gui.status.text[] == "Bob is editing L1"
+            gui.status.text[] = ""
+            @test !GUI._face_beam!(gui, L1)
+            @test gui.status.text[] == "Bob is editing L1"
+            @test pose(L1) == P
+            @test isempty(GUI._claims(gui).held)
+            # released: the rename claims
+            BMOP.release!(dir; by = "bob@PC9")
+            look!(gui)
+            GUI._rename_object!(gui, L1, "collimator")
+            @test GUI._label(gui, L1) == "collimator"
+            @test haskey(GUI._claims(gui).held, uid(gui, :L1))
+            GUI._release!(gui)
+            ctrl.selected[] = nothing
+            look!(gui)
+            @test isempty(mine(dir, me))
+        end
+
+        @testset "undo and redo of an edit ask the claims" begin
+            entry = only(e for e in component_catalog() if e.name == "Thin lens")
+            c = GUI._catalog_component(entry, String[GUI._catalog_string(p) for p in entry.params])
+            lens = c.obj
+            add_component!(gui, lens; origin = c.origin)
+            save_project(gui)
+            id, u = gui.sync.ids[lens]
+            s = GUI._edit_strings(gui, lens)[1]
+            GUI._set_edit_string!(gui, lens, 1, string(2 * parse(Float64, s)))
+            GUI._apply_edit!(gui, lens; read = false)
+            new = obj(gui, id)
+            @test new !== lens
+            @test GUI._undo!(ctrl)
+            @test obj(gui, id) === lens
+            ctrl.selected[] = nothing
+            look!(gui)
+            @test isempty(mine(dir, me))
+            @test BMOP.claim!(dir; by = "bob@PC9", ids = [id])
+            look!(gui)
+            # the replacement is not done again, and stays in the history
+            gui.status.text[] = ""
+            @test !GUI._redo!(ctrl)
+            @test obj(gui, id) === lens
+            @test gui.status.text[] == "Bob is editing $id"
+            @test length(ctrl.redo_stack) == 1
+            @test isempty(GUI._claims(gui).held)
+            BMOP.release!(dir; by = "bob@PC9")
+            look!(gui)
+            @test GUI._redo!(ctrl)
+            @test obj(gui, id) === new
+            @test haskey(GUI._claims(gui).held, u)
+            ctrl.selected[] = nothing
+            look!(gui)
+            @test isempty(mine(dir, me))
+        end
+
+        @testset "a window of open_system claims for the project" begin
+            S1 = obj(gui, :S1)
+            win = open_system(gui, S1; display = false)
+            try
+                @test GUI._project_view(win) === gui
+                @test BMOP.claim!(dir; by = "bob@PC9", ids = [:L1])
+                look!(gui)
+                P = pose(L1)
+                win.status.text[] = ""
+                @test !GUI._gesture!(win, L1)
+                @test win.status.text[] == "Bob is editing L1"
+                @test GUI._key_step!(win.controls, L1, Keyboard.up, 1)
+                @test pose(L1) == P
+                @test GUI._claimed_by(win, L1) == "Bob"
+                # a gesture there claims for the project
+                win.controls.selected[] = M1
+                @test GUI._gesture!(win, M1)
+                @test haskey(GUI._claims(gui).held, uid(gui, :M1))
+                look!(gui)
+                @test mine(dir, me) == ["M1"]
+                # a drag there holds it
+                win.controls.dragging = true
+                look!(gui; now = time() + 2 * GUI._CLAIM_HOLD)
+                @test mine(dir, me) == ["M1"]
+                win.controls.dragging = false
+                # kept while it is selected in either window
+                ctrl.selected[] = nothing
+                look!(gui)
+                @test mine(dir, me) == ["M1"]
+                win.controls.selected[] = nothing
+                look!(gui)
+                @test isempty(mine(dir, me))
+                BMOP.release!(dir; by = "bob@PC9")
+                look!(gui)
+            finally
+                GUI._unlink!(win)
+                close(win)
+            end
+        end
+
+        @testset "a gesture lands a glide first" begin
+            P, R = pose(M1)
+            origin = gui.components.origin[M1]
+            rec = haskey(origin, :project) ? origin.project : (; pos = nothing, rot = nothing)
+            # halfway of a glide to the pose of the files
+            glide!() = begin
+                translate3d!(M1, [0.0, 0.0, 0.005])
+                gui.sync.gliding[M1] = (Point3{Float64}(P), Matrix{Float64}(R), (; rec.pos, rec.rot))
+                return nothing
+            end
+            glide!()
+            ctrl.selected[] = M1
+            @test GUI._gesture!(gui, M1)
+            @test isempty(gui.sync.gliding)
+            @test pose(M1)[1] ≈ P
+            # a drag starts from the pose of the files, which its undo gives back
+            glide!()
+            scene = gui.ax.scene
+            events(scene).mouseposition[] = (100.0, 100.0)
+            ctrl.press_kind = :pending_drag
+            ctrl.press_pos = ctrl.last_mouse = (100.0, 100.0)
+            ctrl.plane_point = Vector{Float64}(position(M1))
+            ctrl.grab_offset = zeros(3)
+            events(scene).mouseposition[] = (160.0, 170.0)
+            @test ctrl.dragging
+            @test isempty(gui.sync.gliding)
+            @test ctrl.drag_start[1] ≈ P
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test GUI._undo!(ctrl)
+            @test pose(M1)[1] ≈ P
+            # a glide of another object goes on
+            gui.sync.gliding[M2] = (Point3{Float64}(pose(M2)[1]), pose(M2)[2], (; rec.pos, rec.rot))
+            @test GUI._gesture!(gui, M1)
+            @test haskey(gui.sync.gliding, M2)
+            empty!(gui.sync.gliding)
+            ctrl.selected[] = nothing
+            look!(gui)
+        end
+
+        @testset "the claims leave the presence file to the window" begin
+            look!(gui)
+            file = GUI._presence_file(dir, me)
+            @test isfile(file)
+            before = read(file, String)
+            r = GUI._claim_files(dir, me, Dict(uid(gui, :M2) => :M2), Dict{String, Symbol}())
+            @test r.filed == Dict(uid(gui, :M2) => :M2)
+            @test read(file, String) == before
+            GUI._claim_files(dir, me, Dict{String, Symbol}(), r.filed)
+            @test isempty(mine(dir, me))
+        end
+
         @testset "released at closing" begin
             @test GUI._gesture!(gui, M1)
             look!(gui)
