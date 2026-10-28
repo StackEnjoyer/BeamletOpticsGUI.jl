@@ -451,8 +451,9 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
                dist(_pos(sel), _pos(fx.lens)) < 1e-9, "the click did not set the pivot to the lens")
         _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_center)))
         frame!()
-        _check(dist(_pos(sel), (_pos(fx.lens) .+ _pos(fx.mirror)) ./ 2) < 1e-9,
-            "the button center did not set the pivot to the mean")
+        bb = GUI._selection_bbox(gui.controls, sel, GUI._object_plots(gui.controls.h, sel))
+        _check(dist(_pos(sel), minimum(bb) .+ Makie.widths(bb) ./ 2) < 1e-9,
+            "the button center did not set the pivot to the center of the box")
         x = _pos(sel)[1]
         _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_x)))
         frame!()
