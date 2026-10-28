@@ -95,7 +95,10 @@ function _journal!(gui::LiveView, changes)
     return nothing
 end
 
-"""The id, label, type and position of the selected object of the `gui`, or `nothing`."""
+"""
+The id, label, type and position of the selected object of the `gui`, or `nothing`: of the
+innermost item with an id that holds the selection, as `_presence_selected`.
+"""
 function _session_selected(gui::LiveView)
     sel = gui.controls.selected[]
     isnothing(sel) && return nothing
@@ -122,12 +125,13 @@ end
 
 _session_clock(t) = Libc.strftime("%H:%M:%S", t)
 
-# The readable id of the entry or system of a conflict `key` (a uid, or "id:L1")
+# The readable id of the entry, group or system of a conflict `key` (a uid, or "id:L1")
 function _conflict_id(gui::LiveView, key::String)
     s = gui.sync
     for p in (s.theirs, s.base)
         isnothing(p) && continue
-        x = something(_by_key(p.entries, key), _by_key(p.systems, key), Some(nothing))
+        x = something(_by_key(p.entries, key), _by_key(p.systems, key), _by_key(p.groups, key),
+            Some(nothing))
         isnothing(x) || return String(x.name)
     end
     for (id, uid) in values(s.ids)

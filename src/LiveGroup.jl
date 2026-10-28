@@ -481,7 +481,10 @@ longer applies.
 function _do_group!(gui, @nospecialize(g), rec::_WindowGroup; label = nothing)
     ctrl = gui.controls
     members = rec.members
-    reason = length(members) < 2 ? "a group needs several objects" :
+    # A group of one member comes from a project (see `open_project`): its undo makes it again
+    reason = isempty(members) ? "a group needs objects" :
+             length(members) == 1 ? (_shown_top(gui, only(members)) ? nothing :
+                                     "$(_label(gui, only(members))) is no top-level object") :
              _group_reason(gui, _MultiSelection(members))
     isnothing(reason) || throw(ArgumentError(reason))
     systems = _member_systems(gui, first(members))

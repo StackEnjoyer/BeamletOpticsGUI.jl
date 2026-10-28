@@ -1038,7 +1038,8 @@ and works on it like a person with an agent: drags the lens, which the autosave 
 files; changes the files like an agent, which the window merges and glides; `Ctrl+S` with the card
 of the version, closed by a typed message and `Enter`, by `Esc`, by the button "Cancel" and by the
 button "Save version"; another participant (a presence file) works on the mirror, shown with its
-name, and leaves. The steps call the autosave and the watcher themselves, with times that do
+name, and leaves; `Ctrl+G` groups the lens and the mirror, which the autosave writes as a line, and
+an agent ungroups them in the file. The steps call the autosave and the watcher themselves, with times that do
 not depend on how long a step takes: the watcher of the window never starts, and the step of the
 agent waits until the mirror has glided. Returns the live view and its screen, which the caller
 closes.
@@ -1144,6 +1145,31 @@ function _project_session(step; dir = mktempdir())
         GUI._check_presence!(gui)
         frame!()
         _check(isempty(gui.sync.presence), "the other participant did not leave")
+    end
+    step("project: Ctrl+G, autosave; an agent ungroups in the file") do
+        _click!(gui, _px(gui, _pos(lens)))
+        frame!()
+        _ctrl!(gui, Keyboard.press)
+        _click!(gui, _px(gui, _pos(mirror)))
+        _ctrl!(gui, Keyboard.release)
+        frame!()
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(GUI._is_window_group(gui, gui.controls.selected[]), "Ctrl+G did not make a group")
+        t = time()
+        GUI._autosave!(gui; now = t)
+        _check(GUI._autosave!(gui; now = t + 1) === :saved, "the autosave did not save the group")
+        # not `file`, which the step of the other participant set to its presence file
+        system = joinpath(dir, "system.jl")
+        text = read(system, String)
+        _check(occursin("@group G1 = [L1, M1]", text), "the group is not a line of system.jl")
+        text = replace(text, r"@group G1 = [^\n]*\n" => "")
+        write(system, replace(text, r"@system S1 = \[G1\]" => "@system S1 = [L1, M1]"))
+        t = time()
+        GUI._check_files!(gui; now = t)
+        _check(GUI._check_files!(gui; now = t + 1) === :applied, "the window did not merge the file")
+        settle!()
+        _check(isempty(gui.components.groups), "the window did not ungroup")
     end
     return gui, screen
 end

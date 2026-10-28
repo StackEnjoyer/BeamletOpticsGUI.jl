@@ -101,6 +101,11 @@ When this Skill is active:
   of the members, the group, `push!` of the group; for a changed group of the script
   `delete!(sg, part)` of the parts it lost, the new group(s), `push!(sg, new)`; the group keeps its variable
   and its systems).
+- Projects (prototype): `open_project(path)` opens a folder of BeamletOpticsProjects (or its `.bmo`
+  file), `save_project(gui, dir)` saves a view as one. The open window writes every finished action
+  to `system.jl` and merges what agents or other people write there; groups made in the window are
+  `@group` lines. `Ctrl+S` saves a version, `Ctrl+R` takes the files as they are. How to work on the
+  files is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
   `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
   cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"

@@ -603,10 +603,17 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
 end
 
 """
-Gives the entries and systems of the `project` without a machine id (lines of an agent) the one
-that the `gui` gave their objects (see `ids`), such that the project and the window compare equal.
+Gives the entries, systems and groups of the `project` without a machine id (lines of an agent) the
+one that the `gui` gave their objects (see `ids`), such that the project and the window compare equal.
 """
 function _align_uids!(gui::LiveView, project)
+    for (i, ge) in enumerate(project.groups)
+        isnothing(ge.uid) || continue
+        g = _window_object(gui, ge)
+        isnothing(g) && continue
+        project.groups[i] = BMOP.GroupEntry(ge.name, ge.members, ge.pos, ge.rot, ge.object, ge.label,
+            gui.sync.ids[g][2])
+    end
     for (i, e) in enumerate(project.entries)
         isnothing(e.uid) || continue
         obj = _window_object(gui, e)
@@ -793,27 +800,70 @@ function _object_of_key(gui::LiveView, key::String)
 end
 
 """
+The objects of the `gui` that the names `names` (members of a system or group of the files `disk`)
+stand for, those for which `shown` is `true`: the object of an entry, the window group of a group,
+or for a group that the window has not (yet, see `_make_groups!`) the objects of its members.
+"""
+function _member_objects(gui::LiveView, disk, names, shown)
+    out = Any[]
+    for n in names
+        key = "id:" * String(n)
+        x = something(_by_key(disk.entries, key), _by_key(disk.groups, key), Some(nothing))
+        isnothing(x) && continue
+        o = _window_object(gui, x)
+        if !isnothing(o) && shown(o)
+            push!(out, o)
+        elseif x isa BMOP.GroupEntry
+            append!(out, _member_objects(gui, disk, x.members, shown))
+        end
+    end
+    return out
+end
+
+"""
+The objects of the `gui` of the keys `ks` of entries and groups (see `BeamletOpticsProjects.merge_plan`)
+for which `shown` is `true`; a group that the window has not, by its members in the first of the
+`projects` that has it.
+"""
+function _key_objects(gui::LiveView, projects, ks, shown)
+    out = Any[]
+    for k in ks
+        o = _object_of_key(gui, k)
+        if !isnothing(o) && shown(o)
+            push!(out, o)
+            continue
+        end
+        for p in projects
+            ge = _by_key(p.groups, k)
+            isnothing(ge) && continue
+            append!(out, _member_objects(gui, p, ge.members, shown))
+            break
+        end
+    end
+    return out
+end
+
+"""
 Makes the systems of the `gui` that are in `keys` have the members and sources of the files `disk`;
 those of `merged` (see `BeamletOpticsProjects.merge_plan`) get the merged members and sources, given
-by entry keys. Objects and sources that the person removed from the view stay removed.
+by keys of entries and groups (`mine` is the state of the window). A group that the window has not
+yet stands for its members until it is made, see `_make_groups!`. Objects and sources that the
+person removed from the view stay removed.
 """
-function _sync_members!(gui::LiveView, disk, keys; merged = Dict{String, Any}())
+function _sync_members!(gui::LiveView, disk, keys; merged = Dict{String, Any}(), mine = nothing)
     # The ids of objects removed from the view are kept, see `_project_ids`
     shown(@nospecialize o) = _shown_top(gui, o) || _has(_sources(gui), o)
     for se in disk.systems
         (_key(se) in keys || haskey(merged, _key(se))) || continue
         sys = _window_object(gui, se)
         sys isa BMO.System || continue
-        objs(names) = Any[o for n in names
-                          for o in (_window_object(gui, _by_key(disk.entries, "id:" * String(n))),)
-                          if !isnothing(o) && shown(o)]
-        want, sources = objs(se.members), objs(se.sources)
+        want, sources = _member_objects(gui, disk, se.members, shown), _member_objects(gui, disk, se.sources, shown)
         if haskey(merged, _key(se))
             # Changed both in the window and in the files: the union of what each added (an object
             # of the window that is not saved yet has no id here and is not removed)
             m = merged[_key(se)]
-            by_keys(ks) = Any[o for k in ks for o in (_object_of_key(gui, k),) if !isnothing(o) && shown(o)]
-            want, sources = by_keys(m.members), by_keys(m.sources)
+            projects = isnothing(mine) ? Any[disk] : Any[disk, mine]
+            want, sources = _key_objects(gui, projects, m.members, shown), _key_objects(gui, projects, m.sources, shown)
         end
         _unrecorded(gui) do
             for o in want
@@ -833,13 +883,238 @@ function _sync_members!(gui::LiveView, disk, keys; merged = Dict{String, Any}())
     return nothing
 end
 
+#=
+Groups of the files in the window: a group whose members change is made anew, one that only moves,
+is renamed or relabeled is changed in place
+=#
+
+# The keys of the members of the group `ge` of the project `p`, by the names of its entries and groups
+_group_member_keys(p, ge) = String[_key(x) for n in ge.members
+                                   for x in (something(_by_key(p.entries, "id:" * String(n)),
+                                                       _by_key(p.groups, "id:" * String(n)), Some(nothing)),)
+                                   if !isnothing(x)]
+
+"""
+    _group_plan(gui, mine, disk, keys, merged, rebuilt) -> (; dissolve, make)
+
+How the groups of the `gui` (whose state is `mine`, see `_collect_project`: the `object` of each of
+its groups is the window group) take the groups of the files `disk` for the `keys` and `merged` of a
+merge (see `_adopt!`):
+
+- `dissolve`: the outermost groups of the window whose tree is made anew, since a group in it is
+  added, removed or gets other members in the files, or it holds one of the objects `rebuilt` (that
+  are removed or rebuilt, which must be top-level for that);
+- `make`: the groups to make afterwards, `(; key, old, name, label, uid, pos, rot, members)`, whose
+  members are keys of entries and groups or objects of the window: as in the files for the `keys`,
+  the merged members for `merged`, and the window group `old` as it is for the other groups of the
+  dissolved trees, also one that is not saved yet (it has no id then, `name` is `nothing`).
+"""
+function _group_plan(gui::LiveView, mine, disk, keys, merged, rebuilt)
+    comp = gui.components
+    restructure = Set{String}()
+    for ge in disk.groups
+        k = _key(ge)
+        (k in keys || haskey(merged, k)) || continue
+        mg = _by_key(mine.groups, k)
+        want = haskey(merged, k) ? merged[k].members : Set(_group_member_keys(disk, ge))
+        (isnothing(mg) || Set(_group_member_keys(mine, mg)) != want) && push!(restructure, k)
+    end
+    for mg in mine.groups
+        k = _key(mg)
+        k in keys && isnothing(_by_key(disk.groups, k)) && push!(restructure, k)
+    end
+    # The outermost window groups of the trees to make anew
+    dissolve = Any[]
+    function mark!(@nospecialize(o))
+        top = _component_top(gui, o)
+        haskey(comp.groups, top) && !_has(dissolve, top) && push!(dissolve, top)
+        return nothing
+    end
+    for k in restructure
+        mg = _by_key(mine.groups, k)
+        o = isnothing(mg) ? _object_of_key(gui, k) : mg.object
+        isnothing(o) || mark!(o)
+    end
+    foreach(mark!, rebuilt)
+    # Every group of these trees is made anew, also those that did not change
+    trees = Any[]
+    collect_groups!(@nospecialize(g)) = (push!(trees, g);
+        foreach(m -> haskey(comp.groups, m) && collect_groups!(m), BMO.objects(g)))
+    foreach(collect_groups!, dissolve)
+    make = NamedTuple[]
+    made = Set{String}()
+    function from_files!(k, old)
+        ge = _by_key(disk.groups, k)
+        isnothing(ge) && return nothing
+        members = haskey(merged, k) ? Any[merged[k].members...] : Any[_group_member_keys(disk, ge)...]
+        push!(make, (; key = k, old, ge.name, ge.label, ge.uid, ge.pos, ge.rot, members))
+        return nothing
+    end
+    for g in trees
+        i = findfirst(x -> x.object === g, mine.groups)
+        mg = isnothing(i) ? nothing : mine.groups[i]
+        k = isnothing(mg) ? nothing : _key(mg)
+        isnothing(k) || push!(made, k)
+        if !isnothing(k) && (k in keys || haskey(merged, k))
+            from_files!(k, g)
+        else
+            # As in the window, by its objects: also members that are not saved
+            name, label, uid = isnothing(mg) ? (nothing, nothing, nothing) : (mg.name, mg.label, mg.uid)
+            R = Matrix{Float64}(BMO.orientation(g))
+            push!(make, (; key = k, old = g, name, label, uid, pos = Tuple(Vector{Float64}(position(g))),
+                rot = R, members = collect(Any, BMO.objects(g))))
+        end
+    end
+    for k in restructure
+        k in made || from_files!(k, nothing)
+    end
+    return (; dissolve, make)
+end
+
+"""
+Dissolves the top-level group `g` made in the window of the `gui` and the window groups inside it,
+without undo entries and without selecting: their members take their places in the systems.
+Returns the objects that were members.
+"""
+function _unmake_group!(gui::LiveView, @nospecialize(g))
+    ctrl = gui.controls
+    systems = _member_systems(gui, g)
+    members = collect(Any, BMO.objects(g))
+    _change!(ctrl, nothing) do
+        for sys in systems
+            delete!(sys, g)
+            foreach(m -> push!(sys, m), members)
+        end
+    end
+    _unshow_group!(gui, g, systems)
+    _sync_structure!(gui)
+    isempty(systems) || _on_systems_change!(gui, systems)
+    # Also the linked views, which followed the ungrouping
+    foreach(v -> _drop_history!(v.controls, Any[g]), Any[gui, gui.links.views...])
+    ctrl.selected[] === g && (ctrl.selected[] = nothing)
+    delete!(gui.sync.ids, g)
+    freed = copy(members)
+    for m in members
+        haskey(gui.components.groups, m) && append!(freed, _unmake_group!(gui, m))
+    end
+    return freed
+end
+
+"""
+Makes the groups `specs` (see `_group_plan`) in the `gui`, inner groups first: each an
+`ObjectGroup` of its members (keys of entries and groups, or objects; a group of the window that is
+made anew stands for the new one), which are taken out of their systems, with the pivot and
+orientation of its spec; the group goes into each of these systems. Without undo entries and
+without selecting. A member that is not in the view or not top-level is left out, a group without
+members is not made. A spec with a `name` gives the group that id (the stale object of a group that
+had the uid loses it). Adds `"grouped G1"` to `done` and the groups to `touched`.
+"""
+function _make_groups!(gui::LiveView, specs, done, touched; replaced = IdDict{Any, Any}())
+    ctrl = gui.controls
+    ids = gui.sync.ids
+    remade = IdDict{Any, Any}()
+    pending = collect(specs)
+    waits(s, ref) = ref isa String ? (ref == s.key) : (ref === s.old)
+    resolve(ref) = ref isa String ? _object_of_key(gui, ref) : get(remade, ref, get(replaced, ref, ref))
+    while !isempty(pending)
+        i = findfirst(s -> !any(ref -> any(t -> t !== s && waits(t, ref), pending), s.members), pending)
+        # A cycle can not come from a loaded project; whatever is left is not made
+        isnothing(i) && break
+        s = popat!(pending, i)
+        members = Any[o for ref in s.members for o in (resolve(ref),)
+                      if !isnothing(o) && _shown_top(gui, o)]
+        isempty(members) && continue
+        g = BMO.ObjectGroup(members)
+        BMO.set_pivot3d!(g, Float64[s.pos...])
+        isnothing(s.rot) || BMO.orientation!(g, BMOP.rotation_matrix(s.rot))
+        systems = unique(objectid, Any[sys for m in members for sys in _member_systems(gui, m)])
+        _change!(ctrl, nothing) do
+            for sys in systems
+                foreach(m -> _has(sys.objects, m) && delete!(sys, m), members)
+                push!(sys, g)
+            end
+        end
+        isnothing(s.old) || (remade[s.old] = g)
+        if isnothing(s.name)
+            _show_group!(gui, g, _current_record(g), systems)
+        else
+            _show_group!(gui, g, _current_record(g), systems; label = _shown_label(s))
+            for (o, (_, uid)) in collect(ids)
+                o !== g && !isnothing(s.uid) && uid == s.uid && delete!(ids, o)
+            end
+            _name!(gui, g, s)
+        end
+        _sync_structure!(gui)
+        isempty(systems) || _on_systems_change!(gui, systems)
+        push!(touched, g)
+        isnothing(s.old) && push!(done, "grouped $(_shown_label(s))")
+    end
+    return nothing
+end
+
+"""
+Takes the objects `freed` (members of dissolved groups, see `_unmake_group!`) that are top-level
+objects after the groups were made again out of the systems of the `gui` that do not list them:
+the system of the files `disk` for the `keys` and `merged`, else that of the window `mine`. A
+dissolved group put its members into its systems, which list only the group.
+"""
+function _settle_freed!(gui::LiveView, mine, disk, keys, merged, freed)
+    for o in freed
+        (_shown_top(gui, o) && haskey(gui.sync.ids, o)) || continue
+        name, uid = gui.sync.ids[o]
+        for sys in _member_systems(gui, o)
+            haskey(gui.sync.ids, sys) || continue
+            k = gui.sync.ids[sys][2]
+            listed = if haskey(merged, k)
+                uid in merged[k].members || "id:" * String(name) in merged[k].members
+            else
+                se = _by_key((k in keys ? disk : mine).systems, k)
+                isnothing(se) || name in se.members
+            end
+            listed || _unrecorded(() -> _remove_member!(gui, o, sys), gui)
+        end
+    end
+    return nothing
+end
+
+"""
+The groups of the files `disk` that the window of the `gui` has and that only moved, were renamed or
+relabeled for the `keys`: changed in place. The members keep the poses of their own lines, so the
+pivot and the orientation are set without moving them.
+"""
+function _adopt_groups!(gui::LiveView, mine, disk, keys, done)
+    for ge in disk.groups
+        _key(ge) in keys || continue
+        mg = _by_key(mine.groups, _key(ge))
+        isnothing(mg) && continue
+        g = _window_object(gui, ge)
+        (isnothing(g) || !haskey(gui.components.groups, g)) && continue
+        if ge.name !== mg.name || ge.label != mg.label
+            _name!(gui, g, ge)
+            push!(done, "renamed $(_shown_label(ge))")
+        end
+        R = BMOP.rotation_matrix(ge.rot)
+        if collect(ge.pos) != Vector{Float64}(position(g)) || maximum(abs, R - BMO.orientation(g)) > 1e-12
+            _change!(gui.controls, nothing) do
+                BMO.set_pivot3d!(g, Float64[ge.pos...])
+                BMO.orientation!(g, R)
+            end
+            gui.components.groups[g] = _current_record(g)
+            push!(done, "moved $(_shown_label(ge))")
+        end
+    end
+    return nothing
+end
+
 """
     _adopt!(gui, mine, disk, keys; rebuild = Set{Symbol}(), animate = _shown(gui), merged = Dict()) -> Vector{String}
 
-Makes the entries and systems of the `keys` in the open `gui` (whose state is the project `mine`,
-see `_collect_project`) as in the files `disk`, without undo entries: removes, adds, rebuilds (other
-code, or calling own code in `rebuild`), moves (gliding if `animate`, see `_glide!`), renames and
-relabels; the systems of `merged` get the merged members (see `_sync_members!`). The changed
+Makes the entries, systems and groups of the `keys` in the open `gui` (whose state is the project
+`mine`, see `_collect_project`) as in the files `disk`, without undo entries: removes, adds,
+rebuilds (other code, or calling own code in `rebuild`), moves (gliding if `animate`, see
+`_glide!`), renames and relabels; the systems and groups of `merged` get the merged members (see
+`_sync_members!`). A group whose members change is made anew with the window groups around and
+inside it (see `_group_plan`), one that only moved or was renamed is changed in place. The changed
 objects get a box for a moment. Returns what was done, e.g. `"moved M1"`.
 """
 function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), animate::Bool = _shown(gui),
@@ -848,6 +1123,18 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
     touched = Any[]
     glides = Tuple{Any, Any, Any}[]
     m = BMOP.match_entries(disk.entries, mine.entries)
+    # The trees of groups that change are dissolved first and made again after the entries and the
+    # systems, so that removed and rebuilt members are top-level objects then
+    rebuilt = Any[e.object for e in m.added if _key(e) in keys]
+    for (e, mine_e) in m.pairs
+        _key(e) in keys || continue
+        (e.kind != mine_e.kind || e.name in rebuild ||
+         BMOP.normalize_code(e.code) != BMOP.normalize_code(mine_e.code)) && push!(rebuilt, mine_e.object)
+    end
+    groups = _group_plan(gui, mine, disk, keys, merged, rebuilt)
+    freed = Any[o for g in groups.dissolve for o in _unmake_group!(gui, g)]
+    # The objects that a rebuild replaced, for the groups made again by their objects
+    replaced = IdDict{Any, Any}()
     # In the window only: removed in the files
     for e in m.added
         _key(e) in keys || continue
@@ -872,7 +1159,9 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
         obj = mine_e.object
         if e.kind != mine_e.kind || e.name in rebuild ||
            BMOP.normalize_code(e.code) != BMOP.normalize_code(mine_e.code)
-            push!(touched, _swap!(gui, obj, e))
+            new = _swap!(gui, obj, e)
+            replaced[obj] = new
+            push!(touched, new)
             push!(done, "rebuilt $(_shown_label(e))")
             continue
         end
@@ -887,7 +1176,10 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
         end
         isequal(Dict(e.meta), Dict(mine_e.meta)) || _update_record!(gui, obj; meta = Pair{Symbol, Any}[e.meta...])
     end
-    _sync_members!(gui, disk, keys; merged)
+    _sync_members!(gui, disk, keys; merged, mine)
+    _make_groups!(gui, groups.make, done, touched; replaced)
+    _settle_freed!(gui, mine, disk, keys, merged, freed)
+    _adopt_groups!(gui, mine, disk, keys, done)
     for se in ms.added
         _key(se) in keys || continue
         try
@@ -946,8 +1238,8 @@ function _load_from_disk!(gui::LiveView)
     _finish_glides!(gui)
     _align_uids!(gui, disk)
     mine = _collect_project(gui, gui.project)
-    keys = Set{String}(_key(x) for x in Iterators.flatten((disk.entries, disk.systems, mine.entries,
-        mine.systems)))
+    keys = Set{String}(_key(x) for x in Iterators.flatten((disk.entries, disk.systems, disk.groups,
+        mine.entries, mine.systems, mine.groups)))
     _release_info!(gui, _ProjectConflict)
     done = _adopt!(gui, mine, disk, keys; rebuild = Set(_calls_own_code(disk)))
     # Taken in from the files, not written by the window
@@ -989,7 +1281,7 @@ function _show_conflict!(gui::LiveView, keys::Vector{String})
     names = String[]
     for k in keys
         x = something(_by_key(gui.sync.theirs.entries, k), _by_key(gui.sync.theirs.systems, k),
-            Some(nothing))
+            _by_key(gui.sync.theirs.groups, k), Some(nothing))
         if isnothing(x)
             obj = findfirst(t -> t[2] == k, gui.sync.ids)
             push!(names, isnothing(obj) ? k : _label(gui, obj))

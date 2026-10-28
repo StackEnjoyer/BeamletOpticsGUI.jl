@@ -40,7 +40,11 @@ _person() = BMOP.person()
 """The presence file of the person `id` in the project folder `dir`, see `BeamletOpticsProjects.presence_file`."""
 _presence_file(dir::AbstractString, id::AbstractString) = BMOP.presence_file(dir, id)
 
-"""The machine id and the readable id of the selected object of the `gui`, `("", "")` if none."""
+"""
+The machine id and the readable id of the selected object of the `gui`, `("", "")` if none: of the
+innermost item with an id that holds the selection, e.g. a group (`@group`), a member of a group, or
+the component of a selected part of it.
+"""
 function _presence_selected(gui::LiveView)
     sel = gui.controls.selected[]
     isnothing(sel) && return ("", "")

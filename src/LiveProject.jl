@@ -47,8 +47,8 @@ _is_project_name(s::AbstractString) = _is_variable_name(s) && !_is_taken_name(s)
 """
     _project_ids(gui, items) -> IdDict{Any, Tuple{Symbol, String}}
 
-The readable id and the machine id of the objects, sources and systems `items` of the `gui` in a
-project: those it has in `gui.sync.ids` (see `_ProjectSync`), else a new id of the prefix of its
+The readable id and the machine id of the objects, sources, groups and systems `items` of the `gui`
+in a project: those it has in `gui.sync.ids` (see `_ProjectSync`), else a new id of the prefix of its
 type (see `BeamletOpticsProjects.id_prefix` and `next_id`) and a new uid. Every id in
 `gui.sync.ids` is reserved first, also of an item later in `items` or of an object that is not in
 the view anymore, such that a new one never takes it: after `L5` the next lens is `L6`. An id or a
@@ -100,16 +100,16 @@ function _project_label(gui::LiveView, @nospecialize(x), id::Symbol)
 end
 
 """
-    _file_order(base, entries, systems) -> (entries, systems)
+    _file_order(base, entries, systems, groups) -> (entries, systems, groups)
 
-The `entries` and `systems` of a project in the order of the project `base` (the state that the view
-and the files last agreed on, see `_ProjectSync`): each by the place of the entry or system of the
-same uid in `base`, else of the same readable id; the others after those, in their order. `system_code`
-writes the components before the sources, so a new one is written at the end of its kind. Without
-`base`, as they are.
+The `entries`, `systems` and `groups` of a project in the order of the project `base` (the state
+that the view and the files last agreed on, see `_ProjectSync`): each by the place of the entry,
+system or group of the same uid in `base`, else of the same readable id; the others after those, in
+their order. `system_code` writes the components before the sources and the inner groups before the
+groups that hold them, so a new one is written at the end of its kind. Without `base`, as they are.
 """
-function _file_order(base, entries, systems)
-    isnothing(base) && return entries, systems
+function _file_order(base, entries, systems, groups)
+    isnothing(base) && return entries, systems, groups
     function order(xs, old)
         by_uid = Dict{String, Int}()
         by_name = Dict{Symbol, Int}()
@@ -122,7 +122,7 @@ function _file_order(base, entries, systems)
                    get(by_name, x.name, typemax(Int))
         return xs[sortperm([place(x) for x in xs]; alg = Base.Sort.DEFAULT_STABLE)]
     end
-    return order(entries, base.entries), order(systems, base.systems)
+    return order(entries, base.entries), order(systems, base.systems), order(groups, base.groups)
 end
 
 #=
@@ -171,12 +171,69 @@ function _project_meta(origin)
 end
 
 """
+    _group_pose(gui, g, uid) -> (pos, rot)
+
+The `pos` and `rot` of the `@group` line of the group `g` made in the window with the machine id
+`uid`: those of the group of that uid in the `base` of the sync (see `_ProjectSync`) while `g` has
+that pivot and orientation, such that the text of an unmoved group stays as it was; otherwise its
+position and its orientation, `nothing` for the identity within `1e-13`.
+"""
+function _group_pose(gui::LiveView, @nospecialize(g), uid)
+    P = Vector{Float64}(position(g))
+    R = Matrix{Float64}(BMO.orientation(g))
+    base = gui.sync.base
+    if !isnothing(base)
+        i = findfirst(e -> e.uid == uid, base.groups)
+        if !isnothing(i)
+            e = base.groups[i]
+            collect(e.pos) == P && maximum(abs, R - BMOP.rotation_matrix(e.rot)) <= 1e-12 &&
+                return e.pos, e.rot
+        end
+    end
+    rot = maximum(abs, R - I) <= 1e-13 ? nothing : R
+    return (P[1], P[2], P[3]), rot
+end
+
+"""
+    _collect_saved!(gui, x, saved, groups, members, skipped) -> Bool
+
+Collects the object or source `x` of the `gui` for `_project_parts` and returns whether it is
+saved: a group made in the window (see `gui.components.groups`) with those of its members that are
+saved, in their order (`members[x]`), after its inner groups in `groups`, unless none of them is
+saved; any other with a known constructor in `saved`; else its label in `skipped`.
+"""
+function _collect_saved!(gui::LiveView, @nospecialize(x), saved, groups, members, skipped)
+    comp = gui.components
+    if haskey(comp.groups, x)
+        ms = Any[]
+        for m in BMO.objects(x)
+            _collect_saved!(gui, m, saved, groups, members, skipped) && push!(ms, m)
+        end
+        isempty(ms) && return false
+        members[x] = ms
+        push!(groups, x)
+        return true
+    end
+    if isnothing(get(comp.origin, x, nothing))
+        push!(skipped, _label(gui, x))
+        return false
+    end
+    push!(saved, x)
+    return true
+end
+
+"""
     _project_parts(gui, dir; name = project_name(dir)) -> (; project, names, ids, skipped)
 
 The `project` of the `gui` in the folder `dir` with the module `name` (see `_collect_project`), the
-readable ids (`names`) and the readable and machine `ids` of its objects, sources and systems (see
-`_project_ids`) and the labels of the objects and sources that were `skipped`, since their
-constructor is not known.
+readable ids (`names`) and the readable and machine `ids` of its objects, sources, groups and
+systems (see `_project_ids`) and the labels of the objects and sources that were `skipped`, since
+their constructor is not known.
+
+A group made in the window (see `_group!`) is a `@group` of its members that are saved, with its
+pivot and orientation (see `_group_pose`); each member is an entry or a group of its own, at its
+absolute pose, and the systems list the group, not its members. A group of the script without a
+constructor is skipped like any such object.
 """
 function _project_parts(gui::LiveView, dir::AbstractString; name::AbstractString = BMOP.project_name(dir))
     comp = gui.components
@@ -191,14 +248,12 @@ function _project_parts(gui::LiveView, dir::AbstractString; name::AbstractString
         (src for src in _sources(gui) if isempty(_snapshot(gui, src).systems))...])
     skipped = String[]
     saved = Any[]
+    groups = Any[]
+    members = IdDict{Any, Vector{Any}}()
     for x in Any[objects..., sources...]
-        if isnothing(get(comp.origin, x, nothing))
-            push!(skipped, _label(gui, x))
-        else
-            push!(saved, x)
-        end
+        _collect_saved!(gui, x, saved, groups, members, skipped)
     end
-    ids = _project_ids(gui, Any[saved..., systems...])
+    ids = _project_ids(gui, Any[saved..., groups..., systems...])
     names = IdDict{Any, Symbol}(x => first(v) for (x, v) in ids)
     entries = BMOP.Entry[]
     for x in saved
@@ -210,14 +265,22 @@ function _project_parts(gui::LiveView, dir::AbstractString; name::AbstractString
             pose0 = (Vector{Float64}(P0), Matrix{Float64}(R0)), meta = _project_meta(origin),
             label = _project_label(gui, x, id), uid))
     end
-    is_saved = Base.IdSet{Any}(saved)
+    group_entries = BMOP.GroupEntry[]
+    for g in groups
+        id, uid = ids[g]
+        pos, rot = _group_pose(gui, g, uid)
+        push!(group_entries, BMOP.GroupEntry(id, Symbol[names[m] for m in members[g]]; pos, rot,
+            object = g, label = _project_label(gui, g, id), uid))
+    end
+    is_saved = Base.IdSet{Any}(Any[saved..., groups...])
     system_entries = BMOP.SystemEntry[BMOP.SystemEntry(names[sys],
         Symbol[names[obj] for obj in sys.objects if obj in is_saved],
         Symbol[names[src] for src in _sources_of(gui, sys) if src in is_saved];
         static = _static_system(sys), object = sys, label = _project_label(gui, sys, names[sys]),
         uid = last(ids[sys])) for sys in systems]
-    entries, system_entries = _file_order(gui.sync.base, entries, system_entries)
-    project = BMOP.Project(dir, name; entries, systems = system_entries)
+    entries, system_entries, group_entries = _file_order(gui.sync.base, entries, system_entries,
+        group_entries)
+    project = BMOP.Project(dir, name; entries, systems = system_entries, groups = group_entries)
     return (; project, names, ids, skipped)
 end
 
@@ -228,7 +291,8 @@ The setup of the `gui` as a project in the folder `dir`: its systems (`System` o
 with their members and sources, the objects and sources without a system (not those of the
 `extras` kwarg), each object once, also one of several systems. Each is an entry with its
 constructor call and its pose, see `_project_pose`; one whose constructor is not known (see the
-`origin` of `_ComponentState`) is left out. The inputs of the page "Edit" that are not applied are
+`origin` of `_ComponentState`) is left out. A group made in the window is a `@group` of its
+members, see `_project_parts`. The inputs of the page "Edit" that are not applied are
 ignored.
 """
 _collect_project(gui::LiveView, dir::AbstractString) = _project_parts(gui, dir).project
@@ -245,14 +309,14 @@ end
 """
     _apply_project_names!(gui, project)
 
-Writes the readable ids and the machine ids of the entries and systems of the saved `project` into
+Writes the readable ids and the machine ids of the entries, groups and systems of the saved `project` into
 `gui.sync.ids` (see `_ProjectSync`), such that the next save gives the same ones; the uids that
 `BeamletOpticsProjects.save_project` gave are those of the entries in `project`. The labels of the
 `gui` stay as they are.
 """
 function _apply_project_names!(gui::LiveView, project)
     ids = gui.sync.ids
-    for e in Iterators.flatten((project.entries, project.systems))
+    for e in Iterators.flatten((project.entries, project.systems, project.groups))
         isnothing(e.object) && continue
         ids[e.object] = (e.name, something(e.uid, BMOP.new_uid()))
     end
@@ -479,10 +543,16 @@ sources without a system, their labels (else their readable ids), their ids and 
 `_ProjectSync`), the origins of the objects (their code, with which they are saved again and, from
 the catalog, edited and copied), and the view file of the person (`.bmo/view-<person>.toml`, else `view.toml`). The `kwargs` of `live_view` win over those of
 the view file. The `project` becomes the `base` of the sync.
+
+The groups of the project (`@group`, built by `BeamletOpticsProjects`) become groups made in the
+window (see `_group!`), which `Ctrl+Shift+G` ungroups: an outermost group is a top-level object of
+its systems or without a system, its members are no top-level objects.
 """
 function _open_from(project; view = _read_view(project), kwargs...)
     @nospecialize
     byname = Dict{Symbol, Any}(e.name => e.object for e in project.entries)
+    # The entries and groups inside a group: only their outermost group is a top-level object
+    grouped = Set{Symbol}(m for g in project.groups for m in g.members)
     in_system = Set{Symbol}()
     args = Any[]
     for s in project.systems
@@ -494,29 +564,40 @@ function _open_from(project; view = _read_view(project), kwargs...)
     paired = Base.IdSet{Any}(a.second for a in args if a isa Pair)
     # The label of each, else its readable id
     labels = IdDict{Any, String}()
-    for e in Iterators.flatten((project.entries, project.systems))
+    for e in Iterators.flatten((project.entries, project.systems, project.groups))
         labels[e.object] = something(e.label, String(e.name))
     end
     vk = _view_kwargs(view, byname, paired)
     gui = live_view(args...; labels, vk.kwargs..., kwargs...)
     # The readable id and the uid of each; a line of an agent without a uid gets one, which the
     # next save writes (`diff_projects` pairs it with its line by the readable id meanwhile)
-    for e in Iterators.flatten((project.entries, project.systems))
+    for e in Iterators.flatten((project.entries, project.systems, project.groups))
         gui.sync.ids[e.object] = (e.name, something(e.uid, BMOP.new_uid()))
     end
     origins = IdDict{Any, Any}(e.object => _project_origin(gui, e) for e in project.entries)
+    # The groups are groups made in the window, also before they are added without a system (see
+    # `_record_units`); they have no origin, see `_regroup_reason`
+    comp = gui.components
+    for g in project.groups
+        comp.groups[g.object] = _current_record(g.object)
+    end
     _unrecorded(gui) do
         for e in project.entries
-            e.name in in_system && continue
+            (e.name in in_system || e.name in grouped) && continue
             _add_loose!(gui, e.object, labels[e.object], origins[e.object], vk.beam_kwargs)
+        end
+        for g in project.groups
+            (g.name in in_system || g.name in grouped) && continue
+            _add_loose!(gui, g.object, labels[g.object], nothing, vk.beam_kwargs)
         end
         for src in vk.off
             src in paired || _set_beam_on!(gui, src, false)
         end
     end
     for (obj, origin) in origins
-        gui.components.origin[obj] = origin
+        comp.origin[obj] = origin
     end
+    foreach(g -> (comp.origin[g.object] = nothing), project.groups)
     empty!(gui.controls.undo_stack)
     empty!(gui.controls.redo_stack)
     if haskey(view, "camera")
