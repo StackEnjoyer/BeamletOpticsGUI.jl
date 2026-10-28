@@ -353,7 +353,9 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(layout)
         ctrl, c = gui.controls, _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
-        center = Point2f(minimum(view) .+ Makie.widths(view) ./ 2)
+        # beside the middle of the view, the origin, where the dot of the pivot of a selected group of
+        # the fixture takes a press, see `_pivot_hit`
+        center = Point2f(minimum(view) .+ Makie.widths(view) ./ 2) .+ Point2f(30, 0)
         plots = GUI._object_plots(ctrl.h, fx.bench)
         state = _state(plots)
         # the selection is kept while the menu is open
@@ -449,7 +451,9 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(:compact)
         c = _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
-        center = Point2f(minimum(view) .+ Makie.widths(view) ./ 2)
+        # beside the middle of the view, the origin, where the dot of the pivot of a selected group of
+        # the fixture takes a press, see `_pivot_hit`
+        center = Point2f(minimum(view) .+ Makie.widths(view) ./ 2) .+ Point2f(30, 0)
         _click_at!(gui, fx.m1, center)
         origin = c.origin
         # a click on "More": the entries of the group, the group see-through, same corner
@@ -499,7 +503,9 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(:compact)
         c = _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
-        center = Point2f(minimum(view) .+ Makie.widths(view) ./ 2)
+        # beside the middle of the view, the origin, where the dot of the pivot of a selected group of
+        # the fixture takes a press, see `_pivot_hit`
+        center = Point2f(minimum(view) .+ Makie.widths(view) ./ 2) .+ Point2f(30, 0)
         head(c) = Point2f(c.origin[1] + c.size[1] / 2, c.origin[2] - GUI._CARD_PADDING - GUI._BROWSE_HEAD / 2)
         function drag!(from, d)
             _move!(gui, from)

@@ -235,7 +235,9 @@ subgroup made of some of them, or a group inside it ungrouped), the group stays 
 and [`export_changes`](@ref) changes it in the script: `delete!(sg, part)` of each part that it
 lost, the code of the new groups and `push!(sg, s)`, such that `sg` keeps its variable and its
 systems. [`export_script`](@ref) writes a group of the script as a comment, since its constructor
-is not known.
+is not known. A pivot that was moved in the window (see [`live_view`](@ref)) is written as
+`set_pivot3d!(g, [...])` before the change of the pose of a group of the script or of the catalog;
+a group made in the window is built with its new pivot.
 
 An object that is built in code, e.g. by a tool or an agent, is exported with its constructor as
 well if it is added with the keyword `code` of [`add_component!`](@ref), its constructor call as

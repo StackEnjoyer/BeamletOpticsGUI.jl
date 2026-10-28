@@ -119,6 +119,10 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
     ctrl = gui.controls
     objs = _descendants(top)
     copies = top isa BMO.AbstractObjectGroup ? _descendants(_initial_copy(ctrl, top)) : nothing
+    # A group whose pivot was moved, see `_shift_pivot!`: `base` is the pose of its pivot as
+    # constructed, the copy has the pivot of the window
+    shift = get(gui.components.pivots, top, nothing)
+    (isnothing(base) || isnothing(shift)) || (base = _shifted_pose(base, shift))
     # The objects of a group follow the group back to the pose `base`
     isnothing(base) || isnothing(copies) || _set_pose!(copies[1], base...)
     n = 0
@@ -127,7 +131,9 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
         (own || haskey(ctrl.init_poses, obj)) || continue
         P, R = isnothing(current) ? _pose(obj) : current[i]
         P0, R0 = !isnothing(copies) ? _pose(copies[i]) : own ? base : ctrl.init_poses[obj]
-        (norm(P - P0) > 1e-15 || norm(R - R0) > 1e-15) || continue
+        # the pivot of a group that is not made in the window, in the pose after the lines before
+        pivot = isnothing(copies) || !haskey(gui.components.pivots, obj) ? nothing : P0
+        (norm(P - P0) > 1e-15 || norm(R - R0) > 1e-15 || !isnothing(pivot)) || continue
         axis, angle = _rotation_axis_angle(R * R0')
         name = names[obj]
         if heading || i > 1
@@ -136,6 +142,7 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
             push!(lines, "", isnothing(label) ? "# $type" : "# $label ($type)")
             n += 1
         end
+        isnothing(pivot) || push!(lines, "set_pivot3d!($name, $(_vector_code(pivot)))")
         angle > 0 && push!(lines, "rotate3d!($name, $(_vector_code(axis)), $(repr(angle)))")
         push!(lines, "translate_to3d!($name, $(_vector_code(P)))")
         isnothing(copies) || _set_pose!(copies[i], P, R)

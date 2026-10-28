@@ -1727,7 +1727,7 @@ _points(h) = only(render_plots(h))[1][]
         # the tools of the shared logic and fit and views, initialized from the kwargs
         @test [s.role for s in GUI._tools(gui.layout)] == [:trace_button, :auto_trace_toggle,
             :show_all_button, :home_button, :fit_button, :views_button, :save_view_button,
-            :orthographic_toggle, :clip_beams_toggle, :sources_toggle, :measure_toggle,
+            :lock_view_toggle, :orthographic_toggle, :clip_beams_toggle, :sources_toggle, :measure_toggle,
             :export_button]
         @test w.trace_button isa GUI._OverlayItem && w.trace_button.label[] == "Trace (t)"
         @test w.export_button isa GUI._OverlayItem && w.export_button.label[] == "Export"

@@ -66,6 +66,7 @@
         tree.expand_clicked[] = first(gui.controls.movable)
         gui.widgets.show_all_button.clicks[] += 1
         gui.widgets.orthographic_toggle.active[] = true
+        gui.widgets.lock_view_toggle.active[] = true
         close(gui)
 
         # A component placed with the mouse in an empty system, then removed

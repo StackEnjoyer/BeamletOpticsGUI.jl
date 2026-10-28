@@ -356,7 +356,8 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         settle!()
         _check(is_group(), "Ctrl+G did not make the inner group")
         inner[] = gui.controls.selected[]
-        ctrl_click!(_px(gui, _pos(fx.detector)))
+        # not by a click: the card of the group may cover the detector in the compact layout
+        GUI._toggle_select!(gui, fx.detector)
         frame!()
         in_selection(inner[], fx.detector)
         _key!(gui, Keyboard.g, Keyboard.left_control)
@@ -424,6 +425,53 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         foreach(_ -> GUI._undo!(gui.controls), 1:2)
         settle!()
         _check(flat(), "the undo did not bring back the objects")
+    end
+    # The pivot of a selection of several: its row on the card ("pick" and a click on an object,
+    # "center", a typed x) and the drag of its dot; the objects do not move
+    step("pivot: pick, center, typed x, drag of the dot, undo") do
+        deselect!()
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        sel = gui.controls.selected[]
+        poses = (GUI._pose(fx.lens), GUI._pose(fx.mirror))
+        n = length(gui.controls.undo_stack)
+        dist(a, b) = sqrt(sum(abs2, collect(a) .- collect(b)))
+        pivot_card() = (cards = GUI._edit_cards(gui);
+            i = findfirst(c -> !isnothing(GUI._card_widget(c, :pivot_pick)), cards);
+            _check(!isnothing(i), "no card of the selection of several has the row pivot"); cards[i])
+        _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_pick)))
+        frame!()
+        _check(gui.components.pivot_pick === sel, "the button pick did not start the pick")
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        _check(isnothing(gui.components.pivot_pick) && gui.controls.selected[] === sel &&
+               dist(_pos(sel), _pos(fx.lens)) < 1e-9, "the click did not set the pivot to the lens")
+        _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_center)))
+        frame!()
+        bb = GUI._selection_bbox(gui.controls, sel, GUI._object_plots(gui.controls.h, sel))
+        _check(dist(_pos(sel), minimum(bb) .+ Makie.widths(bb) ./ 2) < 1e-9,
+            "the button center did not set the pivot to the center of the box")
+        x = _pos(sel)[1]
+        _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_x)))
+        frame!()
+        foreach(char -> (_events(gui).unicode_input[] = char), "5")
+        _key!(gui, Keyboard.enter)
+        frame!()
+        _check(_pos(sel)[1] != x, "the typed x did not move the pivot")
+        at = _px(gui, _pos(sel))
+        _move!(gui, at)
+        frame!()
+        _drag!(gui, at, at .+ (25, 10))
+        settle!()
+        _check(dist(_px(gui, _pos(sel)), at .+ (25, 10)) < 1, "the drag did not move the dot")
+        _check(GUI._pose(fx.lens) == poses[1] && GUI._pose(fx.mirror) == poses[2], "the objects moved")
+        _check(length(gui.controls.undo_stack) == n + 4, "the pivot is not one action per change")
+        foreach(_ -> GUI._undo!(gui.controls), 1:4)
+        settle!()
+        deselect!()
     end
     # Several parts of one group: Ctrl+click on a sibling part adds it, Ctrl+G makes the parts a group
     # inside the group (also in a group of the script), one action of the undo history
@@ -547,6 +595,25 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         step(() -> (_click!(gui); settle!()), "view cube: click")
         step(home!, "camera: home after the view cube")
     end
+
+    step("camera: lock the view, drag, unlock") do
+        lock = gui.widgets.lock_view_toggle
+        direction() = (v = GUI._current_view(gui); (v[1] .- v[2]) ./ sqrt(sum(abs2, v[1] .- v[2])))
+        _check(!lock.active[], "the view starts locked")
+        _click!(gui, _rect_center(lock))
+        frame!()
+        _check(lock.active[], "the click did not lock the view")
+        d = direction()
+        a = _free_px(gui)
+        _drag!(gui, a, a .+ (40, 20))
+        frame!()
+        _check(maximum(abs, direction() .- d) < 1e-9, "the left drag turned the locked view")
+        _click!(gui, _rect_center(lock))
+        frame!()
+        _check(!lock.active[], "the click did not unlock the view")
+        settle!()
+    end
+    step(home!, "camera: home after the lock")
 
     step("click beam (inspect)") do
         _click!(gui, _px(gui, [0, 0.025, 0]))

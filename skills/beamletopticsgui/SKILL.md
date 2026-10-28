@@ -78,8 +78,8 @@ When this Skill is active:
   and rotated as one about the mean of their positions with the world axes as gizmo axes, without
   snapping, only on the axes that all allow; one drag, run of keys or `Backspace` is one undo step,
   and `on_change` is called once per object. Their card (compact) or the inspector (app) shows "N
-  objects" ("Selection"), one row per object (click: that object alone), hide and remove, no pages and
-  no pin. `Ctrl+C` copies them if all their components are from the catalog. `gui.controls.selected[]` then holds an internal value, not a
+  objects" ("Selection"), the row "pivot", one row per object (click: that object alone), hide and
+  remove, no pages and no pin. `Ctrl+C` copies them if all their components are from the catalog. `gui.controls.selected[]` then holds an internal value, not a
   component.
 - `Ctrl+G` (`Cmd+G`) makes a selection of several an `ObjectGroup`: the systems hold the group
   instead of the objects, it is selected, moved, rotated, hidden and browsed like a group of the
@@ -115,6 +115,14 @@ When this Skill is active:
   of one change of the files glide together; a group moved as a whole glides as one. The table
   fits the setup again after a drag, a removal or a change of the files. How to work on the files
   is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
+- A group or a selection of several rotates about its pivot, a dot (dashed line to the gizmo) while
+  it is selected: the mean of the objects for one made in the window or a selection, the pivot of the
+  script for a group of the script (BeamletOptics starts it at the origin). The row "pivot" of the
+  card sets it without moving anything (axes unchanged): typed x/y/z [mm], "pick" + click on a part
+  (also inside a subgroup, 3D view or tree; `Esc` ends), "center" (center of its bounding box); dragging the dot
+  moves it in the view plane. One undo step each; `Backspace` keeps it where it is in the group;
+  linked views follow; `export_changes` writes `set_pivot3d!(g, [...])` of a group of the script.
+  From code: `set_pivot3d!(gui, group, p)`.
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
   `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
   cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"

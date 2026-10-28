@@ -33,6 +33,17 @@ orthographic view, there `W`/`S` zoom like `U`/`O`:
 gui = live_view(system, beam; orthographic = true)
 ```
 
+The "lock view" toggle next to it keeps the direction of the camera, `lock_view = true` starts
+locked. While locked, neither the left drag on the background nor the keys `J`/`L`, `I`/`K` and
+`Q`/`E` turn the view; objects are selected, dragged and placed as before. The right drag (pan), the
+scroll wheel and the walk and zoom keys work as before. The view cube, the saved views and home still set the
+direction, and the lock stays on. The status line shows "view locked" or "view unlocked"; no key
+toggles it.
+
+```julia
+gui = live_view(system, beam; lock_view = true)
+```
+
 While the camera is rotated, panned or zoomed (also by `g`, the view cube, home and the saved
 views), a dot with a small camera symbol beside it marks the point the camera turns about (its
 `lookat` point). It fades shortly after the camera stops. Arrows about the dot show the motion: two
@@ -61,7 +72,7 @@ demand over the 3D view:
   for the `sliders`. Such an entry opens its widgets in a popover next to the rail. `Esc`, "⋯" or
   a click outside close the rail (`Esc` closes an open popover first).
 - the mouse over the view cube shows the camera popover below it: home, fit (`g`), the views menu,
-  save view and orthographic; it hides 0.3 s after the mouse left the cube and the popover
+  save view, orthographic and lock view; it hides 0.3 s after the mouse left the cube and the popover
 - the status line and the info label (last solve, rays, projection) appear as a toast at the bottom
   for 3 s after each change
 
@@ -649,8 +660,8 @@ steps and one `Backspace` (which resets all its objects to their initial poses) 
 and `on_change` is called once per object of a moved selection. `Ctrl+C` copies them if all
 their components are from the catalog, see [Changing, undoing and the whole script](@ref).
 Its card (compact layout) or the inspector (app layout) shows "N
-objects" with the subtitle "Selection" and one row per object with its name, where a click selects
-that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
+objects" with the subtitle "Selection", the row "pivot" (see below) and one row per object with its
+name, where a click selects that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
 hidden) and remove (all removable objects as one undo step; the others stay selected and the status
 line says why). From code, `select!(gui, [lens, mirror])` selects several; `gui.controls.selected[]`
 then holds an internal value for the selection, not a component.
@@ -689,6 +700,20 @@ the action "group", the card of a group made in the window the action "ungroup".
 group (`Delete`) and undoing it keeps it a group of the window, and linked views
 ([`open_system`](@ref)) follow grouping and ungrouping. [`export_script`](@ref) and
 [`export_changes`](@ref) write the groups, see [Adding and removing components](@ref components_page).
+
+A group or a selection of several is rotated about its pivot, which a dot in the accent color shows
+while it is selected, with a dashed line to the gizmo. The pivot of a group made in the window or
+of a selection of several is the mean of the positions of its objects; the pivot of a group of the
+script is the one it has in the script (BeamletOptics starts it at the origin, see `set_pivot3d!`).
+The row "pivot" of its card sets it without moving any object, and its axes stay: by typing x, y
+and z [mm], by "pick" followed by a click on one of its parts (also a part inside a subgroup, in
+the 3D view or in the object tree; `Esc` or a click beside it ends the pick), or by "center", the
+center of the box around it. A drag of the dot moves the pivot in the plane of the view. Each change is one
+undo step; the reset of the pose of the group (`Backspace`) keeps the pivot where it is in the
+group, and linked views follow. [`export_changes`](@ref) writes `set_pivot3d!` of a group of the
+script, and the groups made in the window are exported with their new pivot. From code,
+[`set_pivot3d!(gui, group, pivot)`](@ref set_pivot3d!(::BeamletOpticsGUI.LiveView, ::BeamletOptics.AbstractObjectGroup, ::AbstractVector))
+does the same.
 
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and

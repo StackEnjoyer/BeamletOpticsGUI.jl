@@ -29,6 +29,7 @@ The gestures of the user from code: the verbs of BeamletOptics with the live vie
 ```@docs
 translate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector)
 rotate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector, ::Real)
+set_pivot3d!(::BeamletOpticsGUI.LiveView, ::BeamletOptics.AbstractObjectGroup, ::AbstractVector)
 select!
 spectator!
 wait_solve

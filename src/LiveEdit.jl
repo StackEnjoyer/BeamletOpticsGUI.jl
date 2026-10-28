@@ -187,6 +187,10 @@ function _replace!(gui::LiveView, old, new, origin)
     old_snap = _snapshot(gui, old)
     # The pose of `old` relative to its pose as constructed, applied to `new`
     P, R = _pose(old)
+    # a group whose pivot was moved (see `_shift_pivot!`): the pose of its pivot as constructed, which
+    # `new` gets
+    shift = get(comp.pivots, old, nothing)
+    isnothing(shift) || (P = first(_shifted_pose((P, R), -shift)))
     P0, R0 = old_snap.origin.pose0
     Pn, Rn = origin.pose0
     ΔR = R * R0'
