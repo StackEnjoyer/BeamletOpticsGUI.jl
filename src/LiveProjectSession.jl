@@ -9,7 +9,7 @@ writes it when the selection changes and when the autosave saved changes of the 
 const _JOURNAL_MAX = 20
 
 # The session file of the person of this window, see `_person`
-_session_file(dir::AbstractString) = joinpath(dir, ".bmo", "session-$(_person().id).md")
+_session_file(dir::AbstractString) = BMOP.session_file(dir, _person().id)
 
 # A position in m with 4 significant digits, e.g. `(0.0, 0.105, 0.0)`
 _session_pos(p) = "(" * join((string(round(Float64(x); sigdigits = 4)) for x in p), ", ") * ")"

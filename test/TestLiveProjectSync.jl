@@ -45,6 +45,8 @@ function obj(gui, id)
     return nothing
 end
 
+_has_member(sys, o) = any(x -> x === o, sys.objects)
+
 """Replaces the line of `id` in `text` by `f(line)`."""
 function line!(f, text, id)
     lines = split(text, "\n")
@@ -362,6 +364,67 @@ end
         edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.15, 0.0)" => "pos = (0.0, 0.16, 0.0)"), text, "L1"), dir)
         @test tick!(gui) === :applied
         @test startswith(gui.status.text[], "agent: moved")
+        close(gui)
+    end
+
+    @testset "the window and the files both add to a system: no conflict" begin
+        gui, dir = opened()
+        GUI._autosave!(gui)
+        s1 = only(GUI._systems(gui))
+        mine = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)
+        add_component!(gui, mine; system = s1, select = false, code = LENS)
+        translate3d!(gui, mine, [0.0, 0.45, 0.0])
+        edit!(text -> line!(l -> replace(l, "D1]" => "D1, T1]"),
+            text * "@component T1 = $LENS pos = (0.0, 0.4, 0.0)\n", "S1"), dir)
+        @test tick!(gui) === :applied
+        t1 = obj(gui, :T1)
+        @test _has_member(s1, t1) && _has_member(s1, mine)
+        @test isempty(gui.sync.conflicts)
+        # The autosave writes both into the system
+        @test autosave!(gui) === :saved
+        line = only(l for l in split(read(system(dir), String), "\n") if startswith(l, "@system S1 = "))
+        @test occursin("T1", line) && count(",", split(line, "]")[1]) == 4
+        close(gui)
+    end
+
+    @testset "a member renamed or rebuilt in the files keeps the window's members" begin
+        gui, dir = opened()
+        edit!(text -> text * "@component X1 = $LENS pos = (0.0, 0.6, 0.0)\n", dir)
+        @test tick!(gui) === :applied
+        s1, x1 = only(GUI._systems(gui)), obj(gui, :X1)
+        # Not saved yet: X1 into S1, while the files rename D1 (same uid), then rebuild L1
+        GUI._add_member!(gui, x1, s1)
+        edit!(text -> replace(text, "D1 = " => "D2 = ", "D1]" => "D2]"), dir)
+        @test tick!(gui) === :applied
+        @test obj(gui, :D2) !== nothing && _has_member(s1, x1)
+        edit!(text -> line!(l -> replace(l, "0.005, 0.0254" => "0.006, 0.0254"), text, "L1"), dir)
+        @test tick!(gui) === :applied
+        @test _has_member(s1, x1) && isempty(gui.sync.conflicts)
+        close(gui)
+    end
+
+    @testset "a member that the person removed stays removed" begin
+        gui, dir = opened()
+        edit!(text -> text * "@component X1 = $LENS pos = (0.0, 0.6, 0.0)\n", dir)
+        @test tick!(gui) === :applied
+        s1, x1 = only(GUI._systems(gui)), obj(gui, :X1)
+        # Not saved yet: X1 removed and a new lens in S1, while the files put X1 into S1 (merged)
+        remove_component!(gui, x1)
+        mine = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)
+        add_component!(gui, mine; system = s1, select = false, code = LENS)
+        edit!(text -> line!(l -> replace(l, "D1]" => "D1, X1]"), text, "S1"), dir)
+        @test tick!(gui) === :applied
+        @test _has_member(s1, mine) && !_has_member(s1, x1) && !GUI._shown_top(gui, x1)
+        close(gui)
+        # Only removed in the window: the system of the files is taken, without X1
+        gui, dir = opened()
+        edit!(text -> text * "@component X1 = $LENS pos = (0.0, 0.6, 0.0)\n", dir)
+        @test tick!(gui) === :applied
+        s1, x1 = only(GUI._systems(gui)), obj(gui, :X1)
+        remove_component!(gui, x1)
+        edit!(text -> line!(l -> replace(l, "D1]" => "D1, X1]"), text, "S1"), dir)
+        @test tick!(gui) === :applied
+        @test !_has_member(s1, x1) && !GUI._shown_top(gui, x1)
         close(gui)
     end
 

@@ -237,21 +237,24 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
             end
             rm(bob)
 
-            # `_writer`: the one alive agent, even without `written`
+            # `_writer`: no fallback by kind, an agent without `written` is not named
             agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 4)
             GUI._check_presence!(gui; now = 3000.0)
-            @test GUI._writer(gui, "stamp-z"; now = 3000.0) == "Claude (Opus 5.5)"
-            # A person with a matching `written` comes first
-            other!(dir, "bob@PC9"; name = "Bob", beat = 3, written = "stamp-z")
+            @test isnothing(GUI._writer(gui, "stamp-z"; now = 3000.0))
+            # An agent that announced after its write is named, like a person
+            agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 5, written = "stamp-z")
             GUI._check_presence!(gui; now = 3000.0)
-            @test GUI._writer(gui, "stamp-z"; now = 3000.0) == "Bob"
-            # An other person without a match: still the one agent
-            @test GUI._writer(gui, "stamp-y"; now = 3000.0) == "Claude (Opus 5.5)"
+            @test GUI._writer(gui, "stamp-z"; now = 3000.0) == "Claude (Opus 5.5)"
+            # A person with a matching `written` is named alike; no match, no name
+            other!(dir, "bob@PC9"; name = "Bob", beat = 3, written = "stamp-y")
+            GUI._check_presence!(gui; now = 3000.0)
+            @test GUI._writer(gui, "stamp-y"; now = 3000.0) == "Bob"
+            @test isnothing(GUI._writer(gui, "stamp-x"; now = 3000.0))
             rm(GUI._presence_file(dir, "bob@PC9"))
-            # Two agents: nothing, unless the `written` of one matches
+            # Two agents: each is named by its own `written`
             agent!(dir, "codex@agent"; name = "Codex", beat = 1, written = "stamp-c")
             GUI._check_presence!(gui; now = 3000.0)
-            @test isnothing(GUI._writer(gui, "stamp-z"; now = 3000.0))
+            @test GUI._writer(gui, "stamp-z"; now = 3000.0) == "Claude (Opus 5.5)"
             @test GUI._writer(gui, "stamp-c"; now = 3000.0) == "Codex"
             rm(GUI._presence_file(dir, "codex@agent"))
             # None alive: nothing
@@ -261,6 +264,93 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
             GUI._check_presence!(gui; now = 3000.0)
             @test isempty(gui.sync.others)
             @test isnothing(GUI._writer(gui, "stamp-z"; now = 3000.0))
+        end
+
+        @testset "writer named after the merge" begin
+            gui.controls.selected[] = nothing
+            GUI._write_presence!(gui; now = 4000.0)
+            saved = gui.sync.stamp
+            @test TOML.parsefile(own)["written"] == saved
+            # An agent writes the files; the window merges before the agent announces
+            file = joinpath(dir, "system.jl")
+            write(file, replace(read(file, String), "pos = (0.0, 0.1, 0.0)" => "pos = (0.0, 0.13, 0.0)"))
+            @test GUI._sync!(gui; animate = false) === :applied
+            merged = gui.sync.stamp
+            @test merged != saved
+            status = gui.status.text[]
+            @test startswith(status, "agent: ") && occursin("moved L1", status)
+            # The window does not claim the merged files as its write
+            GUI._write_presence!(gui; now = 4000.0)
+            @test TOML.parsefile(own)["written"] == saved
+            # An announce of the agent without its stamp changes nothing
+            claude = agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 1, written = "stamp-old")
+            GUI._check_presence!(gui; now = 4001.0)
+            @test gui.status.text[] == status
+            # Its announce after the write names it in the status line of the merge
+            agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 2, written = merged)
+            GUI._check_presence!(gui; now = 4002.0)
+            @test gui.status.text[] == "Claude (Opus 5.5): " * status[(length("agent: ") + 1):end]
+            # Once only: another status line is not renamed
+            gui.status.text[] = "agent: something else"
+            GUI._check_presence!(gui; now = 4003.0)
+            @test gui.status.text[] == "agent: something else"
+            # A status line that changed since the merge is not renamed either
+            write(file, replace(read(file, String), "pos = (0.0, 0.13, 0.0)" => "pos = (0.0, 0.14, 0.0)"))
+            @test GUI._sync!(gui; animate = false) === :applied
+            gui.status.text[] = "project files are as in the window"
+            agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 3, written = gui.sync.stamp)
+            GUI._check_presence!(gui; now = 4004.0)
+            @test gui.status.text[] == "project files are as in the window"
+            rm(claude)
+            GUI._check_presence!(gui; now = 4005.0)
+        end
+
+        @testset "writer of two merges of the same change" begin
+            # The agent writes L1 twice before it announces: both merges say "agent: moved L1"
+            file = joinpath(dir, "system.jl")
+            write(file, replace(read(file, String), "pos = (0.0, 0.14, 0.0)" => "pos = (0.0, 0.15, 0.0)"))
+            @test GUI._sync!(gui; animate = false) === :applied
+            status = gui.status.text[]
+            @test startswith(status, "agent: ") && occursin("moved L1", status)
+            write(file, replace(read(file, String), "pos = (0.0, 0.15, 0.0)" => "pos = (0.0, 0.16, 0.0)"))
+            @test GUI._sync!(gui; animate = false) === :applied
+            @test gui.status.text[] == status
+            claude = agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 1, written = gui.sync.stamp)
+            GUI._check_presence!(gui; now = 5000.0)
+            @test gui.status.text[] == "Claude (Opus 5.5): " * status[(length("agent: ") + 1):end]
+            rm(claude)
+            GUI._check_presence!(gui; now = 5001.0)
+        end
+
+        @testset "open and reload claim no write" begin
+            # Someone edits the files without announcing; the window merges them
+            file = joinpath(dir, "system.jl")
+            write(file, replace(read(file, String), "pos = (0.0, 0.16, 0.0)" => "pos = (0.0, 0.17, 0.0)"))
+            @test GUI._sync!(gui; animate = false) === :applied
+            edited = gui.sync.stamp
+            status = gui.status.text[]
+            @test startswith(status, "agent: ")
+            # Anna opens the project in a second window: its presence does not claim the files
+            rm(own)
+            gui2 = open_project(dir; display = false, const_kw...)
+            @test gui2.sync.stamp == edited
+            GUI._write_presence!(gui2; now = 6000.0)
+            @test TOML.parsefile(own)["written"] == ""
+            # Nor after `Ctrl+R`
+            GUI._load_from_disk!(gui2)
+            GUI._write_presence!(gui2; now = 6000.0)
+            @test TOML.parsefile(own)["written"] == ""
+            # So the window of the merge does not name her as the writer
+            anna = other!(dir, "anna@PC2"; name = "Anna", beat = 1,
+                written = TOML.parsefile(own)["written"])
+            GUI._check_presence!(gui; now = 6001.0)
+            @test gui.status.text[] == status
+            # Her own save is claimed (the same text: the same stamp)
+            save_project(gui2)
+            GUI._write_presence!(gui2; now = 6002.0)
+            @test TOML.parsefile(own)["written"] == gui2.sync.stamp == edited
+            rm(anna)
+            GUI._write_presence!(gui; now = 6003.0)
         end
 
         @testset "closing" begin

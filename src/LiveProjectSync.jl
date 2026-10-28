@@ -425,19 +425,6 @@ _uses(x::Symbol, names) = x in names
 _uses(x::Expr, names) = any(a -> _uses(a, names), x.args)
 _uses(x, names) = false
 
-"""Whether the state of the `key` is the same in the projects `a` and `b`."""
-function _same_state(a, b, key::String)
-    ea, eb = _by_key(a.entries, key), _by_key(b.entries, key)
-    if !(isnothing(ea) && isnothing(eb))
-        (isnothing(ea) || isnothing(eb)) && return false
-        return BMOP.same_entry(ea, eb)
-    end
-    sa, sb = _by_key(a.systems, key), _by_key(b.systems, key)
-    (isnothing(sa) && isnothing(sb)) && return true
-    (isnothing(sa) || isnothing(sb)) && return false
-    return BMOP.same_system(sa, a, sb, b)
-end
-
 """
     _stale(s, key, disk) -> Bool
 
@@ -465,8 +452,9 @@ end
     _sync!(gui; animate = _shown(gui)) -> Symbol
 
 Loads the project of the `gui` from its files and merges it into the open window, see
-`LiveProjectSync.jl`: the changes of the files since `base` that the window did not change too are
-applied (`_adopt!`, moved objects glide if `animate`), conflicting ones are left and shown on a
+`LiveProjectSync.jl` and `BeamletOpticsProjects.merge_plan`: the changes of the files since `base`
+that the window did not change too are applied (`_adopt!`, moved objects glide if `animate`), the
+members of a system that both changed are merged as sets, conflicting ones are left and shown on a
 card (`_ProjectConflict`), also changes back to an older state of the window (see `_stale`) and
 the conflicts still open from before, unless the files now agree with the window there. The files
 become the new `base`; the status line names the person whose window wrote them (`_writer`), else
@@ -493,17 +481,15 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
     # The lines without uid (of an agent) get those of their objects in the window
     _align_uids!(gui, disk)
     rebuild = _src_marks(s.marks) == s.src ? Symbol[] : _calls_own_code(disk)
-    d = BMOP.diff_projects(s.base, disk; rebuild)
     mine = _collect_project(gui, dir)
-    g = BMOP.diff_projects(s.base, mine)
-    theirs = Set{String}(_change_key(c) for c in Iterators.flatten((d.entries, d.systems)))
-    ours = Set{String}(_change_key(c) for c in Iterators.flatten((g.entries, g.systems)))
-    conflicts = String[k for k in theirs
-                       if k in ours ? !_same_state(mine, disk, k) : _stale(s, k, disk)]
-    # A conflict of before stays until the person decides, or the files agree with the window
-    still = String[k for k in s.conflicts if !(k in conflicts) && !_same_state(mine, disk, k)]
-    conflicts = vcat(still, conflicts)
-    done = _adopt!(gui, mine, disk, setdiff(theirs, conflicts); rebuild = Set(rebuild), animate)
+    # A conflict of before stays until the person decides, or the files agree with the window. A
+    # new id of the files that an unsaved object of the window has too stays the files': the
+    # window's object gets the next id when it is saved (see `_project_ids`), so `renames` of the
+    # plan is not applied here
+    plan = BMOP.merge_plan(s.base, mine, disk; stale = k -> _stale(s, k, disk), rebuild,
+        keep = s.conflicts)
+    conflicts = plan.conflicts
+    done = _adopt!(gui, mine, disk, plan.take; rebuild = Set(rebuild), animate, merged = plan.merged)
     s.base = _align_uids!(gui, disk)
     s.stamp = disk.stamp
     s.src = _src_marks(s.marks)
@@ -703,20 +689,38 @@ function _flash!(gui::LiveView, objs)
     return boxes
 end
 
+"""The object, source or system of the `gui` of the entry key `key` (a uid, or `"id:L1"`)."""
+function _object_of_key(gui::LiveView, key::String)
+    name = startswith(key, "id:") ? Symbol(key[4:end]) : nothing
+    for (obj, (id, uid)) in gui.sync.ids
+        (isnothing(name) ? uid == key : id === name) && return obj
+    end
+    return nothing
+end
+
 """
-Makes the systems of the `gui` that are in `keys` (or that the entries `changed` are members of)
-have the members and sources of the files `disk`.
+Makes the systems of the `gui` that are in `keys` have the members and sources of the files `disk`;
+those of `merged` (see `BeamletOpticsProjects.merge_plan`) get the merged members and sources, given
+by entry keys. Objects and sources that the person removed from the view stay removed.
 """
-function _sync_members!(gui::LiveView, disk, keys, changed)
+function _sync_members!(gui::LiveView, disk, keys; merged = Dict{String, Any}())
+    # The ids of objects removed from the view are kept, see `_project_ids`
+    shown(@nospecialize o) = _shown_top(gui, o) || _has(_sources(gui), o)
     for se in disk.systems
-        member = any(n -> n in changed, se.members) || any(n -> n in changed, se.sources)
-        (_key(se) in keys || member) || continue
+        (_key(se) in keys || haskey(merged, _key(se))) || continue
         sys = _window_object(gui, se)
         sys isa BMO.System || continue
         objs(names) = Any[o for n in names
                           for o in (_window_object(gui, _by_key(disk.entries, "id:" * String(n))),)
-                          if !isnothing(o)]
+                          if !isnothing(o) && shown(o)]
         want, sources = objs(se.members), objs(se.sources)
+        if haskey(merged, _key(se))
+            # Changed both in the window and in the files: the union of what each added (an object
+            # of the window that is not saved yet has no id here and is not removed)
+            m = merged[_key(se)]
+            by_keys(ks) = Any[o for k in ks for o in (_object_of_key(gui, k),) if !isnothing(o) && shown(o)]
+            want, sources = by_keys(m.members), by_keys(m.sources)
+        end
         _unrecorded(gui) do
             for o in want
                 _has(sys.objects, o) || _add_member!(gui, o, sys)
@@ -736,18 +740,19 @@ function _sync_members!(gui::LiveView, disk, keys, changed)
 end
 
 """
-    _adopt!(gui, mine, disk, keys; rebuild = Set{Symbol}(), animate = _shown(gui)) -> Vector{String}
+    _adopt!(gui, mine, disk, keys; rebuild = Set{Symbol}(), animate = _shown(gui), merged = Dict()) -> Vector{String}
 
 Makes the entries and systems of the `keys` in the open `gui` (whose state is the project `mine`,
 see `_collect_project`) as in the files `disk`, without undo entries: removes, adds, rebuilds (other
 code, or calling own code in `rebuild`), moves (gliding if `animate`, see `_glide!`), renames and
-relabels. The changed objects get a box for a moment. Returns what was done, e.g. `"moved M1"`.
+relabels; the systems of `merged` get the merged members (see `_sync_members!`). The changed
+objects get a box for a moment. Returns what was done, e.g. `"moved M1"`.
 """
-function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), animate::Bool = _shown(gui))
+function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), animate::Bool = _shown(gui),
+        merged = Dict{String, Any}())
     done = String[]
     touched = Any[]
     glides = Tuple{Any, Any, Any}[]
-    changed = Set{Symbol}()
     m = BMOP.match_entries(disk.entries, mine.entries)
     # In the window only: removed in the files
     for e in m.added
@@ -766,7 +771,6 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
     for e in m.removed
         _key(e) in keys || continue
         push!(touched, _add_entry!(gui, e))
-        push!(changed, e.name)
         push!(done, "added $(_shown_label(e))")
     end
     for (e, mine_e) in m.pairs
@@ -775,7 +779,6 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
         if e.kind != mine_e.kind || e.name in rebuild ||
            BMOP.normalize_code(e.code) != BMOP.normalize_code(mine_e.code)
             push!(touched, _swap!(gui, obj, e))
-            push!(changed, e.name)
             push!(done, "rebuilt $(_shown_label(e))")
             continue
         end
@@ -786,12 +789,11 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
         end
         if e.name !== mine_e.name || e.label != mine_e.label
             _name!(gui, obj, e)
-            e.name === mine_e.name || push!(changed, e.name)
             push!(done, "renamed $(_shown_label(e))")
         end
         isequal(Dict(e.meta), Dict(mine_e.meta)) || _update_record!(gui, obj; meta = Pair{Symbol, Any}[e.meta...])
     end
-    _sync_members!(gui, disk, keys, changed)
+    _sync_members!(gui, disk, keys; merged)
     for se in ms.added
         _key(se) in keys || continue
         try

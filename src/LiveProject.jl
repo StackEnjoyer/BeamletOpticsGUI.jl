@@ -621,7 +621,13 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
         # Before checking whether the folder is a project: the copy must not miss its module
         BMOP.copy_code(from, dir)
     end
+    new = !isfile(joinpath(dir, "Project.toml"))
     path = save_project(parts.project; packages = _project_packages(), force)
+    # A new project gets the skills of BeamletOptics and BeamletOpticsProjects from its scaffold,
+    # and the one of the GUI here; derived copies, not part of the versions
+    new && Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+        install_agent_skill(joinpath(dir, ".claude", "skills"))
+    end
     _write_view_toml(gui, parts.project, parts.names)
     # The uids that the save gave are those of `parts.project`
     _apply_project_names!(gui, parts.project)
@@ -639,6 +645,8 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     end
     save_as && empty!(gui.sync.journal)
     gui.project = dir
+    # The files of this stamp are the window's own write, see `_own_written`
+    _own_save!(gui, parts.project.stamp)
     _saved!(gui, parts.project)
     connected && _connect_session!(gui)
     dir == from || _set_title!(gui, basename(dir))

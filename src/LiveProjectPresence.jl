@@ -10,7 +10,7 @@ seconds that a beat counts; windows write `_ALIVE`, agents e.g. 600, since they 
 they act), the object it works on (`selected`: its uid, `selected_id`: its readable id; `""` if
 nothing; the readable id counts when the uid is missing or unknown, an agent writes only that),
 optionally `doing` (a few words, shown under the name) and the stamp of the files after its last
-save (`written`). A window writes its file when it saves, when its selection changes and every
+write (`written`; of a window: its last save, never files it merged). A window writes its file when it saves, when its selection changes and every
 `_BEAT` seconds. It reads the files of the others at every look of the watcher: an other is there
 while its `beat` changed within its `ttl` seconds of the clock of this machine, so the clocks of
 the machines are never compared. People and agents are shown alike: a box at their object and
@@ -20,9 +20,8 @@ their name.
 # How often a window writes its presence file at least [s]
 const _BEAT = 20.0
 # How long an other is shown after its `beat` last changed [s]: the `ttl` of a window and the
-# default of a file without one; the `ttl` of a file is clamped to `_TTL_RANGE`
+# default of a file without one (`BeamletOpticsProjects.read_presences` clamps the `ttl` of a file)
 const _ALIVE = 60.0
-const _TTL_RANGE = (5.0, 3600.0)
 # At most this many characters of `doing` are shown
 const _DOING_CHARS = 80
 # The color of the boxes and names of the others: the green of Julia, not the accent of the themes
@@ -34,27 +33,12 @@ const _OTHER_FONTSIZE = 14
 """
     _person() -> (; id, name, host)
 
-The person of this window: `name` from `ENV["BMO_PERSON"]`, else the user name of the system
-(`USERNAME`, `USER`), else `"someone"`; `host` the name of the machine; `id` is `"name@host"` with
-every character outside `[A-Za-z0-9_.@-]` replaced by `_`, for the names of the files of the person
-in `.bmo/`.
+The person of this window, see `BeamletOpticsProjects.person`.
 """
-function _person()
-    name = get(ENV, "BMO_PERSON", get(ENV, "USERNAME", get(ENV, "USER", "someone")))
-    isempty(strip(name)) && (name = "someone")
-    host = gethostname()
-    id = replace("$name@$host", r"[^A-Za-z0-9_.@-]" => "_")
-    return (; id, name = String(name), host = String(host))
-end
+_person() = BMOP.person()
 
-"""The presence file of the person `id` in the project folder `dir`."""
-_presence_file(dir::AbstractString, id::AbstractString) = joinpath(dir, ".bmo", "presence-$id.toml")
-
-# The id of the person of a presence file name, `nothing` for other files
-function _presence_id(name::AbstractString)
-    m = match(r"^presence-(.+)\.toml$", name)
-    return isnothing(m) ? nothing : String(m.captures[1])
-end
+"""The presence file of the person `id` in the project folder `dir`, see `BeamletOpticsProjects.presence_file`."""
+_presence_file(dir::AbstractString, id::AbstractString) = BMOP.presence_file(dir, id)
 
 """The machine id and the readable id of the selected object of the `gui`, `("", "")` if none."""
 function _presence_selected(gui::LiveView)
@@ -73,53 +57,71 @@ function _presence_selected(gui::LiveView)
     return ("", "")
 end
 
-# The `beat` of the presence file `file`, 0 if it is missing or does not parse: a window that is
-# opened again continues the counter, so that the others see a change
-function _file_beat(file::AbstractString)
-    isfile(file) || return 0
-    try
-        b = get(TOML.parsefile(file), "beat", 0)
-        return b isa Integer ? Int(b) : 0
-    catch
-        return 0
-    end
-end
-
 """
     _write_presence!(gui; now = time())
 
 Writes the presence file of the person of the `gui` (see `_person`, `_presence_file`) atomically:
 its name and host, `kind = "person"`, `ttl = _ALIVE`, the `beat` one higher than in the file, the
-selected object and the stamp of the files after the last save (`gui.sync.stamp`). Sets `gui.sync.beat_at` to `now`. Does nothing
-without a project. An error of writing propagates; the watcher logs it.
+selected object and `written`, the stamp of the files after the last save of the window (see
+`_own_written`). Sets `gui.sync.beat_at` to `now`. Does nothing without a project. An error of
+writing propagates; the watcher logs it.
 """
 function _write_presence!(gui::LiveView; now::Real = time())
     dir = gui.project
     isnothing(dir) && return nothing
     me = _person()
-    file = _presence_file(dir, me.id)
     uid, id = _presence_selected(gui)
     data = Dict{String, Any}("name" => me.name, "host" => me.host, "kind" => "person", "ttl" => _ALIVE,
-        "beat" => _file_beat(file) + 1, "selected" => uid, "selected_id" => id, "written" => something(gui.sync.stamp, ""))
-    mkpath(dirname(file))
-    tmp = file * ".tmp"
-    open(io -> TOML.print(io, data; sorted = true), tmp, "w")
-    mv(tmp, file; force = true)
+        "selected" => uid, "selected_id" => id, "written" => _own_written(gui, _presence_file(dir, me.id)))
+    BMOP.write_presence(dir, me.id, data)
     gui.sync.beat_at = Float64(now)
     return nothing
 end
 
-# Whether the other `o` (an entry of `gui.sync.others`) is there at the time `now`
-_alive(o, now::Real) = now - o.seen_at < o.ttl
-
-# The `ttl` of a presence file: a positive real clamped to `_TTL_RANGE`, else `_ALIVE`
-function _presence_ttl(x)
-    (x isa Real && isfinite(x) && x > 0) || return _ALIVE
-    return clamp(Float64(x), _TTL_RANGE...)
+# The `written` of the presence file `file`, `""` if it is missing, does not parse or has none
+function _file_written(file::AbstractString)
+    isfile(file) || return ""
+    try
+        w = get(TOML.parsefile(file), "written", "")
+        return w isa AbstractString ? String(w) : ""
+    catch
+        return ""
+    end
 end
 
-# A string field of a presence file, `""` if it is missing or not a string
-_presence_string(data, key) = (x = get(data, key, ""); x isa AbstractString ? String(x) : "")
+"""
+    _own_written(gui, file) -> String
+
+The stamp of the files that the window of the `gui` wrote last, for `written` of its presence file
+`file`: `gui.sync.stamp` if the window wrote these files itself (`Ctrl+S`, the autosave, "save
+as", see `_own_save!`); else the `written` of the file before is kept, so that the window never
+claims files that it only opened, reloaded (`Ctrl+R`) or merged, e.g. the change of an other.
+"""
+function _own_written(gui::LiveView, file::AbstractString)
+    own = get(_OWN_SAVE, gui, nothing)
+    return !isnothing(own) && own == gui.sync.stamp ? own : _file_written(file)
+end
+
+# Per view, the stamp of the files that its last save wrote, see `_own_written`
+const _OWN_SAVE = WeakKeyDict{LiveView, String}()
+
+"""
+    _own_save!(gui, stamp)
+
+Records that the window of the `gui` wrote the files of the project with the `stamp` itself, by a
+save (`save_project`), such that its presence publishes it as `written` (see `_own_written`).
+"""
+function _own_save!(gui::LiveView, stamp)
+    if isnothing(stamp)
+        delete!(_OWN_SAVE, gui)
+    else
+        _OWN_SAVE[gui] = String(stamp)
+    end
+    return nothing
+end
+
+# Whether the other `o` (an entry of `gui.sync.others`) is there at the time `now`
+_alive(o, now::Real) = BMOP.alive(o, now)
 
 """
     _check_presence!(gui; now = time())
@@ -130,7 +132,8 @@ parse, e.g. half written on a network drive, is skipped and its participant kept
 updates `gui.sync.others`, people and agents alike. An other whose `beat` changed is seen at `now`;
 one whose file is gone is dropped. One whose `beat` did not change for its `ttl` seconds stays in
 `others` but is not shown, so that the file of a window that crashed or of an agent that did not
-delete it does not come back. Then the boxes and names of the
+delete it does not come back. A merge whose status line says "agent" gets the name of the other
+that published its stamp meanwhile (see `_name_writer!`). Then the boxes and names of the
 selections of the others are drawn again if what they show changed (see `_draw_presence!`). Does
 nothing without a project.
 """
@@ -140,32 +143,19 @@ function _check_presence!(gui::LiveView; now::Real = time())
     s = gui.sync
     now - s.beat_at >= _BEAT && _write_presence!(gui; now)
     me = _person().id
-    bmo = joinpath(dir, ".bmo")
-    names = isdir(bmo) ? readdir(bmo) : String[]
-    found = Set{String}()
-    for name in names
-        id = _presence_id(name)
-        (isnothing(id) || id == me) && continue
-        push!(found, id)
-        data = try
-            TOML.parsefile(joinpath(bmo, name))
-        catch
-            continue
-        end
-        beat = get(data, "beat", nothing)
-        beat isa Integer || continue
+    for (id, data) in BMOP.read_presences(dir; except = me)
+        beat = data["beat"]
         old = get(s.others, id, nothing)
         seen_at = isnothing(old) || old.beat != beat ? Float64(now) : old.seen_at
-        name = _presence_string(data, "name")
-        kind = _presence_string(data, "kind")
-        s.others[id] = (; name = isempty(name) ? id : name, kind = isempty(kind) ? "person" : kind,
-            selected_uid = _presence_string(data, "selected"), selected_id = _presence_string(data, "selected_id"),
-            doing = first(_presence_string(data, "doing"), _DOING_CHARS), written = _presence_string(data, "written"),
-            ttl = _presence_ttl(get(data, "ttl", nothing)), seen_at, beat = Int(beat))
+        s.others[id] = (; name = data["name"], kind = data["kind"], selected_uid = data["selected"],
+            selected_id = data["selected_id"], doing = first(data["doing"], _DOING_CHARS), written = data["written"],
+            ttl = data["ttl"], seen_at, beat)
     end
+    # A file that is skipped (it does not parse) keeps its participant as it was; a file that is gone drops it
     for id in collect(keys(s.others))
-        id in found || delete!(s.others, id)
+        isfile(_presence_file(dir, id)) || delete!(s.others, id)
     end
+    _name_writer!(gui, now)
     _draw_presence!(gui, now)
     return nothing
 end
@@ -275,21 +265,64 @@ function _presence_closed!(gui::LiveView)
     return nothing
 end
 
+# Per view, the stamp of the files of the last merge whose writer `_writer` did not find, see
+# `_name_writer!`
+const _UNNAMED = WeakKeyDict{LiveView, String}()
+
+# The start of the status line of a merge whose writer was not found
+const _UNNAMED_PREFIX = "agent: "
+
 """
     _writer(gui, stamp) -> Union{Nothing, String}
 
-The name of the participant of the `gui` (an other person or an agent) who is there now and wrote
-the files with the stamp `stamp` (`written` of its presence file). Else, if exactly one participant
-that is there is an agent (`kind = "agent"`), its name, since an agent need not write `written`.
-Else `nothing` (the status then says "agent").
+The name of the participant of the `gui` (an other person or an agent, alike) who is there now and
+wrote the files with the stamp `stamp` (`written` of its presence file), else `nothing` (the status
+then says "agent"). Called once per merge. An agent publishes the stamp of its write with
+`BeamletOpticsProjects.announce(...; wrote = true)`, often only after the window merged it: a merge
+whose writer is not found is therefore remembered, and `_name_writer!` names the writer in the
+status line once its stamp arrives.
 """
 function _writer(gui::LiveView, stamp; now::Real = time())
-    (isnothing(stamp) || isempty(stamp)) && return nothing
-    others = [gui.sync.others[id] for id in sort!(collect(keys(gui.sync.others)))]
-    filter!(o -> _alive(o, now), others)
-    for o in others
-        o.written == stamp && return o.name
+    name = _writer_of(gui, stamp, now)
+    if isnothing(name) && !isnothing(stamp) && !isempty(stamp)
+        _UNNAMED[gui] = String(stamp)
+    else
+        delete!(_UNNAMED, gui)
     end
-    agents = filter(o -> o.kind == "agent", others)
-    return length(agents) == 1 ? only(agents).name : nothing
+    return name
+end
+
+# The name of the other of the `gui` that is there at `now` and whose `written` is `stamp`, else `nothing`
+function _writer_of(gui::LiveView, stamp, now::Real)
+    (isnothing(stamp) || isempty(stamp)) && return nothing
+    for id in sort!(collect(keys(gui.sync.others)))
+        o = gui.sync.others[id]
+        _alive(o, now) && o.written == stamp && return o.name
+    end
+    return nothing
+end
+
+"""
+    _name_writer!(gui, now)
+
+Names the writer of the last merge of the `gui` whose writer `_writer` did not find, once an other
+that is there at `now` published the stamp of its files: the status line of that merge,
+`"agent: …"`, becomes `"<name>: …"`. The merge is forgotten once it is named, or once the files or
+the status line are no longer those of a merge (a save, a new merge, another message). The status
+line is only checked for its start: a merge that changed nothing in the window keeps the status line
+`"agent: …"` of a merge before it, which is then named after the writer of the later files.
+"""
+function _name_writer!(gui::LiveView, now::Real)
+    stamp = get(_UNNAMED, gui, nothing)
+    isnothing(stamp) && return nothing
+    text = gui.status.text[]
+    if gui.sync.stamp != stamp || !startswith(text, _UNNAMED_PREFIX)
+        delete!(_UNNAMED, gui)
+        return nothing
+    end
+    name = _writer_of(gui, stamp, now)
+    isnothing(name) && return nothing
+    gui.status.text[] = name * ": " * text[(ncodeunits(_UNNAMED_PREFIX) + 1):end]
+    delete!(_UNNAMED, gui)
+    return nothing
 end

@@ -601,6 +601,13 @@ const GUI = BeamletOpticsGUI
         t = _setup(:compact)
         save_project(t.gui, dir)
         close(t.gui)
+        # A new project gets the skills of BMO, Projects and the GUI, none of them in a version
+        skills = joinpath(dir, ".claude", "skills")
+        @test all(isfile(joinpath(skills, s, "SKILL.md")) for s in ("beamletoptics", "beamletopticsprojects", "beamletopticsgui"))
+        G2 = BMOP.LibGit2
+        @test G2.with(G2.GitRepo(dir)) do r
+            G2.status(r, ".claude/skills/beamletopticsgui/SKILL.md") & G2.Consts.STATUS_IGNORED != 0
+        end
         name = BMOP.project_name(dir)
         own = joinpath(dir, "src", name * ".jl")
         write(own, "module $name\nusing BeamletOptics\nexport extra_lens\n" *
