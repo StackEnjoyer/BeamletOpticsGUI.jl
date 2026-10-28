@@ -9,6 +9,7 @@ for a coding agent; default `"person"`), a counter `beat` that grows with every 
 seconds that a beat counts; windows write `_ALIVE`, agents e.g. 600, since they write only when
 they act), the object it works on (`selected`: its uid, `selected_id`: its readable id; `""` if
 nothing; the readable id counts when the uid is missing or unknown, an agent writes only that),
+of a window the keys of the lines that its person claims (`claimed`, see `LiveProjectClaims.jl`),
 optionally `doing` (a few words, shown under the name) and the stamp of the files after its last
 write (`written`; of a window: its last save, never files it merged). A window writes its file when it saves, when its selection changes and every
 `_BEAT` seconds. It reads the files of the others at every look of the watcher: an other is there
@@ -91,9 +92,15 @@ function _presence_data(gui::LiveView)
     me = _person()
     uid, id = _presence_selected(gui)
     data = Dict{String, Any}("name" => me.name, "host" => me.host, "kind" => "person", "ttl" => _ALIVE,
-        "selected" => uid, "selected_id" => id)
+        "selected" => uid, "selected_id" => id, "claimed" => _claimed_keys(gui))
     own = get(_OWN_SAVE, gui, nothing)
     return (; id = me.id, data, own = !isnothing(own) && own == gui.sync.stamp ? own : nothing)
+end
+
+# The keys of the lines whose objects the person of the `gui` claims, sorted, see `LiveProjectClaims.jl`
+function _claimed_keys(gui::LiveView)
+    c = gui.sync.claim
+    return c isa _ClaimState ? sort!(collect(keys(c.held))) : String[]
 end
 
 """Writes the presence file of `_presence_data` `p` into the project folder `dir`."""
@@ -172,7 +179,9 @@ updates `gui.sync.others`, people and agents alike. An other whose `beat` change
 one whose file is gone is dropped. One whose `beat` did not change for its `ttl` seconds stays in
 `others` but is not shown, so that the file of a window that crashed or of an agent that did not
 delete it does not come back. A merge whose status line says "agent" gets the name of the other
-that published its stamp meanwhile (see `_name_writer!`). Then the boxes and names of the
+that published its stamp meanwhile (see `_name_writer!`). The claims go one step on (see
+`_claims_tick!`: the own ones are written and those of the others read in the background). Then
+the boxes and names of the
 selections of the others are drawn again if what they show changed (see `_draw_presence!`). Does
 nothing without a project.
 """
@@ -198,6 +207,7 @@ function _check_presence!(gui::LiveView; now::Real = time(), look = nothing)
         id in look.known && !(id in look.present) && delete!(s.others, id)
     end
     _name_writer!(gui, now)
+    _claims_tick!(gui; now)
     _draw_presence!(gui, now)
     return nothing
 end
@@ -229,26 +239,35 @@ end
 # The label of the other `o`: its name, with what it is doing in a second line
 _other_label(o) = isempty(o.doing) ? o.name : o.name * "\n" * o.doing
 
-# What the overlay of the others shows at `now`: per alive other with an object in the view the
-# edges of the box of the object and the label, sorted by the id of the participant
+# What the overlay of the others shows at `now`, sorted by the id of the participant: per alive
+# other with an object in the view the edges of the box of the object, the label and `false`; per
+# object of the view that a participant claims (see `_claimed_objects`, also of one whose presence
+# is not shown) the box, the label with "editing" and `true` for the lock
 function _presence_shown(gui::LiveView, now::Real)
-    shown = Tuple{Vector{Point3f}, String}[]
-    for id in sort!(collect(keys(gui.sync.others)))
-        o = gui.sync.others[id]
-        _alive(o, now) || continue
-        obj = _object_of_other(gui, o)
-        isnothing(obj) && continue
-        bb = _part_box(gui, obj)
-        isnothing(bb) && continue
-        push!(shown, (_bbox_wireframe(bb), _other_label(o)))
+    shown = Tuple{Vector{Point3f}, String, Bool}[]
+    claimed = _claimed_objects(gui)
+    for id in sort!(unique!([collect(keys(gui.sync.others)); collect(keys(claimed))]))
+        o = get(gui.sync.others, id, nothing)
+        objs = get(claimed, id, Any[])
+        if !isnothing(o) && _alive(o, now)
+            obj = _object_of_other(gui, o)
+            if !isnothing(obj) && !_has(objs, obj)
+                bb = _part_box(gui, obj)
+                isnothing(bb) || push!(shown, (_bbox_wireframe(bb), _other_label(o), false))
+            end
+        end
+        for obj in objs
+            bb = _part_box(gui, obj)
+            isnothing(bb) || push!(shown, (_bbox_wireframe(bb), _claim_label(gui, id, o), true))
+        end
     end
     return shown
 end
 
 # What the plots of the overlay show now, in the form of `_presence_shown`
 function _presence_drawn(gui::LiveView)
-    p = gui.sync.presence
-    return [(Vector{Point3f}(p[i][1][]), _label_text(p[i + 1])) for i in 1:2:(length(p) - 1)]
+    c = gui.sync.claim
+    return c isa _ClaimState ? c.drawn : Tuple{Vector{Point3f}, String, Bool}[]
 end
 
 # The text of a label of the overlay (Makie keeps it as a vector of one string)
@@ -260,8 +279,9 @@ _label_text(p) = (t = p.text[]; String(t isa AbstractString ? t : only(t)))
 Draws where the others of the `gui` (people and agents alike) are at `now` (see
 `_check_presence!`): the box of the object each works on in `_OTHER_COLOR` and its name at the
 upper corner, with what it is doing (`doing`) in a second line; overlays in `gui.sync.presence` (a
-box and a label per other). Only an object of the view is shown.
-Draws again only if the boxes or names changed; hidden in the spectator mode.
+box and a label per other). An object that a participant claims (see `LiveProjectClaims.jl`) has a
+lock at the corner (`gui.sync.claim.locks`) and "editing" after the name. Only an object of the view
+is shown. Draws again only if the boxes or names changed; hidden in the spectator mode.
 """
 function _draw_presence!(gui::LiveView, now::Real)
     s = gui.sync
@@ -269,21 +289,29 @@ function _draw_presence!(gui::LiveView, now::Real)
     visible = !gui.controls.spectator[]
     if shown != _presence_drawn(gui)
         _delete_presence!(gui)
-        for (pts, name) in shown
+        for (pts, name, locked) in shown
             box = linesegments!(gui.ax, pts; color = _OTHER_COLOR, linewidth = _OTHER_BOX_WIDTH, visible,
                 clip_planes = Plane3f[], inspectable = false)
+            # the name of a claimed object after its lock
             label = text!(gui.ax, maximum(pts); text = name, color = _OTHER_COLOR, fontsize = _OTHER_FONTSIZE,
-                align = (:left, :bottom), visible, clip_planes = Plane3f[], inspectable = false)
+                align = (:left, :bottom), offset = (locked ? 0.6 * _LOCK_SIZE : 0.0, 0.0), visible,
+                clip_planes = Plane3f[], inspectable = false)
             push!(s.presence, box, label)
         end
+        _draw_locks!(gui, shown, visible)
+        append!(_claims(gui).drawn, shown)
     end
-    for p in s.presence
+    for p in Iterators.flatten((s.presence, _presence_locks(gui)))
         p.visible[] == visible || (p.visible[] = visible)
     end
     return nothing
 end
 
+# The plots of the locks of the claimed objects, see `_draw_locks!`
+_presence_locks(gui::LiveView) = (c = gui.sync.claim; c isa _ClaimState ? c.locks : Any[])
+
 function _delete_presence!(gui::LiveView)
+    _delete_locks!(gui)
     for p in gui.sync.presence
         try
             delete!(gui.ax, p)
@@ -297,11 +325,13 @@ end
 """
     _presence_closed!(gui)
 
-Removes the boxes and names of the others from the `gui` and deletes its own presence file, when
-the window is closed. A missing file is fine.
+Removes the boxes and names of the others from the `gui`, releases the claims of its person (see
+`_claims_closed!`) and deletes its own presence file, when the window is closed. A missing file is
+fine.
 """
 function _presence_closed!(gui::LiveView)
     _delete_presence!(gui)
+    _claims_closed!(gui)
     empty!(gui.sync.others)
     isnothing(gui.project) || rm(_presence_file(gui.project, _person().id); force = true)
     return nothing

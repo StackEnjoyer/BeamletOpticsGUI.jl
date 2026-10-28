@@ -529,6 +529,14 @@ function _removal_reason(gui::LiveView, @nospecialize(obj))
     return "$name is not a component of the live view"
 end
 
+# Why the person can not remove `obj` from the `gui` ("remove" on its card, the key `Delete`): the
+# `_removal_reason`, else the claim of another participant (see `_claim_refusal`), else `nothing`.
+# Not in `_removal_reason`, which also guards the removals of a merge of the files of the project.
+function _removal_refusal(gui::LiveView, @nospecialize(obj))
+    reason = _removal_reason(gui, obj)
+    return isnothing(reason) ? _claim_refusal(gui, obj) : reason
+end
+
 """Returns `obj`, the objects of its groups and their parts (recursively), see `_part_children`."""
 function _component_parts(@nospecialize(obj))
     parts = Base.IdSet{Any}()
@@ -711,10 +719,11 @@ end
 
 Removes `obj` from the `gui` like `remove_component!`, after "remove" on its card or the key
 `Delete`. An object that can not be removed is kept, and the status line names the reason, see
-`_removal_reason`. Returns whether `obj` was removed.
+`_removal_reason`, or the participant who claims it, see `_claim_refusal`. Returns whether `obj` was
+removed.
 """
 function _remove_selected!(gui::LiveView, @nospecialize(obj))
-    reason = _removal_reason(gui, obj)
+    reason = _removal_refusal(gui, obj)
     if !isnothing(reason)
         gui.status.text[] = reason
         return false
@@ -729,14 +738,14 @@ end
 Removes the objects of the selection `s` of several objects that can be removed (see
 `_removal_reason`) from the `gui`, each like `remove_component!`, with one solve afterwards and as
 one action of the undo history: undo adds all of them again and selects them, redo removes them
-again. The objects that can not be removed stay selected, the status line names the reasons.
-Returns whether an object was removed.
+again. The objects that can not be removed (also those that another participant claims) stay
+selected, the status line names the reasons. Returns whether an object was removed.
 """
 function _remove_selected!(gui::LiveView, s::_MultiSelection)
     removable = Any[]
     reasons = String[]
     for obj in s.objects
-        reason = _removal_reason(gui, obj)
+        reason = _removal_refusal(gui, obj)
         isnothing(reason) ? push!(removable, obj) : push!(reasons, reason)
     end
     if isempty(removable)

@@ -108,9 +108,16 @@ _takes_edit_text(::LiveView, _, ::CatalogSurface, ::Int, text) = !isempty(text)
 (see `_read_edit_inputs!`, unless `read` is `false`) and puts the new object in the place of `obj`,
 see `_replace!`. An
 invalid input or an error of the constructor only shows a message in the status line; unchanged
-inputs do nothing.
+inputs do nothing. An `obj` that another participant of the project claims is not changed, the
+status line names the holder (see `_claim_refusal`); else the new object holds the claims of `obj`
+(see `_hold!`).
 """
 function _apply_edit!(gui::LiveView, @nospecialize(obj); read::Bool = true)
+    refusal = _claim_refusal(gui, obj)
+    if !isnothing(refusal)
+        gui.status.text[] = refusal
+        return nothing
+    end
     _editable(gui, obj) || return nothing
     read && _read_edit_inputs!(gui, obj)
     origin = gui.components.origin[obj]
@@ -128,7 +135,9 @@ function _apply_edit!(gui::LiveView, @nospecialize(obj); read::Bool = true)
         return nothing
     end
     name = _label(gui, obj)
+    claims = isnothing(gui.project) ? nothing : _claim_keys(gui, obj)
     _replace!(gui, obj, c.obj, c.origin)
+    isnothing(claims) || _hold!(gui, claims)
     gui.status.text[] = "$name changed"
     return nothing
 end

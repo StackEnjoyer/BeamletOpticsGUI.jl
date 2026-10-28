@@ -85,13 +85,18 @@ Applies the input `s` of the pose box `k` of a card (see `_POSE_FIELDS`) to its 
 green or blue axis of the controls [mrad], like a key step in the rotate mode. The change is
 recorded in the undo history and solved like a key step. An invalid input only shows a message in
 the status line, and so does an input for an object that is not movable, e.g. an inspected one (see
-`_inspect!`).
+`_inspect!`), or that another participant of the project claims (see `_gesture!`).
 """
 _apply_pose_input!(gui::LiveView, ::Nothing, ::Int, _) = _update_inspector!(gui; force = true)
 function _apply_pose_input!(gui::LiveView, @nospecialize(obj), k::Int, s)
     ctrl = gui.controls
     if !_is_movable(ctrl, obj)
         gui.status.text[] = "$(_label(gui, obj)) is not movable, its pose can not be changed"
+        _update_inspector!(gui; force = true)
+        return nothing
+    end
+    if !_gesture!(gui, obj)
+        # claimed by another participant, see `_gesture!`
         _update_inspector!(gui; force = true)
         return nothing
     end
@@ -652,12 +657,19 @@ end
 
 Applies the input `v` of the declared widget `i` of the card `c` to the object of the card (see
 `_card_object`) with `on` of its declaration (and solves again for `solve = true`), then shows the
-new values on all cards. Ignored while the card shows new values (`refreshing`).
+new values on all cards. Ignored while the card shows new values (`refreshing`). An input on an
+object that another participant of the project claims is refused (see `_gesture!`): the card shows
+the values of the object again.
 """
 function _on_input!(gui::LiveView, c::_AbstractCard, i::Int, v)
     c.refreshing && return nothing
     w = c.widgets[i][2]
-    _apply_input!(gui, w.on, _card_object(gui, c), v, w.solve)
+    obj = _card_object(gui, c)
+    if !isnothing(w.on) && !isnothing(obj) && !_gesture!(gui, obj)
+        _refresh_card!(gui, c; force = true)
+        return nothing
+    end
+    _apply_input!(gui, w.on, obj, v, w.solve)
     _update_inspector!(gui)
     _update_cards!(gui)
     return nothing
@@ -1245,6 +1257,8 @@ function _connect_cards!(gui::LiveView)
                  _over_catalog(gui) || _card_menu_open(gui)
     # not in `over`: a press on the debug card ends the input into the textboxes of the cards
     ctrl.ignore_mouse = () -> over() || _over_debug(gui) || _outside_view(gui)
+    # the gestures of the controls ask the claims of the project, see `LiveProjectClaims.jl`
+    _connect_claims!(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(ev.tick) do tick
         # a tick tells whether the frame before it was drawn, see `_settle_cards!`

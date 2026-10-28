@@ -75,12 +75,15 @@ _same_systems(a, b) = length(a) == length(b) && all(sys -> _has(b, sys), a)
 Why the selection `sel` of the controls of the `gui` can not be made a group (see `_group!`), for
 the status line, or `nothing` if it can: a selection of several movable top-level components with
 the same systems (or none), no source, clip plane or static object; or several, not all, parts of
-the same group, see `_subgroup_reason`.
+the same group, see `_subgroup_reason`; none of them claimed by another participant of the project,
+see `_claim_refusal`.
 """
 function _group_reason(gui, @nospecialize(sel))
     _is_multi(sel) || return "select several objects to group them"
     objs = sel.objects
     length(objs) >= 2 || return "select several objects to group them"
+    refusal = _claim_refusal(gui, sel)
+    isnothing(refusal) || return refusal
     parent = _part_parent(gui, first(objs))
     for obj in objs
         _part_parent(gui, obj) === parent && continue
@@ -165,6 +168,8 @@ function _group!(gui, @nospecialize(sel))
         gui.status.text[] = reason
         return nothing
     end
+    # the claims of the members stay while the group is selected, see `_claims_selected!`
+    _claim!(gui, sel)
     parent = _part_parent(gui, first(sel.objects))
     isnothing(parent) || return _subgroup!(gui, sel.objects, parent)
     members = collect(Any, sel.objects)
@@ -185,6 +190,8 @@ function _ungroup_reason(gui, @nospecialize(g))
     g isa BMO.AbstractObjectGroup || return "select a group made in the window to ungroup it"
     _is_window_group(gui, g) ||
         return "$(_label(gui, g)) is a group of the script, only groups made in the window are ungrouped"
+    refusal = _claim_refusal(gui, g)
+    isnothing(refusal) || return refusal
     parent = _part_parent(gui, g)
     return isnothing(parent) ? nothing : _regroup_reason(gui, parent)
 end
@@ -204,6 +211,8 @@ function _ungroup!(gui, @nospecialize(g))
         gui.status.text[] = reason
         return false
     end
+    # the claims of the members stay while they are selected, see `_claims_selected!`
+    _claim!(gui, g)
     parent = _part_parent(gui, g)
     isnothing(parent) || return _dissolve!(gui, g, parent)
     rec = gui.components.groups[g]
