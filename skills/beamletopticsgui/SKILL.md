@@ -36,6 +36,13 @@ When this Skill is active:
   its card (`card_rows`), parameters without an object in `add_controls!`, plots in `add_panel!`.
 - Card functions are extended as `BeamletOpticsGUI.card_rows(x::MyType)`, in a package extension of
   the component package (weak dependency on BeamletOpticsGUI) or directly in a script.
+- **Ask once, at the start of the work, whether you should keep a report on the tools**: where
+  BeamletOptics, BeamletOpticsProjects and BeamletOpticsGUI got in your way and what you would have
+  needed. It is how these packages are made easier to use for agents. If the person says yes, write
+  each point when it happens: what you wanted, what you tried (call, first line of the error, the
+  docs you followed), what it cost, what would have helped, and the package. In a project: as
+  "Report on the tools" in the skill `beamletopticsprojects` says; otherwise in
+  `bmo-report-<your name>-<date>.md` in the working folder. Tell the person the path when done.
 
 ## Default workflow
 
@@ -109,7 +116,8 @@ When this Skill is active:
   or 30 s pass; a gesture on an object that another participant claims is refused, the status line
   names the holder ("Bob is editing M1"), and the object shows a lock and "editing". A conflict
   (an object changed here and in the files) holds only that object: everything else is saved, the
-  object keeps the files' state until the person picks "theirs" or "mine" on the card. Lines that
+  object keeps the files' state (also its places in the systems and groups) until the person picks
+  "theirs" or "mine" on the card. Lines that
   another participant claims are held the same way: the window saves everything else and writes
   its change of such an object once the claim is gone. The objects
   of one change of the files glide together; a group moved as a whole glides as one. The table

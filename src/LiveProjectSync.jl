@@ -535,13 +535,23 @@ function _name!(gui::LiveView, @nospecialize(x), e)
     return nothing
 end
 
-"""Adds the object or source of the entry `e` of the files to the `gui`, without a system yet."""
+"""
+Adds the object or source of the entry `e` of the files to the `gui`, without a system yet. An
+object that the person removed from the view under the same id (kept for its undo, see
+`_project_ids`) is forgotten, with its undo history: the files' object takes its place, e.g. when
+the person takes "theirs" of a conflict on an object they removed.
+"""
 function _add_entry!(gui::LiveView, e)
     obj = e.object
     origin = _project_origin(gui, e)
     _unrecorded(gui) do
         add_component!(gui, obj; system = :none, select = false, label = _shown_label(e), origin)
     end
+    stale = Any[o for (o, (name, uid)) in gui.sync.ids
+                if o !== obj && (isnothing(e.uid) ? name === e.name : uid == e.uid) &&
+                   !(_shown_top(gui, o) || _has(_sources(gui), o))]
+    foreach(o -> delete!(gui.sync.ids, o), stale)
+    _drop_history!(gui.controls, stale)
     _name!(gui, obj, e)
     return obj
 end
@@ -1106,6 +1116,38 @@ function _show_conflict!(gui::LiveView, keys::Vector{String})
 end
 
 """
+    _taken_places(gui, mine, disk, keys) -> (; keys, merged)
+
+What "theirs" of a conflict at the `keys` takes from the files `disk` into the `gui`, whose state is
+`mine`: the lines of the `keys` with their places in the systems and groups as in the files, the
+other members of those systems and groups as in the window (see `BeamletOpticsProjects.compose`,
+which holds the same in the files while the conflict is open). `keys` widened as by `compose`, and
+`merged` the systems and groups whose members change, `key => (; members, sources)`, for `_adopt!`.
+"""
+function _taken_places(gui::LiveView, mine, disk, keys)
+    r = BMOP.compose(something(gui.sync.base, disk), mine, disk, keys)
+    p = r.project
+    ks(q, names) = Set(_group_member_keys(q, (; members = names)))
+    merged = Dict{String, Any}()
+    for se in p.systems
+        k = _key(se)
+        ms = _by_key(mine.systems, k)
+        (k in r.keys || isnothing(ms)) && continue
+        members, sources = ks(p, se.members), ks(p, se.sources)
+        (members == ks(mine, ms.members) && sources == ks(mine, ms.sources)) ||
+            (merged[k] = (; members, sources))
+    end
+    for ge in p.groups
+        k = _key(ge)
+        mg = _by_key(mine.groups, k)
+        (k in r.keys || isnothing(mg)) && continue
+        members = ks(p, ge.members)
+        members == ks(mine, mg.members) || (merged[k] = (; members, sources = Set{String}()))
+    end
+    return (; keys = Set(r.keys), merged)
+end
+
+"""
     _resolve_conflict!(gui, how, keys = all open ones)
 
 Resolves the conflict of the `gui` (see `_ProjectConflict`) for the objects of the `keys` as the
@@ -1125,7 +1167,8 @@ function _resolve_conflict!(gui::LiveView, how::Symbol, keys = copy(gui.sync.con
     names = String[_conflict_name(gui, k) for k in keys]
     if how === :theirs && !isnothing(s.theirs)
         mine = _collect_project(gui, gui.project)
-        done = _adopting(() -> _adopt!(gui, mine, s.theirs, Set(keys)), gui)
+        taken = _taken_places(gui, mine, s.theirs, keys)
+        done = _adopting(() -> _adopt!(gui, mine, s.theirs, taken.keys; taken.merged), gui)
         gui.status.text[] = "taken from the files: " * join(isempty(done) ? names : done, ", ")
     elseif how === :mine
         gui.status.text[] = "kept as here, written to the files: " * join(names, ", ")

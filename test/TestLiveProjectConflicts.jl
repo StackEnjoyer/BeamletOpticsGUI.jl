@@ -244,4 +244,60 @@ end
     end
 end
 
+# The members of S1 in the files and in the window
+members(dir) = Set(only(load_project(dir).systems).members)
+members(gui::GUI.LiveView) = Set(only(GUI._collect_project(gui, gui.project).systems).members)
+has_line(dir, id) = any(l -> startswith(l, "@component $id "), split(read(system(dir), String), "\n"))
+
+@testset "removed here, moved in the files: L1 keeps its place in S1 (F18)" begin
+    for how in (:theirs, :mine)
+        a, b, dir = two_windows()
+        remove_component!(a, obj(a, :L1))
+        translate3d!(b, obj(b, :L1), [0.0, 0.0, 0.02])
+        @test autosave!(b) === :saved
+        @test sync!(a) === :conflict
+        # the files keep the moved L1 in S1, the window has neither
+        @test autosave!(a) === :saved
+        @test occursin("pos = (0.0, 0.1, 0.02)", pos_line(dir, "L1"))
+        @test members(dir) == Set([:L1, :M1, :D1])
+        @test members(a) == Set([:M1, :D1])
+        GUI._resolve_conflict!(a, how)
+        @test isempty(a.sync.conflicts)
+        autosave!(a)
+        if how === :theirs
+            @test members(a) == Set([:L1, :M1, :D1])
+            @test BeamletOptics.position(obj(a, :L1)) == [0.0, 0.1, 0.02]
+            @test members(dir) == Set([:L1, :M1, :D1])
+        else
+            @test !has_line(dir, "L1") && members(dir) == Set([:M1, :D1])
+        end
+        close(a); close(b)
+    end
+end
+
+@testset "removed in the files, moved here: L1 keeps its place in S1 (F18)" begin
+    for how in (:mine, :theirs)
+        a, b, dir = two_windows()
+        remove_component!(b, obj(b, :L1))
+        @test autosave!(b) === :saved
+        translate3d!(a, obj(a, :L1), [0.0, 0.0, 0.01])
+        @test sync!(a) === :conflict
+        # the window keeps L1 in S1, the files have neither: nothing else to save
+        @test members(a) == Set([:L1, :M1, :D1])
+        @test autosave!(a) === :none
+        @test !has_line(dir, "L1") && members(dir) == Set([:M1, :D1])
+        GUI._resolve_conflict!(a, how)
+        @test isempty(a.sync.conflicts)
+        autosave!(a)
+        if how === :mine
+            @test occursin("pos = (0.0, 0.1, 0.01)", pos_line(dir, "L1"))
+            @test members(dir) == Set([:L1, :M1, :D1])
+        else
+            @test members(a) == Set([:M1, :D1])
+            @test !has_line(dir, "L1")
+        end
+        close(a); close(b)
+    end
+end
+
 end
