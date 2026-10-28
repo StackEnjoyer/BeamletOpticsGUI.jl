@@ -188,7 +188,7 @@ function _autosave_write!(gui::LiveView, parts, now::Real)
     dir = gui.project
     if BMOP.project_stamp(dir) != s.stamp
         s.changed_at = nothing
-        if _sync!(gui; animate = false) === :failed
+        if _adopting(() -> _sync!(gui; animate = false), gui) === :failed
             _write_backup!(gui, _collect_project(gui, dir))
             return :paused
         end
@@ -824,7 +824,7 @@ end
 Makes the entries, systems and groups of the `keys` in the open `gui` (whose state is the project
 `mine`, see `_collect_project`) as in the files `disk`, without undo entries: removes, adds,
 rebuilds (other code, or calling own code in `rebuild`), moves (gliding if `animate`, see
-`_glide!`), renames and relabels; the systems and groups of `merged` get the merged members (see
+`_glide_all!`), renames and relabels; the systems and groups of `merged` get the merged members (see
 `_sync_members!`). A group whose members change is made anew with the window groups around and
 inside it (see `_group_plan`), one that only moved or was renamed is changed in place. The changed
 objects get a box for a moment. Returns what was done, e.g. `"moved M1"`.
@@ -906,12 +906,14 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
         _key(se) in keys || continue
         (se.name !== mine_se.name || se.label != mine_se.label) && _name!(gui, mine_se.object, se)
     end
-    isempty(glides) && (_flash!(gui, touched); return done)
+    # The table fits the setup of the files, see `_table_fit!`
+    isempty(glides) && (_flash!(gui, touched); _table_fit!(gui); return done)
     # The autosave waits until they landed, a save lands them at once
     foreach(((obj, (P, R), e),) -> (gui.sync.gliding[obj] = (P, R, e)), glides)
     finish() = begin
         _glide_all!(gui, glides; animate)
         _flash!(gui, Any[touched..., first.(glides)...])
+        _table_fit!(gui)
         return nothing
     end
     animate ? (@async finish()) : finish()
@@ -953,7 +955,7 @@ function _load_from_disk!(gui::LiveView)
     keys = Set{String}(_key(x) for x in Iterators.flatten((disk.entries, disk.systems, disk.groups,
         mine.entries, mine.systems, mine.groups)))
     _release_info!(gui, _ProjectConflict)
-    done = _adopt!(gui, mine, disk, keys; rebuild = Set(_calls_own_code(disk)))
+    done = _adopting(() -> _adopt!(gui, mine, disk, keys; rebuild = Set(_calls_own_code(disk))), gui)
     # Taken in from the files, not written by the window
     _saved!(gui, disk; written = false)
     gui.status.text[] = isempty(done) ? "project reloaded, nothing changed" : "reloaded: " * join(done, ", ")
@@ -1039,7 +1041,7 @@ function _resolve_conflict!(gui::LiveView, how::Symbol, keys = copy(gui.sync.con
     names = String[_conflict_name(gui, k) for k in keys]
     if how === :theirs && !isnothing(s.theirs)
         mine = _collect_project(gui, gui.project)
-        done = _adopt!(gui, mine, s.theirs, Set(keys))
+        done = _adopting(() -> _adopt!(gui, mine, s.theirs, Set(keys)), gui)
         gui.status.text[] = "taken from the files: " * join(isempty(done) ? names : done, ", ")
     elseif how === :mine
         gui.status.text[] = "kept as here, written to the files: " * join(names, ", ")

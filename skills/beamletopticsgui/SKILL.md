@@ -104,8 +104,15 @@ When this Skill is active:
 - Projects (prototype): `open_project(path)` opens a folder of BeamletOpticsProjects (or its `.bmo`
   file), `save_project(gui, dir)` saves a view as one. The open window writes every finished action
   to `system.jl` and merges what agents or other people write there; groups made in the window are
-  `@group` lines. `Ctrl+S` saves a version, `Ctrl+R` takes the files as they are. How to work on the
-  files is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
+  `@group` lines. `Ctrl+S` saves a version, `Ctrl+R` takes the files as they are. The window claims
+  an object at the first gesture on it (drag, key, card, edit, remove, group) until it is deselected
+  or 30 s pass; a gesture on an object that another participant claims is refused, the status line
+  names the holder ("Bob is editing M1"), and the object shows a lock and "editing". A conflict
+  (an object changed here and in the files) holds only that object: everything else is saved, the
+  object keeps the files' state until the person picks "theirs" or "mine" on the card. The objects
+  of one change of the files glide together; a group moved as a whole glides as one. The table
+  fits the setup again after a drag, a removal or a change of the files. How to work on the files
+  is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
   `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
   cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"

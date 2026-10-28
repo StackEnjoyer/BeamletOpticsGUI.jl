@@ -775,7 +775,7 @@ function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
         e isa BMOP.ProjectChanged || return _save_failed!(gui, e)
         gui.sync.changed_at = nothing
         # Without gliding: the save right after must see the poses of the files
-        _sync!(gui; animate = false) === :failed && return false
+        _adopting(() -> _sync!(gui; animate = false), gui) === :failed && return false
         gui.sync.failed && return false
         try
             save_project(gui, dir; force)

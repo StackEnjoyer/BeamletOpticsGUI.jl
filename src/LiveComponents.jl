@@ -613,6 +613,8 @@ function remove_component!(gui::LiveView, @nospecialize(obj); system = nothing)
     # An object without a system was not traced
     traced && _on_change!(gui, nothing)
     _record_removed!(gui, obj, snap)
+    # The table fits what is left, see `_table_fit!`
+    _table_fit!(gui)
     return obj
 end
 

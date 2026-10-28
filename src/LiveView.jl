@@ -614,7 +614,8 @@ What the view knows of the files of its project, which an agent may change while
   left out (warned once);
 - `journal`: the recent changes of the person in the view, `(time, line)`, newest last, and
   `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`;
-- `gliding`: the objects that glide to a pose of the files, `obj => (P, R, entry)`, see `_glide!`;
+- `gliding`: the objects that glide to a pose of the files, `obj => (P, R, entry)`, and a group
+  that glides as one, `group => _GroupGlide`, see `_glide_all!`;
 - `others`: the other people who have the project open (by the id of their presence file, see
   `LiveProjectPresence.jl`), `presence` the plots that show their selection, `beat_at` the time
   the view last wrote its own presence file (or gave it to a look to write) and `presence_due`
@@ -1714,6 +1715,8 @@ function live_view(
             catalog = CatalogEntry[catalog...]),
         background_card, widgets, layout = lay)
     gui_ref[] = gui
+    # The table fits the setup again after a drag, see `_table_fit!`
+    controls.drag_end = obj -> (_table_fit!(gui); nothing)
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
     # The parents of the parts of groups and multi-shape objects, for the selection card

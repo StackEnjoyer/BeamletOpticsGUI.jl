@@ -257,6 +257,8 @@ function remove_component!(gui::LiveView, src::_Source; system = nothing)
     _on_change!(gui, nothing)
     isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
     _record_removed!(gui, src, snap)
+    # The table fits what is left, see `_table_fit!`
+    _table_fit!(gui)
     return src
 end
 

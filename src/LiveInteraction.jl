@@ -569,6 +569,9 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # gesture, e.g. `live_view` refuses one on an object that another participant of its project
     # claims, see `_gesture!`
     gesture::Function
+    # `obj -> nothing`, called when a drag of the mouse ends, with the dragged selection, e.g.
+    # `live_view` fits its table to the setup again, see `_table_fit!`
+    drag_end::Function
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -2156,7 +2159,7 @@ function kinematic_controls!(
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
         Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
         center, nothing, nothing, nothing, nothing, false, rect_obs, rect_visible, (obj, dt) -> nothing,
-        obj -> true
+        obj -> true, obj -> nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -2268,6 +2271,7 @@ function kinematic_controls!(
                     ctrl.drag_start = nothing
                     ctrl.last_key_step = nothing
                     _push_history!(ctrl, obj, P0, R0, P1, R1)
+                    ctrl.drag_end(obj)
                 end
             elseif kind in (:pending_ring, :pending_arrow)
                 consume = true

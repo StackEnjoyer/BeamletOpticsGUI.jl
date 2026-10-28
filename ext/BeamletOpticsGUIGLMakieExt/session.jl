@@ -1171,6 +1171,59 @@ function _project_session(step; dir = mktempdir())
         settle!()
         _check(isempty(gui.components.groups), "the window did not ungroup")
     end
+    # The claims of the others, read in the background (see `_claims_tick!`), until they are seen
+    function refresh_claims!()
+        for _ in 1:3
+            GUI._check_presence!(gui)
+            c = GUI._claims(gui)
+            isnothing(c.task) || wait(c.task)
+            c.run_at = -Inf
+        end
+        GUI._check_presence!(gui)
+        frame!()
+    end
+    step("project: a gesture on an object that another participant claims is refused") do
+        other = GUI._presence_file(dir, "Bob@pc3")
+        mkpath(dirname(other))
+        write(other, "name = \"Bob\"\nhost = \"pc3\"\nbeat = 1\nselected = \"\"\nselected_id = \"M1\"\nwritten = \"\"\n")
+        GUI.BMOP.claim!(dir; by = "Bob@pc3", ids = [:M1])
+        refresh_claims!()
+        _check(!isempty(GUI._claims(gui).locks), "the lock of the claimed mirror is not shown")
+        before = _pos(mirror)
+        a = _px(gui, before)
+        _click!(gui, a)
+        frame!()
+        _drag!(gui, a, a .+ (14, 4))
+        named = occursin("is editing", gui.status.text[])
+        _key!(gui, Keyboard.up)
+        named = named || occursin("is editing", gui.status.text[])
+        settle!()
+        _check(_pos(mirror) ≈ before, "the claimed mirror moved")
+        _check(named, "the status line does not name the holder: $(gui.status.text[])")
+        GUI.BMOP.release!(dir; by = "Bob@pc3")
+        rm(other)
+        refresh_claims!()
+        _check(isempty(GUI._claims(gui).locks), "the lock stays after the claim was released")
+    end
+    step("project: a conflict holds only its object, decided on the card") do
+        system = joinpath(dir, "system.jl")
+        # The window moves the lens, the file too: a conflict on the lens
+        a = _px(gui, _pos(lens))
+        _click!(gui, a)
+        _drag!(gui, a, a .+ (10, 3))
+        settle!()
+        text = read(system, String)
+        write(system, replace(text, r"(@component L1 = .*? pos = \()[^)]*" => s"\g<1>0.0, 0.13, 0.0"))
+        t = time()
+        GUI._check_files!(gui; now = t)
+        _check(GUI._check_files!(gui; now = t + 1) === :conflict, "the lens is no conflict")
+        frame!()
+        card = GUI._info_card(gui)
+        _check(!isnothing(card) && card.obj isa GUI._ProjectConflict, "the card of the conflict is not shown")
+        _click!(gui, _rect_center(GUI._card_widget(card, :conflict_mine_1)))
+        frame!()
+        _check(isempty(gui.sync.conflicts), "\"mine\" did not end the conflict")
+    end
     return gui, screen
 end
 
