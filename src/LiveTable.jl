@@ -24,7 +24,7 @@ the distance `pitch` [m] in the plane with the `normal` (the rotation axis of th
 time, then the lowest point of the components, see `_table_height`. The rows of the holes run
 along `e1` and `e2`, through the origin, see `_table_axes`. `range` are the holes that the table
 has, `(i0, i1, j0, j1)` along `e1` and `e2`, which grow with the setup while it is shown, see
-`_table_include!`. While it is `shown`, components and sources `snap` onto its holes, see
+`_table_include!`, and fit it again after a gesture, see `_table_fit!`. While it is `shown`, components and sources `snap` onto its holes, see
 `_table_snap`. Its `plots` are an outline and the `holes`, of the diameter `hole_size` [m], created
 when it is shown for the first time, see `_draw_table!`; `toggle` is its tool.
 """
@@ -205,7 +205,7 @@ end
 
 Shows or hides the optical table of the `gui`, see `_Table`. Shown for the first time, it gets its
 height (see `_table_height`) unless the `table` kwarg gave one; each time it is shown, it is
-extended to the setup as it is, see `_table_range`, and never shrinks. While it is shown and the
+extended to the setup as it is, see `_table_range`; it shrinks again only by `_table_fit!`. While it is shown and the
 snapping of the controls is switched on, dragged and placed components and sources snap onto its
 holes, see `_table_snap`; the status line tells if the snapping is off.
 """
@@ -248,6 +248,27 @@ function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrGro
     t.range = range
     _draw_table!(gui, t)
     return nothing
+end
+
+"""
+    _table_fit!(gui) -> Bool
+
+Makes the table of the `gui` fit the setup as it is again, i.e. its holes below the visible
+components, extras and sources with `_TABLE_MARGIN` holes around them (see `_table_range`), also if
+that is fewer than it has: to be called when a gesture ends (the end of a drag, a removal, a merge
+of the files). Does nothing, and returns `false`, while the table is hidden, while the mouse drags
+(`gui.controls.dragging`) or a component is placed (so it does not flicker), and if the range does
+not change. The drawn holes stay where they are, see `_table_holes`.
+"""
+function _table_fit!(gui::LiveView)
+    t = gui.components.table
+    (isnothing(t) || !t.shown || isnothing(t.range) || isnothing(t.height)) && return false
+    (gui.controls.dragging || _placing(gui)) && return false
+    range = _table_range(t, _table_points(gui))
+    range == t.range && return false
+    t.range = range
+    _draw_table!(gui, t)
+    return true
 end
 
 # Components and sources snap onto the holes of the table, clip planes do not
