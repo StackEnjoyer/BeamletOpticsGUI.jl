@@ -50,6 +50,42 @@ const GUI = BeamletOpticsGUI
         @test t.range == GUI._table_range(t, GUI._table_points(gui)) && t.range[4] < grown
     end
 
+    @testset "after undo, a key step or a card input" begin
+        gui, sys, m, lens = _fixture()
+        t = gui.components.table
+        r0 = t.range
+        @test !GUI._table_tick!(gui; now = time() + 1)
+        # a drag far away grows the table and fits it at its end
+        P0, R0 = GUI._pose(lens)
+        translate3d!(gui, lens, [1.0, 0.0, 0.0])
+        @test t.range[2] > r0[2]
+        # the undo moves it back: the table fits after the delay, not at once
+        @test GUI._undo!(gui.controls)
+        @test GUI._pose(lens)[1] ≈ P0
+        @test t.range[2] > r0[2]
+        @test !GUI._table_tick!(gui; now = t.fit_at + GUI._TABLE_FIT_DELAY / 2)
+        @test GUI._table_tick!(gui; now = t.fit_at + 2 * GUI._TABLE_FIT_DELAY)
+        @test t.range == r0
+        @test isnan(t.fit_at)
+        @test !GUI._table_tick!(gui; now = time() + 1)
+    end
+
+    @testset "a fit refused while placing is made up" begin
+        gui, sys, m, lens = _fixture()
+        t = gui.components.table
+        r0 = t.range
+        translate_to3d!(lens, [0.0, 1.0, 0.0])
+        GUI._table_include!(gui, lens)
+        translate_to3d!(lens, [0.0, 0.1, 0.0])
+        gui.controls.dragging = true
+        @test !GUI._table_fit!(gui)
+        @test !isnan(t.fit_at)
+        @test !GUI._table_tick!(gui; now = time() + 1)
+        gui.controls.dragging = false
+        @test GUI._table_tick!(gui; now = time() + 1)
+        @test t.range == r0
+    end
+
     @testset "hidden table is left alone" begin
         gui, sys, m, lens = _fixture()
         t = gui.components.table

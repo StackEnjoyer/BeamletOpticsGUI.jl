@@ -431,22 +431,24 @@ function _pivot_hit(gui::LiveView)
 end
 
 """
-    _start_pivot_drag!(gui)
+    _start_pivot_drag!(gui) -> Bool
 
 A press on the dot of the pivot of the `gui`: the dot follows the mouse in the plane of the view
 through the pivot, see `_pivot_drag_step!`, and the release records the shift as one action of the
-undo history, see `_end_pivot_drag!`.
+undo history, see `_end_pivot_drag!`. A gesture like a drag of the selection: refused (`false`) if
+another participant of the project claims one of its objects, see `_gesture!`.
 """
 function _start_pivot_drag!(gui::LiveView)
     scene = gui.ax.scene
     sel = gui.controls.selected[]
+    _gesture!(gui, sel) || return false
     P = Vector{Float64}(position(sel))
     n = _view_direction(scene)
     origin, dir = _cursor_ray(scene)
     hit = _ray_plane_intersect(origin, dir, P, n)
     grab = isnothing(hit) ? zeros(3) : P .- hit
     gui.components.pivot_marker.drag = (; sel, start = P, normal = n, grab)
-    return nothing
+    return true
 end
 
 function _pivot_drag_step!(gui::LiveView)
@@ -468,6 +470,8 @@ function _end_pivot_drag!(gui::LiveView)
     sel = drag.sel
     δ = Matrix{Float64}(BMO.orientation(sel))' * (Vector{Float64}(position(sel)) .- drag.start)
     norm(δ) > 1e-15 && _record_pivot!(gui, sel, δ)
+    # the claims are held from the end of the drag on, see `_claim!`
+    _claim!(gui, sel)
     return nothing
 end
 

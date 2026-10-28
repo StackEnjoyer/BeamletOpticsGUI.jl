@@ -14,6 +14,8 @@ const _TABLE_HOLE = 0.24
 const _TABLE_MAX_HOLES = 20_000
 # Distance of the table below the sources of a view without components [holes]
 const _TABLE_DROP = 2
+# The table fits the setup again this long [s] after the last change that wants it, see `_table_tick!`
+const _TABLE_FIT_DELAY = 0.3
 
 """
     _Table
@@ -24,7 +26,8 @@ the distance `pitch` [m] in the plane with the `normal` (the rotation axis of th
 time, then the lowest point of the components, see `_table_height`. The rows of the holes run
 along `e1` and `e2`, through the origin, see `_table_axes`. `range` are the holes that the table
 has, `(i0, i1, j0, j1)` along `e1` and `e2`, which grow with the setup while it is shown, see
-`_table_include!`, and fit it again after a gesture, see `_table_fit!`. While it is `shown`, components and sources `snap` onto its holes, see
+`_table_include!`, and fit it again after a gesture, see `_table_fit!`; `fit_at` is the time [s]
+of the last change after which it fits the setup again (`NaN` if none), see `_table_tick!`. While it is `shown`, components and sources `snap` onto its holes, see
 `_table_snap`. Its `plots` are an outline and the `holes`, of the diameter `hole_size` [m], created
 when it is shown for the first time, see `_draw_table!`; `toggle` is its tool.
 """
@@ -37,6 +40,7 @@ mutable struct _Table
     height::Union{Nothing, Float64}
     range::Union{Nothing, NTuple{4, Int}}
     shown::Bool
+    fit_at::Float64
     const holes::Observable{Vector{Point3f}}
     const outline::Observable{Vector{Point3f}}
     const hole_size::Observable{Float32}
@@ -89,7 +93,7 @@ function _Table(normal, spec)
     n = normalize(Vector{Float64}(normal))
     e1, e2 = _table_axes(n)
     return _Table(Float64(spec.pitch), n, e1, e2, spec.snap,
-        isnothing(spec.height) ? nothing : Float64(spec.height), nothing, false,
+        isnothing(spec.height) ? nothing : Float64(spec.height), nothing, false, NaN,
         Observable(Point3f[]), Observable(Point3f[]), Observable(0.0f0), AbstractPlot[], nothing)
 end
 
@@ -229,7 +233,8 @@ end
     _table_include!(gui, obj)
 
 Extends the table of the `gui` to the position of the component or source `obj`, which was moved or
-added, with `_TABLE_MARGIN` holes around it, while the table is shown.
+added, with `_TABLE_MARGIN` holes around it, while the table is shown. It fits the setup again
+`_TABLE_FIT_DELAY` seconds after the last of these changes, see `_table_tick!`.
 """
 _table_include!(::LiveView, _) = nothing
 # A selection of several objects: each of them
@@ -242,6 +247,7 @@ end
 function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrGroup, _Source}))
     t = gui.components.table
     (isnothing(t) || !t.shown) && return nothing
+    t.fit_at = time()
     range = _union_range(t.range,
         _table_range(t, [Vector{Float64}(position(obj))]; min_holes = (1, 1)))
     range == t.range && return nothing
@@ -256,19 +262,39 @@ end
 Makes the table of the `gui` fit the setup as it is again, i.e. its holes below the visible
 components, extras and sources with `_TABLE_MARGIN` holes around them (see `_table_range`), also if
 that is fewer than it has: to be called when a gesture ends (the end of a drag, a removal, a merge
-of the files). Does nothing, and returns `false`, while the table is hidden, while the mouse drags
-(`gui.controls.dragging`) or a component is placed (so it does not flicker), and if the range does
-not change. The drawn holes stay where they are, see `_table_holes`.
+of the files), and after any other change by `_table_tick!`. Does nothing, and returns `false`,
+while the table is hidden, while the mouse drags (`gui.controls.dragging`) or a component is placed
+(so it does not flicker; `_table_tick!` fits it after that), and if the range does not change. The
+drawn holes stay where they are, see `_table_holes`.
 """
 function _table_fit!(gui::LiveView)
     t = gui.components.table
     (isnothing(t) || !t.shown || isnothing(t.range) || isnothing(t.height)) && return false
-    (gui.controls.dragging || _placing(gui)) && return false
+    if gui.controls.dragging || _placing(gui)
+        t.fit_at = time()
+        return false
+    end
+    t.fit_at = NaN
     range = _table_range(t, _table_points(gui))
     range == t.range && return false
     t.range = range
     _draw_table!(gui, t)
     return true
+end
+
+"""
+    _table_tick!(gui; now = time()) -> Bool
+
+A frame of the `gui`: the table fits the setup again (see `_table_fit!`) once `_TABLE_FIT_DELAY`
+seconds have passed since the last change that wants it (`fit_at` of `_Table`): a move of any
+kind (also undo, redo, a key step, an input on a card, a verb from a script), an addition, or a
+fit that was refused while the mouse dragged or a component was placed. Waiting for the last
+change keeps held keys from fitting it at every step. Returns whether it changed.
+"""
+function _table_tick!(gui::LiveView; now::Real = time())
+    t = gui.components.table
+    (isnothing(t) || isnan(t.fit_at) || now - t.fit_at < _TABLE_FIT_DELAY) && return false
+    return _table_fit!(gui)
 end
 
 # Components and sources snap onto the holes of the table, clip planes do not
@@ -308,6 +334,15 @@ function _build_table!(gui::LiveView, spec)
         @nospecialize obj
         return _table_snap(gui, obj, point)
     end
+    push!(gui.controls.listeners, on(events(gui.ax.scene).tick) do _
+        try
+            _table_tick!(gui)
+        catch e
+            t.fit_at = NaN
+            gui.last_error = _log_once(gui, e, gui.last_error, "the table")
+        end
+        return nothing
+    end)
     if spec.shown
         status = gui.status.text[]
         t.toggle.active[] = true

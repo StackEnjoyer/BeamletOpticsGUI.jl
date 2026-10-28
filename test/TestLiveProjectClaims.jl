@@ -222,6 +222,24 @@ mine(dir, me) = sort!([String(c.id) for c in values(BMOP.claims(dir)) if c.by ==
             ctrl.selected[] = nothing
             look!(gui)
             @test isempty(mine(dir, me))
+            # the dot of its pivot is dragged like the group
+            @test BMOP.claim!(dir; by = "bob@PC9", ids = [:M1])
+            look!(gui)
+            ctrl.selected[] = g
+            P = Vector{Float64}(position(g))
+            @test !GUI._start_pivot_drag!(gui)
+            @test isnothing(gui.components.pivot_marker.drag)
+            @test gui.status.text[] == "Bob is editing M1"
+            @test Vector{Float64}(position(g)) == P
+            BMOP.release!(dir; by = "bob@PC9")
+            look!(gui)
+            @test GUI._start_pivot_drag!(gui)
+            GUI._end_pivot_drag!(gui)
+            look!(gui)
+            @test mine(dir, me) == ["M1", "M2"]
+            ctrl.selected[] = nothing
+            look!(gui)
+            @test isempty(mine(dir, me))
         end
 
         @testset "claimed first by another" begin

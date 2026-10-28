@@ -113,7 +113,7 @@ When this Skill is active:
   another participant claims are held the same way: the window saves everything else and writes
   its change of such an object once the claim is gone. The objects
   of one change of the files glide together; a group moved as a whole glides as one. The table
-  fits the setup again after a drag, a removal or a change of the files. How to work on the files
+  fits the setup again shortly after every change (a drag, a key step, undo, a removal, a change of the files). How to work on the files
   is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
 - A group or a selection of several rotates about its pivot, a dot (dashed line to the gizmo) while
   it is selected: the mean of the objects for one made in the window or a selection, the pivot of the
