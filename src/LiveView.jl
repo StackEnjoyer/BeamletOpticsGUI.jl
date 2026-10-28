@@ -609,8 +609,8 @@ What the view knows of the files of its project, which an agent may change while
   both in the view and in the files, and `theirs` the project of the files of that conflict;
 - `written`: per machine id the last states of an entry that the view itself wrote, each after the
   state it overwrote, `nothing` for a removal (the guard against an agent that writes from an older
-  read, see `_stale`), `text` the `system.jl` text of the view at the last look of the autosave and
-  `edited_at` the time it last changed, `skipped` the objects without a recipe that the last save
+  read, see `_stale`), `text` the person's own pending change at the last look of the autosave (see
+  `_own_change`) and `edited_at` the time it last changed, `skipped` the objects without a recipe that the last save
   left out (warned once);
 - `journal`: the recent changes of the person in the view, `(time, line)`, newest last, and
   `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`;

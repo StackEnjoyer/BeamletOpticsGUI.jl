@@ -109,7 +109,9 @@ When this Skill is active:
   or 30 s pass; a gesture on an object that another participant claims is refused, the status line
   names the holder ("Bob is editing M1"), and the object shows a lock and "editing". A conflict
   (an object changed here and in the files) holds only that object: everything else is saved, the
-  object keeps the files' state until the person picks "theirs" or "mine" on the card. The objects
+  object keeps the files' state until the person picks "theirs" or "mine" on the card. Lines that
+  another participant claims are held the same way: the window saves everything else and writes
+  its change of such an object once the claim is gone. The objects
   of one change of the files glide together; a group moved as a whole glides as one. The table
   fits the setup again after a drag, a removal or a change of the files. How to work on the files
   is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
