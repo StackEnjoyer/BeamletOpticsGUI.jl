@@ -291,9 +291,10 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
         @test tick!(gui) === :failed
         translate3d!(gui, obj(gui, :L1), [0.0, 0.0, 0.01])
         @test autosave!(gui) === :paused
-        backup = joinpath(dir, ".bmo", "window-backup.jl")
+        # one backup per person
+        backup = joinpath(dir, ".bmo", "window-backup-$(GUI._person().id).jl")
         @test isfile(backup)
-        @test occursin("window-backup.jl", gui.status.text[])
+        @test occursin("window-backup-", gui.status.text[])
         @test GUI._autosave!(gui; now = time() + 10) === :paused
         # The backup loads as a project
         copy = mktempdir()
@@ -320,8 +321,10 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
         @test BeamletOptics.position(m1) == mine
         @test gui.sync.conflicts == [gui.sync.ids[m1][2]]
         @test BeamletOptics.position(obj(gui, :D1)) == [0.0, 0.33, 0.0]
+        # The conflict holds only M1: nothing else to save, and M1 keeps the files' state
         GUI._autosave!(gui)
-        @test GUI._autosave!(gui; now = time() + 10) === :paused
+        @test GUI._autosave!(gui; now = time() + 10) === :none
+        @test occursin("pos = (0.0, 0.2, 0.01)", pos_line(dir, "M1"))
         GUI._resolve_conflict!(gui, :mine)
         @test autosave!(gui) === :saved
         @test occursin("pos = (0.0, 0.2, 0.02)", pos_line(dir, "M1"))
@@ -486,7 +489,7 @@ end
         # The agent breaks the file, the watcher did not look yet; the window closes
         edit!(text -> text * "@component Z1 = $(LENS[1:end-1])\n", dir)
         close(gui)
-        backup = joinpath(dir, ".bmo", "window-backup.jl")
+        backup = joinpath(dir, ".bmo", "window-backup-$(GUI._person().id).jl")
         @test isfile(backup) && occursin("pos = (0.0, 0.1, 0.01)", read(backup, String))
         @test gui.sync.failed && !isempty(gui.sync.load_error)
     end
@@ -505,19 +508,24 @@ end
         @test tick!(gui) === :conflict
         @test gui.sync.conflicts == [key] && GUI._conflict_shown(gui)
         @test BeamletOptics.position(d1) == [0.0, 0.31, 0.0]
+        # Nothing else to save: the conflict holds only L1, which keeps the files' state
         GUI._autosave!(gui)
-        @test GUI._autosave!(gui; now = time() + 10) === :paused
-        # The card is closed without a decision; a change of the person shows it again
+        @test GUI._autosave!(gui; now = time() + 10) === :none
+        # The card is closed without a decision; a change of the person is saved, the card stays
+        # closed and the conflict open
         GUI._release_info!(gui, GUI._ProjectConflict)
         translate3d!(gui, d1, [0.0, 0.0, 0.01])
         @test GUI._autosave!(gui) === :pending
-        @test GUI._conflict_shown(gui)
-        @test GUI._autosave!(gui; now = time() + 10) === :paused
+        @test !GUI._conflict_shown(gui)
+        @test GUI._autosave!(gui; now = time() + 10) === :saved
+        @test occursin("pos = (0.0, 0.31, 0.01)", pos_line(dir, "D1"))
+        @test occursin("pos = (0.0, 0.11, 0.0)", pos_line(dir, "L1")) && gui.sync.conflicts == [key]
         # Take theirs: L1 of the files
         GUI._resolve_conflict!(gui, :theirs)
         @test BeamletOptics.position(l1) == [0.0, 0.11, 0.0]
         @test isempty(gui.sync.conflicts)
-        @test autosave!(gui) === :saved
+        # the window is as in the files now
+        @test autosave!(gui) === :none
         @test occursin("pos = (0.0, 0.11, 0.0)", pos_line(dir, "L1"))
         @test occursin("pos = (0.0, 0.31, 0.01)", pos_line(dir, "D1"))
         close(gui)
@@ -550,8 +558,9 @@ end
             GUI._SAVE_DIALOG[] = dialog
         end
         @test !isempty(gui.sync.conflicts)
+        # the conflict holds L1 with the files' state; nothing else to save
         GUI._autosave!(gui)
-        @test GUI._autosave!(gui; now = time() + 10) === :paused
+        @test GUI._autosave!(gui; now = time() + 10) === :none
         @test occursin("pos = (0.0, 0.11, 0.0)", pos_line(dir, "L1"))
         close(gui)
     end

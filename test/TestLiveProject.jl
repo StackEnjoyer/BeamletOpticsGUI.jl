@@ -460,7 +460,7 @@ const GUI = BeamletOpticsGUI
         n = length(versions(dir))
         file = read(joinpath(dir, "system.jl"), String)
         translate3d!(gui, t.lens, [0.0, 0.0, 0.01])
-        GUI._show_info!(gui, GUI._ProjectConflict(Point3f(0), ["$lens"]))
+        GUI._show_info!(gui, GUI._ProjectConflict(Point3f(0), ["$lens"], ["id:$lens"]))
         GUI._save_key!(gui)
         @test gui.status.text[] == "decide on the card first: $lens"
         @test GUI._info_card(gui).obj isa GUI._ProjectConflict

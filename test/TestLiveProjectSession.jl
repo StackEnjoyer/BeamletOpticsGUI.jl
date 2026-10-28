@@ -71,10 +71,10 @@ session(dir) = read(GUI._session_file(dir), String)
         gui.status.text[] = "something else"
         GUI._write_session!(gui)
         text = session(dir)
-        @test occursin("Open conflict: D1, M1 (window and file differ; the person decides on the card)", text)
+        @test occursin("Open conflict: D1, M1 (window and file differ: the file keeps its state of them until the person decides; all else is saved)", text)
         @test !occursin(uid, text)
         @test occursin("The file does not load: system.jl:12:5: boom (the window keeps its state)", text)
-        @test occursin(".bmo/window-backup.jl", text)
+        @test occursin(".bmo/window-backup-<person>.jl", text)
         gui.sync.conflicts = String[]
         gui.sync.failed = false
         GUI._write_session!(gui)

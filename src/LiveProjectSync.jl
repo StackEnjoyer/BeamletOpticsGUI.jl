@@ -28,16 +28,18 @@ function _shown(gui::LiveView)
 end
 
 """
-    _saved!(gui, project; written = true)
+    _saved!(gui, project; written = true, keep = String[])
 
 Records that the `gui` and the files of the `project` agree, after it was opened, saved or the
-files were merged: `project` becomes the `base` of the comparisons (see `_ProjectSync`), a conflict
-is over, the states that the window wrote are remembered (unless `written` is `false`, e.g. for
-files that `Ctrl+R` took in; see `_stale`), `.bmo/session.md` is written if the view writes it,
-the watcher starts if the `gui` is shown, and a watched view publishes the stamp of the files in
-its presence file (the others name it as the writer, see `_writer`).
+files were merged: `project` becomes the `base` of the comparisons (see `_ProjectSync`), the
+conflicts are over except those of `keep` (a save of the window writes the files' state of the
+objects in conflict and keeps them open, see `_saved_state`), the states that the window wrote are
+remembered (unless `written` is `false`, e.g. for files that `Ctrl+R` took in; see `_stale`),
+`.bmo/session.md` is written if the view writes it, the watcher starts if the `gui` is shown, and a
+watched view publishes the stamp of the files in its presence file (the others name it as the
+writer, see `_writer`).
 """
-function _saved!(gui::LiveView, project; written::Bool = true)
+function _saved!(gui::LiveView, project; written::Bool = true, keep = String[])
     s = gui.sync
     before = s.base
     s.base = _align_uids!(gui, project)
@@ -48,8 +50,8 @@ function _saved!(gui::LiveView, project; written::Bool = true)
     s.failed = false
     s.load_error = ""
     if !isempty(s.conflicts)
-        empty!(s.conflicts)
-        _release_info!(gui, _ProjectConflict)
+        filter!(in(keep), s.conflicts)
+        isempty(s.conflicts) && _release_info!(gui, _ProjectConflict)
     end
     written && _remember_written!(s, before)
     # A look of the watcher that started before this read the files before it, see `_take_look!`
@@ -106,20 +108,33 @@ Autosave
 _uidless_code(p) = replace(BMOP.system_code(p), r" uid = \"[^\"]*\"" => "")
 
 """
+    _saved_state(gui, project) -> Project
+
+What a save of the `gui` writes of its setup `project` (see `_project_parts`): the setup, except at
+the objects of an open conflict (`gui.sync.conflicts`), where the files keep their state until the
+person decides (see `_ProjectConflict`), see `BeamletOpticsProjects.compose`.
+"""
+function _saved_state(gui::LiveView, project)
+    s = gui.sync
+    (isempty(s.conflicts) || isnothing(s.base)) && return project
+    return BMOP.compose(s.base, project, s.base, s.conflicts).project
+end
+
+"""
     _autosave!(gui; now = time(), force = false) -> Symbol
 
 One look of the autosave at the setup of the `gui`, after `_check_files!`: once the setup differs
 from the files (`base`) and has not changed for `_AUTOSAVE_DELAY` seconds, it is saved (`:saved`)
 and the changes of the person are added to the journal of `.bmo/session.md` (`_journal!`); files
-changed meanwhile are merged first. `:pending` while it waits, `:none` if the setup is as in the
+changed meanwhile are merged first. An open conflict holds only its own objects: the save writes
+everything else, see `_saved_state`. `:pending` while it waits, `:none` if the setup is as in the
 files. `:paused` while the mouse drags or places an object (also in a linked view, see
-`open_system`), an object glides to a pose of the files, the files changed and are not merged yet,
-or a conflict is open: a change of the person then shows its card again if it was closed without
-a decision. While the files do not load (e.g. an agent is half through an edit) or a conflict is
-open, the setup is written to `.bmo/window-backup.jl` instead (`:paused`) and saved once they load
-again. `:failed` if the save failed, the reason in the status line; tried again after
-`_AUTOSAVE_RETRY` seconds. `force` saves without waiting and while the files changed or objects
-glide (when the window closes or `Ctrl+S` saves a version); a conflict then writes the backup.
+`open_system`), an object glides to a pose of the files, or the files changed and are not merged
+yet. While the files do not load (e.g. an agent is half through an edit), the setup is written to
+the backup of the person (see `_write_backup!`) instead (`:paused`) and saved once they load again.
+`:failed` if the save failed, the reason in the status line; tried again after `_AUTOSAVE_RETRY`
+seconds. `force` saves without waiting and while the files changed or objects glide (when the
+window closes or `Ctrl+S` saves a version).
 """
 function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
     s = gui.sync
@@ -132,23 +147,20 @@ function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
     end
     # The name of the files that the view agrees with, not read from `Project.toml` at every look
     parts = _project_parts(gui, dir; name = s.base.name)
-    text = _uidless_code(parts.project)
+    text = _uidless_code(_saved_state(gui, parts.project))
     if text == _uidless_code(s.base)
         s.text, s.edited_at = text, nothing
         return :none
     end
     if text != s.text
         s.text, s.edited_at = text, now
-        # A change of the person while a conflict is open whose card was closed: ask again
-        !force && !isempty(s.conflicts) && !_conflict_shown(gui) && _show_conflict!(gui, s.conflicts)
         force || return :pending
     end
-    !force && !isempty(s.conflicts) && return :paused
     # Written to the backup already, the files still do not load
     isnothing(s.edited_at) && s.failed && !force && return :paused
     !force && !isnothing(s.edited_at) && now - s.edited_at < _AUTOSAVE_DELAY && return :pending
     s.edited_at = nothing
-    if s.failed || !isempty(s.conflicts)
+    if s.failed
         _write_backup!(gui, parts.project)
         return :paused
     end
@@ -167,30 +179,30 @@ end
 """
 Saves the setup (`parts`, see `_project_parts`) of the `gui` for `_autosave!`. Files that changed
 since the last look are merged first, without gliding, such that the save sees the poses of the
-files; a conflict or files that do not load then write the backup. A new list of objects without a
-recipe stays in the status line and is warned once; otherwise the status line stays as it was.
+files; files that do not load then write the backup, a conflict holds only its objects (see
+`_saved_state`). A new list of objects without a recipe stays in the status line and is warned
+once; otherwise the status line stays as it was.
 """
 function _autosave_write!(gui::LiveView, parts, now::Real)
     s = gui.sync
     dir = gui.project
     if BMOP.project_stamp(dir) != s.stamp
         s.changed_at = nothing
-        if _sync!(gui; animate = false) !== :applied || !isempty(s.conflicts)
+        if _sync!(gui; animate = false) === :failed
             _write_backup!(gui, _collect_project(gui, dir))
             return :paused
         end
         parts = _project_parts(gui, dir)
-        _uidless_code(parts.project) == _uidless_code(s.base) && return :none
+        _uidless_code(_saved_state(gui, parts.project)) == _uidless_code(s.base) && return :none
     end
-    changes = BMOP.diff_projects(s.base, parts.project)
+    changes = BMOP.diff_projects(s.base, _saved_state(gui, parts.project))
     status = gui.status.text[]
     saved = Base.CoreLogging.with_logger(Base.CoreLogging.SimpleLogger(stderr, Base.CoreLogging.Error)) do
         _save_to!(gui, dir)
     end
     if !saved
-        # A conflict, files that do not load (both found by a merge of the save), or an error in
-        # the status line
-        if !isempty(s.conflicts) || s.failed
+        # Files that do not load (found by a merge of the save), or an error in the status line
+        if s.failed
             _write_backup!(gui, _collect_project(gui, dir))
             return :paused
         end
@@ -208,12 +220,16 @@ function _autosave_write!(gui::LiveView, parts, now::Real)
     return :saved
 end
 
-"""Writes the setup `mine` of the `gui` to `.bmo/window-backup.jl`, while the files do not load."""
+"""
+Writes the setup `mine` of the `gui` to `.bmo/window-backup-<person>.jl` (see `_person`), while
+the files do not load: each person has a backup of their own.
+"""
 function _write_backup!(gui::LiveView, mine)
-    file = joinpath(gui.project, ".bmo", "window-backup.jl")
+    name = "window-backup-$(_person().id).jl"
+    file = joinpath(gui.project, ".bmo", name)
     mkpath(dirname(file))
     write(file, BMOP.system_code(mine))
-    note = "the window is kept in .bmo/window-backup.jl"
+    note = "the window is kept in .bmo/$name"
     st = gui.status.text[]
     occursin(note, st) || (gui.status.text[] = isempty(st) ? note : "$st; $note")
     _note_session!(gui)
@@ -344,6 +360,7 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
     plan = BMOP.merge_plan(s.base, mine, disk; stale = k -> _stale(s, k, disk), rebuild,
         keep = s.conflicts)
     conflicts = plan.conflicts
+    new_conflicts = setdiff(conflicts, s.conflicts)
     done = _adopt!(gui, mine, disk, plan.take; rebuild = Set(rebuild), animate, merged = plan.merged)
     s.base = _align_uids!(gui, disk)
     s.stamp = disk.stamp
@@ -358,7 +375,9 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
         _note_session!(gui)
         return :applied
     end
-    _show_conflict!(gui, conflicts)
+    # The card comes for new conflicts only; one that the person closed without deciding stays
+    # closed, its objects keep the files' state (see `_saved_state`)
+    isempty(new_conflicts) || _show_conflict!(gui, conflicts)
     _note_session!(gui)
     return :conflict
 end
@@ -945,12 +964,16 @@ end
     _ProjectConflict
 
 Objects that were changed both in the window and in the files of its project (e.g. by an agent),
-differently: an info card at `point` naming them (`names`), with three buttons, see
-`_resolve_conflict!`. All other changes of the files are already applied, see `_sync!`.
+differently: an info card at `point` with a row per object (`names`, their `keys`) to take the
+state of the files ("theirs") or keep the window's ("mine"), and buttons for all of them and for
+"Save as…", see `_resolve_conflict!`. All other changes of the files are already applied (see
+`_sync!`), and the window saves all other changes meanwhile; the files keep their state of these
+objects until the person decides (see `_saved_state`).
 """
 struct _ProjectConflict <: _InfoItem
     point::Point3f
     names::Vector{String}
+    keys::Vector{String}
 end
 
 _points(x::_ProjectConflict) = [x.point]
@@ -958,57 +981,71 @@ _title(::_ProjectConflict) = "Changed here and in the files"
 _tree_kind(::_ProjectConflict) = :warning
 _keep_plots!(::LiveView, ::_ProjectConflict) = nothing
 _keepable(::_ProjectConflict) = false
-card_rows(x::_ProjectConflict) = (
-    _text_row("objects", :conflict_names, (_, _) -> join(x.names, ", "); width = 48),
-    _text_row("files", :conflict_files, (_, _) -> "the rest of the files is applied"; width = 48),
-    CardRow(
-        CardWidget(Button; name = :conflict_theirs, label = "Take theirs",
+function card_rows(x::_ProjectConflict)
+    rows = Any[_text_row("files", :conflict_files,
+        (_, _) -> "the rest is applied and saved; these keep the files' state until you choose"; width = 48)]
+    for (i, (name, key)) in enumerate(zip(x.names, x.keys))
+        push!(rows, CardRow(name,
+            CardWidget(Button; name = Symbol("conflict_theirs_", i), label = "theirs",
+                on = (gui, _, _) -> _resolve_conflict!(gui, :theirs, [key])),
+            CardWidget(Button; name = Symbol("conflict_mine_", i), label = "mine",
+                on = (gui, _, _) -> _resolve_conflict!(gui, :mine, [key]))))
+    end
+    push!(rows, CardRow(
+        CardWidget(Button; name = :conflict_theirs, label = "All theirs",
             on = (gui, _, _) -> _resolve_conflict!(gui, :theirs)),
-        CardWidget(Button; name = :conflict_mine, label = "Keep mine",
+        CardWidget(Button; name = :conflict_mine, label = "All mine",
             on = (gui, _, _) -> _resolve_conflict!(gui, :mine)),
         CardWidget(Button; name = :conflict_save_as, label = "Save as…",
             on = (gui, _, _) -> _resolve_conflict!(gui, :save_as))))
+    return Tuple(rows)
+end
 
-"""Shows the card of the conflict of the `gui` for the entries and systems of the `keys`."""
+# The name of the entry, group or system of the conflict `key` of the `gui`
+function _conflict_name(gui::LiveView, key::String)
+    t = gui.sync.theirs
+    x = isnothing(t) ? nothing :
+        something(_by_key(t.entries, key), _by_key(t.systems, key), _by_key(t.groups, key), Some(nothing))
+    isnothing(x) || return _shown_label(x)
+    obj = findfirst(v -> v[2] == key, gui.sync.ids)
+    return isnothing(obj) ? key : _label(gui, obj)
+end
+
+"""Shows the card of the conflict of the `gui` for the entries, systems and groups of the `keys`."""
 function _show_conflict!(gui::LiveView, keys::Vector{String})
-    names = String[]
-    for k in keys
-        x = something(_by_key(gui.sync.theirs.entries, k), _by_key(gui.sync.theirs.systems, k),
-            _by_key(gui.sync.theirs.groups, k), Some(nothing))
-        if isnothing(x)
-            obj = findfirst(t -> t[2] == k, gui.sync.ids)
-            push!(names, isnothing(obj) ? k : _label(gui, obj))
-        else
-            push!(names, _shown_label(x))
-        end
-    end
-    _show_info!(gui, _ProjectConflict(_error_anchor(gui), names))
+    names = String[_conflict_name(gui, k) for k in keys]
+    _show_info!(gui, _ProjectConflict(_error_anchor(gui), names, copy(keys)))
     gui.status.text[] = "changed here and in the files: $(join(names, ", ")); choose on the card"
     return nothing
 end
 
 """
-Resolves the conflict of the `gui` (see `_ProjectConflict`) as the user chose, `how`: `:theirs`
-takes the objects of the conflict from the files (their changes here are lost), `:mine` keeps them
-as they are here, which the autosave writes, `:save_as` saves the window as a new project (see
-`_save_as_key!`): the conflict is over once that is saved (`_saved!`); if the dialog is cancelled,
-it stays open, and the autosave of the project keeps waiting for a decision.
+    _resolve_conflict!(gui, how, keys = all open ones)
+
+Resolves the conflict of the `gui` (see `_ProjectConflict`) for the objects of the `keys` as the
+person chose, `how`: `:theirs` takes them from the files (their changes here are lost), `:mine`
+keeps them as they are here, which the autosave writes next; `:save_as` saves the window as a new
+project (see `_save_as_key!`), which ends all conflicts once it is saved (`_saved!`). The card shows
+the objects still open, if any.
 """
-function _resolve_conflict!(gui::LiveView, how::Symbol)
+function _resolve_conflict!(gui::LiveView, how::Symbol, keys = copy(gui.sync.conflicts))
     s = gui.sync
     _release_info!(gui, _ProjectConflict)
     if how === :save_as
         _save_as_key!(gui)
         return nothing
     end
+    keys = String[k for k in keys if k in s.conflicts]
+    names = String[_conflict_name(gui, k) for k in keys]
     if how === :theirs && !isnothing(s.theirs)
         mine = _collect_project(gui, gui.project)
-        done = _adopt!(gui, mine, s.theirs, Set(s.conflicts))
-        gui.status.text[] = "taken from the files: " * join(done, ", ")
+        done = _adopt!(gui, mine, s.theirs, Set(keys))
+        gui.status.text[] = "taken from the files: " * join(isempty(done) ? names : done, ", ")
     elseif how === :mine
-        gui.status.text[] = "kept as here; written to the files"
+        gui.status.text[] = "kept as here, written to the files: " * join(names, ", ")
     end
-    empty!(s.conflicts)
+    filter!(k -> !(k in keys), s.conflicts)
+    isempty(s.conflicts) || _show_conflict!(gui, s.conflicts)
     _note_session!(gui)
     return nothing
 end

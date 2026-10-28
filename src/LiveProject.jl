@@ -307,17 +307,18 @@ function _project_packages()
 end
 
 """
-    _apply_project_names!(gui, project)
+    _apply_project_names!(gui, project; skip = String[])
 
 Writes the readable ids and the machine ids of the entries, groups and systems of the saved `project` into
 `gui.sync.ids` (see `_ProjectSync`), such that the next save gives the same ones; the uids that
-`BeamletOpticsProjects.save_project` gave are those of the entries in `project`. The labels of the
+`BeamletOpticsProjects.save_project` gave are those of the entries in `project`. Not those of the
+keys `skip` (the objects of an open conflict, whose lines hold the files' state). The labels of the
 `gui` stay as they are.
 """
-function _apply_project_names!(gui::LiveView, project)
+function _apply_project_names!(gui::LiveView, project; skip = String[])
     ids = gui.sync.ids
     for e in Iterators.flatten((project.entries, project.systems, project.groups))
-        isnothing(e.object) && continue
+        (isnothing(e.object) || _key(e) in skip) && continue
         ids[e.object] = (e.name, something(e.uid, BMOP.new_uid()))
     end
     return nothing
@@ -696,22 +697,27 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     name = save_as && !isfile(joinpath(dir, "Project.toml")) ? BMOP.project_name(from) :
            BMOP.project_name(dir)
     parts = _project_parts(gui, dir; name)
+    # The objects of an open conflict keep the files' state in its own project, see `_saved_state`
+    keep = save_as ? String[] : copy(gui.sync.conflicts)
+    project = save_as ? parts.project : _saved_state(gui, parts.project)
     # The files as the view knows them: only of its own project
-    dir == from && (parts.project.stamp = gui.sync.stamp)
+    dir == from && (project.stamp = gui.sync.stamp)
     if save_as
         # Before checking whether the folder is a project: the copy must not miss its module
         BMOP.copy_code(from, dir)
     end
     new = !isfile(joinpath(dir, "Project.toml"))
-    path = save_project(parts.project; packages = _project_packages(), force)
+    # Refuses a line that another participant claimed (see `BeamletOpticsProjects.claim!`)
+    path = save_project(project; packages = _project_packages(), force, by = _person().id)
     # A new project gets the skills of BeamletOptics and BeamletOpticsProjects from its scaffold,
     # and the one of the GUI here; derived copies, not part of the versions
     new && Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
         install_agent_skill(joinpath(dir, ".claude", "skills"))
     end
     _write_view_toml(gui, parts.project, parts.names)
-    # The uids that the save gave are those of `parts.project`
-    _apply_project_names!(gui, parts.project)
+    # The uids that the save gave are those of `project`; at the objects of a conflict it holds
+    # those of the files, not of the window
+    _apply_project_names!(gui, project; skip = keep)
     # A shown window (see `_connect_session!`) leaves the old folder: its session and presence
     # files go, and its journal is not of the new project
     connected = save_as && !isempty(gui.sync.session)
@@ -727,8 +733,8 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     save_as && empty!(gui.sync.journal)
     gui.project = dir
     # The files of this stamp are the window's own write, see `_own_written`
-    _own_save!(gui, parts.project.stamp)
-    _saved!(gui, parts.project)
+    _own_save!(gui, project.stamp)
+    _saved!(gui, project; keep)
     connected && _connect_session!(gui)
     dir == from || _set_title!(gui, basename(dir))
     msg = save_as ? "project saved as $dir" : "project saved to $dir"
@@ -756,10 +762,10 @@ _message_line(e) = first(split(sprint(showerror, e), '\n'))
 
 """
 Saves the `gui` to `dir`; if the files changed meanwhile, they are merged first (see `_sync!`) and
-saved again if that left no conflict, else the card of the conflict is shown (see
-`_ProjectConflict`); any other error, also of the second save, is logged and shown in the status
-line. Whether the files hold the window afterwards: `false` after an error, a conflict or files
-that do not load.
+saved again, also with a conflict, whose objects keep the files' state (see `_saved_state`); any
+other error, also of the second save, is logged and shown in the status line. Whether the files
+hold the window afterwards (except the objects of a conflict): `false` after an error or files that
+do not load.
 """
 function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
     try
@@ -769,8 +775,8 @@ function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
         e isa BMOP.ProjectChanged || return _save_failed!(gui, e)
         gui.sync.changed_at = nothing
         # Without gliding: the save right after must see the poses of the files
-        _sync!(gui; animate = false) === :applied || return false
-        (isempty(gui.sync.conflicts) && !gui.sync.failed) || return false
+        _sync!(gui; animate = false) === :failed && return false
+        gui.sync.failed && return false
         try
             save_project(gui, dir; force)
         catch e2
