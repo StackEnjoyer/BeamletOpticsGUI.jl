@@ -231,4 +231,95 @@ end
     close(b)
 end
 
+"""Moves `D1` in the window `a` by `dx`, saves and merges in `b` as the watcher does (one solve
+after the merge, see `_adopting`), with the glides, which still run."""
+function merge_d1!(a, b, dx)
+    translate3d!(a, obj(a, :D1), [dx, 0.0, 0.0])
+    @test autosave!(a) === :saved
+    @test GUI._adopting(() -> GUI._sync!(b; animate = true), b) === :applied
+    return obj(b, :D1)
+end
+
+@testset "An object leaves the glides only after its landing change" begin
+    a, b, dir = two_windows()
+    warm_up!(a, b, (:D1,))
+    @test wait_solve(b; timeout = 60)
+    d = merge_d1!(a, b, 0.003)
+    @test b.sync.adopting
+    @test haskey(b.sync.gliding, d)
+    # A tick while the landing change waits for a solve that it cancels must not end the merge,
+    # whose solve would run while the object still moves
+    ended = Bool[]
+    before = b.controls.before_change
+    b.controls.before_change = () -> (before(); push!(ended, GUI._finish_adopt!(b)); nothing)
+    try
+        GUI._finish_glides!(b)
+    finally
+        b.controls.before_change = before
+    end
+    @test !isempty(ended)
+    @test !any(ended)
+    @test isempty(b.sync.gliding)
+    @test same_pose(pose(d), pose(obj(a, :D1)))
+    # The merge ends on the next tick
+    @test b.sync.adopting
+    @test GUI._finish_adopt!(b)
+    @test !b.sync.adopting
+    @test wait_solve(b; timeout = 60)
+    close(a)
+    close(b)
+end
+
+@testset "A glide of an older merge leaves the objects of a newer one" begin
+    a, b, dir = two_windows()
+    warm_up!(a, b, (:D1,))
+    @test wait_solve(b; timeout = 60)
+    d = merge_d1!(a, b, 0.003)
+    P, R, e = b.sync.gliding[d]
+    GUI._finish_glides!(b)
+    @test wait_solve(b; timeout = 60)
+    # the task of the older merge has ended
+    sleep(2 * GUI._GLIDE)
+    @test same_pose(pose(d), pose(obj(a, :D1)))
+    # A newer merge takes `d` over before the task that glides the older one first runs: that
+    # task neither glides `d` back to the older pose nor lands it early
+    P2 = Point3{Float64}(Vector{Float64}(P) .+ [0.0, 0.0, 0.004])
+    R2 = Matrix{Float64}(R)
+    newer = (P2, R2, e)
+    b.sync.gliding[d] = newer
+    GUI._glide_all!(b, [(d, (P, R), e)]; animate = true)
+    @test get(b.sync.gliding, d, nothing) === newer
+    @test same_pose(pose(d), pose(obj(a, :D1)))
+    GUI._finish_glides!(b)
+    @test isempty(b.sync.gliding)
+    @test same_pose(pose(d), (Vector{Float64}(P2), R2))
+    @test wait_solve(b; timeout = 60)
+    close(a)
+    close(b)
+end
+
+@testset "wait_solve waits for a merge of the files" begin
+    a, b, dir = two_windows()
+    warm_up!(a, b, (:D1,))
+    @test wait_solve(b; timeout = 60)
+    @test !b.sync.adopting
+    d = merge_d1!(a, b, 0.003)
+    @test b.sync.adopting
+    @test !isempty(b.sync.gliding)
+    @test wait_solve(b; timeout = 60)
+    # the objects landed and the merge is solved
+    @test !b.sync.adopting
+    @test isempty(b.sync.gliding)
+    @test isnothing(b.trace.job)
+    @test !b.trace.stale
+    @test same_pose(pose(d), pose(obj(a, :D1)))
+    # with a timeout before the glides landed
+    merge_d1!(a, b, 0.002)
+    @test !wait_solve(b; timeout = 0.0)
+    @test wait_solve(b; timeout = 60)
+    @test !b.sync.adopting
+    close(a)
+    close(b)
+end
+
 end

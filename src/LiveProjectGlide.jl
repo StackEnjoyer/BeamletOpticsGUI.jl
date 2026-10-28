@@ -151,15 +151,23 @@ then they land (`_land!`). A window group whose objects all moved by one rigid m
 that the motion takes to the pivot and orientation of the files, which `_adopt_groups!` gave it
 already, back to these. A glide stops when its object lands meanwhile (`_finish_glides!`) or glides
 anew, that of a group with each of its objects.
+
+`_adopt!` calls it in a task of its own, which may first run after a newer merge took over some of
+the objects. So the tokens of the glides are what this merge put into `gliding` (see
+`_glide_token`), taken from `glides` and not from `gliding` when the task runs: the objects that a
+newer merge took over neither glide nor land here, that merge glides and lands them.
 """
 function _glide_all!(gui::LiveView, glides; animate::Bool)
     gliding = gui.sync.gliding
     ctrl = gui.controls
+    # What `gliding` holds for each object of this merge as long as no newer one took it over
+    tokens = IdDict{Any, Any}(x[1] => _glide_token(x) for x in glides)
+    ours(@nospecialize(o)) = get(gliding, o, nothing) === tokens[o]
     objs = Any[first(x) for x in glides]
     if animate
         targets = IdDict{Any, Any}()
         for (obj, (P, R), _) in glides
-            haskey(gliding, obj) && (targets[obj] = (Point3{Float64}(P), Matrix{Float64}(R)))
+            ours(obj) && (targets[obj] = (Point3{Float64}(P), Matrix{Float64}(R)))
         end
         items = _Glide[]
         claimed = IdDict{Any, Nothing}()
@@ -175,34 +183,38 @@ function _glide_all!(gui::LiveView, glides; animate::Bool)
             end
             token = _GroupGlide(g, poses)
             gliding[g] = token
+            tokens[g] = token
             P0, R0 = _pose(g)
             push!(items, _Glide(g, token, P0, R0, poses[1][2], poses[1][3];
-                members = leaves, tokens = Any[gliding[m] for m in leaves]))
+                members = leaves, tokens = Any[tokens[m] for m in leaves]))
             push!(objs, g)
             foreach(m -> (claimed[m] = nothing), leaves)
         end
         for (obj, (P, R), _) in glides
-            (haskey(claimed, obj) || !haskey(gliding, obj)) && continue
+            (haskey(claimed, obj) || !ours(obj)) && continue
             P0, R0 = _pose(obj)
-            push!(items, _Glide(obj, gliding[obj], P0, R0, P, R))
+            push!(items, _Glide(obj, tokens[obj], P0, R0, P, R))
         end
-        # What `gliding` holds for each of them now: a newer merge lands the ones of this one first
-        tokens = IdDict{Any, Any}(o => gliding[o] for o in objs if haskey(gliding, o))
         n = max(1, round(Int, _GLIDE * _GLIDE_FPS))
         for i in 1:(n - 1)
             filter!(x -> _gliding(gliding, x), items)
             isempty(items) && break
             f = i / n
             f = f * f * (3 - 2f)
-            _change!(() -> foreach(x -> _glide_to!(x, f), items), ctrl, nothing)
+            # Not over a landing during the wait of the change for a solve that it cancels
+            _change!(() -> foreach(x -> _gliding(gliding, x) && _glide_to!(x, f), items), ctrl, nothing)
             _update_glided!(gui, Any[x.obj for x in items])
             sleep(1 / _GLIDE_FPS)
         end
-        filter!(o -> haskey(tokens, o) && get(gliding, o, nothing) === tokens[o], objs)
     end
-    _land_all!(gui, objs)
+    # Not the ones that landed meanwhile or that a newer merge took over, which lands them
+    _land_all!(gui, objs; tokens)
     return nothing
 end
+
+# The token of a glide `(obj, (P, R), entry)` of `_glide_all!`: what `_adopt!` puts into `gliding`
+# for `obj`, a newer merge another one (another `R`)
+_glide_token((_, (P, R), entry)) = (P, R, entry)
 
 """
 Puts `obj` of `gliding` of the `gui` exactly into the pose of its entry of the files and records
@@ -214,9 +226,15 @@ _land!(gui::LiveView, @nospecialize(obj)) = _land_all!(gui, Any[obj])
 """
 Lands those of the objects `objs` that are in `gliding` of the `gui` (see `_land!`): first the
 objects, then the window groups. The records of the window groups that hold one of them or are one
-of them are made anew (`_current_record`), then the view is updated once.
+of them are made anew (`_current_record`), then the view is updated once. With `tokens`
+(`obj => token`), only the objects for which `gliding` holds their token, see `_glide_all!`.
+
+An object leaves `gliding` only after its landing change: the change waits for a solve that it
+cancels (see `_change!`), and meanwhile the merge must not end (`_finish_adopt!`), whose solve
+would run while the object still moves. An object that landed or glides anew meanwhile is left to
+that landing or to the newer merge.
 """
-function _land_all!(gui::LiveView, objs)
+function _land_all!(gui::LiveView, objs; tokens = nothing)
     gliding = gui.sync.gliding
     ctrl = gui.controls
     landed = Any[]
@@ -224,22 +242,25 @@ function _land_all!(gui::LiveView, objs)
     for obj in objs
         haskey(gliding, obj) || continue
         v = gliding[obj]
+        isnothing(tokens) || get(tokens, obj, nothing) === v || continue
         v isa _GroupGlide && (push!(groups, v); continue)
-        P, R, e = pop!(gliding, obj)
+        P, R, e = v
         _change!(() -> _place_exactly!(obj, P, R), ctrl, obj)
+        get(gliding, obj, nothing) === v || continue
+        delete!(gliding, obj)
         _update_record!(gui, obj; pos = e.pos, rot = e.rot, pose = _pose(obj))
         push!(landed, obj)
     end
     changed = IdDict{Any, Nothing}()
     foreach(o -> (changed[o] = nothing), landed)
     for gg in groups
-        delete!(gliding, gg.group)
         _change!(ctrl, nothing) do
             for (h, P, R) in gg.poses
                 BMO.set_pivot3d!(h, Vector{Float64}(P))
                 BMO.orientation!(h, R)
             end
         end
+        get(gliding, gg.group, nothing) === gg && delete!(gliding, gg.group)
         foreach(x -> (changed[first(x)] = nothing), gg.poses)
     end
     isempty(changed) && return nothing

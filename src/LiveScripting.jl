@@ -232,15 +232,18 @@ outdated, see [`retrace!`](@ref). Call it after moves from code before reading d
 saving an image.
 
 The windows that show a system of the `gui` (see [`open_system`](@ref)) are waited for as well: a
-solve of one of them traces the beams of the `gui`, which follows when it is done.
+solve of one of them traces the beams of the `gui`, which follows when it is done. So is a change
+of the files of the project of the `gui` (see [`open_project`](@ref)) that is being applied: its
+objects glide to their new poses, then it is solved.
 """
 function wait_solve(gui::LiveView; timeout::Real = Inf)
     t0 = time()
     views = _solve_views(gui)
     unsettled(v) = v.trace.pending || v.trace.preview || v.trace.coarse
-    settled() = all(v -> isnothing(v.trace.job), views)
+    settled() = all(v -> isnothing(v.trace.job) && !_merging(v), views)
     # A deferred solve may start a solve in the background in turn
     for _ in 1:4
+        all(v -> _await_merge!(v, t0, timeout), views) || return false
         all(v -> _await_job!(v, t0, timeout), views) || return false
         any(unsettled, views) || return settled()
         for v in views
@@ -253,6 +256,29 @@ function wait_solve(gui::LiveView; timeout::Real = Inf)
     return settled()
 end
 
+# Whether a merge of the files of the project is being applied to the `gui`, see `_adopting`, or
+# its objects still glide, see `_glide_all!`
+_merging(gui::LiveView) = gui.sync.adopting || !isempty(gui.sync.gliding)
+
+"""
+    _await_merge!(gui, t0, timeout) -> Bool
+
+Waits until the merge of the files of the project that is being applied to the `gui`, if any, ended
+(see `_merging`): its objects landed and its solve started, see `_finish_adopt!`, which it calls as
+the tick of the window does. Glides of no merge land at once (`_finish_glides!`). Returns `false`
+if it still runs `timeout` [s] after the time `t0`.
+"""
+function _await_merge!(gui::LiveView, t0::Real, timeout::Real)
+    while _merging(gui)
+        gui.sync.adopting ? _finish_adopt!(gui) : _finish_glides!(gui)
+        _merging(gui) || break
+        time() - t0 < timeout || return false
+        # The glides run in a task of their own
+        sleep(1 / _GLIDE_FPS)
+    end
+    return true
+end
+
 # The `gui` and the views that are linked with it and show one of its systems, see `_tracing`
 _solve_views(gui::LiveView) =
     LiveView[gui; [v for v in gui.links.views if v !== gui && _shares_system(v, gui)]]
@@ -261,14 +287,16 @@ _solve_views(gui::LiveView) =
     _await_job!(gui, t0, timeout) -> Bool
 
 Waits for the job of the `gui` that runs in the background, if any, and shows its result, see
-`_poll_job!`. Returns `false` if it still runs `timeout` [s] after the time `t0`.
+`_poll_job!`; the result of a job that another task waits for in `_run!` (e.g. the tick that ended
+a merge of the files of the project, see `_finish_adopt!`) is shown by that task. Returns `false`
+if it still runs `timeout` [s] after the time `t0`.
 """
 function _await_job!(gui::LiveView, t0::Real, timeout::Real)
     job = gui.trace.job
     isnothing(job) && return true
     _wait(job.done, timeout - (time() - t0))
-    # `done` is notified by the task before it ends
-    while !istaskdone(job.task)
+    # `done` is notified by the task before it ends, the task in `_run!` resumes after it
+    while !istaskdone(job.task) || (gui.trace.awaited && gui.trace.job === job)
         time() - t0 < timeout || return false
         sleep(1e-3)
     end
