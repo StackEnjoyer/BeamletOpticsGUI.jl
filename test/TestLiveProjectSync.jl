@@ -120,6 +120,13 @@ end
         write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, -r, 0.004, 0.0254, 1.5)\nend\n")
         @test tick!(gui) === :applied
         @test obj(gui, :Q1) !== q1 && BeamletOptics.position(obj(gui, :Q1)) == [0.0, 0.5, 0.0]
+        # The merge reads the times of the own code itself, not those of the last look (which the
+        # watcher reads in the background, possibly before the change)
+        q1 = obj(gui, :Q1)
+        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, -2r, 0.004, 0.0254, 1.5)\nend\n")
+        edit!(text -> text * "\n", dir)
+        @test GUI._sync!(gui; animate = false) === :applied
+        @test obj(gui, :Q1) !== q1
     end
 
     @testset "merged with changes in the window" begin
@@ -637,6 +644,104 @@ end
     @test save < 0.05
     @test occursin("pos = (0.0, 0.051, 0.0)", pos_line(dir, "L5"))
     @test occursin("pos = (0.0, 0.09, 0.001)", pos_line(dir, "L9"))
+    close(gui)
+end
+
+@testset "The watcher reads the files in the background" begin
+    gui, dir = opened()
+    s = gui.sync
+    # The next look of the watcher, after the one that runs is done
+    function take!(now)
+        isnothing(s.look) || wait(s.look.task)
+        return GUI._take_look!(gui; now)
+    end
+    t = time()
+    @testset "a look at a time, the stamp of the contents seldom" begin
+        # The first call starts a look; the window does not wait for it
+        @test GUI._take_look!(gui; now = t) === nothing
+        @test s.look.task isa Task
+        look = take!(t + 0.1)
+        @test look.dir == dir && look.marks == GUI._file_marks(dir)
+        @test look.stamp == s.stamp
+        # Then without a stamp, until `_STAMP_EVERY` passed
+        @test take!(t + 0.2).stamp === nothing
+        @test take!(t + 0.2 + GUI._STAMP_EVERY).stamp === nothing
+        @test take!(t + 0.3 + GUI._STAMP_EVERY).stamp == s.stamp
+    end
+    @testset "a look that waits, e.g. behind a solve" begin
+        t2 = t + 5
+        take!(t2)
+        wait(s.look.task)
+        slow = Threads.@spawn (sleep(1.0); GUI._files_look(dir))
+        s.look = (; task = slow, gen = s.gen, presence = false)
+        # While it runs, nothing, until `_LOOK_WAIT` passed: then read here, without the stamp
+        @test GUI._take_look!(gui; now = t2 + 0.1) === nothing
+        look = GUI._take_look!(gui; now = t2 + GUI._LOOK_WAIT)
+        @test look.marks == GUI._file_marks(dir) && look.stamp === nothing
+        @test GUI._take_look!(gui; now = t2 + GUI._LOOK_WAIT + 0.1) === nothing
+        # The waiting one is dropped once it is done: it started before
+        wait(slow)
+        @test GUI._take_look!(gui; now = t2 + 3) === nothing
+        @test !isnothing(take!(t2 + 3.1))
+    end
+    @testset "a look that failed is thrown once, the next one runs" begin
+        take!(t + 10)
+        wait(s.look.task)
+        failed = Threads.@spawn error("network gone")
+        s.look = (; task = failed, gen = s.gen, presence = true)
+        s.presence_due = false
+        try
+            wait(failed)
+        catch
+        end
+        @test_throws ErrorException("network gone") GUI._take_look!(gui; now = t + 10.1)
+        # its presence file is written by the next look
+        @test s.look.presence
+        @test !isnothing(take!(t + 10.2))
+    end
+    @testset "a change of the files, through the looks" begin
+        edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.1, 0.0)" => "pos = (0.0, 0.13, 0.0)"), text, "L1"), dir)
+        take!(t + 20)
+        look = take!(t + 20.1)
+        @test GUI._check_files!(gui; now = t + 20.1, look) === :pending
+        look = take!(t + 21)
+        @test GUI._check_files!(gui; now = t + 21, look) === :applied
+        @test BeamletOptics.position(obj(gui, :L1)) ≈ [0.0, 0.13, 0.0] atol = 1e-15
+        # A look without a stamp compares the times and sizes only
+        @test GUI._check_files!(gui; now = t + 22, look = (; GUI._files_look(dir)..., stamp = nothing)) === :none
+    end
+    @testset "a look from before a save or of another folder is dropped" begin
+        take!(t + 30)
+        save_project(gui)
+        @test take!(t + 30.1) === nothing
+        @test !isnothing(take!(t + 30.2))
+        wait(s.look.task)
+        project = gui.project
+        gui.project = mktempdir()
+        @test GUI._take_look!(gui; now = t + 31) === nothing
+        gui.project = project
+        wait(s.look.task)
+        s.look = nothing
+    end
+    @testset "the own presence file, written by the looks" begin
+        withenv("BMO_PERSON" => "anna") do
+            own = GUI._presence_file(dir, GUI._person().id)
+            rm(own; force = true)
+            s.presence_due = true
+            take!(t + 40)
+            wait(s.look.task)
+            @test isfile(own)
+            beat = GUI.TOML.parsefile(own)["beat"]
+            # Not again until it is due: the selection changed or `_BEAT` passed
+            take!(t + 40.1)
+            wait(s.look.task)
+            @test GUI.TOML.parsefile(own)["beat"] == beat
+            take!(t + 40 + GUI._BEAT)
+            wait(s.look.task)
+            @test GUI.TOML.parsefile(own)["beat"] == beat + 1
+            rm(own)
+        end
+    end
     close(gui)
 end
 

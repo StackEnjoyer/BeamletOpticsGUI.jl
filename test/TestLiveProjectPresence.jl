@@ -353,6 +353,22 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
             GUI._write_presence!(gui; now = 6003.0)
         end
 
+        @testset "from a look of the watcher" begin
+            look() = GUI._files_look(dir; stamp = false, except = me.id, known = collect(keys(gui.sync.others)))
+            file = other!(dir, "carl@PC3"; name = "Carl", beat = 1)
+            GUI._check_presence!(gui; now = 6500.0, look = look())
+            @test haskey(gui.sync.others, "carl@PC3")
+            # A look that started before Carl was known does not drop him; one after his file is gone does
+            early = GUI._files_look(dir; stamp = false, except = me.id)
+            rm(file)
+            GUI._check_presence!(gui; now = 6501.0, look = early)
+            @test haskey(gui.sync.others, "carl@PC3")
+            GUI._check_presence!(gui; now = 6502.0, look = (; early..., presences = Dict{String, Dict{String, Any}}()))
+            @test haskey(gui.sync.others, "carl@PC3")
+            GUI._check_presence!(gui; now = 6503.0, look = look())
+            @test !haskey(gui.sync.others, "carl@PC3")
+        end
+
         @testset "closing" begin
             other = other!(dir, "bob@PC9"; name = "Bob", beat = 20, selected = uid(gui, :M1))
             GUI._check_presence!(gui; now = 700.0)

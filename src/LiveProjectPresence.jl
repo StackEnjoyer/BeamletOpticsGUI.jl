@@ -64,18 +64,55 @@ Writes the presence file of the person of the `gui` (see `_person`, `_presence_f
 its name and host, `kind = "person"`, `ttl = _ALIVE`, the `beat` one higher than in the file, the
 selected object and `written`, the stamp of the files after the last save of the window (see
 `_own_written`). Sets `gui.sync.beat_at` to `now`. Does nothing without a project. An error of
-writing propagates; the watcher logs it.
+writing propagates; the watcher logs it. The watcher writes it in the background instead, see
+`_presence_due!`.
 """
 function _write_presence!(gui::LiveView; now::Real = time())
     dir = gui.project
     isnothing(dir) && return nothing
+    _write_presence_file(dir, _presence_data(gui))
+    gui.sync.beat_at = Float64(now)
+    return nothing
+end
+
+"""
+    _presence_data(gui) -> (; id, data, own)
+
+What the presence file of the person of the `gui` holds, without `written`: the `id` of the
+person, the fields `data` and `own`, the stamp of the own last save if the files are still those
+(else `nothing`: the file keeps its `written`, see `_own_written`). Read on the thread of the
+window, written by `_write_presence_file`, also in the background.
+"""
+function _presence_data(gui::LiveView)
     me = _person()
     uid, id = _presence_selected(gui)
     data = Dict{String, Any}("name" => me.name, "host" => me.host, "kind" => "person", "ttl" => _ALIVE,
-        "selected" => uid, "selected_id" => id, "written" => _own_written(gui, _presence_file(dir, me.id)))
-    BMOP.write_presence(dir, me.id, data)
-    gui.sync.beat_at = Float64(now)
+        "selected" => uid, "selected_id" => id)
+    own = get(_OWN_SAVE, gui, nothing)
+    return (; id = me.id, data, own = !isnothing(own) && own == gui.sync.stamp ? own : nothing)
+end
+
+"""Writes the presence file of `_presence_data` `p` into the project folder `dir`."""
+function _write_presence_file(dir::AbstractString, p)
+    data = copy(p.data)
+    data["written"] = something(p.own, _file_written(_presence_file(dir, p.id)))
+    BMOP.write_presence(dir, p.id, data)
     return nothing
+end
+
+"""
+    _presence_due!(gui, now) -> `_presence_data` or nothing
+
+The presence file of the `gui` to be written by the next look of the watcher (see `_take_look!`):
+when the selection changed or the window saved since the last write (`gui.sync.presence_due`) or
+the last write is `_BEAT` seconds ago; `nothing` otherwise. Counts it as written at `now`.
+"""
+function _presence_due!(gui::LiveView, now::Real)
+    s = gui.sync
+    (s.presence_due || now - s.beat_at >= _BEAT) || return nothing
+    s.presence_due = false
+    s.beat_at = Float64(now)
+    return _presence_data(gui)
 end
 
 # The `written` of the presence file `file`, `""` if it is missing, does not parse or has none
@@ -97,10 +134,7 @@ The stamp of the files that the window of the `gui` wrote last, for `written` of
 as", see `_own_save!`); else the `written` of the file before is kept, so that the window never
 claims files that it only opened, reloaded (`Ctrl+R`) or merged, e.g. the change of an other.
 """
-function _own_written(gui::LiveView, file::AbstractString)
-    own = get(_OWN_SAVE, gui, nothing)
-    return !isnothing(own) && own == gui.sync.stamp ? own : _file_written(file)
-end
+_own_written(gui::LiveView, file::AbstractString) = something(_presence_data(gui).own, _file_written(file))
 
 # Per view, the stamp of the files that its last save wrote, see `_own_written`
 const _OWN_SAVE = WeakKeyDict{LiveView, String}()
@@ -124,10 +158,11 @@ end
 _alive(o, now::Real) = BMOP.alive(o, now)
 
 """
-    _check_presence!(gui; now = time())
+    _check_presence!(gui; now = time(), look = nothing)
 
-One look at the presence files of the project of the `gui`: writes the own file if the last write
-is `_BEAT` seconds ago, reads the files of the others (never the own one; a file that does not
+One look at the presence files of the project of the `gui`: takes the files of the others from the
+`look` of the watcher (see `_take_look!`, which also writes the own file); without a `look`, writes
+the own file if the last write is `_BEAT` seconds ago and reads the others here (never the own one; a file that does not
 parse, e.g. half written on a network drive, is skipped and its participant kept as it was) and
 updates `gui.sync.others`, people and agents alike. An other whose `beat` changed is seen at `now`;
 one whose file is gone is dropped. One whose `beat` did not change for its `ttl` seconds stays in
@@ -137,13 +172,15 @@ that published its stamp meanwhile (see `_name_writer!`). Then the boxes and nam
 selections of the others are drawn again if what they show changed (see `_draw_presence!`). Does
 nothing without a project.
 """
-function _check_presence!(gui::LiveView; now::Real = time())
+function _check_presence!(gui::LiveView; now::Real = time(), look = nothing)
     dir = gui.project
     isnothing(dir) && return nothing
     s = gui.sync
-    now - s.beat_at >= _BEAT && _write_presence!(gui; now)
-    me = _person().id
-    for (id, data) in BMOP.read_presences(dir; except = me)
+    if isnothing(look)
+        now - s.beat_at >= _BEAT && _write_presence!(gui; now)
+        look = _files_look(dir; stamp = false, except = _person().id, known = collect(keys(s.others)))
+    end
+    for (id, data) in look.presences
         beat = data["beat"]
         old = get(s.others, id, nothing)
         seen_at = isnothing(old) || old.beat != beat ? Float64(now) : old.seen_at
@@ -153,7 +190,8 @@ function _check_presence!(gui::LiveView; now::Real = time())
     end
     # A file that is skipped (it does not parse) keeps its participant as it was; a file that is gone drops it
     for id in collect(keys(s.others))
-        isfile(_presence_file(dir, id)) || delete!(s.others, id)
+        haskey(look.presences, id) && continue
+        id in look.known && !(id in look.present) && delete!(s.others, id)
     end
     _name_writer!(gui, now)
     _draw_presence!(gui, now)
