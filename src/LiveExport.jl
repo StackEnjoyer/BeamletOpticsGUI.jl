@@ -2,35 +2,6 @@
 Export of the changed poses
 =#
 
-"""
-    _rotation_axis_angle(R)
-
-Returns the `axis` and `angle` of the rotation matrix `R` such that `rotate3d(axis, angle) ≈ R`.
-Unlike `_axis_angle_from_rotmatrix`, which is based on the trace of `R`, it is accurate to the
-precision of `Float64` for all angles, including small ones.
-"""
-function _rotation_axis_angle(R::AbstractMatrix)
-    # sin(angle) * axis
-    v = [R[3, 2] - R[2, 3], R[1, 3] - R[3, 1], R[2, 1] - R[1, 2]] ./ 2
-    s, c = norm(v), (tr(R) - 1) / 2
-    angle = atan(s, c)
-    iszero(s) && c > 0 && return [0.0, 0.0, 1.0], 0.0
-    c > -0.5 && return v ./ s, angle
-    # Close to π, where sin(angle) is inaccurate: (R + R') / 2 = c I + (1 - c) axis axis'
-    B = (R + R') ./ 2 - c * I
-    axis = normalize(B[:, argmax(diag(B))])
-    dot(axis, v) < 0 && (axis = -axis)
-    return axis, angle
-end
-
-"""Sets the pose of `obj` like `_set_pose!`, but with the accurate `_rotation_axis_angle`."""
-function _set_pose_exact!(@nospecialize(obj), P, R)
-    axis, angle = _rotation_axis_angle(R * _pose(obj)[2]')
-    angle > 0 && rotate3d!(obj, axis, angle)
-    translate_to3d!(obj, P)
-    return nothing
-end
-
 """Returns `true` if `s` can be used as the name of a variable."""
 _is_variable_name(s) = Base.isidentifier(s) && try
     Meta.parse(s) isa Symbol
@@ -94,7 +65,7 @@ poses of the controls `ctrl`, from the outside in.
 function _initial_copy(ctrl::KinematicController, group)
     copy = deepcopy(group)
     for (obj, c) in zip(_descendants(group), _descendants(copy))
-        haskey(ctrl.init_poses, obj) && _set_pose_exact!(c, ctrl.init_poses[obj]...)
+        haskey(ctrl.init_poses, obj) && _set_pose!(c, ctrl.init_poses[obj]...)
     end
     return copy
 end
@@ -138,19 +109,23 @@ pose after the preceding lines.
 The changes are relative to the initial poses of the controls, or, with `base`, to the pose `base`
 of `top` (and the poses of the objects of its group in that pose of the group), e.g. the pose of an
 added component as constructed. Without `heading`, the change of `top` itself gets no comment and
-is not counted, see `_export_code`.
+is not counted, see `_export_code`. With `current`, the poses `(P, R)` of `top` and of the objects
+of its group in the order of `_descendants(top)`, the changes lead to these poses instead of the
+current ones, e.g. to the poses of the members of a group made in the window when it was made, see
+`_grouping_copies`.
 """
-function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, heading::Bool = true)
+function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, heading::Bool = true,
+        current = nothing)
     ctrl = gui.controls
     objs = _descendants(top)
     copies = top isa BMO.AbstractObjectGroup ? _descendants(_initial_copy(ctrl, top)) : nothing
     # The objects of a group follow the group back to the pose `base`
-    isnothing(base) || isnothing(copies) || _set_pose_exact!(copies[1], base...)
+    isnothing(base) || isnothing(copies) || _set_pose!(copies[1], base...)
     n = 0
     for (i, obj) in enumerate(objs)
         own = i == 1 && !isnothing(base)
         (own || haskey(ctrl.init_poses, obj)) || continue
-        P, R = _pose(obj)
+        P, R = isnothing(current) ? _pose(obj) : current[i]
         P0, R0 = !isnothing(copies) ? _pose(copies[i]) : own ? base : ctrl.init_poses[obj]
         (norm(P - P0) > 1e-15 || norm(R - R0) > 1e-15) || continue
         axis, angle = _rotation_axis_angle(R * R0')
@@ -163,9 +138,109 @@ function _export_pose_lines!(lines, gui::LiveView, names, top; base = nothing, h
         end
         angle > 0 && push!(lines, "rotate3d!($name, $(_vector_code(axis)), $(repr(angle)))")
         push!(lines, "translate_to3d!($name, $(_vector_code(P)))")
-        isnothing(copies) || _set_pose_exact!(copies[i], P, R)
+        isnothing(copies) || _set_pose!(copies[i], P, R)
     end
     return n
+end
+
+#=
+Groups made in the window, see `_group!`: the exported code builds their members first, in their
+poses when the group was made, then the `ObjectGroup`, its pivot and its change of pose since then
+=#
+
+"""
+    _grouping_copies(gui, tops) -> IdDict
+
+Copies for the export of the groups made in the window of the `gui` (see `_WindowGroup`) among the
+top-level objects `tops` and inside them: a copy of each such top-level group in its current pose,
+and a copy of each member of such a group (also of a group inside one) in its pose when the group
+was made (see `_WindowGroup`), which the exported code moves it to before it builds the
+`ObjectGroup`. The objects of a group follow it. A group made in the window as a part of a group of
+the script (see `_subgroup!`) is copied in its initial pose and its objects in theirs (see
+`_initial_copy`), since the changes of the poses of the group of the script follow its new parts,
+see `_export_regrouped_lines!`. Empty if the `tops` hold no group made in the window.
+"""
+function _grouping_copies(gui::LiveView, tops)
+    groups = gui.components.groups
+    copies = IdDict{Any, Any}()
+    function visit!(@nospecialize(obj), @nospecialize(copy))
+        copies[obj] = copy
+        rec = get(groups, obj, nothing)
+        isnothing(rec) && return scripted!(obj)
+        at = deepcopy(copy)
+        for (m, c) in zip(BMO.objects(obj), BMO.objects(at))
+            haskey(rec.poses, m) && _set_pose!(c, rec.poses[m]...)
+            visit!(m, c)
+        end
+        return nothing
+    end
+    function scripted!(@nospecialize(obj))
+        obj isa BMO.AbstractObjectGroup || return nothing
+        for m in BMO.objects(obj)
+            haskey(groups, m) ? visit!(m, _initial_copy(gui.controls, m)) : scripted!(m)
+        end
+        return nothing
+    end
+    for top in tops
+        haskey(groups, top) ? visit!(top, deepcopy(top)) : scripted!(top)
+    end
+    return copies
+end
+
+"""The poses `(P, R)` of the copy of `obj` in `copies` and of its parts, see `_grouping_copies`."""
+_copy_poses(copies, @nospecialize(obj)) =
+    haskey(copies, obj) ? Tuple{Point3{Float64}, Matrix{Float64}}[_pose(c) for c in _descendants(copies[obj])] :
+    nothing
+
+"""Returns whether the export writes `obj` as a group made in the window, see `_grouping_copies`."""
+_exports_as_group(gui::LiveView, copies, @nospecialize(obj)) =
+    haskey(gui.components.groups, obj) && haskey(copies, obj)
+
+"""
+    _export_group_lines!(lines, gui, names, g, copies; after = String[]) -> n
+
+Appends the lines that build the group `g` made in the window of the `gui` from its members, which
+the lines before bring to their poses when it was made (see `_grouping_copies`):
+`g = ObjectGroup([m1, m2])`, `set_pivot3d!(g, pivot)`, the lines `after` (e.g. a `push!` to a
+system) and the change of the pose of `g` since it was made, which moves its members as well,
+followed by the changes of its objects since then, if they were moved inside the group. Each
+change is relative to the pose after the preceding lines, like in `_export_pose_lines!`, and leads
+to the pose of the copy of `g` in `copies`. Returns the number `n` of changed objects of the group,
+without `g` itself.
+"""
+function _export_group_lines!(lines, gui::LiveView, names, @nospecialize(g), copies; after = String[])
+    rec = gui.components.groups[g]
+    members = BMO.objects(g)
+    name = names[g]
+    push!(lines, "$name = ObjectGroup([$(join((names[m] for m in members), ", "))])",
+        "set_pivot3d!($name, $(_vector_code(rec.pivot)))")
+    append!(lines, after)
+    # The group of the code, built from the members in their poses when it was made
+    built = BMO.ObjectGroup(Any[deepcopy(copies[m]) for m in members])
+    set_pivot3d!(built, rec.pivot)
+    n = 0
+    for (i, (obj, b, c)) in enumerate(zip(_descendants(g), _descendants(built), _descendants(copies[g])))
+        (P, R), (P0, R0) = _pose(c), _pose(b)
+        (norm(P - P0) > 1e-15 || norm(R - R0) > 1e-15) || continue
+        axis, angle = _rotation_axis_angle(R * R0')
+        if i > 1
+            type = string(nameof(typeof(obj)))
+            label = get(gui.labels, obj, nothing)
+            push!(lines, "", isnothing(label) ? "# $type" : "# $label ($type)")
+            n += 1
+        end
+        angle > 0 && push!(lines, "rotate3d!($(names[obj]), $(_vector_code(axis)), $(repr(angle)))")
+        push!(lines, "translate_to3d!($(names[obj]), $(_vector_code(P)))")
+        _set_pose!(b, P, R)
+    end
+    return n
+end
+
+"""The comment above the lines of `obj` in the exported code: its label and type."""
+function _export_heading(gui::LiveView, @nospecialize(obj))
+    type = string(nameof(typeof(obj)))
+    label = get(gui.labels, obj, nothing)
+    return isnothing(label) ? "# $type" : "# $label ($type)"
 end
 
 """
@@ -283,6 +358,111 @@ function _export_member_lines!(lines, gui::LiveView, names, systems)
 end
 
 """
+    _export_added_code!(lines, cx, obj) -> n
+
+Appends the lines of `export_changes` for `obj`, which was added to the `gui` of the context `cx`
+(see `_export_code`) at runtime, unless they were written already (`cx.written`), and returns the
+number `n` of changes: its constructor call, its `push!` to its systems and its change of pose, see
+`_export_added_lines!`. A member of a group made in the window is not pushed to a system and is
+moved to its pose when the group was made, and such a group is `_export_grouping_lines!`.
+"""
+function _export_added_code!(lines, cx, @nospecialize(obj))
+    (; gui, names, systems, copies, inside, written) = cx
+    obj in written && return 0
+    _exports_as_group(gui, copies, obj) && return _export_grouping_lines!(lines, cx, obj)
+    push!(written, obj)
+    name = names[obj]
+    origin = get(gui.components.origin, obj, nothing)
+    push!(lines, "", _export_heading(gui, obj) * ", added")
+    push!(lines, isnothing(origin) ? "# construct `$name` here, in its pose when it was added" :
+        "$name = $(origin.code)")
+    base = isnothing(origin) ? nothing : origin.pose0
+    haskey(inside, obj) || return 1 + _export_added_lines!(lines, gui, names, systems, obj, base)
+    push!(lines, "# $name is grouped into $(names[inside[obj]]) below")
+    return 1 + _export_pose_lines!(lines, gui, names, obj; base, heading = false,
+        current = _copy_poses(copies, obj))
+end
+
+"""
+    _export_regrouped_lines!(lines, cx, shown) -> n
+
+Appends the lines of `export_changes` for the groups of the script among the top-level objects
+`shown` and inside them whose parts were changed in place (see `_regroup!` and
+`gui.components.start_parts`) and returns the number `n` of changes: per group, inner ones first,
+a `delete!` of each part at the start that is no part any more, the code of each new part (a group
+made in the window, see `_export_grouping_lines!`) and one `push!` of the new parts. Before the
+other changes, which use the groups as they are now: a new part ends in its initial pose and its
+objects in theirs, from which the changes of the poses of the group of the script follow, see
+`_grouping_copies`.
+"""
+function _export_regrouped_lines!(lines, cx, shown)
+    (; gui, names) = cx
+    start = gui.components.start_parts
+    n = 0
+    function visit!(@nospecialize(g))
+        g isa BMO.AbstractObjectGroup || return nothing
+        foreach(visit!, BMO.objects(g))
+        haskey(start, g) || return nothing
+        before, now = start[g], collect(Any, BMO.objects(g))
+        gone = Any[o for o in before if !_has(now, o)]
+        new = Any[o for o in now if !_has(before, o)]
+        (isempty(gone) && isempty(new)) && return nothing
+        n += 1
+        push!(lines, "", _export_heading(gui, g) * ", parts changed")
+        foreach(o -> push!(lines, "delete!($(names[g]), $(names[o]))"), gone)
+        # a new part is a group made in the window, unless the view forgot it, e.g. when `g` was
+        # removed and added again by code: then its code is not known
+        known = Any[o for o in new if _exports_as_group(gui, cx.copies, o)]
+        foreach(o -> (n += _export_added_code!(lines, cx, o)), known)
+        for o in new
+            _has(known, o) || push!(lines, "# push!($(names[g]), …) of $(_label(gui, o)), whose code is not known")
+        end
+        isempty(known) || push!(lines, "push!($(names[g]), $(join((names[o] for o in known), ", ")))")
+        return nothing
+    end
+    foreach(visit!, shown)
+    return n
+end
+
+"""
+    _export_grouping_lines!(lines, cx, g) -> n
+
+Appends the lines of `export_changes` for the group `g` that was made in the window of the `gui` of
+the context `cx` (see `_export_code` and `_group!`) and returns the number `n` of changes: first its
+members in their poses when it was made, those added at runtime like `_export_added_code!`, those
+of the script by their changes of pose until then; then a `delete!` of each member of the script
+from the systems that held it at the start, the lines of `_export_group_lines!`, and a `push!` of `g`
+to each of its systems, unless it is a part of another group, see `_export_regrouped_lines!`.
+"""
+function _export_grouping_lines!(lines, cx, @nospecialize(g))
+    (; gui, names, systems, copies, inside, added, written) = cx
+    comp = gui.components
+    push!(written, g)
+    n = 0
+    scripted = Any[]
+    for m in BMO.objects(g)
+        if m in added || _exports_as_group(gui, copies, m)
+            n += _export_added_code!(lines, cx, m)
+        elseif !(m in written)
+            push!(written, m)
+            push!(scripted, m)
+            n += _export_pose_lines!(lines, gui, names, m; current = _copy_poses(copies, m))
+        end
+    end
+    push!(lines, "", _export_heading(gui, g) * ", grouped")
+    for m in scripted, s in get(comp.start_systems, m, Any[])
+        haskey(systems, s) && push!(lines, "delete!($(systems[s]), $(names[m]))")
+    end
+    after = String[]
+    if !haskey(inside, g)
+        held = String[systems[s] for s in _member_systems(gui, g) if haskey(systems, s)]
+        isempty(held) && push!(after, "# $(names[g]) is in no system, i.e. not traced")
+        foreach(system -> push!(after, "push!($system, $(names[g]))"), held)
+    end
+    return n + 1 + _export_group_lines!(lines, gui, names, g, copies; after)
+end
+
+"""
     _export_code(gui) -> (code, n)
 
 Returns the Julia code of `export_changes` and the number `n` of changes: the components that were
@@ -296,7 +476,9 @@ its label is no variable name. An added component is its constructor call (the `
 `push!` to its system and its change of pose since it was constructed (without `origin`: since it
 was added); together they count as one change. Sources are added and removed like components: a
 removed source is a comment, an added one its constructor call, its change of pose and the
-`solve_system!` that traces it, see `_export_removed_lines!` and `_export_added_lines!`.
+`solve_system!` that traces it, see `_export_removed_lines!` and `_export_added_lines!`. A group
+made in the window is its members and the `ObjectGroup`, see `_export_grouping_lines!`; a group of
+the script whose parts were changed in place is changed before, see `_export_regrouped_lines!`.
 """
 function _export_code(gui::LiveView)
     ctrl = gui.controls
@@ -325,20 +507,32 @@ function _export_code(gui::LiveView)
         n += 1
     end
     added = Base.IdSet{Any}(comp.added)
+    # The groups made in the window and their members, see `_export_grouping_lines!`
+    shown = unique(objectid, Any[(obj for sys in _systems(gui) for obj in sys.objects)...,
+        rendered(gui.extras).objects...])
+    copies = _grouping_copies(gui, shown)
+    inside = IdDict{Any, Any}()
+    for g in keys(copies)
+        haskey(comp.groups, g) || continue
+        foreach(m -> inside[m] = g, BMO.objects(g))
+        # a part of a group of the script, see `_subgroup!`
+        p = _part_parent(gui, g)
+        (isnothing(p) || haskey(comp.groups, p)) || (inside[g] = p)
+    end
+    cx = (; gui, names, systems, used, copies, inside, added, written = Base.IdSet{Any}())
+    # before the other changes, which use the groups as they are now
+    n += _export_regrouped_lines!(lines, cx, shown)
     for obj in comp.added
-        type = string(nameof(typeof(obj)))
-        label = get(gui.labels, obj, nothing)
-        name = names[obj]
-        origin = get(comp.origin, obj, nothing)
-        push!(lines, "", (isnothing(label) ? "# $type" : "# $label ($type)") * ", added")
-        push!(lines, isnothing(origin) ? "# construct `$name` here, in its pose when it was added" :
-            "$name = $(origin.code)")
-        base = isnothing(origin) ? nothing : origin.pose0
-        n += 1 + _export_added_lines!(lines, gui, names, systems, obj, base)
+        n += _export_added_code!(lines, cx, obj)
+    end
+    # a group made in the window that is not listed as added
+    for top in shown
+        _exports_as_group(gui, copies, top) && !(top in cx.written) &&
+            (n += _export_grouping_lines!(lines, cx, top))
     end
     n += _export_member_lines!(lines, gui, names, systems)
     for top in ctrl.movable
-        (top isa LiveClipPlane || top in added) && continue
+        (top isa LiveClipPlane || top in added || top in cx.written || haskey(inside, top)) && continue
         n += _export_pose_lines!(lines, gui, names, top)
     end
     n == 0 && push!(lines, "", "# no changes")
@@ -393,6 +587,15 @@ pushed to each of its systems, or marked by a comment if it has none, i.e. it is
 source that the view started with and that changed its system is a comment, since the script that
 traces it is not known; an added source without a system is a comment instead of its
 `solve_system!`.
+
+A group that was made in the window (`Ctrl+G`) comes at its place among the added components: its
+members in their poses when it was made (one that was added is its constructor call, one of the
+script its `rotate3d!` and `translate_to3d!`), a `delete!(system, name)` of each member of the
+script, `g = ObjectGroup([a, b])`, `set_pivot3d!(g, pivot)`, a `push!(system, g)` and the change of
+the pose of the group since it was made. A group of the script whose parts were changed in the
+window, since a group was made of some of its parts or a group inside it was ungrouped, comes
+first: a `delete!(group, part)` of each part that it lost, the code of its new parts, groups made
+in the window, and a `push!(group, parts...)` of them.
 
 The variables are named after the `labels` of [`live_view`](@ref) if they are valid variable names
 that the code does not use otherwise, i.e. no name exported by BeamletOptics or this package, such as
@@ -454,9 +657,16 @@ function _export_script_names(gui::LiveView, tops)
         end
         return nothing
     end
-    for top in tops
-        isnothing(get(gui.components.origin, top, nothing)) || name_children!(top)
+    # The members of a group made in the window are variables of the script, see `_group!`
+    function name_parts!(obj)
+        if haskey(gui.components.groups, obj)
+            foreach(name_parts!, _children(obj))
+        elseif !isnothing(get(gui.components.origin, obj, nothing))
+            name_children!(obj)
+        end
+        return nothing
     end
+    foreach(name_parts!, tops)
     return names
 end
 
@@ -464,7 +674,7 @@ end
 _commented(line::AbstractString) = isempty(line) || startswith(line, "#") ? String(line) : "# " * line
 
 """
-    _export_construct_lines!(lines, gui, names, obj) -> Bool
+    _export_construct_lines!(lines, gui, names, obj; copies, defined) -> Bool
 
 Appends the lines of `export_script` that construct the top-level object or source `obj` of the
 `gui` in its current pose, and returns whether the script defines its variable.
@@ -473,23 +683,44 @@ With an `origin` (see `_ComponentState`) these are its constructor call and the 
 since it was constructed, see `_export_pose_lines!`. Without one, the constructor is not known: a
 comment with its type and position marks where to construct it, and the change of its pose since
 the view got it is commented out.
+
+A group made in the window (see `_group!`) is its members, each constructed like this in its pose
+when the group was made, followed by `_export_group_lines!`; these are commented out unless the
+script defines all members. `copies` are the `_grouping_copies` of the script, and the objects
+whose variables the script defines are added to `defined`, also the members of a group whose
+`ObjectGroup` line is a comment.
 """
-function _export_construct_lines!(lines, gui::LiveView, names, @nospecialize(obj))
+function _export_construct_lines!(lines, gui::LiveView, names, @nospecialize(obj);
+        copies = IdDict{Any, Any}(), defined = Base.IdSet{Any}())
+    if _exports_as_group(gui, copies, obj)
+        ok = true
+        for m in BMO.objects(obj)
+            ok &= _export_construct_lines!(lines, gui, names, m; copies, defined)
+        end
+        group = String["", _export_heading(gui, obj)]
+        _export_group_lines!(group, gui, names, obj, copies)
+        append!(lines, ok ? group : (_commented(line) for line in group))
+        ok && push!(defined, obj)
+        return ok
+    end
     type = string(nameof(typeof(obj)))
-    label = get(gui.labels, obj, nothing)
     name = names[obj]
     origin = get(gui.components.origin, obj, nothing)
+    # a member of a group made in the window: its pose when the group was made
+    current = _copy_poses(copies, obj)
     push!(lines, "")
     if isnothing(origin)
-        push!(lines, "# $name = … ($type) at $(_vector_code(_pose(obj)[1])), construct it here")
+        P = isnothing(current) ? _pose(obj)[1] : current[1][1]
+        push!(lines, "# $name = … ($type) at $(_vector_code(P)), construct it here")
         pose = String[]
-        _export_pose_lines!(pose, gui, names, obj; heading = false)
+        _export_pose_lines!(pose, gui, names, obj; heading = false, current)
         append!(lines, (_commented(line) for line in pose))
         return false
     end
-    push!(lines, isnothing(label) ? "# $type" : "# $label ($type)")
+    push!(lines, _export_heading(gui, obj))
     push!(lines, "$name = $(origin.code)")
-    _export_pose_lines!(lines, gui, names, obj; base = origin.pose0, heading = false)
+    _export_pose_lines!(lines, gui, names, obj; base = origin.pose0, heading = false, current)
+    foreach(o -> push!(defined, o), _descendants(obj))
     return true
 end
 
@@ -539,6 +770,7 @@ function _export_script_code(gui::LiveView)
     free = Any[obj for obj in rendered(gui.extras).objects if !isempty(get(start, obj, Any[nothing]))]
     tops = unique(objectid, Any[(obj for sys in systems for obj in sys.objects)..., free..., sources...])
     names = _export_script_names(gui, tops)
+    copies = _grouping_copies(gui, tops)
     system_names = _export_system_names(gui, Set{String}(values(names)))
     defined = Base.IdSet{Any}()
     done = Base.IdSet{Any}()
@@ -553,7 +785,7 @@ function _export_script_code(gui::LiveView)
         for obj in sys.objects
             if !(obj in done)
                 push!(done, obj)
-                _export_construct_lines!(lines, gui, names, obj) && push!(defined, obj)
+                _export_construct_lines!(lines, gui, names, obj; copies, defined) && push!(defined, obj)
             end
             push!(obj in defined ? members : pending, names[obj])
         end
@@ -572,10 +804,10 @@ function _export_script_code(gui::LiveView)
         end
     end
     for obj in free
-        _export_construct_lines!(lines, gui, names, obj) && push!(defined, obj)
+        _export_construct_lines!(lines, gui, names, obj; copies, defined) && push!(defined, obj)
     end
     for src in sources
-        _export_construct_lines!(lines, gui, names, src) && push!(defined, src)
+        _export_construct_lines!(lines, gui, names, src; copies, defined) && push!(defined, src)
     end
     # A source without a system is not traced
     traced = Pair{BMO.AbstractSystem, Any}[p for p in gui.pairs if !(p.second in gui.beams.unassigned)]
@@ -603,7 +835,7 @@ function _export_script_code(gui::LiveView)
     end
     for top in tops, obj in _descendants(top)
         haskey(gui.labels, obj) &&
-            push!(labels, "$(names[obj]) => $(repr(gui.labels[obj]))" => top in defined)
+            push!(labels, "$(names[obj]) => $(repr(gui.labels[obj]))" => (top in defined || obj in defined))
     end
     unique!(first, labels)
     _export_view_lines!(lines, args, labels)
@@ -639,6 +871,12 @@ The script consists of, in this order:
    has no `solve_system!` and no pair in `live_view`.
 
 An object that belongs to several systems is constructed once and listed in each of them.
+
+A group that was made in the window (`Ctrl+G`) is its members, each constructed as below in its
+pose when the group was made, then `g = ObjectGroup([a, b])`, `set_pivot3d!(g, pivot)` with the
+mean of the positions of its members [m] and the `rotate3d!` and `translate_to3d!` of the group
+since it was made; the system lists `g`. If the constructor of a member is not known, the lines of
+the group are comments as well.
 
 An object or source of the catalog (see [`component_catalog`](@ref)), or one that was added with
 its `code` (see [`add_component!`](@ref)), is its constructor call

@@ -197,6 +197,8 @@ function _each_layer(f, gui::LiveView, args...)
 end
 
 _debug_moved!(gui::LiveView, @nospecialize(obj)) = _each_layer(_layer_moved!, gui, obj)
+# the layers learn about each object of a moved selection of several, see `_MultiSelection`
+_debug_moved!(gui::LiveView, s::_MultiSelection) = foreach(obj -> _debug_moved!(gui, obj), s.objects)
 _debug_attached!(gui::LiveView, @nospecialize(obj)) = _each_layer(_layer_attached!, gui, obj)
 _debug_released!(gui::LiveView, @nospecialize(obj)) = _each_layer(_layer_released!, gui, obj)
 _debug_hidden!(gui::LiveView) = _each_layer(_layer_hidden!, gui)

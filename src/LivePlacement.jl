@@ -115,18 +115,20 @@ the optical axis as constructed, points along the beam; with `:position` it keep
 a beam group, only the central beam takes part, and of a Gaussian beamlet its chief ray, such that
 the component sits on the axis of the source and not on one of its outer rays. The
 component is not traced while it is placed, hence the beams it snaps onto do not change. A source
-does not snap, see `_snaps`. Elsewhere, the position is where the camera ray through the cursor meets the plane through `p.plane_point`
+does not snap, see `_snaps`, nor do several pasted objects, like a selection of several that is
+dragged, see `_placed_snaps`. Elsewhere, the position is where the camera ray through the cursor meets the plane through `p.plane_point`
 with the normal of `_placement_normal` (the plane of the table, or the one with the `plane_normal`
 of the controls), in the orientation `p.R0` as constructed; the position is kept if
 the ray does not meet the plane in front of the camera. There, a component or source snaps onto
-the grid of the controls, if any, e.g. the holes of the table (see `_table_snap`). The first
+the grid of the controls, if any, e.g. the holes of the table (see `_table_snap`), except several
+pasted objects. The first
 component or source of an empty view stays at the origin as constructed, see `_Placement`.
 """
 function _placement_pose(gui::LiveView, p::_Placement)
     ctrl = gui.controls
     p.fixed && return Point3{Float64}(0, 0, 0), p.R0, false
     snap = ctrl.snap[]
-    info = snap != :off && _snaps(p.obj) ?
+    info = snap != :off && _snaps(p.obj) && _placed_snaps(p.origin) ?
            _inspect_beam(gui; radius = _SNAP_RADIUS, central = true) : nothing
     if !isnothing(info)
         R = snap == :pose ?
@@ -143,7 +145,7 @@ function _placement_pose(gui::LiveView, p::_Placement)
     met && (hit = hit .- dot(hit .- p.plane_point, n) .* n)
     P = met ? Point3{Float64}(hit) : _pose(p.obj)[1]
     # beside the beams: onto the grid, e.g. the holes of the table
-    grid = ctrl.snap_grid(p.obj, Vector{Float64}(P))
+    grid = _placed_snaps(p.origin) ? ctrl.snap_grid(p.obj, Vector{Float64}(P)) : nothing
     isnothing(grid) || (P = Point3{Float64}(grid.point))
     return P, p.R0, false
 end
@@ -158,7 +160,7 @@ function _update_placement!(gui::LiveView)
     (isnothing(p) || !_placement_mouse_in_view(gui, p)) && return nothing
     P, R, snapped = _placement_pose(gui, p)
     # Not traced, hence no solve is cancelled, see `_change!`
-    _set_pose_exact!(p.obj, P, R)
+    _set_pose!(p.obj, P, R)
     p.snapped = snapped
     update_render!(p.ghost)
     return nothing
@@ -250,7 +252,7 @@ function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrG
     n = _placement_normal(gui.ax.scene, ctrl)
     lookat = Vector{Float64}(cameracontrols(gui.ax.scene).lookat[])
     R0 = _pose(obj)[2]
-    _set_pose_exact!(obj, fixed ? zeros(3) : lookat .- dot(lookat .- plane_point, n) .* n, R0)
+    _set_pose!(obj, fixed ? zeros(3) : lookat .- dot(lookat .- plane_point, n) .* n, R0)
     _show_placed_markers!(gui, obj)
     ghost = _ghost!(gui, obj, system)
     gui.components.placement = _Placement(obj, ghost, system, origin, kwargs, R0, plane_point,
@@ -294,10 +296,18 @@ of the catalog closes then, unless it is pinned, see `_close_unpinned_catalog!`.
 function _drop_placement!(gui::LiveView)
     p = _end_placement!(gui)
     isnothing(p) && return nothing
-    add_component!(gui, p.obj; system = p.system, origin = p.origin, p.kwargs...)
+    _add_placed!(gui, p.obj, p.origin, p.system, p.kwargs)
     _close_unpinned_catalog!(gui)
     return nothing
 end
+
+# Adds the placed `obj` with its `origin` to the `system`, see `_drop_placement!`; a pasted group or
+# several pasted objects have their own method, see `_Pasted`
+_add_placed!(gui::LiveView, @nospecialize(obj), origin, system, kwargs::NamedTuple) =
+    add_component!(gui, obj; system, origin, kwargs...)
+
+# Whether what is placed with this `origin` snaps onto the beams, see `_placement_pose`
+_placed_snaps(_) = true
 
 """
 A left click into the 3D view of the `gui`, i.e. a press and a release less than the

@@ -361,15 +361,22 @@ Cards of a `LiveView`: the card of the `selection` next to the selected object, 
 rows and actions declared for it (see [`card_rows`](@ref)); `all` cards, including the pinned
 ones; the listeners that keep the camera from the cards (`shield`, see `_shield_cards!`); the
 selection card of groups (`browse`, a `_BrowseCard`, see `_browse!`), `nothing` until it is
-connected; `settle` holds the row layouts of cards whose widgets were just built, with the clock
-time of the build, until their boxes were moved once, see `_settle_cards!`.
+connected; `settle` holds the layouts of widgets that were just built (the actions and rows of
+cards, the form of the catalog), with the number of `ticks` of the render loop before the build, until a frame drew them
+(`drawn`: the number of ticks before the last frame that was drawn) and they were settled,
+`restore` the scenes of their widgets with a grown viewport until they take their size again,
+see `_settle_cards!`.
 """
 Base.@kwdef mutable struct _CardState
     selection::_ComponentCard
     all::Vector{_ComponentCard} = [selection]
     shield::Vector{Any} = Any[]
     browse::Any = nothing
-    settle::Vector{Tuple{Float64, Vector{GridLayout}}} = Tuple{Float64, Vector{GridLayout}}[]
+    ticks::Int = 0
+    drawn::Int = 0
+    settle::Vector{Tuple{Int, Vector{GridLayout}}} = Tuple{Int, Vector{GridLayout}}[]
+    restore::Vector{Tuple{Int, Vector{Tuple{Makie.Scene, Makie.Rect2i}}}} =
+        Tuple{Int, Vector{Tuple{Makie.Scene, Makie.Rect2i}}}[]
 end
 
 """
@@ -456,7 +463,12 @@ shown object is `target_shown`, see `_catalog_target`; the
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
 likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
-`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
+`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog;
+the `groups` made in the window, with their `_WindowGroup`, see `_group!`; the parts of the groups
+of the script whose parts were changed in place (see `_regroup!`) before the first change,
+`start_parts`, from which `export_changes` writes the change; the initial poses and constraints of
+the groups that are no parts any more, `forgotten`, which they get back by an undo, see
+`_forget_part!`.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -488,6 +500,12 @@ Base.@kwdef mutable struct _ComponentState
     # the debug mode of the view (a `_Debug`), see `_set_debug!`
     debug::Any = nothing
     window::Any = nothing
+    # the groups made in the window (an `ObjectGroup` => its `_WindowGroup`), see `_group!`
+    const groups::IdDict{Any, Any} = IdDict{Any, Any}()
+    # the parts of the groups of the script before their parts were changed in place, see `_regroup!`
+    const start_parts::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the initial poses and constraints of the groups that are no parts any more, see `_forget_part!`
+    const forgotten::IdDict{Any, Any} = IdDict{Any, Any}()
 end
 
 """
@@ -1735,6 +1753,8 @@ function live_view(
     # Saving and opening projects with `Ctrl+S` and `Ctrl+O` and the tools "Save" and "Open", see
     # `save_project` and `open_project`
     _connect_project!(gui)
+    # Grouping the selection of several with `Ctrl+G`, see `_group!`
+    _connect_group_keys!(gui)
     # What linked views share beside their objects, see `open_system`
     _connect_links!(gui)
     # Aiming a source with the mouse, see `_start_aim!`

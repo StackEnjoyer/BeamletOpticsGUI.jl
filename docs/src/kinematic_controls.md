@@ -39,6 +39,10 @@ mode, which is switched with `m`:
 | `Backspace`                  | Reset the selected component to its initial pose                |
 | `Ctrl`/`Cmd` + `Z`           | Undo the last change                                            |
 | `Ctrl`/`Cmd` + `Y`           | Redo, also `Ctrl`/`Cmd` + `Shift` + `Z`                         |
+| `Ctrl`/`Cmd` + left-click    | Add a component to the selection, or remove it from it; while parts of one group are selected, a part of the same group (in `live_view`) |
+| `Ctrl`/`Cmd` + left-drag     | Draw a rectangle that adds the objects inside it to the selection (a drag on a selected object moves the selection) |
+| `Ctrl`/`Cmd` + `G`           | Group the selection of several (in `live_view`)                 |
+| `Ctrl`/`Cmd` + `Shift` + `G` | Ungroup a group made in the window (in `live_view`)             |
 | `Esc`                        | Select the enclosing group, or deselect at the top level        |
 | Left-click on empty space    | Deselect                                                        |
 | `v`                          | Switch the spectator mode on or off                             |
@@ -50,10 +54,11 @@ camera, such that the system can be viewed without moving a component by acciden
 help. Components
 whose kinematic trait is `Static` can not be selected.
 
-The selected component is marked by a box and three axes above it: its local y-axis (green), its
-local x-axis (red) and the vertical rotation axis (blue). If a local axis is parallel to the
-rotation axis, e.g. the local x-axis of a `CollimatedSource` along +y, the axis perpendicular to
-the other two takes its place, such that the component can be moved in all directions. In the move mode the axes are shown as
+The selected component is marked by a box and three perpendicular axes above it: the vertical
+rotation axis (blue), the heading of the component in the horizontal plane (green, its local y-axis
+projected onto that plane) and the horizontal axis beside it (red). For a component that is only
+turned about the vertical, these are its local y- and x-axes; a tilted component keeps
+perpendicular axes. In the move mode the axes are shown as
 arrows, in the rotate mode as rings. The first key of each pair moves the component in the
 direction of the arrow, or rotates it in the direction of the ring. In the rotate mode, a drag on
 a ring (the ring under the cursor is highlighted) rotates the component around that ring, through

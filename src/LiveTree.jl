@@ -26,8 +26,8 @@ A row of an [`_ObjectTree`](@ref), plain data without any reference to the tree.
 # Fields
 
 - `key`: any value that identifies the row, e.g. the object it stands for. It is passed to the
-  `clicked`, `eye_clicked` and `expand_clicked` observables of the tree and compared with
-  `isequal` by [`_set_selected!`](@ref). Several rows may have the same key, e.g. an object that
+  `clicked`, `toggled`, `eye_clicked` and `expand_clicked` observables of the tree and compared
+  with `isequal` by [`_set_selected!`](@ref). Several rows may have the same key, e.g. an object that
   is listed in several places; they are all highlighted while the key is selected
 - `label`: the displayed name, ellipsized if it does not fit
 - `depth`: the indentation level, `0` for top-level rows
@@ -68,7 +68,8 @@ An object tree like the feature tree of a CAD program, placed at a `GridPosition
 The tree only displays rows, it does not know what they stand for: the caller sets the rows with
 [`_set_rows!`](@ref) (only the rows that are currently shown, i.e. the children of expanded rows)
 and reacts to clicks through the observables below, e.g. by toggling the visibility of an
-object and setting the rows again. [`_set_selected!`](@ref) highlights a row.
+object and setting the rows again. [`_set_selected!`](@ref) highlights the rows of one or several
+keys.
 
 Each row shows, from left to right: the indentation by depth, an expander (if `expandable`), an
 eye (if `visible !== nothing`), the type marker of its `kind` and the label, which is ellipsized
@@ -102,12 +103,17 @@ mouse move listeners.
 - `clicked`, `eye_clicked`, `expand_clicked`: `Observable{Any}`, set to the key of the row whose
   label (or type marker), eye or expander was clicked. A click fires on the release of the left
   mouse button over the same part of the same row as the press.
+- `toggled`: `Observable{Any}`, set instead of `clicked` to the key of the row whose label (or
+  type marker) was clicked with `Ctrl` (`Cmd` on macOS) held at the press (see `_toggle_held`),
+  e.g. to add the row to the selection or to remove it from it
 - `button_clicked`: `Observable{Any}`, set to `(key, button)` of the row whose button "+"
   (`button == :add`) or "−" (`:remove`) was clicked
 - `scene`: the child scene that holds the plots, its viewport is the layout cell
 - `box`: the invisible `Box` that holds the place of the tree in the layout
 - `rows`: the rows set by [`_set_rows!`](@ref)
-- `selected`: the key of the selected row, `nothing` if none
+- `selected`: the key of the selected row, `nothing` if none; of several selected keys the one
+  that was added last
+- `selected_keys`: all selected keys, whose rows are highlighted, see [`_set_selected!`](@ref)
 - `offset`: the scroll position, in pixels from the top
 - `plots`: the plots of the tree, a `NamedTuple`
 """
@@ -115,14 +121,18 @@ mutable struct _ObjectTree
     const box::Makie.Box
     const scene::Makie.Scene
     const clicked::Observable{Any}
+    const toggled::Observable{Any}
     const eye_clicked::Observable{Any}
     const expand_clicked::Observable{Any}
     const button_clicked::Observable{Any}
     rows::Vector{_TreeRow}
     selected::Any
+    selected_keys::Vector{Any}
     offset::Float32
     # Row and part (:label, :eye, :expander, :add, :remove) of the last press of the left mouse button
     pressed::Union{Nothing, Tuple{Int, Symbol}}
+    # Whether `Ctrl` or `Cmd` was held at that press, see `toggled`
+    modified::Bool
     const plots::NamedTuple
     const listeners::Vector{Observables.ObserverFunction}
     # Appearance
@@ -193,7 +203,8 @@ function _ObjectTree(parent::Makie.GridPosition;
         color = scrollbar_color, linewidth = _TREE_SCROLLBAR, linecap = :round)
     plots = (; selection, guide, expanders, eyes, markers, labels, buttons, counters, scrollbar)
     tree = _ObjectTree(box, scene, Observable{Any}(nothing), Observable{Any}(nothing),
-        Observable{Any}(nothing), Observable{Any}(nothing), _TreeRow[], nothing, 0.0f0, nothing, plots,
+        Observable{Any}(nothing), Observable{Any}(nothing), Observable{Any}(nothing), _TreeRow[],
+        nothing, Any[], 0.0f0, nothing, false, plots,
         Observables.ObserverFunction[], marker, marker_color, eye_marker, expand_marker,
         Float32(row_height), Float32(fontsize), _tree_font(scene, font), guides,
         RGBAf(Makie.to_color(text_color)), RGBAf(Makie.to_color(muted_color)),
@@ -214,6 +225,7 @@ function _ObjectTree(parent::Makie.GridPosition;
             _mouse_in_tree(tree) || return Consume(false)
             # Presses beside the rows are consumed, too, and so are their releases
             tree.pressed = something(_hit(tree), (0, :none))
+            tree.modified = _toggle_held(scene)
             return Consume(true)
         elseif event.action == Mouse.release && !isnothing(tree.pressed)
             pressed, tree.pressed = tree.pressed, nothing
@@ -224,7 +236,8 @@ function _ObjectTree(parent::Makie.GridPosition;
             key = tree.rows[i].key
             part === :eye ? (tree.eye_clicked[] = key) :
             part === :expander ? (tree.expand_clicked[] = key) :
-            part === :label ? (tree.clicked[] = key) : (tree.button_clicked[] = (key, part))
+            part === :label ? (tree.modified ? (tree.toggled[] = key) : (tree.clicked[] = key)) :
+            (tree.button_clicked[] = (key, part))
             return Consume(true)
         end
         return Consume(false)
@@ -250,27 +263,55 @@ function _set_rows!(tree::_ObjectTree, rows::AbstractVector{_TreeRow})
 end
 
 """
+Returns whether a click on a row of a tree in the `scene` toggles the row instead of selecting it
+alone: `Ctrl` (`Cmd` on macOS) is held, see `toggled` of [`_ObjectTree`](@ref). `Shift` is a
+plain click.
+"""
+_toggle_held(scene) = _modifier_held(scene, _CTRL_OR_CMD_KEYS)
+
+"""
     _set_selected!(tree::_ObjectTree, key)
+    _set_selected!(tree::_ObjectTree, keys::AbstractVector)
 
 Highlights the rows with the key `key` (compared with `isequal`) and scrolls the first of them
 into view; `nothing` clears the selection. A key that is not among the rows of the tree (e.g. an object in a
 collapsed group) highlights no row, but is kept, such that the row is highlighted once it is
 shown by [`_set_rows!`](@ref).
+
+With a vector of `keys`, the rows of all of them are highlighted, e.g. of the objects of a
+selection of several, and the first row of the last key that was not selected before is scrolled
+into view (none if all of them were); an empty vector clears the selection.
 """
 function _set_selected!(tree::_ObjectTree, key)
     tree.selected = key
-    i = isnothing(key) ? nothing : findfirst(r -> isequal(r.key, key), tree.rows)
-    if !isnothing(i)
-        h = _tree_size(tree)[2]
-        top = _TREE_PAD + (i - 1) * tree.row_height
-        if top < tree.offset
-            tree.offset = top - _TREE_PAD
-        elseif top + tree.row_height > tree.offset + h
-            tree.offset = top + tree.row_height + _TREE_PAD - h
-        end
-    end
+    tree.selected_keys = isnothing(key) ? Any[] : Any[key]
+    _scroll_to_key!(tree, key)
     _redraw!(tree)
     return tree
+end
+
+function _set_selected!(tree::_ObjectTree, keys::AbstractVector)
+    old = tree.selected_keys
+    added = findlast(k -> !any(o -> isequal(o, k), old), keys)
+    tree.selected_keys = collect(Any, keys)
+    tree.selected = isempty(keys) ? nothing : keys[something(added, lastindex(keys))]
+    isnothing(added) || _scroll_to_key!(tree, keys[added])
+    _redraw!(tree)
+    return tree
+end
+
+# Scrolls the first row with the `key` into view, if there is one
+function _scroll_to_key!(tree::_ObjectTree, key)
+    i = isnothing(key) ? nothing : findfirst(r -> isequal(r.key, key), tree.rows)
+    isnothing(i) && return nothing
+    h = _tree_size(tree)[2]
+    top = _TREE_PAD + (i - 1) * tree.row_height
+    if top < tree.offset
+        tree.offset = top - _TREE_PAD
+    elseif top + tree.row_height > tree.offset + h
+        tree.offset = top + tree.row_height + _TREE_PAD - h
+    end
+    return nothing
 end
 
 function Base.close(tree::_ObjectTree)
@@ -453,8 +494,9 @@ function _redraw!(tree::_ObjectTree)
     scrollbar = _max_offset(tree) > 0
     label_right = _row_right(tree)
     columns = _button_columns(tree)
-    # A background and an accent stripe per row of the selected key
+    # A background and an accent stripe per row of a selected key
     selection, selection_color = Rect2f[], RGBAf[]
+    keys = tree.selected_keys
     for (k, i) in enumerate(in_view)
         row = rows[i]
         y = _row_y(tree, i)
@@ -494,7 +536,7 @@ function _redraw!(tree::_ObjectTree)
             push!(counter_text, string(row.count))
             push!(counter_color, muted ? tree.muted_color : tree.icon_color)
         end
-        if !isnothing(tree.selected) && isequal(row.key, tree.selected)
+        if any(k -> isequal(row.key, k), keys)
             bottom = y - rh / 2
             push!(selection, Rect2f(0, bottom, w, rh), Rect2f(0, bottom, _TREE_ACCENT, rh))
             push!(selection_color, tree.selection_color, tree.accent_color)

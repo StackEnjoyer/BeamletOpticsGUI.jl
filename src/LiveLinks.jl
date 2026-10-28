@@ -19,6 +19,20 @@ _shows(::LiveView, ::Nothing) = false
 _shows(gui::LiveView, @nospecialize(obj)) = any(p -> p.second === obj, gui.pairs) ||
                              any(leaf -> !isnothing(_child_handle(gui.controls.h, leaf)), _leaves(obj))
 
+"""
+The part of the changed `obj` of a linked view that the `gui` shows (see `_shows`): `obj` itself or
+`nothing`; of a selection of several objects (see `_MultiSelection`) those that the `gui` shows, see
+`_selection_of`.
+"""
+_shown_part(gui::LiveView, @nospecialize(obj)) = _shows(gui, obj) ? obj : nothing
+function _shown_part(gui::LiveView, s::_MultiSelection)
+    shown = Any[]
+    for obj in s.objects
+        _shows(gui, obj) && push!(shown, obj)
+    end
+    return length(shown) == length(s.objects) ? s : _selection_of(shown)
+end
+
 """The name of the `theme` kwarg of `live_view` with the color tokens `tokens`, see `_app_theme`."""
 function _theme_name(tokens)
     name = _index(_APP_THEMES, tokens)
@@ -53,6 +67,14 @@ function _systems_of(gui::LiveView, @nospecialize(obj))
     top = _component_top(gui, obj)
     return BMO.AbstractSystem[rendered(h) for h in gui.system_handles
                               if _has(rendered(h).objects, top)]
+end
+# Those of all objects of a selection of several, see `_MultiSelection`
+function _systems_of(gui::LiveView, s::_MultiSelection)
+    systems = BMO.AbstractSystem[]
+    for obj in s.objects, sys in _systems_of(gui, obj)
+        _has(systems, sys) || push!(systems, sys)
+    end
+    return systems
 end
 
 # Records that the `systems` of the `gui` are outdated, see `_note_stale!`
@@ -207,6 +229,22 @@ function _link!(gui::LiveView, new::LiveView, system)
             continue
         end
         push!(to.removed, obj)
+    end
+    # the groups made in the window, which `new` shows as groups of the `system`, see `_group!`
+    # and their members, not `new`, started with
+    for (g, rec) in from.groups
+        any(top -> _has(_descendants(top), g), system.objects) || continue
+        to.groups[g] = rec
+        delete!(to.start_systems, g)
+        for m in rec.members
+            haskey(from.start_systems, m) &&
+                (to.start_systems[m] = Any[s for s in from.start_systems[m] if s === system])
+        end
+    end
+    # the parts of the groups of the script at the start, whose parts were changed, see `_regroup!`
+    for (g, parts) in from.start_parts
+        any(top -> _has(_descendants(top), g), system.objects) || continue
+        to.start_parts[g] = copy(parts)
     end
     init = new.controls.init_poses
     for (obj, pose) in gui.controls.init_poses
@@ -378,7 +416,9 @@ function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool
     # `from` traced only some of its systems, see `_trace_set`
     (stale || isnothing(traced)) || filter!(sys -> _has(traced, sys), systems)
     isempty(systems) && return nothing
-    foreign = !isnothing(obj) && !_shows(gui, obj)
+    # the objects of a selection of several that the `gui` shows, see `_shown_part`
+    mine = _shown_part(gui, obj)
+    foreign = !isnothing(obj) && isnothing(mine)
     (foreign && (stale || !gui.trace.stale)) && return nothing
     # The changes pause for both, see `_on_idle!`
     gui.trace.last_change = time()
@@ -386,14 +426,14 @@ function _follow!(gui::LiveView, from::LiveView, @nospecialize(obj); stale::Bool
     _follow_switches!(gui, from, systems)
     update_render!(gui.controls.h)
     _update_selection_box!(gui.controls)
-    _shows(gui, obj) && _table_include!(gui, obj)
+    isnothing(mine) || _table_include!(gui, mine)
     # not through the controls of the `gui`, see `_apply_update!`
-    _debug_moved!(gui, _shows(gui, obj) ? obj : nothing)
+    _debug_moved!(gui, mine)
     if stale
         _follow_stale!(gui)
         # A detector that `from` moved has no hits, unless `from` solves it in the background,
         # whose detectors nothing else reads meanwhile
-        (_shows(gui, obj) && !_running(from)) && _detectors_moved!(gui, obj)
+        (!isnothing(mine) && !_running(from)) && _detectors_moved!(gui, mine)
     else
         _follow_solved!(gui, from, systems, obj; preview)
     end
@@ -409,9 +449,11 @@ Shows the sources and the components of the `systems` that the `gui` shares with
 `_detach!`), one that the `gui` lacks is shown (see `_attach!`), with the origin and, for a source,
 the kwargs that it has in `from`. The entries of the undo history of the `gui` on these objects are
 dropped, since they no longer apply. A source that the `gui` traces through another system as well
-is left as it is.
+is left as it is. Objects that `from` grouped or ungrouped are grouped or ungrouped in the `gui` as
+well, see `_follow_groups!`.
 """
 function _follow_structure!(gui::LiveView, from::LiveView, systems = _shared_systems(gui, from))
+    _follow_groups!(gui, from, systems)
     changed = Any[]
     origin(obj) = get(from.components.origin, obj, nothing)
     for sys in systems
@@ -451,6 +493,106 @@ function _follow_structure!(gui::LiveView, from::LiveView, systems = _shared_sys
     end
     isempty(changed) || _drop_history!(gui.controls, changed)
     return nothing
+end
+
+"""
+    _follow_groups!(gui, from, systems)
+
+The groups made in the linked view `from` (see `_group!`) of objects of the `System`s among the
+shared `systems`, in the `gui` as well: a group whose members the `gui` shows at the top level is
+made there too (see `_show_group!`), one that `from` ungrouped is ungrouped (see
+`_unshow_group!`), both without changing the systems, which the views share; the `gui` records the
+groups that it does not show yet as made in the window, such that `_follow_structure!` adds them as
+such, e.g. after `from` undid their removal. The groups whose parts `from` changed in place (see
+`_regroup!`) get the records of `from` and are shown as they are now, see `_restructured!`.
+"""
+function _follow_groups!(gui::LiveView, from::LiveView, systems)
+    shared = BMO.System[sys for sys in systems if sys isa BMO.System]
+    isempty(shared) && return nothing
+    function top(x)
+        @nospecialize x
+        return any(sys -> _has(sys.objects, x), shared)
+    end
+    function inside(x)
+        @nospecialize x
+        return any(sys -> any(t -> _has(_descendants(t), x), sys.objects), shared)
+    end
+    function shown(x)
+        @nospecialize x
+        return any(h -> _has(_top_levels(h), x), (gui.system_handles..., gui.extras))
+    end
+    groups = gui.components.groups
+    # ungrouped in `from`: the systems hold its members instead
+    done = Any[]
+    for h in (gui.system_handles..., gui.extras), g in collect(Any, _top_levels(h))
+        (haskey(groups, g) && !_has(done, g) && !top(g)) || continue
+        members = groups[g].members
+        (!isempty(members) && all(top, members)) || continue
+        push!(done, g)
+        _unshow_group!(gui, g, _member_systems(gui, first(members)))
+    end
+    for (g, rec) in from.components.groups
+        haskey(groups, g) && continue
+        if top(g) && all(shown, rec.members)
+            # grouped in `from`
+            _show_group!(gui, g, rec, _member_systems(gui, g))
+        elseif inside(g) && !_shows(gui, g)
+            groups[g] = rec
+        end
+    end
+    # the parts changed in place: the records of `from`, the groups that are no parts any more go
+    for (g, rec) in from.components.groups
+        (haskey(groups, g) && groups[g] !== rec && inside(g)) && (groups[g] = rec)
+    end
+    for (g, parts) in from.components.start_parts
+        haskey(gui.components.start_parts, g) || (gui.components.start_parts[g] = copy(parts))
+    end
+    st = gui.objects
+    for h in (gui.system_handles..., gui.extras), t in collect(Any, _top_levels(h))
+        (t isa BMO.AbstractObjectGroup && top(t)) || continue
+        _same_parts(gui, t) && continue
+        now = _descendants(t)
+        # the groups that were parts of `t`, also inside a group that is gone
+        gone = Any[g for g in keys(st.parents)
+                   if g isa BMO.AbstractObjectGroup && !_has(now, g) && _was_part(st, g, t)]
+        for g in gone
+            delete!(groups, g)
+        end
+        for d in now
+            rec = get(from.components.groups, d, nothing)
+            (isnothing(rec) || haskey(groups, d)) || (groups[d] = rec)
+        end
+        # the entries of the history of the `gui` on the groups of `t` no longer apply
+        _drop_history!(gui.controls, Any[gone..., (d for d in now if d isa BMO.AbstractObjectGroup)...])
+        _restructured!(gui, t, gone)
+    end
+    return nothing
+end
+
+# Whether the part `g` belonged to `t` as the `_ObjectState` `st` maps the parts, see `_map_parts!`
+function _was_part(st, @nospecialize(g), @nospecialize(t))
+    p = get(st.parents, g, nothing)
+    seen = Base.IdSet{Any}()
+    while !isnothing(p) && !(p in seen)
+        p === t && return true
+        push!(seen, p)
+        p = get(st.parents, p, nothing)
+    end
+    return false
+end
+
+# Whether the `gui` shows the parts of the groups of the top-level object `t` as they are, see
+# `_map_parts!`, i.e. whether no other view changed them in place, see `_regroup!`
+function _same_parts(gui::LiveView, @nospecialize(t))
+    st = gui.objects
+    for d in _descendants(t), c in _children(d)
+        get(st.parents, c, nothing) === d || return false
+    end
+    for (g, p) in st.parents
+        (g isa BMO.AbstractObjectGroup && p isa BMO.AbstractObjectGroup && !_has(_children(p), g) &&
+         _has(_descendants(t), p)) && return false
+    end
+    return true
 end
 
 """
@@ -522,12 +664,7 @@ function _follow_solved!(gui::LiveView, from::LiveView, systems, @nospecialize(o
             foreach(state -> state.window_changed = now, states)
         end
     end
-    try
-        gui.on_change(gui, _shows(gui, obj) ? obj : nothing)
-        gui.last_error = nothing
-    catch e
-        gui.last_error = _log_once(gui, e, gui.last_error, "`on_change` callback")
-    end
+    _user_on_change!(gui, _shown_part(gui, obj))
     _update_user_panels!(gui)
     _on_solved!(gui)
     # The layers of the debug mode show the beams that `from` traced

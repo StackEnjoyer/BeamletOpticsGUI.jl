@@ -450,7 +450,8 @@ Keeps the view of the `gui` when plots are added to the open window, e.g. an ove
 clip plane or a measurement: Makie's `plot!` into the `LScene` then calls `reset_limits!`, whose
 `center!` would move the camera to fit the scene. Called once the window is shown, after the view
 was fitted to the scene; `center!` then only updates the bounds of the camera (and its depth
-range), the reset key of `Camera3D` (Ctrl + left click) still fits the view.
+range). The reset key of `Camera3D` (Ctrl + left click) is taken by the selection, see
+[`kinematic_controls!`](@ref); the home button fits the view.
 """
 _keep_camera!(gui::LiveView) = (cameracontrols(gui.ax.scene).settings.center[] = false; nothing)
 
@@ -463,6 +464,8 @@ function _connect_camera!(gui::LiveView)
     scene = gui.ax.scene
     push!(listeners, on(events(scene).keyboardbutton, priority = 200) do event
         (event.action == Keyboard.press && event.key == Keyboard.g) || return Consume(false)
+        # Ctrl+G groups the selection, see `_connect_group_keys!`
+        _modifier_held(scene, _CTRL_OR_CMD_KEYS) && return Consume(false)
         gui.controls.ignore_keys() && return Consume(false)
         _zoom_to_selection!(gui)
         return Consume(true)

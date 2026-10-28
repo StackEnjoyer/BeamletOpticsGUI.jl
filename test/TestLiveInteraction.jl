@@ -34,7 +34,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test isnothing(GUI._ray_plane_intersect([0.0, 0, -5], [0.0, 0, -1], [0.0, 0, 0], [0.0, 0, 1]))
     end
 
-    @testset "_axis_angle_from_rotmatrix round-trips through rotate3d" begin
+    @testset "_rotation_axis_angle round-trips through rotate3d" begin
         cases = [
             ([0.0, 0, 1], deg2rad(30)),
             ([1.0, 0, 0], deg2rad(90)),
@@ -44,7 +44,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         ]
         for (axis, θ) in cases
             R = BMO.rotate3d(axis, θ)
-            got_axis, got_angle = GUI._axis_angle_from_rotmatrix(R)
+            got_axis, got_angle = GUI._rotation_axis_angle(R)
             R2 = BMO.rotate3d(got_axis, got_angle)
             @test isapprox(R2, R; atol = 1e-6)
         end
@@ -60,7 +60,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
 
         R = Matrix{Float64}(BMO.orientation(mir))
         Rd = R0 * R'
-        axis, angle = GUI._axis_angle_from_rotmatrix(Rd)
+        axis, angle = GUI._rotation_axis_angle(Rd)
         angle > 1e-12 && rotate3d!(mir, axis, angle)
         translate_to3d!(mir, P0)
 
@@ -203,9 +203,20 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test abs(GUI._pose(m2)[2][3, 2]) ≈ 1 atol = 1e-9
         @test abs(det(hcat(y2, x2, v2))) ≈ 1 atol = 1e-9
         @test x2 ≈ GUI._pose(m2)[2][:, 1]
-        # axes in general position are the local ones
+        # a tilted object: the frame stays orthonormal, e.g. after a rotation in the rotate mode; the
+        # heading comes from the local axis that lies more in the plane perpendicular to the rotation
+        # axis, here the local x-axis turned by 90°, since the local y-axis points almost upwards
         BMO.xrotate3d!(m2, 0.3)
-        @test GUI._control_axes(ctrl, m2)[1] ≈ GUI._pose(m2)[2][:, 2]
+        Rm2 = GUI._pose(m2)[2]
+        y3, x3, v3 = GUI._control_axes(ctrl, m2)
+        @test y3 ≈ cross([0, 0, 1], normalize([Rm2[1, 1], Rm2[2, 1], 0.0])) && v3 == [0, 0, 1]
+        @test abs(dot(y3, x3)) < 1e-12 && abs(dot(y3, v3)) < 1e-12 && abs(dot(x3, v3)) < 1e-12
+        @test cross(x3, y3) ≈ v3
+        # an object turned only about the rotation axis keeps its local axes
+        m3 = RoundPlanoMirror(25e-3, 5e-3)
+        BMO.zrotate3d!(m3, 0.7)
+        y4, x4, _ = GUI._control_axes(ctrl, m3)
+        @test y4 ≈ GUI._pose(m3)[2][:, 2] && x4 ≈ GUI._pose(m3)[2][:, 1]
         # the key of the x-axis moves m1 along the new axis, i.e. sideways
         ctrl.selected[] = m1
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)
@@ -755,10 +766,15 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
         n0 = length(ax.scene.plots)
         nb = length(ax.blockscene.plots)
+        nc = length(ax.blockscene.children)
         limits = Makie.data_limits(ax.scene)
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
         @test length(ax.scene.plots) == n0 + 4 # selection box and gizmo
         @test length(ax.blockscene.plots) == nb + 1 # controls overlay
+        # the selection rectangle, in a scene of its own over the 3D scene
+        @test length(ax.blockscene.children) == nc + 1
+        rect_scene = ax.blockscene.children[end]
+        @test length(rect_scene.plots) == 1 && rect_scene.plots[1].overdraw[]
         # the hidden gizmo and the overlay must not change the limits of the scene
         @test Makie.data_limits(ax.scene) ≈ limits
 
@@ -766,6 +782,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test isempty(ctrl.listeners)
         @test length(ax.scene.plots) == n0
         @test length(ax.blockscene.plots) == nb
+        @test length(ax.blockscene.children) == nc
 
         # listeners are gone: this must not error and must not select anything
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)

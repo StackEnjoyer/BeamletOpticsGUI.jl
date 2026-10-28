@@ -45,7 +45,7 @@ control on its page "Pose" (the rows of `card_rows`), and every card, also a pin
    that extends the default ones via `invoke`, as below.
 6. No state in the widgets and no captured `gui`: the card may be rebuilt at any time and shows other
    objects with the same declarations.
-7. Test it: `gui = live_view(System([...]) => beam; layout)`, `gui.controls.selected[] = obj`, find the
+7. Test it: `gui = live_view(System([...]) => beam; layout)`, `select!(gui, obj)` (or `gui.controls.selected[] = obj`; for several objects only `select!(gui, [a, b])`, after which `gui.controls.selected[]` is not a component), find the
    widget by `name` on the card, set an input, check the object, the shown value and the solve. The
    examples of this file run as tests in `test/TestLiveWidgetRecipe.jl` of BeamletOpticsGUI.
 

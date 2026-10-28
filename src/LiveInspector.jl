@@ -432,8 +432,9 @@ The property inspector of the app layout, the "PROPERTIES" section of the right 
 to bottom:
 
 - the header: the icon of the kind of the selected object (see `_tree_kind`), its name (see
-  `_label`) and its type, the actions of its card (e.g. hide) and the `pin` toggle, which pins a
-  card to the object below the inspector (see `_toggle_pin!`); the icon, the name and the pin are
+  `_label`) and its type, the actions of its card (e.g. hide), the `back` button "‹" of a part of
+  another object (see `_browse_parent!`) and the `pin` toggle, which pins a card to the object
+  below the inspector (see `_toggle_pin!`); the icon, the name and the pin are
   built by the shared parts of the cards, see `_card_icon!`
 - the docked `card` of the selected object with its pages, like a floating card (see `_DockedCard`
   and `_card_pages`): below the page bar, on the page "Pose" the rows of [`card_rows`](@ref) and
@@ -493,10 +494,11 @@ function _build_inspector!(layout::AppLayout)
     name.text[] = "No selection"
     type = Label(header[2, 2], " "; halign = :left, color = t.muted, fontsize = 12,
         tellwidth = false)
-    pin = _card_pin!(header[1:2, 4], t; size = 24, icon_size = 18,
+    pin = _card_pin!(header[1:2, 5], t; size = 24, icon_size = 18,
         tooltip = "Pin a card below the inspector", tooltip_placement = :left)
-    back = _card_back!(header[1:2, 3], t; size = 24, icon_size = 18, tooltip_placement = :left)
-    back.box.visible[] = false
+    # between the actions (column 3, see `_docked_actions`) and the pin
+    back = _card_back!(header[1:2, 4], t; size = 24, icon_size = 18, tooltip_placement = :left)
+    _show_back!(header, back, false)
     rowgap!(header, 0)
     colsize!(header, 2, Auto(false))
     # The card of the selection with its pages below the header, see `_DockedCard`
@@ -799,12 +801,27 @@ function _show_pin!(gui::AppView)
     obj = _shown_object(gui)
     pinned = !isnothing(obj) && _is_pinned(gui, obj)
     pin.active[] == pinned || (pin.active[] = pinned)
-    visible = !isnothing(obj)
+    # no pin for a selection of several objects, see `_pinnable`
+    visible = !isnothing(obj) && _pinnable(obj)
     pin.box.visible[] == visible || (pin.box.visible[] = visible)
     # "‹" for a part of another object, see `_part_parent`
-    back = gui.layout.inspector.back
-    part = visible && !isnothing(_part_parent(gui, obj))
-    back.box.visible[] == part || (back.box.visible[] = part)
+    insp = gui.layout.inspector
+    part = _shows_back(gui, obj)
+    insp.back.box.visible[] == part || _show_back!(insp.card.header, insp.back, part)
+    return nothing
+end
+
+# Whether the inspector shows the button "‹" for `obj`, i.e. for a part of another object
+_shows_back(gui::AppView, @nospecialize(obj)) = !isnothing(obj) && !isnothing(_part_parent(gui, obj))
+
+"""
+Shows or hides the button "‹" `back` in column 4 of the `header` of the inspector; hidden, the
+column and its gap take no room, such that the actions stay next to the pin.
+"""
+function _show_back!(header::GridLayout, back::_IconButton, shown::Bool)
+    back.box.visible[] = shown
+    colsize!(header, 4, shown ? Auto() : Fixed(0))
+    colgap!(header, 4, shown ? 6 : 0)
     return nothing
 end
 
@@ -824,7 +841,7 @@ function _show_header!(gui::AppView, @nospecialize(obj))
     # Labels do not ellipsize: the room for the texts is the column of the name, between the icon
     # and the actions of the card
     w = Makie.widths(insp.grid.layoutobservables.computedbbox[])[1] - 32 - 30 -
-        _actions_width(insp.card)
+        (_shows_back(gui, obj) ? 30 : 0) - _actions_width(insp.card)
     font(label) = _tree_font(label.blockscene, label.font[])
     _set_text!(insp.name, _fit_text(insp.widths[1], font(insp.name), 14, name,
         w - (renamable ? _CARD_PENCIL + 2 : 0)))

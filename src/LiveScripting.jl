@@ -118,13 +118,17 @@ end
 
 """
     select!(gui::LiveView, obj)
+    select!(gui::LiveView, objs::AbstractVector)
     select!(gui::LiveView, ::Nothing)
 
 Selects the object `obj` of the [`live_view`](@ref) window `gui` like a click on it: its selection
 box and gizmo are shown, and its card opens or the inspector shows it. `nothing` clears the
-selection, like a click on the background. A group is selected as a whole. Throws an
-`ArgumentError` if `obj` is not part of the view or the spectator mode is on, see
-[`spectator!`](@ref), in which nothing can be selected.
+selection, like a click on the background. A group is selected as a whole. A vector `objs` selects
+all its objects, like `Ctrl`+click (`Cmd` on macOS) on each: they are moved, rotated, hidden and removed as one; a
+vector of one object selects it like `obj`, an empty one clears the selection. Throws an
+`ArgumentError` if an object is not part of the view, if one of `objs` is a part of another one or
+a clip plane, or if the spectator mode is on, see [`spectator!`](@ref), in which nothing can be
+selected.
 """
 function select!(gui::LiveView, @nospecialize(obj))
     ctrl = gui.controls
@@ -132,6 +136,32 @@ function select!(gui::LiveView, @nospecialize(obj))
         throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))
     ctrl.spectator[] && throw(ArgumentError("nothing can be selected in the spectator mode"))
     _select!(gui, obj)
+    return nothing
+end
+
+function select!(gui::LiveView, objs::AbstractVector)
+    ctrl = gui.controls
+    sel = Any[]
+    for obj in objs
+        haskey(ctrl.init_poses, obj) ||
+            throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))
+        _has(sel, obj) && continue
+        for o in sel
+            _related(o, obj) && throw(ArgumentError(
+                "$(typeof(obj)) is a part of another object of the selection, or has one as a part"))
+        end
+        push!(sel, obj)
+    end
+    length(sel) == 1 && return select!(gui, only(sel))
+    isempty(sel) && return select!(gui, nothing)
+    for o in sel
+        _multi_selectable(o) || throw(ArgumentError("a clip plane can not be selected with other objects"))
+    end
+    ctrl.spectator[] && throw(ArgumentError("nothing can be selected in the spectator mode"))
+    s = _selection_of(sel)
+    ctrl.selected[] = s
+    _update_selection_box!(ctrl)
+    gui.status.text[] = _pose_string(gui, s)
     return nothing
 end
 

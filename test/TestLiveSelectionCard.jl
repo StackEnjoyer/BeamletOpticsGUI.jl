@@ -310,6 +310,21 @@ const GUI = BeamletOpticsGUI
         GUI._select!(gui, fx.bench)
         GUI._show_pin!(gui)
         @test !back.box.visible[]
+        # beside the actions, e.g. "parts ›" of a group that is a part, not over them
+        insp = gui.layout.inspector
+        left(x) = Makie.origin(x.layoutobservables.computedbbox[])[1]
+        right(x) = left(x) + Makie.widths(x.layoutobservables.computedbbox[])[1]
+        GUI._select!(gui, fx.pair)
+        GUI._refresh_inspector!(gui)
+        @test back.box.visible[]
+        @test !isempty(insp.card.actions.content)
+        @test right(insp.card.actions) <= left(back.box)
+        @test right(back.box) <= left(insp.pin.box)
+        # hidden, it takes no room: the actions are next to the pin
+        GUI._select!(gui, fx.bench)
+        GUI._refresh_inspector!(gui)
+        @test !back.box.visible[]
+        @test left(insp.pin.box) - right(insp.card.actions) ≈ 6 atol = 1
         close(gui)
     end
 

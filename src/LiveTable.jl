@@ -232,6 +232,13 @@ Extends the table of the `gui` to the position of the component or source `obj`,
 added, with `_TABLE_MARGIN` holes around it, while the table is shown.
 """
 _table_include!(::LiveView, _) = nothing
+# A selection of several objects: each of them
+function _table_include!(gui::LiveView, s::_MultiSelection)
+    for obj in s.objects
+        _table_include!(gui, obj)
+    end
+    return nothing
+end
 function _table_include!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrGroup, _Source}))
     t = gui.components.table
     (isnothing(t) || !t.shown) && return nothing

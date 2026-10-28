@@ -47,9 +47,13 @@ _normal(p::LiveClipPlane) = p.dir[:, 2]
 """Returns the `Makie.Plane3f` of the clip plane `p`, as applied to the plots."""
 _plane3f(p::LiveClipPlane) = Plane3f(Point3f(p.pos), Vec3f(_normal(p)))
 
-"""Values that can be live-rendered and moved by the controls: objects, groups, sources and clip planes."""
+# A clip plane is selected on its own, see `_with_toggled`
+_multi_selectable(::LiveClipPlane) = false
+
+"""Values that can be live-rendered and moved by the controls: objects, groups, sources and clip
+planes, and the selections of several of them, see `_MultiSelection`."""
 const _LiveMovable = Union{BMO.AbstractObject, BMO.AbstractObjectGroup, BMO.AbstractBeam, BMO.AbstractBeamGroup,
-    LiveClipPlane}
+    LiveClipPlane, _MultiSelection}
 
 """
     _live_render_source!(ax, src; size, color = :orange, strokecolor = :black)

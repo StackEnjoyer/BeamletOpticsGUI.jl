@@ -94,6 +94,29 @@ function _compute(pairs, handles, requests, sinks; systems = first.(pairs), coar
 end
 
 """
+    _user_on_change!(gui, obj)
+
+Calls the user `on_change` of the `gui` (see [`live_view`](@ref)) with the changed `obj` (or
+`nothing`), once per object of a selection of several (see `_MultiSelection`), which never reaches
+it. An error is logged once, see `_log_once`.
+"""
+_user_on_change!(gui::LiveView, @nospecialize(obj)) = _call_on_change!(gui, Any[obj])
+_user_on_change!(gui::LiveView, s::_MultiSelection) = _call_on_change!(gui, s.objects)
+function _call_on_change!(gui::LiveView, objs::Vector{Any})
+    failed = false
+    for obj in objs
+        try
+            gui.on_change(gui, obj)
+        catch e
+            failed = true
+            gui.last_error = _log_once(gui, e, gui.last_error, "`on_change` callback")
+        end
+    end
+    failed || (gui.last_error = nothing)
+    return nothing
+end
+
+"""
     _apply!(gui, r, obj; coarse = false)
 
 Shows the result `r` of `_compute` in the `gui`: updates the beams that are switched on and their
@@ -137,12 +160,7 @@ function _apply!(gui::LiveView, r, @nospecialize(obj); coarse = false, traced = 
     gui.trace.preview = previewed
     gui.trace.preview_obj = obj
     if !previewed
-        try
-            gui.on_change(gui, obj)
-            gui.last_error = nothing
-        catch e
-            gui.last_error = _log_once(gui, e, gui.last_error, "`on_change` callback")
-        end
+        _user_on_change!(gui, obj)
         # After `on_change`, which may record what the panels of `add_panel!` show
         _update_user_panels!(gui)
     end

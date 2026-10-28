@@ -294,9 +294,8 @@ theme tokens `theme`, from top to bottom:
 The tiles are built again when another group is chosen (see `_build_catalog_tiles!`), the form
 when another entry is chosen (see `_build_catalog_form!`) and, at the next frame while `dirty`,
 after a menu of a glass changed to or from "constant" or the one of a surface to or from
-"aspheric", see `_flush_catalog_form!`. `settle` holds
-the grids of a new form and its time until its boxes were moved once, see `_settle_catalog_form!`.
-The `style` changes when the place of the widgets gets another width, see `_restyle_catalog!`.
+"aspheric", see `_flush_catalog_form!`; a new form is settled like a new card, see
+`_settle_cards!`. The `style` changes when the place of the widgets gets another width, see `_restyle_catalog!`.
 """
 mutable struct _CatalogWidget
     const layout::GridLayout
@@ -320,7 +319,6 @@ mutable struct _CatalogWidget
     const boxes::Vector{Textbox}
     const menus::Vector{Menu}
     dirty::Bool
-    settle::Union{Nothing, Tuple{Float64, Vector{GridLayout}}}
 end
 
 """The entry that is chosen in the catalog widget `w`."""
@@ -381,8 +379,7 @@ function _catalog_widget!(gui::LiveView, body::GridLayout, style::NamedTuple)
     place = Button(body[7, 1]; label = "Place", _card_style(t, Button)..., halign = :left)
     widget = _CatalogWidget(body, t, style, entries, groups, target, target_menu, false,
         group_buttons, group_label,
-        entry_label, place, 0, 0, tiles, Pair{Int, _OverlayItem}[], form, Any[], Textbox[], Menu[], false,
-        nothing)
+        entry_label, place, 0, 0, tiles, Pair{Int, _OverlayItem}[], form, Any[], Textbox[], Menu[], false)
     listeners = gui.controls.listeners
     # its search takes the keyboard like the menus of the form
     _register_widget!(gui, target_menu)
@@ -758,7 +755,7 @@ end
 _surface_unit(order::Integer) = Makie.rich(_SURFACE_UNIT, Makie.superscript(string(1 - order)))
 
 """
-    _fill_catalog_surfaces!(gui, w, pos, surfaces, strings) -> Vector{GridLayout}
+    _fill_catalog_surfaces!(gui, w, pos, surfaces, strings)
 
 Builds the inputs of the surfaces of the chosen entry of the catalog widget `w` at the position
 `pos` of its form, i.e. of its parameters with the indices `surfaces` (see `CatalogSurface`), with
@@ -770,7 +767,7 @@ go at the next frame after the menu changed, see `_flush_catalog_form!`.
 
 Sets the inputs `(; menu, radius, conic, coefficients)` of the surfaces in `w.inputs`, with
 `conic === nothing` and no `coefficients` for a spherical surface, and adds their boxes and menus
-to `w.boxes` and `w.menus`. Returns the grids of the boxes, see `_settle_catalog_form!`.
+to `w.boxes` and `w.menus`.
 """
 function _fill_catalog_surfaces!(gui::LiveView, w::_CatalogWidget, pos, surfaces, strings)
     params = _catalog_entry(w).params
@@ -781,20 +778,17 @@ function _fill_catalog_surfaces!(gui::LiveView, w::_CatalogWidget, pos, surfaces
     # An emptied box shows its placeholder
     stored(s) = isempty(s) ? nothing : s
     inline = w.style.constant_inline
-    grids = GridLayout[]
     # Where the box of the radius is right of the menu, each surface has a grid of its own in a
     # column of grids, and so have the fields of an asphere, which are wider than their surface:
     # a layout does not make room for content that spans its columns. Otherwise all are in one
     # grid of labels, boxes and units, whose last two columns a menu spans
     outer = inline ? GridLayout(pos; halign = :left, default_rowgap = 6) : _catalog_form_grid(pos)
-    inline || push!(grids, outer)
     row = 0
     for i in surfaces
         p = params[i]
         f = _surface_fields(strings[i])
         row += 1
         head = inline ? _catalog_form_grid(outer[row, 1]) : outer
-        inline && push!(grids, head)
         Label(head[inline ? 1 : row, 1], p.name; label...)
         menu = Menu(inline ? head[1, 2] : head[row, 2:3]; options = kinds,
             default = f.aspheric ? _SURFACE_ASPHERIC : _SURFACE_SPHERICAL, _card_style(t, Menu)...,
@@ -815,7 +809,6 @@ function _fill_catalog_surfaces!(gui::LiveView, w::_CatalogWidget, pos, surfaces
                 row += 1
                 fields = GridLayout(outer[row, 1]; halign = :left, default_rowgap = 6,
                     default_colgap = _CATALOG_GAP, alignmode = Makie.Outside(_CATALOG_INDENT, 0, 0, 0))
-                push!(grids, fields)
             end
             names = String["k"; ["A$order" for order in _SURFACE_ORDERS]]
             texts = String[f.conic; f.coefficients]
@@ -847,7 +840,7 @@ function _fill_catalog_surfaces!(gui::LiveView, w::_CatalogWidget, pos, surfaces
             return nothing
         end)
     end
-    return grids
+    return nothing
 end
 
 """
@@ -869,16 +862,13 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     resize!(w.inputs, length(params))
     # An empty layout has no size
     isempty(params) && Label(w.form[1, 1], "no parameters"; label..., color = t.muted)
-    grids = GridLayout[]
     # the row of the form of the next part
     part = 0
     surfaces = findall(p -> p isa CatalogSurface, params)
-    isempty(surfaces) ||
-        append!(grids, _fill_catalog_surfaces!(gui, w, w.form[part += 1, 1], surfaces, strings))
+    isempty(surfaces) || _fill_catalog_surfaces!(gui, w, w.form[part += 1, 1], surfaces, strings)
     numbers = findall(p -> p isa CatalogParam, params)
     if !isempty(numbers)
         grid = _catalog_form_grid(w.form[part += 1, 1])
-        push!(grids, grid)
         two = length(numbers) >= w.style.two_columns
         per_column = two ? cld(length(numbers), 2) : length(numbers)
         # The menu of the presets of a number: right of its unit, or in a row of its own below it
@@ -913,7 +903,6 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     glasses = findall(p -> p isa CatalogGlass, params)
     if !isempty(glasses)
         grid = _catalog_form_grid(w.form[part += 1, 1])
-        push!(grids, grid)
         names = [_glass_names(); _GLASS_CONSTANT]
         inline = w.style.constant_inline
         row = 0
@@ -946,29 +935,8 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     end
     foreach(b -> _register_widget!(gui, b), w.boxes)
     foreach(m -> _register_widget!(gui, m), w.menus)
-    w.settle = isempty(w.boxes) ? nothing : (time(), grids)
-    return nothing
-end
-
-"""
-    _settle_catalog_form!(w)
-
-Moves the boxes of a new form of the catalog widget `w` (in the grids of `w.settle`, with the clock
-time at which they were built) by a pixel, at the first frame with a later clock time. A workaround
-for Makie 0.24, whose plots take the camera of their scene anew when its trigger changes, which is
-the clock time `time()`: a `Textbox` is created with a default size and resized by its layout at
-once; with a coarse clock (Windows) both happen at the same time, the second update is discarded,
-and the text of the box is drawn with the camera of the default size, i.e. tiny, until the viewport
-of the box changes again, which a box that keeps its place never gets. The move changes the
-viewports without resizing them, hence the cameras are taken anew whatever else happens at that
-time. Called every frame, see `_connect_catalog_window!`.
-"""
-function _settle_catalog_form!(w::_CatalogWidget)
-    isnothing(w.settle) && return nothing
-    t0, grids = w.settle
-    time() == t0 && return nothing
-    w.settle = nothing
-    foreach(g -> Makie.colgap!(g, 1, _CATALOG_GAP + 1), grids)
+    # drawn with the cameras of their sizes like the widgets of a new card, see `_settle_cards!`
+    push!(gui.cards.settle, (gui.cards.ticks, GridLayout[w.form]))
     return nothing
 end
 
