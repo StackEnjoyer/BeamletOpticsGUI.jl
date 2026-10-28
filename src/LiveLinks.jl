@@ -246,6 +246,10 @@ function _link!(gui::LiveView, new::LiveView, system)
         any(top -> _has(_descendants(top), g), system.objects) || continue
         to.start_parts[g] = copy(parts)
     end
+    # the shifts of the pivots of the other groups, with the initial poses below, see `_shift_pivot!`
+    for (g, shift) in from.pivots
+        any(top -> _has(_descendants(top), g), system.objects) && (to.pivots[g] = copy(shift))
+    end
     init = new.controls.init_poses
     for (obj, pose) in gui.controls.init_poses
         haskey(init, obj) && (init[obj] = pose)

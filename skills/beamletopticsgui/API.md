@@ -170,6 +170,7 @@ static objects throw `ArgumentError`):
 ```julia
 translate3d!(gui, lens, [0, 1e-3, 0]);  translate_to3d!(gui, lens, [0, 0.12, 0])
 rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))   # or rotate3d!(gui, mirror, R)
+set_pivot3d!(gui, group, position(lens))        # pivot of a group, nothing moves; one undo entry
 select!(gui, lens); select!(gui, nothing)       # like a click
 select!(gui, [lens, mirror])                    # like Ctrl+click on each: moved, rotated, hidden, removed as one
 spectator!(gui, true)                           # like the key v

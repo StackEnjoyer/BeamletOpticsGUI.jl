@@ -12,7 +12,7 @@ import BeamletOptics: live_render!, update_render!, remove_render!, pick_object,
                       rendered, render_plots, render_children, render_parent, render_settings,
                       render_settings!, look_colors, AbstractRenderHandle, AbstractObjectRenderHandle,
                       AbstractSystemRenderHandle, AbstractBeamRenderHandle
-import BeamletOptics: translate3d!, translate_to3d!, rotate3d!
+import BeamletOptics: translate3d!, translate_to3d!, rotate3d!, set_pivot3d!
 
 const BMO = BeamletOptics
 
@@ -106,6 +106,7 @@ include("LiveCatalogWindow.jl")
 include("LiveCopy.jl")
 include("LiveGroup.jl")
 include("LiveGroupKeys.jl")
+include("LivePivot.jl")
 include("LiveDebug.jl")
 include("LiveDebugHUD.jl")
 include("LiveDebugSpheres.jl")

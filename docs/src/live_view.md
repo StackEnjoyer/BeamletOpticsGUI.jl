@@ -649,8 +649,8 @@ steps and one `Backspace` (which resets all its objects to their initial poses) 
 and `on_change` is called once per object of a moved selection. `Ctrl+C` copies them if all
 their components are from the catalog, see [Changing, undoing and the whole script](@ref).
 Its card (compact layout) or the inspector (app layout) shows "N
-objects" with the subtitle "Selection" and one row per object with its name, where a click selects
-that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
+objects" with the subtitle "Selection", the row "pivot" (see below) and one row per object with its
+name, where a click selects that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
 hidden) and remove (all removable objects as one undo step; the others stay selected and the status
 line says why). From code, `select!(gui, [lens, mirror])` selects several; `gui.controls.selected[]`
 then holds an internal value for the selection, not a component.
@@ -689,6 +689,20 @@ the action "group", the card of a group made in the window the action "ungroup".
 group (`Delete`) and undoing it keeps it a group of the window, and linked views
 ([`open_system`](@ref)) follow grouping and ungrouping. [`export_script`](@ref) and
 [`export_changes`](@ref) write the groups, see [Adding and removing components](@ref components_page).
+
+A group or a selection of several is rotated about its pivot, which a dot in the accent color shows
+while it is selected, with a dashed line to the gizmo. The pivot of a group made in the window or
+of a selection of several is the mean of the positions of its objects; the pivot of a group of the
+script is the one it has in the script (BeamletOptics starts it at the origin, see `set_pivot3d!`).
+The row "pivot" of its card sets it without moving any object, and its axes stay: by typing x, y
+and z [mm], by "pick" followed by a click on one of its parts (also a part inside a subgroup, in
+the 3D view or in the object tree; `Esc` or a click beside it ends the pick), or by "center", the
+center of the box around it. A drag of the dot moves the pivot in the plane of the view. Each change is one
+undo step; the reset of the pose of the group (`Backspace`) keeps the pivot where it is in the
+group, and linked views follow. [`export_changes`](@ref) writes `set_pivot3d!` of a group of the
+script, and the groups made in the window are exported with their new pivot. From code,
+[`set_pivot3d!(gui, group, pivot)`](@ref set_pivot3d!(::BeamletOpticsGUI.LiveView, ::BeamletOptics.AbstractObjectGroup, ::AbstractVector))
+does the same.
 
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and
