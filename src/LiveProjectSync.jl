@@ -17,6 +17,9 @@ const _FLASH = 1.0
 # autosave waits after a save that failed
 const _AUTOSAVE_DELAY = 0.5
 const _AUTOSAVE_RETRY = 5.0
+# How long a change of the person waits at most for the merge of files that keep changing [s], see
+# `_autosave!`: as long as the watcher waits at most before it merges them (`_MERGE_EVERY`)
+const _AUTOSAVE_WAIT = 2.0
 # How many states of each entry that the window wrote are kept, see `_stale`
 const _WRITTEN_MAX = 8
 
@@ -108,33 +111,97 @@ Autosave
 _uidless_code(p) = replace(BMOP.system_code(p), r" uid = \"[^\"]*\"" => "")
 
 """
-    _saved_state(gui, project) -> Project
+    _claimed_lines(gui) -> Vector{String}
+
+The keys (see `_key`) of the lines of the files (`base`) that another participant claims, by the
+claims of the others at the last read of the `gui` (see `_ClaimState`, no file access): a save of
+the `gui` keeps their state of the files, see `_composed`.
+"""
+function _claimed_lines(gui::LiveView)
+    c = gui.sync.claim
+    base = gui.sync.base
+    out = String[]
+    (c isa _ClaimState && !isempty(c.others) && !isnothing(base)) || return out
+    for k in keys(c.others)
+        x = something(_by_key(base.entries, k), _by_key(base.systems, k), _by_key(base.groups, k),
+            Some(nothing))
+        isnothing(x) || _key(x) in out || push!(out, _key(x))
+    end
+    return out
+end
+
+"""
+The keys of the lines whose state of the files a save of the `gui` keeps: those of an open conflict
+(`gui.sync.conflicts`) and those that another participant claims (`_claimed_lines`).
+"""
+_held_keys(gui::LiveView) = union(gui.sync.conflicts, _claimed_lines(gui))
+
+"""
+    _composed(gui, project) -> (; project, keys)
 
 What a save of the `gui` writes of its setup `project` (see `_project_parts`): the setup, except at
-the objects of an open conflict (`gui.sync.conflicts`), where the files keep their state until the
-person decides (see `_ProjectConflict`), see `BeamletOpticsProjects.compose`.
+the lines of an open conflict (see `_ProjectConflict`) and the lines that another participant claims
+(see `_claimed_lines`), where the files keep their state (`base`): of a conflict until the person
+decides, of a claim until it is released. The window keeps its own state of them meanwhile and
+writes it once that is over; if the other wrote the line meanwhile, the merge makes it a conflict.
+`keys` are the keys of the lines of the files that the result holds, widened by
+`BeamletOpticsProjects.compose` to the systems and groups that keep the tree of the result whole.
 """
-function _saved_state(gui::LiveView, project)
+function _composed(gui::LiveView, project)
     s = gui.sync
-    (isempty(s.conflicts) || isnothing(s.base)) && return project
-    return BMOP.compose(s.base, project, s.base, s.conflicts).project
+    held = isnothing(s.base) ? String[] : _held_keys(gui)
+    isempty(held) && return (; project, keys = String[])
+    return BMOP.compose(s.base, project, s.base, held)
+end
+
+"""
+    _saved_state(gui, project) -> Project
+
+What a save of the `gui` writes of its setup `project`, see `_composed`.
+"""
+_saved_state(gui::LiveView, project) = _composed(gui, project).project
+
+"""
+    _kept_back(gui, mine) -> Vector{String}
+
+The keys of the lines of the setup `mine` of the `gui` (see `_project_parts`) whose state of the
+window a save does not write, see `_composed`: those that differ from the state of the files there.
+"""
+function _kept_back(gui::LiveView, mine)
+    c = _composed(gui, mine)
+    isempty(c.keys) && return String[]
+    d = BMOP.diff_projects(c.project, mine)
+    changed = Set{String}(_change_key(x) for x in Iterators.flatten((d.entries, d.systems, d.groups)))
+    return String[k for k in c.keys if k in changed]
+end
+
+# What the text `text` of `system.jl` changes in the text `base`: the lines that only one of them
+# has, sorted. A merge of the files changes both alike, so this stays while the files change.
+function _own_change(base::AbstractString, text::AbstractString)
+    a, b = Set(split(base, '\n')), Set(split(text, '\n'))
+    return join(sort!(String[symdiff(a, b)...]), '\n')
 end
 
 """
     _autosave!(gui; now = time(), force = false) -> Symbol
 
 One look of the autosave at the setup of the `gui`, after `_check_files!`: once the setup differs
-from the files (`base`) and has not changed for `_AUTOSAVE_DELAY` seconds, it is saved (`:saved`)
-and the changes of the person are added to the journal of `.bmo/session.md` (`_journal!`); files
-changed meanwhile are merged first. An open conflict holds only its own objects: the save writes
-everything else, see `_saved_state`. `:pending` while it waits, `:none` if the setup is as in the
-files. `:paused` while the mouse drags or places an object (also in a linked view, see
-`open_system`), an object glides to a pose of the files, or the files changed and are not merged
-yet. While the files do not load (e.g. an agent is half through an edit), the setup is written to
-the backup of the person (see `_write_backup!`) instead (`:paused`) and saved once they load again.
-`:failed` if the save failed, the reason in the status line; tried again after `_AUTOSAVE_RETRY`
-seconds. `force` saves without waiting and while the files changed or objects glide (when the
-window closes or `Ctrl+S` saves a version).
+from the files (`base`) and its change has not changed for `_AUTOSAVE_DELAY` seconds (`_own_change`:
+a merge of the files does not count), it is saved (`:saved`) and the changes of the person are added
+to the journal of `.bmo/session.md` (`_journal!`); files changed meanwhile are merged first. An open
+conflict and the claims of others hold only their own objects: the save writes everything else, see
+`_composed`. `:pending` while it waits, `:none` if the setup is as in the files. `:paused` while
+the mouse drags or places an object (also in a linked view, see `open_system`) or an object glides
+to a pose of the files, and while the files changed and are not merged yet, there for at most
+`_AUTOSAVE_WAIT` seconds since the change of the person: then it is saved anyway, while other
+writers keep changing the files. While the files do not load (e.g. an agent is half through an
+edit), the setup is written to the backup of the person (see `_write_backup!`) instead (`:paused`)
+and saved once they load again. `:busy` if another participant held the write lock of the files,
+tried again after `_AUTOSAVE_DELAY` seconds; `:failed` if the save failed, the reason in the status
+line, tried again after `_AUTOSAVE_RETRY` seconds. `force` saves without waiting and while the
+files changed or objects glide (when the window closes or `Ctrl+S` saves a version). A window that
+closes with objects whose state of the window is not written (see `_kept_back`) writes its setup to
+the backup of the person, which `.bmo/session.md` names.
 """
 function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
     s = gui.sync
@@ -143,22 +210,30 @@ function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
     if force
         _finish_glides!(gui)
     else
-        (_busy(gui) || !isnothing(s.changed_at) || !isempty(s.gliding)) && return :paused
+        (_busy(gui) || !isempty(s.gliding)) && return :paused
     end
     # The name of the files that the view agrees with, not read from `Project.toml` at every look
     parts = _project_parts(gui, dir; name = s.base.name)
+    # The person's version of the objects that the files keep is lost otherwise
+    force && s.closed && !isempty(_kept_back(gui, parts.project)) && _write_backup!(gui, parts.project)
     text = _uidless_code(_saved_state(gui, parts.project))
-    if text == _uidless_code(s.base)
-        s.text, s.edited_at = text, nothing
+    base = _uidless_code(s.base)
+    if text == base
+        s.text, s.edited_at = nothing, nothing
         return :none
     end
-    if text != s.text
-        s.text, s.edited_at = text, now
+    change = _own_change(base, text)
+    if change != s.text
+        s.text, s.edited_at = change, now
         force || return :pending
     end
     # Written to the backup already, the files still do not load
     isnothing(s.edited_at) && s.failed && !force && return :paused
-    !force && !isnothing(s.edited_at) && now - s.edited_at < _AUTOSAVE_DELAY && return :pending
+    if !force && !isnothing(s.edited_at)
+        now - s.edited_at < _AUTOSAVE_DELAY && return :pending
+        # The watcher merges files that changed (gliding) before the save, unless they keep changing
+        !isnothing(s.changed_at) && now - s.edited_at < _AUTOSAVE_WAIT && return :paused
+    end
     s.edited_at = nothing
     if s.failed
         _write_backup!(gui, parts.project)
@@ -179,9 +254,11 @@ end
 """
 Saves the setup (`parts`, see `_project_parts`) of the `gui` for `_autosave!`. Files that changed
 since the last look are merged first, without gliding, such that the save sees the poses of the
-files; files that do not load then write the backup, a conflict holds only its objects (see
-`_saved_state`). A new list of objects without a recipe stays in the status line and is warned
-once; otherwise the status line stays as it was.
+files; files that do not load then write the backup, a conflict and the claims of others hold only
+their objects (see `_composed`). While another participant holds the write lock of the files, it is
+tried again after `_AUTOSAVE_DELAY` seconds (`:busy`), without waiting here. A new list of objects
+without a recipe stays in the status line and is warned once; otherwise the status line stays as
+it was.
 """
 function _autosave_write!(gui::LiveView, parts, now::Real)
     s = gui.sync
@@ -197,10 +274,14 @@ function _autosave_write!(gui::LiveView, parts, now::Real)
     end
     changes = BMOP.diff_projects(s.base, _saved_state(gui, parts.project))
     status = gui.status.text[]
-    saved = Base.CoreLogging.with_logger(Base.CoreLogging.SimpleLogger(stderr, Base.CoreLogging.Error)) do
+    result = Base.CoreLogging.with_logger(Base.CoreLogging.SimpleLogger(stderr, Base.CoreLogging.Error)) do
         _save_to!(gui, dir)
     end
-    if !saved
+    if result === :busy
+        s.edited_at = now
+        return :busy
+    end
+    if result !== :saved
         # Files that do not load (found by a merge of the save), or an error in the status line
         if s.failed
             _write_backup!(gui, _collect_project(gui, dir))
@@ -209,6 +290,9 @@ function _autosave_write!(gui::LiveView, parts, now::Real)
         s.edited_at = now + _AUTOSAVE_RETRY
         return :failed
     end
+    # Not the changes of the lines that the save did not write: claimed since the last read
+    held = _held_keys(gui)
+    isempty(held) || (changes = map(cs -> filter(c -> !(_change_key(c) in held), cs), changes))
     _journal!(gui, changes)
     if !isempty(parts.skipped) && parts.skipped != s.skipped
         @warn "save_project: $(length(parts.skipped)) objects without a recipe are not saved: " *

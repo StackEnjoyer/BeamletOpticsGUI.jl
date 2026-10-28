@@ -256,8 +256,10 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
         gui.controls.dragging = true
         @test GUI._autosave!(gui) === :paused
         gui.controls.dragging = false
-        gui.sync.changed_at = time()
-        @test GUI._autosave!(gui) === :paused
+        # files that changed are merged first, for at most `_AUTOSAVE_WAIT` seconds
+        gui.sync.changed_at = t = time()
+        @test GUI._autosave!(gui; now = t) === :pending
+        @test GUI._autosave!(gui; now = t + 1) === :paused
         gui.sync.changed_at = nothing
         @test autosave!(gui) === :saved
         @test occursin("pos = (0.0, 0.2, 0.01)", pos_line(dir, "M1"))
@@ -623,6 +625,69 @@ end
         t = time()
         GUI._autosave!(gui; now = t)
         @test_logs GUI._autosave!(gui; now = t + 1)
+        close(gui)
+    end
+
+    @testset "saved while other writers keep changing the files" begin
+        gui, dir = opened()
+        GUI._autosave!(gui)
+        translate3d!(gui, obj(gui, :M1), [0.0, 0.0, 0.01])
+        t = time()
+        @test GUI._autosave!(gui; now = t) === :pending
+        # an agent writes L1 every few 0.1 s: the files never settle
+        edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.1, 0.0)" => "pos = (0.0, 0.11, 0.0)"), text, "L1"), dir)
+        @test GUI._check_files!(gui; now = t + 0.2) === :pending
+        @test GUI._autosave!(gui; now = t + 1) === :paused
+        # merged at the latest after `_MERGE_EVERY`, and the agent writes again
+        @test GUI._check_files!(gui; now = t + 2.3) === :applied
+        @test GUI._autosave!(gui; now = t + 2.3) === :saved
+        @test occursin("pos = (0.0, 0.2, 0.01)", pos_line(dir, "M1"))
+        translate3d!(gui, obj(gui, :D1), [0.0, 0.0, 0.01])
+        @test GUI._autosave!(gui; now = t + 3) === :pending
+        edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.11, 0.0)" => "pos = (0.0, 0.122, 0.0)"), text, "L1"), dir)
+        @test GUI._check_files!(gui; now = t + 3.2) === :pending
+        @test GUI._autosave!(gui; now = t + 4) === :paused
+        # the change of the person waited `_AUTOSAVE_WAIT`: saved anyway, the files merged first
+        @test GUI._autosave!(gui; now = t + 5.1) === :saved
+        @test occursin("pos = (0.0, 0.3, 0.01)", pos_line(dir, "D1"))
+        @test occursin("pos = (0.0, 0.122, 0.0)", pos_line(dir, "L1"))
+        @test !any(l -> occursin("L1", l[2]), gui.sync.journal)
+        close(gui)
+    end
+
+    @testset "save_project lands the glides first" begin
+        gui, dir = opened()
+        l1 = obj(gui, :L1)
+        edit!(text -> line!(l -> replace(l, "pos = (0.0, 0.1, 0.0)" => "pos = (0.0, 0.15, 0.0)"), text, "L1"), dir)
+        # the glide starts after the next yield; the save comes first
+        @test GUI._adopting(() -> GUI._sync!(gui; animate = true), gui) === :applied
+        @test !isempty(gui.sync.gliding)
+        save_project(gui)
+        @test isempty(gui.sync.gliding)
+        @test BeamletOptics.position(l1) == [0.0, 0.15, 0.0]
+        @test occursin("pos = (0.0, 0.15, 0.0)", pos_line(dir, "L1"))
+        sleep(0.5)
+        @test BeamletOptics.position(l1) == [0.0, 0.15, 0.0]
+        @test GUI._autosave!(gui; now = time() + 10) === :none
+        close(gui)
+    end
+
+    # The bounded wait for the write lock of BeamletOpticsProjects (`ProjectChanged` while busy)
+    isdefined(BeamletOpticsProjects, :_with_write_lock) && @testset "the write lock of another: tried again soon" begin
+        gui, dir = opened()
+        GUI._autosave!(gui)
+        translate3d!(gui, obj(gui, :M1), [0.0, 0.0, 0.01])
+        status = gui.status.text[]
+        lock = joinpath(dir, ".bmo", "write.lock")
+        write(lock, "PC9 1 another writer")
+        t = time()
+        @test GUI._autosave!(gui; now = t) === :pending
+        @test @test_logs(GUI._autosave!(gui; now = t + 1)) === :busy
+        @test gui.status.text[] == status
+        @test GUI._autosave!(gui; now = t + 1.2) === :pending
+        rm(lock)
+        @test GUI._autosave!(gui; now = t + 1.6) === :saved
+        @test occursin("pos = (0.0, 0.2, 0.01)", pos_line(dir, "M1"))
         close(gui)
     end
 end

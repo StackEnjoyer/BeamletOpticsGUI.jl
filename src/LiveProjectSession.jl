@@ -140,15 +140,37 @@ function _conflict_id(gui::LiveView, key::String)
     return startswith(key, "id:") ? key[4:end] : key
 end
 
-function _session_text(gui::LiveView)
+"""
+    _closed_kept(gui) -> Vector{String}
+
+The readable ids of the objects of the `gui`, which is closed, whose state of the window the files
+do not have (an open conflict, claimed by another participant, see `_kept_back`): the window wrote
+it to the backup of the person when it closed (see `_autosave!`). Empty if it is not closed.
+"""
+function _closed_kept(gui::LiveView)
+    s = gui.sync
+    (s.closed && !isnothing(gui.project) && !isnothing(s.base)) || return String[]
+    try
+        mine = _project_parts(gui, gui.project; name = s.base.name).project
+        return String[_conflict_id(gui, k) for k in _kept_back(gui, mine)]
+    catch e
+        e isa InterruptException && rethrow()
+        return String[]
+    end
+end
+
+function _session_text(gui::LiveView; kept = _closed_kept(gui))
     s = gui.sync
     io = IOBuffer()
     println(io, _session_header(gui.project))
     println(io, "Written by the open BeamletOpticsGUI window: what the person sees and did there.")
     println(io, "system.jl holds the state of the window (it saves every finished action), except the objects")
-    println(io, "of an open conflict, which keep the state of the file until the person decides, and while the")
-    println(io, "files do not load: then the window keeps its state, which .bmo/window-backup-<person>.jl holds.")
+    println(io, "of an open conflict, which keep the state of the file until the person decides, those that")
+    println(io, "another participant claims, until the claim is released, and while the files do not load:")
+    println(io, "then the window keeps its state, which .bmo/window-backup-<person>.jl holds.")
     println(io)
+    isempty(kept) || println(io, "The window was closed. The person's version of ", join(kept, ", "),
+        " is not in system.jl but in .bmo/window-backup-$(_person().id).jl (the file kept its state of them).\n")
     sel = _session_selected(gui)
     println(io, "Selected: ", isnothing(sel) ? "nothing" : sel)
     isempty(s.conflicts) || println(io, "Open conflict: ", join((_conflict_id(gui, k) for k in s.conflicts), ", "),
@@ -227,7 +249,9 @@ end
 """
     _session_closed!(gui)
 
-Removes the listener of the `gui` and deletes its session file (a missing file is fine). An error of
+Removes the listener of the `gui` and deletes its session file (a missing file is fine). A window
+that closed with objects whose state of the window the files do not have (see `_closed_kept`) keeps
+the file instead, which names them and the backup of the person that holds them. An error of
 deleting never propagates; it is logged once per distinct message.
 """
 function _session_closed!(gui::LiveView)
@@ -237,7 +261,12 @@ function _session_closed!(gui::LiveView)
     empty!(gui.sync.session)
     isnothing(gui.project) && return nothing
     try
-        rm(_session_file(gui.project); force = true)
+        kept = _closed_kept(gui)
+        if isempty(kept)
+            rm(_session_file(gui.project); force = true)
+        else
+            _put_session(gui.project, _session_text(gui; kept))
+        end
     catch e
         e isa InterruptException && rethrow()
         msg = sprint(showerror, e)

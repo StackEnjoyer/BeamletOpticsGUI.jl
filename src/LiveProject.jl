@@ -51,8 +51,10 @@ The readable id and the machine id of the objects, sources, groups and systems `
 in a project: those it has in `gui.sync.ids` (see `_ProjectSync`), else a new id of the prefix of its
 type (see `BeamletOpticsProjects.id_prefix` and `next_id`) and a new uid. Every id in
 `gui.sync.ids` is reserved first, also of an item later in `items` or of an object that is not in
-the view anymore, such that a new one never takes it: after `L5` the next lens is `L6`. An id or a
-uid that an item before took already is given anew, an empty uid too.
+the view anymore, such that a new one never takes it: after `L5` the next lens is `L6`. So is the
+id that the files give a line whose state of the files a save keeps (see `_held_keys`), e.g. an
+object of an open conflict that an agent renamed. An id or a uid that an item before took already
+is given anew, an empty uid too.
 """
 function _project_ids(gui::LiveView, items)
     known = gui.sync.ids
@@ -61,6 +63,14 @@ function _project_ids(gui::LiveView, items)
     taken = BMOP.Project(pwd(), "taken")
     reserve!(id) = (push!(taken.systems, BMOP.SystemEntry(id, Symbol[])); id)
     foreach(k -> reserve!(first(k)), values(known))
+    base = gui.sync.base
+    if !isnothing(base)
+        for k in _held_keys(gui)
+            x = something(_by_key(base.entries, k), _by_key(base.systems, k), _by_key(base.groups, k),
+                Some(nothing))
+            isnothing(x) || reserve!(x.name)
+        end
+    end
     used = Set{Symbol}()
     uids = Set{String}()
     for x in items
@@ -307,21 +317,34 @@ function _project_packages()
 end
 
 """
-    _apply_project_names!(gui, project; skip = String[])
+    _apply_project_names!(gui, project; skip = String[], window = nothing)
 
 Writes the readable ids and the machine ids of the entries, groups and systems of the saved `project` into
 `gui.sync.ids` (see `_ProjectSync`), such that the next save gives the same ones; the uids that
 `BeamletOpticsProjects.save_project` gave are those of the entries in `project`. Not those of the
-keys `skip` (the objects of an open conflict, whose lines hold the files' state). The labels of the
-`gui` stay as they are.
+keys `skip` (the lines that hold the files' state, see `_composed`). A system or group without its
+object (`compose` builds them anew) is that of the project of the `window` (see `_project_parts`)
+of the same machine id, else of the same readable id. The labels of the `gui` stay as they are.
 """
-function _apply_project_names!(gui::LiveView, project; skip = String[])
+function _apply_project_names!(gui::LiveView, project; skip = String[], window = nothing)
     ids = gui.sync.ids
     for e in Iterators.flatten((project.entries, project.systems, project.groups))
-        (isnothing(e.object) || _key(e) in skip) && continue
-        ids[e.object] = (e.name, something(e.uid, BMOP.new_uid()))
+        _key(e) in skip && continue
+        obj = isnothing(e.object) ? _window_line_object(window, e) : e.object
+        isnothing(obj) && continue
+        ids[obj] = (e.name, something(e.uid, BMOP.new_uid()))
     end
     return nothing
+end
+
+# The object of the system or group of the project `window` that the system or group `e` of a
+# composed project stands for: of the same machine id, else of the same readable id
+function _window_line_object(window, e)
+    isnothing(window) && return nothing
+    xs = e isa BMOP.GroupEntry ? window.groups : e isa BMOP.SystemEntry ? window.systems : window.entries
+    i = isnothing(e.uid) ? nothing : findfirst(x -> x.uid == e.uid, xs)
+    isnothing(i) && (i = findfirst(x -> x.name === e.name, xs))
+    return isnothing(i) ? nothing : xs[i].object
 end
 
 """
@@ -684,10 +707,13 @@ Saving a view that has a project to another folder ("save as") copies the own co
 copy loads. A shown window removes its session and presence files from the old folder.
 
 Throws `BeamletOpticsProjects.ProjectChanged` and saves nothing if the files of the project of the
-view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`. The autosave
-and `Ctrl+S` merge such changes into the window first and save again; objects that were changed
-differently in both places get a card with "Take theirs", "Keep mine" and "Save as…", see
-`_ProjectConflict`.
+view changed since it opened or saved it, e.g. by an agent, unless `force` is `true`, or while
+another participant writes them. The autosave and `Ctrl+S` merge such changes into the window
+first and save again; objects that were changed differently in both places get a card with "Take
+theirs", "Keep mine" and "Save as…", see `_ProjectConflict`. The objects of such a conflict and
+those that another participant claims (see `BeamletOpticsProjects.claim!`) keep the state of the
+files in their own project; the window keeps its own and writes it once the conflict or the claim
+is over. Objects that glide to a pose of the files land first.
 """
 function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     dir = abspath(dir)
@@ -696,10 +722,14 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     # A new folder of "save as" gets the own code and the module of the project
     name = save_as && !isfile(joinpath(dir, "Project.toml")) ? BMOP.project_name(from) :
            BMOP.project_name(dir)
+    # The objects that glide to a pose of the files land first: the save writes that pose
+    _finish_glides!(gui)
     parts = _project_parts(gui, dir; name)
-    # The objects of an open conflict keep the files' state in its own project, see `_saved_state`
+    # The objects of an open conflict and those that others claim keep the files' state in its own
+    # project, see `_composed`
     keep = save_as ? String[] : copy(gui.sync.conflicts)
-    project = save_as ? parts.project : _saved_state(gui, parts.project)
+    composed = save_as ? (; parts.project, keys = String[]) : _composed(gui, parts.project)
+    project = composed.project
     # The files as the view knows them: only of its own project
     dir == from && (project.stamp = gui.sync.stamp)
     if save_as
@@ -715,9 +745,9 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
         install_agent_skill(joinpath(dir, ".claude", "skills"))
     end
     _write_view_toml(gui, parts.project, parts.names)
-    # The uids that the save gave are those of `project`; at the objects of a conflict it holds
-    # those of the files, not of the window
-    _apply_project_names!(gui, project; skip = keep)
+    # The uids that the save gave are those of `project`; at the lines that keep the files' state
+    # it holds those of the files, not of the window
+    _apply_project_names!(gui, project; skip = composed.keys, window = parts.project)
     # A shown window (see `_connect_session!`) leaves the old folder: its session and presence
     # files go, and its journal is not of the new project
     connected = save_as && !isempty(gui.sync.session)
@@ -761,37 +791,69 @@ Keys, tools and dialogs
 _message_line(e) = first(split(sprint(showerror, e), '\n'))
 
 """
-Saves the `gui` to `dir`; if the files changed meanwhile, they are merged first (see `_sync!`) and
-saved again, also with a conflict, whose objects keep the files' state (see `_saved_state`); any
-other error, also of the second save, is logged and shown in the status line. Whether the files
-hold the window afterwards (except the objects of a conflict): `false` after an error or files that
-do not load.
+    _save_to!(gui, dir; force = false) -> Symbol
+
+Saves the `gui` to `dir` (`:saved`); if the files changed meanwhile, they are merged first (see
+`_sync!`) and saved again, also with a conflict, whose objects keep the files' state (see
+`_composed`). A line that another participant claimed since the last read of the claims (the save
+refuses it) keeps the files' state too: the claims are read again and it is saved again without it.
+`:busy` while another participant holds the write lock of the files (they did not change, or
+changed again right after the merge): nothing is written, the status line stays. `:failed` after
+any other error, also of the second save, which is logged and shown in the status line, or after
+files that do not load.
 """
 function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
-    try
-        save_project(gui, dir; force)
-    catch e
-        e isa InterruptException && rethrow()
-        e isa BMOP.ProjectChanged || return _save_failed!(gui, e)
-        gui.sync.changed_at = nothing
-        # Without gliding: the save right after must see the poses of the files
-        _adopting(() -> _sync!(gui; animate = false), gui) === :failed && return false
-        gui.sync.failed && return false
+    merged = refreshed = false
+    while true
         try
             save_project(gui, dir; force)
-        catch e2
-            e2 isa InterruptException && rethrow()
-            return _save_failed!(gui, e2)
+            return :saved
+        catch e
+            e isa InterruptException && rethrow()
+            if e isa BMOP.ProjectChanged
+                (merged || _write_busy(gui, dir)) && return :busy
+                merged = true
+                gui.sync.changed_at = nothing
+                # Without gliding: the save right after must see the poses of the files
+                _adopting(() -> _sync!(gui; animate = false), gui) === :failed && return :failed
+                gui.sync.failed && return :failed
+            elseif e isa ArgumentError && !refreshed && _refresh_claims!(gui, dir)
+                refreshed = true
+            else
+                return _save_failed!(gui, e)
+            end
         end
     end
-    return true
 end
 
-# Logs the error `e` of saving the `gui` and shows it in the status line; returns `false`
+"""
+Whether a `ProjectChanged` of a save of the `gui` to `dir` came from the write lock of another
+participant, not from a change of the files: of a folder other than that of the project of the
+`gui` (which is not compared with the files), or files as the `gui` knows them.
+"""
+_write_busy(gui::LiveView, dir::AbstractString) =
+    dir != gui.project || BMOP.project_stamp(dir) == gui.sync.stamp
+
+"""
+Reads the claims of the others in the project `dir` of the `gui` again, into its cache (see
+`_ClaimState`), after a save refused a line claimed by another participant: whether a line of the
+files is claimed now that was not before (see `_claimed_lines`), i.e. a save again keeps more lines.
+"""
+function _refresh_claims!(gui::LiveView, dir::AbstractString)
+    (dir == gui.project && !isnothing(gui.sync.base)) || return false
+    before = _claimed_lines(gui)
+    me = _holder_pid(_person().id)
+    c = _claims(gui)
+    c.others = _ClaimMap(k => x for (k, x) in BMOP.claims(dir) if _holder_pid(x.by) != me)
+    gui.sync.presence_due = true
+    return !issubset(_claimed_lines(gui), before)
+end
+
+# Logs the error `e` of saving the `gui` and shows it in the status line; returns `:failed`
 function _save_failed!(gui::LiveView, e)
     @error "save_project failed" exception = (e, catch_backtrace())
     gui.status.text[] = "project not saved: $(_message_line(e))"
-    return false
+    return :failed
 end
 
 """
@@ -834,6 +896,9 @@ function _save_target(path::AbstractString)
         message = "project not saved: \"$dir\" exists already; to overwrite a project, pick its .bmo file")
 end
 
+# The status line of a save while another participant writes the files, see `_save_to!`
+const _BUSY_TEXT = "project not saved: another participant is writing the files, try again"
+
 # Runs `f` after the key callback returned, e.g. a dialog, which blocks
 _run_later(f) = (_DIALOG_TASK[] = @async f())
 
@@ -847,7 +912,11 @@ function _save_as_key!(gui::LiveView)
         path = _ask_path(gui, _SAVE_DIALOG)
         isnothing(path) && return nothing
         target = _save_target(path)
-        isnothing(target.dir) ? (gui.status.text[] = target.message) : _save_to!(gui, target.dir)
+        if isnothing(target.dir)
+            gui.status.text[] = target.message
+        elseif _save_to!(gui, target.dir) === :busy
+            gui.status.text[] = _BUSY_TEXT
+        end
         return nothing
     end
     return nothing
@@ -859,13 +928,16 @@ not written yet is written to the files first, without waiting, and noted in the
 `_autosave!` with `force`); then the card of the version asks for its message, filled with what
 changed since the last version (see `_ask_version!`), or the status line says that nothing changed.
 Nothing is saved while a conflict is open (see `_ProjectConflict`), whose card is shown, or when the
-flush ends in a conflict, in files that do not load or in an error. Without a project, like "Save
+flush ends in a conflict, in files that do not load, in an error or while another participant
+writes the files (the status line asks to try again). Without a project, like "Save
 as" (see `_save_as_key!`), whose new project has its first version.
 """
 function _save_key!(gui::LiveView)
     isnothing(gui.project) && return _save_as_key!(gui)
     _conflict_open!(gui) && return nothing
-    _autosave!(gui; force = true) in (:none, :saved) || return nothing
+    r = _autosave!(gui; force = true)
+    r === :busy && (gui.status.text[] = _BUSY_TEXT)
+    r in (:none, :saved) || return nothing
     summary = try
         BMOP.version_summary(gui.project)
     catch e
