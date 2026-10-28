@@ -1,17 +1,29 @@
 #=
 The watcher of the files of a project of a shown window: it looks at the files in the background
-(see `_take_look!`), merges a change of them once they settled (`_check_files!`, `_sync!`) and calls
-the autosave and the presence; see `LiveProjectSync.jl`
+(see `_take_look!`), merges a change of them once they settled, or at the latest every
+`_MERGE_EVERY` seconds while they keep changing (`_check_files!`, `_sync!`), and calls the autosave
+and the presence; see `LiveProjectSync.jl`. Notifications of the file system (`_FileNotes`) start a
+look at once; the polling stays as a safety net
 =#
 
-# How often the watcher looks at the times of the files [s]
+import FileWatching
+
+# How often the watcher wakes up for the autosave and the presence, and looks at the times of the
+# files without notifications [s]
 const _WATCH_INTERVAL = 0.2
+# How often the watcher looks at the times of the files while notifications run [s]. Stays at
+# `_WATCH_INTERVAL` until `benchmark/watch_notify.jl` showed on the shared drive that the
+# notifications of a write of another machine arrive (D7 of the plan: then 2 s)
+const _POLL_WITH_MONITOR = 0.2
 # How often a look reads the contents of the files for their stamp, while their times stay [s]
 const _STAMP_EVERY = 2.0
 # How long a look may wait in the background before the window reads the files itself [s]
 const _LOOK_WAIT = 1.0
 # How long the files must stay unchanged before they are loaded [s], an agent writes in steps
 const _SETTLE = 0.3
+# How long the files may keep changing before they are loaded anyway [s], e.g. while several
+# participants write one after the other
+const _MERGE_EVERY = 2.0
 
 """
 The times and sizes of the files of the project in `dir` that define the setup: `system.jl` and
@@ -114,15 +126,106 @@ function _take_look!(gui::LiveView; now::Real = time())
 end
 
 """
+    _FileNotes
+
+The notifications of changes of the files of the project in `dir`, see `_file_notes`: `wake` wakes
+the watcher up (also its timer, see `_start_watching!`), `notes` whether notifications are wanted,
+`monitors` the `FileWatching.FolderMonitor`s (none: the watcher polls every `_WATCH_INTERVAL`
+seconds), `poll` how often the watcher polls while they run, `first` the time of the first
+notification that no look answered yet (`0.0`: none), `last` the time of the last one and `waited`
+the task of the look whose end wakes the watcher up, see `_watch_step!`.
+"""
+mutable struct _FileNotes
+    wake::Base.Event
+    dir::String
+    notes::Bool
+    monitors::Vector{FileWatching.FolderMonitor}
+    poll::Float64
+    first::Float64
+    last::Float64
+    waited::Union{Nothing, Task}
+end
+
+"""
+    _file_notes(dir; notes = true, poll = _POLL_WITH_MONITOR) -> _FileNotes
+
+Starts the notifications of changes of the files of the project in `dir`: a
+`FileWatching.FolderMonitor` of the folder and of its folders `src/` and `.bmo/` (those that
+exist), each followed by a task that wakes the watcher up. Without monitors if `notes` is `false`
+or if one of them fails to start (e.g. on a drive that does not send them); the watcher polls every
+`_WATCH_INTERVAL` seconds then, else every `poll` seconds.
+"""
+function _file_notes(dir::AbstractString; notes::Bool = true, poll::Real = _POLL_WITH_MONITOR)
+    n = _FileNotes(Base.Event(true), String(dir), notes, FileWatching.FolderMonitor[], Float64(poll),
+        0.0, 0.0, nothing)
+    _monitor!(n)
+    return n
+end
+
+# Starts the monitors of the notifications `n` for the folders of `n.dir`, see `_file_notes`
+function _monitor!(n::_FileNotes)
+    n.notes || return nothing
+    try
+        for d in (n.dir, joinpath(n.dir, "src"), joinpath(n.dir, ".bmo"))
+            isdir(d) && push!(n.monitors, FileWatching.FolderMonitor(d))
+        end
+    catch e
+        e isa InterruptException && rethrow()
+        foreach(close, n.monitors)
+        empty!(n.monitors)
+        @debug "no notifications of changes of the files of $(n.dir), polling" exception = e
+        return nothing
+    end
+    foreach(m -> @async(_follow_notes!(n, m)), n.monitors)
+    return nothing
+end
+
+# The notifications `n` follow the project of a view that was saved to another folder `dir`
+function _renew_notes!(n::_FileNotes, dir::AbstractString)
+    foreach(close, n.monitors)
+    empty!(n.monitors)
+    n.dir = String(dir)
+    _monitor!(n)
+    return nothing
+end
+
+# Wakes the watcher up for each change in the folder of the monitor `m`, until `m` is closed
+function _follow_notes!(n::_FileNotes, m::FileWatching.FolderMonitor)
+    while true
+        try
+            wait(m)
+        catch
+            # closed (`EOFError`) or failed: the polling goes on
+            return nothing
+        end
+        n.last = time()
+        n.first == 0.0 && (n.first = n.last)
+        notify(n.wake)
+    end
+end
+
+"""Stops the notifications `n` (see `_file_notes`) and wakes the watcher up for its end."""
+function _close_notes!(n::_FileNotes)
+    foreach(close, n.monitors)
+    empty!(n.monitors)
+    notify(n.wake)
+    return nothing
+end
+
+"""
+    _start_watching!(gui; notes = true, poll = _POLL_WITH_MONITOR)
+
 Starts the watcher of the files of the project of the `gui` if it is shown, the file
 `.bmo/session.md` (see `_connect_session!`) and the presence file of the window, written again when
 the selection changes (see `LiveProjectPresence.jl`). Every `_WATCH_INTERVAL` seconds until the
-window is closed, the watcher takes the last look at the files, read in the background (see
-`_take_look!`), and calls `_check_files!` and `_check_presence!` with it once there is a new one,
-and `_autosave!` and `_draw_presence!` every time. A view that is not shown (e.g. in the tests or
-of a script) is not watched and writes neither; the functions can be called instead.
+window is closed, and at once after a notification of a change of the files (see `_file_notes`,
+none if `notes` is `false`), the watcher takes a step, see `_watch_step!`: a look at the files every
+`poll` seconds while the notifications run, else every `_WATCH_INTERVAL` seconds, read in the
+background (see `_take_look!`), `_check_files!` and `_check_presence!` with it once there is a new
+one, and `_autosave!` and `_draw_presence!` every time. A view that is not shown (e.g. in the tests
+or of a script) is not watched and writes neither; the functions can be called instead.
 """
-function _start_watching!(gui::LiveView)
+function _start_watching!(gui::LiveView; notes::Bool = true, poll::Real = _POLL_WITH_MONITOR)
     s = gui.sync
     (isnothing(s.timer) && !s.closed && !isnothing(gui.project) && _shown(gui)) || return nothing
     _connect_session!(gui)
@@ -132,25 +235,77 @@ function _start_watching!(gui::LiveView)
         gui.sync.presence_due = true
         return nothing
     end)
-    last_error = Ref("")
-    s.timer = Timer(_WATCH_INTERVAL; interval = _WATCH_INTERVAL) do _
+    n = _file_notes(gui.project; notes, poll)
+    s.monitor = n
+    s.timer = Timer(_ -> notify(n.wake), _WATCH_INTERVAL; interval = _WATCH_INTERVAL)
+    # One task takes the steps, of the timer and of the notifications, one after the other
+    @async _watch_loop!(gui, n)
+    return nothing
+end
+
+# The task of the watcher of the `gui` with the notifications `n`, see `_start_watching!`
+function _watch_loop!(gui::LiveView, n::_FileNotes)
+    s = gui.sync
+    last_error = ""
+    while true
+        wait(n.wake)
+        (s.closed || s.monitor !== n) && return nothing
         _shown(gui) || return _stop_watching!(gui)
         try
-            # The files are read in the background; the window works with the last look
-            look = _take_look!(gui)
-            isnothing(look) || _check_files!(gui; look)
-            _autosave!(gui)
-            isnothing(look) ? _draw_presence!(gui, time()) : _check_presence!(gui; look)
+            _watch_step!(gui, n)
         catch e
             e isa InterruptException && rethrow()
-            last_error[] = _log_once(e, last_error[], "watching the project")
+            last_error = _log_once(e, last_error, "watching the project")
+        end
+    end
+end
+
+"""
+    _watch_step!(gui, n; now = time())
+
+One step of the watcher of the `gui` (see `_start_watching!`): takes the last look at the files
+(`_take_look!`) if one is due, i.e. `n.poll` seconds after the last one started while the
+notifications `n` run (else `_WATCH_INTERVAL`, see `_file_notes`), while the files change (until
+they are merged), while the own presence file is due, or after a notification until a look that
+started after it was taken (a look that is still running then wakes the watcher up when it is
+done); calls `_check_files!` and `_check_presence!` with a new look, and `_autosave!` and
+`_draw_presence!` every time. The notifications follow the project to another folder.
+"""
+function _watch_step!(gui::LiveView, n::_FileNotes; now::Real = time())
+    s = gui.sync
+    dir = gui.project
+    isnothing(dir) || dir == n.dir || _renew_notes!(n, dir)
+    poll = isempty(n.monitors) ? _WATCH_INTERVAL : n.poll
+    noted = n.first
+    take = noted > 0 || poll <= _WATCH_INTERVAL || !isnothing(s.changed_at) || s.presence_due ||
+           now - s.look_at >= poll
+    run, started = s.look, s.look_at
+    # The files are read in the background; the window works with the last look
+    look = take ? _take_look!(gui; now) : nothing
+    isnothing(look) || _check_files!(gui; look)
+    _autosave!(gui)
+    isnothing(look) ? _draw_presence!(gui, time()) : _check_presence!(gui; look)
+    noted > 0 || return nothing
+    if !isnothing(run) && s.look !== run && started >= n.first
+        # Answered, unless notifications came after that look started
+        n.first = n.last > started ? n.last : 0.0
+    end
+    if n.first > 0 && !isnothing(s.look) && s.look.task !== n.waited
+        task = n.waited = s.look.task
+        @async begin
+            try
+                wait(task)
+            catch
+            end
+            notify(n.wake)
         end
     end
     return nothing
 end
 
 """
-Stops the watcher of the `gui` (see `_start_watching!`) when it is closed: if it was watched, saves
+Stops the watcher of the `gui` (see `_start_watching!`) and its notifications when it is closed: if
+it was watched, saves
 what the person changed last, without waiting (`_autosave!` with `force`), and removes its session
 and presence files (`_session_closed!`, `_presence_closed!`). A view that was not watched saves
 nothing. No watcher starts again afterwards, also not by that save.
@@ -160,6 +315,9 @@ function _stop_watching!(gui::LiveView)
     s.closed = true
     t = s.timer
     s.timer = nothing
+    n = s.monitor
+    s.monitor = nothing
+    n isa _FileNotes && _close_notes!(n)
     if !isnothing(t)
         close(t)
         try
@@ -195,8 +353,10 @@ end
     _check_files!(gui; now = time(), look = nothing) -> Symbol
 
 One look of the watcher at the files of the project of the `gui`: `:pending` while they change or
-have not stayed unchanged for `_SETTLE` seconds; then, once per state of the files, `:applied`,
-`:conflict` or `:failed`, see `_sync!`; `:none` otherwise, also for the files that the `gui` saved
+have not stayed unchanged for `_SETTLE` seconds, but at most `_MERGE_EVERY` seconds since they
+began to change (`first_change_at`), e.g. while several participants write one after the other;
+then, once per state of the files, `:applied`, `:conflict` or `:failed`, see `_sync!`, which
+solves once per merge (see `_adopting`); `:none` otherwise, also for the files that the `gui` saved
 itself. The files changed if their times or sizes (`_file_marks`) or else the stamp of their
 contents (`project_stamp`) changed, as read by the `look` (see `_files_look`; read here if
 `nothing`; the watcher reads it in the background, see `_take_look!`, and a look without a stamp
@@ -211,19 +371,19 @@ function _check_files!(gui::LiveView; now::Real = time(), look = nothing)
     marks = look.marks
     if marks != s.marks
         s.marks = marks
-        s.changed_at = now
-        return :pending
-    end
-    if isnothing(s.changed_at)
+        _files_changed!(s, now)
+        _merge_due(s, now) || return :pending
+    elseif isnothing(s.changed_at)
         # A write of the same size within the resolution of the file times (e.g. right after a save
         # of the view) leaves the marks as they were: the stamp of the contents tells
         stamp = look.stamp
         (isnothing(stamp) || stamp == s.stamp || stamp == s.handled) && return :none
-        s.changed_at = now
+        _files_changed!(s, now)
         return :pending
+    else
+        _merge_due(s, now) || return :pending
     end
-    now - s.changed_at < _SETTLE && return :pending
-    s.changed_at = nothing
+    s.changed_at = s.first_change_at = nothing
     disk = BMOP.project_stamp(dir)
     if disk == s.stamp
         # Saved by the view itself, or back to the state of the view
@@ -238,5 +398,19 @@ function _check_files!(gui::LiveView; now::Real = time(), look = nothing)
     end
     disk == s.handled && return :none
     s.handled = disk
-    return _sync!(gui)
+    # One solve after the merge, also after the glides of the objects that it moved
+    return _adopting(() -> _sync!(gui), gui)
+end
+
+# The files of `s` (a `_ProjectSync`) changed at `now`: since then, if they had settled
+function _files_changed!(s::_ProjectSync, now::Real)
+    (isnothing(s.changed_at) || isnothing(s.first_change_at)) && (s.first_change_at = Float64(now))
+    s.changed_at = Float64(now)
+    return nothing
+end
+
+# Whether the files of `s` that changed are merged at `now`: they settled, or changed for too long
+function _merge_due(s::_ProjectSync, now::Real)
+    now - s.changed_at >= _SETTLE && return true
+    return !isnothing(s.first_change_at) && now - s.first_change_at >= _MERGE_EVERY
 end
