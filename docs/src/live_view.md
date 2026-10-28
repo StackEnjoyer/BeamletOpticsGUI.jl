@@ -647,19 +647,73 @@ on a selected group selects the part). See the section "Selection card" of [`liv
 selection, or removes it if it is selected; in the object tree of the app layout, `Ctrl`/`Cmd`+click
 on a row does the same, and every row of a selected object is highlighted. A plain click on an object
 of the selection selects that object alone, `Ctrl`+click on the background keeps the selection and
-`Esc` clears it. With a `select_modifier` set, see [`kinematic_controls!`](@ref), a toggle needs that
+`Esc` clears it. A `Ctrl`+drag (`Cmd` on macOS) that starts on the background or on an object that is
+not selected draws a selection rectangle, without moving the camera; on release every visible, movable
+top-level object (a group as a whole) whose center lies inside it is added to the selection (objects
+already selected stay; hidden objects and clip planes are not selected). A `Ctrl`+drag that starts on
+an object of the selection still moves the selection. With a `select_modifier` set, see [`kinematic_controls!`](@ref), a toggle needs that
 modifier and `Ctrl` held. A selection of several is moved (a drag on any of its objects, the arrows,
 the arrow and page keys) and rotated (rotate mode, rings, keys) as one, about the mean of the
 positions of its objects, with the axes of the world as its gizmo axes. It does not snap onto beams
 or the table grid, and only the axes that all its objects allow are free. One drag, one run of key
 steps and one `Backspace` (which resets all its objects to their initial poses) are one undo step,
-and `on_change` is called once per object of a moved selection. `Ctrl+C` copies nothing while
-several objects are selected. Its card (compact layout) or the inspector (app layout) shows "N
-objects" with the subtitle "Selection" and one row per object with its name, where a click selects
-that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
+and `on_change` is called once per object of a moved selection. `Ctrl+C` copies them if all
+their components are from the catalog, see [Changing, undoing and the whole script](@ref).
+Its card (compact layout) or the inspector (app layout) shows "N
+objects" with the subtitle "Selection", the row "pivot" (see below) and one row per object with its
+name, where a click selects that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
 hidden) and remove (all removable objects as one undo step; the others stay selected and the status
 line says why). From code, `select!(gui, [lens, mirror])` selects several; `gui.controls.selected[]`
 then holds an internal value for the selection, not a component.
+
+`Ctrl+G` (`Cmd+G` on macOS) makes the selection of several a group (an `ObjectGroup` of
+BeamletOptics): the systems of the objects hold the group instead of them, and the group is
+selected and then moved, rotated, hidden and browsed (its parts) like a group of the script. Its
+pivot is the mean of the positions of the members, with the axes of the world. It is one undo step.
+Only two or more movable top-level components with the same systems (or none) can be grouped: no
+sources, clip planes, static objects, parts of groups or objects of a `StaticSystem`; otherwise the
+status line says why. `Ctrl+Shift+G` ungroups a group made in the window (not a group of the
+script): its members are top-level again in the same systems at their current poses and are
+selected as a selection of several, again as one undo step. A group made in the window that is part
+of another one (selected through its parts) is dissolved into that one: its members take its place
+there, and that group is changed in place: it and the groups above it stay the same objects with
+their pose, axes, name and label, and a group of the script stays a group of the script. The members
+of the dissolved group are selected as a selection of several.
+
+`Ctrl+G` on several, but not all, parts of one group, a group made in the window or a group of the
+script (an `ObjectGroup`, not an own assembly type), makes them a new group inside it. `Ctrl`+click
+on a part of the same group in the 3D view adds it to the selection or removes it, as long as parts
+of one group are selected (otherwise `Ctrl`+click selects the top-level object as before); in the
+object tree of the app layout, `Ctrl`/`Cmd`+click on part rows does the same. The new group takes the
+place of the first of the parts in its group, its pivot is the mean of the positions of the parts,
+its axes are those of the world, and it is selected. The group that holds it is changed in place
+(`push!` and `delete!` of BeamletOptics on the `ObjectGroup`): it and the groups above it stay the
+same objects with their pose, axes, name and label, in the same systems, and a group of the script
+stays a group of the script. The new group is a group made in the window, which `Ctrl+Shift+G` can
+ungroup. It is one undo step; undoing it gives the group its parts back in their order. A group
+that is built by its code (added from the catalog) refuses this; the status line says so. Parts of
+different groups, a part together with a top-level object, and a single part can not be grouped; the
+status line says why.
+
+The card of a selection of several has
+the action "group", the card of a group made in the window the action "ungroup". Removing such a
+group (`Delete`) and undoing it keeps it a group of the window, and linked views
+([`open_system`](@ref)) follow grouping and ungrouping. [`export_script`](@ref) and
+[`export_changes`](@ref) write the groups, see [Adding and removing components](@ref components_page).
+
+A group or a selection of several is rotated about its pivot, which a dot in the accent color shows
+while it is selected, with a dashed line to the gizmo. The pivot of a group made in the window or
+of a selection of several is the mean of the positions of its objects; the pivot of a group of the
+script is the one it has in the script (BeamletOptics starts it at the origin, see `set_pivot3d!`).
+The row "pivot" of its card sets it without moving any object, and its axes stay: by typing x, y
+and z [mm], by "pick" followed by a click on one of its parts (also a part inside a subgroup, in
+the 3D view or in the object tree; `Esc` or a click beside it ends the pick), or by "center", the
+center of the box around it. A drag of the dot moves the pivot in the plane of the view. Each change is one
+undo step; the reset of the pose of the group (`Backspace`) keeps the pivot where it is in the
+group, and linked views follow. [`export_changes`](@ref) writes `set_pivot3d!` of a group of the
+script, and the groups made in the window are exported with their new pivot. From code,
+[`set_pivot3d!(gui, group, pivot)`](@ref set_pivot3d!(::BeamletOpticsGUI.LiveView, ::BeamletOptics.AbstractObjectGroup, ::AbstractVector))
+does the same.
 
 With `live_view(...; layout = :app)`, the cards are docked in the "Properties" sidebar instead of
 floating next to the components: the card of the selection at the top, with the same rows and

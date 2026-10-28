@@ -98,7 +98,13 @@ a change traces the affected systems that have auto tracing, the other affected 
 (beams dimmed); the trace button and `t` trace all systems; systems that share a `Detector` are
 always traced together. `export_changes`/`export_script` write the memberships (`push!`/`delete!`
 per system, `systemN = System()`, and `add_component!(gui, x; system = :none)` for what has no
-system).
+system). A group made in the window with `Ctrl+G` is exported as `g = ObjectGroup([a, b])`,
+`set_pivot3d!(g, [...])` and its pose change, listed in the `System`; `export_changes` writes the
+grouping of objects of the script (`delete!` of the members, the group, `push!` of the group). A
+subgroup made with `Ctrl+G` on parts of a group (also of the script), or a group dissolved into its
+parent with `Ctrl+Shift+G`, changes the parent in place (it and the groups above stay the same
+objects); `export_changes` of a changed group of the script writes `delete!(sg, part)` for the parts
+it lost, builds the new group(s), and `push!(sg, new)`; the group keeps its variable and its systems.
 
 Sources are added and removed the same way: `add_component!(gui, source; system, select, label,
 beam_kwargs)` traces a beam or beam group through a system of the view (also a `StaticSystem`) and
@@ -150,7 +156,9 @@ an arrow of the gizmo moves the component along that arrow only, a drag elsewher
 in the plane of the view. `Ctrl`+click (`Cmd` on macOS) on a component adds its top-level object to
 the selection or removes it (no camera reset on `Ctrl`+click in the controls; with a `select_modifier`
 set, a toggle needs that modifier and `Ctrl`); a plain click on an object of the selection selects it
-alone, `Ctrl`+click on the background keeps the selection.
+alone, `Ctrl`+click on the background keeps the selection. `Ctrl`+drag starting on the background or an
+unselected object draws a rectangle and adds the visible, movable top-level objects whose center is
+inside; starting on a selected object it moves the selection.
 
 ## Scripting a window
 
@@ -162,6 +170,7 @@ static objects throw `ArgumentError`):
 ```julia
 translate3d!(gui, lens, [0, 1e-3, 0]);  translate_to3d!(gui, lens, [0, 0.12, 0])
 rotate3d!(gui, mirror, [0, 0, 1], deg2rad(2))   # or rotate3d!(gui, mirror, R)
+set_pivot3d!(gui, group, position(lens))        # pivot of a group, nothing moves; one undo entry
 select!(gui, lens); select!(gui, nothing)       # like a click
 select!(gui, [lens, mirror])                    # like Ctrl+click on each: moved, rotated, hidden, removed as one
 spectator!(gui, true)                           # like the key v

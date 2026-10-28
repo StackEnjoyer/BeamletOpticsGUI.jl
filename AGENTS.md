@@ -110,7 +110,9 @@ describe it as available in docs or the skill.
   system, the system widget (its name with the pencil that renames it, the chip of its tracing,
   "+" and "−", the list of its members (`_MemberList`), "Remove system").
   `src/LivePick.jl`: picking the members of a system with the mouse (`_set_member_pick!`,
-  `_pick_member!`), whose highlight is in `src/LiveHighlight.jl`. `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
+  `_pick_member!`), whose highlight is in `src/LiveHighlight.jl`. `src/LivePivot.jl`: the pivot of
+  a group or a selection of several (its dot, its row on the card, its pick and drag,
+  `_shift_pivot!`, which shifts the stored poses of a group with it). `src/LiveCatalog.jl`: the component catalog (`CatalogEntry`,
   `component_catalog`) and its widgets (groups, tiles, form), `src/LiveCatalogWindow.jl`: its
   window over the 3D view (pin, minimize) and its dock in a place of the layout
   (`_catalog_dock_slot!`, e.g. the left sidebar of the app layout), `src/LiveCatalogEntries.jl`: the entries of the components of

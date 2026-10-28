@@ -463,7 +463,15 @@ shown object is `target_shown`, see `_catalog_target`; the
 its pose as constructed, or `nothing` if it is not known (see `export_changes`); the component that
 is being placed with the mouse in `placement`, `nothing` otherwise, see `_start_placement!`, and
 likewise the source that is being aimed in `aim`, see `_start_aim!`; the optical `table`; the
-`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog.
+`window` of the catalog with its dock (a `_CatalogWindow`), `nothing` for a view without a catalog;
+the `groups` made in the window, with their `_WindowGroup`, see `_group!`; the parts of the groups
+of the script whose parts were changed in place (see `_regroup!`) before the first change,
+`start_parts`, from which `export_changes` writes the change; the initial poses and constraints of
+the groups that are no parts any more, `forgotten`, which they get back by an undo, see
+`_forget_part!`; the shifts of the pivots of the groups that are not made in the window since the
+start or since they were added, `pivots`, in the frame of each group, from which `export_changes`
+writes `set_pivot3d!`, the selection whose pivot is picked with the mouse, `pivot_pick`, and the
+marker of the pivot of the selection, `pivot_marker`, see `_shift_pivot!`.
 """
 Base.@kwdef mutable struct _ComponentState
     const render_kwargs::NamedTuple
@@ -495,6 +503,18 @@ Base.@kwdef mutable struct _ComponentState
     # the debug mode of the view (a `_Debug`), see `_set_debug!`
     debug::Any = nothing
     window::Any = nothing
+    # the groups made in the window (an `ObjectGroup` => its `_WindowGroup`), see `_group!`
+    const groups::IdDict{Any, Any} = IdDict{Any, Any}()
+    # the parts of the groups of the script before their parts were changed in place, see `_regroup!`
+    const start_parts::IdDict{Any, Vector{Any}} = IdDict{Any, Vector{Any}}()
+    # the initial poses and constraints of the groups that are no parts any more, see `_forget_part!`
+    const forgotten::IdDict{Any, Any} = IdDict{Any, Any}()
+    # the shifts of the pivots of the groups that are not made in the window, see `_shift_pivot!`
+    const pivots::IdDict{Any, Vector{Float64}} = IdDict{Any, Vector{Float64}}()
+    # the selection whose pivot is picked with the mouse, see `_start_pivot_pick!`
+    pivot_pick::Any = nothing
+    # the marker of the pivot of the selection (a `_PivotMarker`), see `_draw_selection_pivot!`
+    pivot_marker::Any = nothing
 end
 
 """
@@ -1657,6 +1677,8 @@ function live_view(
     _connect_tools!(gui)
     _connect_inspection!(gui)
     _connect_camera!(gui)
+    # The marker of the pivot of a group or a selection of several, before the cards, which cover it
+    _connect_pivot!(gui)
     _connect_cards!(gui)
     # The selection card of groups, see `_browse!`
     _connect_browse!(gui)
@@ -1679,6 +1701,8 @@ function live_view(
     _connect_placement!(gui)
     # Copying and pasting of the components of the catalog, see `_copy_selected!`
     _connect_copy!(gui)
+    # Grouping the selection of several with `Ctrl+G`, see `_group!`
+    _connect_group_keys!(gui)
     # What linked views share beside their objects, see `open_system`
     _connect_links!(gui)
     # Aiming a source with the mouse, see `_start_aim!`

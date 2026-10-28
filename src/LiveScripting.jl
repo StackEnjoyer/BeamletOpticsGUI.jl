@@ -90,6 +90,30 @@ function rotate3d!(gui::LiveView, @nospecialize(obj), axis::AbstractVector, θ::
     _gesture!(() -> rotate3d!(obj, axis, θ), gui, obj)
 end
 
+"""
+    set_pivot3d!(gui::LiveView, group, pivot)
+
+Moves the pivot of the `group` of the [`live_view`](@ref) window `gui` to `pivot` [m], like the row
+"pivot" of its card: none of its objects move, its axes stay, and later rotations of the `group` in
+the window are about the new pivot, which its dot in the 3D view shows while it is selected. The
+change is one entry of the undo history (`Ctrl+Z` in the window), and [`export_changes`](@ref)
+writes it as `set_pivot3d!(group, ...)`. Unlike `set_pivot3d!(group, pivot)`, which changes the
+group only, the window is told about it, e.g. for the reset of the pose of the `group` and its
+export. Throws an `ArgumentError` if `group` is static or is not part of the view.
+
+```julia
+set_pivot3d!(gui, arm, position(m1))   # turn the arm about its first mirror
+rotate3d!(gui, arm, [0, 0, 1], deg2rad(5))
+```
+"""
+function set_pivot3d!(gui::LiveView, @nospecialize(group::BMO.AbstractObjectGroup), pivot::AbstractVector)
+    _scriptable(gui, group)
+    _is_movable(gui.controls, group) ||
+        throw(ArgumentError("$(typeof(group)) can not be moved, its pivot can not be changed"))
+    _set_pivot!(gui, group, Vector{Float64}(pivot))
+    return nothing
+end
+
 function rotate3d!(gui::LiveView, @nospecialize(obj), R::AbstractMatrix)
     axis, θ = _rotation_axis_angle(R)
     # The identity has no axis that could be locked

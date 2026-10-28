@@ -95,7 +95,7 @@ _remove_button() = CardWidget(Button; name = :remove, label = "remove",
 
 # A selection of several objects: the eye hides all of them (see `_toggle_hidden!`), "remove"
 # removes all of them that can be removed, see `_remove_selected!`
-card_actions(::_MultiSelection) = (_hide_action(), _remove_button())
+card_actions(::_MultiSelection) = (_hide_action(), _group_button(), _remove_button())
 
 card_actions(::LiveClipPlane) = (
     CardWidget(Button; name = :flip, label = "flip", on = (gui, p, _) -> _flip_clip_plane!(gui, p)),

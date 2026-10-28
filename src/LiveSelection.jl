@@ -260,6 +260,8 @@ it returns `true`; the component menu shows the object of the cards again. Anoth
 pick and is inspected. Returns `false` without a pick and for anything else, e.g. a clip plane.
 """
 function _pick_shown!(gui::LiveView, @nospecialize(obj))
+    # a part of the selection whose pivot is picked, see `_pivot_pick_shown!`
+    _pivot_pick_shown!(gui, obj) && return true
     pick = _member_pick(gui)
     isnothing(pick) && return false
     if obj isa BMO.AbstractSystem

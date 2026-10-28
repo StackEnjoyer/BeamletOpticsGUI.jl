@@ -156,14 +156,15 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "Ctrl+C copies nothing, $layout" for layout in (:compact, :app)
+    # copied are only objects whose code is known, e.g. from the catalog, see `TestLiveCopy.jl`
+    @testset "Ctrl+C copies nothing without code, $layout" for layout in (:compact, :app)
         m1, m2 = _mirror(), _mirror(0.3)
         gui = _live_view(System([m1, m2]) => _beam(); layout)
         kept = GUI._CLIPBOARD[]
         _select_several!(gui, [m1, m2])
         @test isnothing(GUI._copy_selected!(gui))
         @test GUI._CLIPBOARD[] === kept
-        @test occursin("2 objects selected", gui.status.text[])
+        @test occursin("can not be copied", gui.status.text[]) && occursin("not from the catalog", gui.status.text[])
         close(gui)
     end
 end

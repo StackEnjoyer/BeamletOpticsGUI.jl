@@ -201,6 +201,13 @@ of the selection, else the first one, `Esc` cancels, and each further `Ctrl+V` p
 also in another window. Objects that the view started with can not be copied, for the same reason;
 the status line says so.
 
+A group whose components are all from the catalog is copied with its structure: `Ctrl+V` builds its
+components and groups (also groups inside it) again, with their poses relative to each other and the
+pivots and axes of the groups, and attaches the new group to the mouse by its pivot. It is dropped
+as a group made in the window (`Ctrl+Shift+G` ungroups it) and is one undo step. Several selected
+objects are copied the same way and follow the mouse together, without snapping onto beams or the
+table; they are dropped as separate objects. A source is only copied on its own.
+
 Adding, removing and changing are part of the undo history of the controls, together with the
 moves: `Ctrl+Z` takes the last step back, `Ctrl+Y` (or `Ctrl+Shift+Z`) does it again, e.g. a removed
 component comes back in its pose, with its label. How a source is drawn (color, opacity, line
@@ -218,6 +225,19 @@ gui = live_view(System())
 # place sources and components from the catalog, then
 code = export_script(gui)
 ```
+
+A group made in the window (`Ctrl+G`, see [`live_view`](@ref)) is written
+as its members, then `g = ObjectGroup([a, b])`, `set_pivot3d!(g, [...])` and the change of the pose
+of the group, and `g` is listed in the `System` instead of its members. [`export_changes`](@ref)
+writes the grouping of objects of the script: `delete!` of the members from the system, the group
+and `push!` of the group. If the parts of a group of the script were changed in the window (a
+subgroup made of some of them, or a group inside it ungrouped), the group stays the same object,
+and [`export_changes`](@ref) changes it in the script: `delete!(sg, part)` of each part that it
+lost, the code of the new groups and `push!(sg, s)`, such that `sg` keeps its variable and its
+systems. [`export_script`](@ref) writes a group of the script as a comment, since its constructor
+is not known. A pivot that was moved in the window (see [`live_view`](@ref)) is written as
+`set_pivot3d!(g, [...])` before the change of the pose of a group of the script or of the catalog;
+a group made in the window is built with its new pivot.
 
 An object that is built in code, e.g. by a tool or an agent, is exported with its constructor as
 well if it is added with the keyword `code` of [`add_component!`](@ref), its constructor call as

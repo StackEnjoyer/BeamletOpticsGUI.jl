@@ -766,10 +766,15 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         pick_m1 = ax2 -> (render_plots(render_children(h)[1])[1], 0)
         n0 = length(ax.scene.plots)
         nb = length(ax.blockscene.plots)
+        nc = length(ax.blockscene.children)
         limits = Makie.data_limits(ax.scene)
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1)
         @test length(ax.scene.plots) == n0 + 4 # selection box and gizmo
         @test length(ax.blockscene.plots) == nb + 1 # controls overlay
+        # the selection rectangle, in a scene of its own over the 3D scene
+        @test length(ax.blockscene.children) == nc + 1
+        rect_scene = ax.blockscene.children[end]
+        @test length(rect_scene.plots) == 1 && rect_scene.plots[1].overdraw[]
         # the hidden gizmo and the overlay must not change the limits of the scene
         @test Makie.data_limits(ax.scene) ≈ limits
 
@@ -777,6 +782,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test isempty(ctrl.listeners)
         @test length(ax.scene.plots) == n0
         @test length(ax.blockscene.plots) == nb
+        @test length(ax.blockscene.children) == nc
 
         # listeners are gone: this must not error and must not select anything
         events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)

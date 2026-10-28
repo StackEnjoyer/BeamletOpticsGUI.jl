@@ -306,6 +306,257 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
             "the undo did not restore the selection")
     end
+    # Groups made in the window: Ctrl+G groups the selection of several, which is then dragged like a
+    # group, Ctrl+Shift+G ungroups it; the undo history takes the ungrouping back and does it again
+    is_group() = GUI._is_window_group(gui, gui.controls.selected[])
+    step("ctrl+g (group lens and mirror)") do
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group(), "Ctrl+G did not make a group")
+    end
+    step("drag the group made in the window") do
+        a = _px(gui, _pos(fx.lens))
+        _drag!(gui, a, a .+ (20, 5))
+        settle!()
+        _check(is_group(), "the drag did not keep the group selected")
+    end
+    step("ctrl+shift+g (ungroup), undo, redo") do
+        _key!(gui, Keyboard.g, Keyboard.left_control, Keyboard.left_shift)
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(is_group(), "the undo did not group again")
+        GUI._redo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
+            "the redo did not ungroup")
+        # the later steps find the scene of before: grouped again, the drag and the grouping undone
+        foreach(_ -> GUI._undo!(gui.controls), 1:3)
+        settle!()
+        _check(GUI._has(fx.system.objects, fx.mirror) && GUI._has(fx.system.objects, fx.lens),
+            "the undo did not ungroup")
+    end
+    # A group made in the window that is part of another one is dissolved into it by Ctrl+Shift+G:
+    # the other group stays the same object and gets the members, one action of the undo history
+    flat() = all(o -> GUI._has(fx.system.objects, o), (fx.lens, fx.mirror, fx.detector))
+    inner = Ref{Any}(nothing)
+    outer = Ref{Any}(nothing)
+    step("ctrl+g (group lens and mirror, then that group and the detector)") do
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group(), "Ctrl+G did not make the inner group")
+        inner[] = gui.controls.selected[]
+        # not by a click: the card of the group may cover the detector in the compact layout
+        GUI._toggle_select!(gui, fx.detector)
+        frame!()
+        in_selection(inner[], fx.detector)
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group() && gui.controls.selected[] !== inner[], "Ctrl+G did not make the outer group")
+        outer[] = gui.controls.selected[]
+    end
+    step("ctrl+shift+g (dissolve the inner group), undo, redo") do
+        out = outer[]
+        parts() = collect(Any, BMO.objects(out))
+        three() = parts() == Any[fx.lens, fx.mirror, fx.detector]
+        GUI._select!(gui, inner[])
+        settle!()
+        _check(gui.controls.selected[] === inner[], "the inner group is not selected")
+        _check(parts() == Any[inner[], fx.detector], "the outer group does not hold the inner group")
+        n = length(gui.controls.undo_stack)
+        _key!(gui, Keyboard.g, Keyboard.left_control, Keyboard.left_shift)
+        settle!()
+        _check(length(gui.controls.undo_stack) == n + 1, "the dissolving is not one action of the undo history")
+        _check(GUI._has(fx.system.objects, out) && three(),
+            "Ctrl+Shift+G did not dissolve the inner group into the same outer group")
+        in_selection(fx.lens, fx.mirror)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, out) && parts() == Any[inner[], fx.detector] &&
+               gui.controls.selected[] === inner[],
+            "the undo did not bring back the inner group in the same outer group")
+        GUI._redo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, out) && three(), "the redo did not dissolve again")
+        in_selection(fx.lens, fx.mirror)
+        # the later steps find the scene of before: the dissolving and both groupings undone
+        foreach(_ -> GUI._undo!(gui.controls), 1:3)
+        settle!()
+        _check(flat(), "the undo did not bring back the objects")
+    end
+    # The card buttons "group" (selection of several) and "ungroup" (group made in the window)
+    step("card: group and ungroup buttons, undo, redo") do
+        deselect!()
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        cards = GUI._edit_cards(gui)
+        i = findfirst(c -> !isnothing(GUI._card_widget(c, :group)), cards)
+        _check(!isnothing(i), "no card of the selection of several has the button group")
+        _click!(gui, _rect_center(GUI._card_widget(cards[i], :group)))
+        settle!()
+        _check(is_group(), "the button group did not make a group")
+        g = gui.controls.selected[]
+        cards = GUI._edit_cards(gui)
+        i = findfirst(c -> GUI._card_object(gui, c) === g && !isnothing(GUI._card_widget(c, :ungroup)), cards)
+        _check(!isnothing(i), "the card of the group has no button ungroup")
+        _click!(gui, _rect_center(GUI._card_widget(cards[i], :ungroup)))
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(is_group(), "the undo did not group again")
+        GUI._redo!(gui.controls)
+        settle!()
+        in_selection(fx.lens, fx.mirror)
+        # the later steps find the scene of before
+        foreach(_ -> GUI._undo!(gui.controls), 1:2)
+        settle!()
+        _check(flat(), "the undo did not bring back the objects")
+    end
+    # The pivot of a selection of several: its row on the card ("pick" and a click on an object,
+    # "center", a typed x) and the drag of its dot; the objects do not move
+    step("pivot: pick, center, typed x, drag of the dot, undo") do
+        deselect!()
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        in_selection(fx.lens, fx.mirror)
+        sel = gui.controls.selected[]
+        poses = (GUI._pose(fx.lens), GUI._pose(fx.mirror))
+        n = length(gui.controls.undo_stack)
+        dist(a, b) = sqrt(sum(abs2, collect(a) .- collect(b)))
+        pivot_card() = (cards = GUI._edit_cards(gui);
+            i = findfirst(c -> !isnothing(GUI._card_widget(c, :pivot_pick)), cards);
+            _check(!isnothing(i), "no card of the selection of several has the row pivot"); cards[i])
+        _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_pick)))
+        frame!()
+        _check(gui.components.pivot_pick === sel, "the button pick did not start the pick")
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        _check(isnothing(gui.components.pivot_pick) && gui.controls.selected[] === sel &&
+               dist(_pos(sel), _pos(fx.lens)) < 1e-9, "the click did not set the pivot to the lens")
+        _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_center)))
+        frame!()
+        bb = GUI._selection_bbox(gui.controls, sel, GUI._object_plots(gui.controls.h, sel))
+        _check(dist(_pos(sel), minimum(bb) .+ Makie.widths(bb) ./ 2) < 1e-9,
+            "the button center did not set the pivot to the center of the box")
+        x = _pos(sel)[1]
+        _click!(gui, _rect_center(GUI._card_widget(pivot_card(), :pivot_x)))
+        frame!()
+        foreach(char -> (_events(gui).unicode_input[] = char), "5")
+        _key!(gui, Keyboard.enter)
+        frame!()
+        _check(_pos(sel)[1] != x, "the typed x did not move the pivot")
+        at = _px(gui, _pos(sel))
+        _move!(gui, at)
+        frame!()
+        _drag!(gui, at, at .+ (25, 10))
+        settle!()
+        _check(dist(_px(gui, _pos(sel)), at .+ (25, 10)) < 1, "the drag did not move the dot")
+        _check(GUI._pose(fx.lens) == poses[1] && GUI._pose(fx.mirror) == poses[2], "the objects moved")
+        _check(length(gui.controls.undo_stack) == n + 4, "the pivot is not one action per change")
+        foreach(_ -> GUI._undo!(gui.controls), 1:4)
+        settle!()
+        deselect!()
+    end
+    # Several parts of one group: Ctrl+click on a sibling part adds it, Ctrl+G makes the parts a group
+    # inside the group (also in a group of the script), one action of the undo history
+    function subgroup!(parts, top, undo_n)
+        GUI._select!(gui, parts[1])
+        settle!()
+        _check(gui.controls.selected[] === parts[1], "the part is not selected")
+        ctrl_click!(_px(gui, _pos(parts[2])))
+        frame!()
+        in_selection(parts[1], parts[2])
+        before = collect(Any, BMO.objects(top))
+        kind = GUI._is_window_group(gui, top)
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        sub = gui.controls.selected[]
+        _check(is_group() && sub !== top && GUI._has(fx.system.objects, top) &&
+               BMO.objects(top)[1] === sub && !GUI._has(BMO.objects(top), parts[1]) &&
+               GUI._has(BMO.objects(sub), parts[1]) && GUI._has(BMO.objects(sub), parts[2]),
+            "Ctrl+G did not make the parts a group inside the same group")
+        _check(length(gui.controls.undo_stack) == undo_n + 1, "the grouping is not one action of the undo history")
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, top) && collect(Any, BMO.objects(top)) == before,
+            "the undo did not bring back the parts of the group")
+        GUI._redo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, top) && BMO.objects(top)[1] === sub && is_group(),
+            "the redo did not group the parts again")
+        _check(GUI._is_window_group(gui, top) == kind, "the grouping changed the kind of the group")
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, top) && collect(Any, BMO.objects(top)) == before,
+            "the undo did not bring back the group")
+    end
+    step("ctrl+click a sibling part, ctrl+g (group inside a group made in the window), undo, redo") do
+        deselect!()
+        _click!(gui, _px(gui, _pos(fx.lens)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.mirror)))
+        frame!()
+        ctrl_click!(_px(gui, _pos(fx.detector)))
+        frame!()
+        _key!(gui, Keyboard.g, Keyboard.left_control)
+        settle!()
+        _check(is_group(), "Ctrl+G did not make the group")
+        subgroup!((fx.lens, fx.mirror), gui.controls.selected[], length(gui.controls.undo_stack))
+        # the later steps find the scene of before
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(flat(), "the undo did not bring back the objects")
+    end
+    step("ctrl+click a sibling part, ctrl+g (group inside a group of the script), undo, redo") do
+        # a group of the script: it is added without being made in the window
+        ms = [RoundPlanoMirror(10e-3, 3e-3) for _ in 1:3]
+        foreach((m, y) -> translate3d!(m, [-0.05, y, 0]), ms, (0.0, 0.04, 0.08))
+        sg = ObjectGroup(ms)
+        add_component!(gui, sg; select = false)
+        settle!()
+        _check(GUI._has(fx.system.objects, sg) && !GUI._is_window_group(gui, sg), "no group of the script")
+        subgroup!((ms[1], ms[2]), sg, length(gui.controls.undo_stack))
+        # the later steps find the scene of before: the group of the script out again
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(flat() && !GUI._has(fx.system.objects, sg), "the undo did not remove the group of the script")
+    end
+    step(deselect!, "click background (deselect) after the groups")
+    # Ctrl+drag beside the selection draws a rectangle, which adds the objects whose center it holds
+    step("ctrl+drag a rectangle around lens and mirror") do
+        deselect!()
+        a, b = _px(gui, _pos(fx.lens)), _px(gui, _pos(fx.mirror))
+        lo, hi = min.(a, b) .- 25, max.(a, b) .+ 25
+        _ctrl!(gui, Keyboard.press)
+        _move!(gui, lo)
+        _press!(gui)
+        _move!(gui, lo .+ 10)
+        _check(gui.controls.rect_visible[], "the Ctrl+drag did not draw a rectangle")
+        _move!(gui, hi)
+        frame!()
+        _release!(gui)
+        _ctrl!(gui, Keyboard.release)
+        settle!()
+        sel = gui.controls.selected[]
+        _check(GUI._in_selection(sel, fx.lens) && GUI._in_selection(sel, fx.mirror) &&
+               !gui.controls.rect_visible[], "the rectangle did not select lens and mirror")
+    end
     step(deselect!, "click background (deselect) of the selection")
 
     step("camera: rotate (left drag)") do
@@ -602,6 +853,45 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _click!(gui)
         settle!()
         _check(length(fx.system.objects) == n + 1, "the copy was not dropped")
+    end
+    copied = Ref{Any}(nothing)
+    # Ctrl+V of what Ctrl+C kept of the selection, dropped at the mouse
+    function paste_drop!(n)
+        _key!(gui, Keyboard.c, Keyboard.left_control)
+        frame!()
+        _key!(gui, Keyboard.v, Keyboard.left_control)
+        _move!(gui, _free_px(gui))
+        frame!()
+        _click!(gui)
+        settle!()
+        _check(length(fx.system.objects) == n, "the copy was not dropped")
+        return nothing
+    end
+    step("copy + paste + drop a group, undo") do
+        copied[] = gui.controls.selected[]
+        n = length(fx.system.objects)
+        GUI._group!(gui, GUI._MultiSelection([placed[], copied[]]))
+        settle!()
+        _check(GUI._is_window_group(gui, gui.controls.selected[]), "the copies were not grouped")
+        paste_drop!(n)
+        _check(GUI._is_window_group(gui, last(fx.system.objects)), "the group was not pasted as a group")
+        # the paste, then the grouping
+        GUI._undo!(gui.controls)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(GUI._has(fx.system.objects, copied[]), "the undo did not ungroup the copies")
+    end
+    step("copy + paste + drop several, undo") do
+        n = length(fx.system.objects)
+        GUI._select!(gui, GUI._MultiSelection([placed[], copied[]]))
+        frame!()
+        paste_drop!(n + 2)
+        GUI._undo!(gui.controls)
+        settle!()
+        _check(length(fx.system.objects) == n, "the undo did not remove the copies")
+        # the copy of before for the next step
+        GUI._select!(gui, copied[])
+        frame!()
     end
     step(() -> (_key!(gui, Keyboard.delete); settle!()), "delete selected")
     step(() -> (_key!(gui, Keyboard.v); frame!(); _key!(gui, Keyboard.v); frame!()), "key v (spectator mode)")

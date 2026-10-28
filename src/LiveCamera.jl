@@ -464,6 +464,8 @@ function _connect_camera!(gui::LiveView)
     scene = gui.ax.scene
     push!(listeners, on(events(scene).keyboardbutton, priority = 200) do event
         (event.action == Keyboard.press && event.key == Keyboard.g) || return Consume(false)
+        # Ctrl+G groups the selection, see `_connect_group_keys!`
+        _modifier_held(scene, _CTRL_OR_CMD_KEYS) && return Consume(false)
         gui.controls.ignore_keys() && return Consume(false)
         _zoom_to_selection!(gui)
         return Consume(true)
