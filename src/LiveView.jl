@@ -636,8 +636,9 @@ What the view knows of the files of its project, which an agent may change while
   presence)` (see `_take_look!`), `look_at` the time it started, `gen` a counter that drops the
   looks started before it (`gen` of a look), and `stamp_at` the time a look last read the stamp of
   the contents of the files; `first_change_at` the time the files began to change since the last
-  merge, `adopting` whether a merge is being applied (its solves wait for its end) and `monitor`
-  the notifications of changes of the files, see `LiveProjectWatch.jl`;
+  merge, `adopting` whether a merge is being applied (its solves wait for its end), `saving`
+  whether the view writes the files (no look reads them meanwhile, see `_without_looks`) and
+  `monitor` the notifications of changes of the files, see `LiveProjectWatch.jl`;
 - `claim`: the claims of the person of the view and of the others, see `LiveProjectClaims.jl`.
 """
 Base.@kwdef mutable struct _ProjectSync
@@ -672,6 +673,7 @@ Base.@kwdef mutable struct _ProjectSync
     stamp_at::Float64 = 0.0
     first_change_at::Union{Nothing, Float64} = nothing
     adopting::Bool = false
+    saving::Bool = false
     monitor::Any = nothing
     claim::Any = nothing
 end

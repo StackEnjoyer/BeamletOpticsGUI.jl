@@ -797,6 +797,37 @@ end
         wait(s.look.task)
         s.look = nothing
     end
+    @testset "no look while the window writes the files" begin
+        # Windows can not replace system.jl while the window's own look reads it
+        slow = Threads.@spawn (sleep(0.2); GUI._files_look(dir))
+        s.look = (; task = slow, gen = s.gen, presence = false)
+        started = Ref(true)
+        GUI._without_looks(gui) do
+            # the look that ran is done, and none starts meanwhile
+            @test istaskdone(slow)
+            started[] = !isnothing(GUI._take_look!(gui; now = t + 50)) || s.look.task !== slow
+        end
+        @test !started[] && !s.saving
+        # a look that takes longer is not waited for
+        stuck = Threads.@spawn sleep(5.0)
+        s.look = (; task = stuck, gen = s.gen, presence = false)
+        @test @elapsed(GUI._without_looks(() -> nothing, gui)) < 2.0
+        wait(stuck)
+        s.look = nothing
+    end
+    @testset "a write that the file system refuses is busy and tried again" begin
+        file = system(dir)
+        translate3d!(gui, obj(gui, :M1), [0.0, 0.0, 0.01])
+        # read-only: neither the replace nor the overwrite in place works
+        chmod(file, 0o444)
+        try
+            @test GUI._save_to!(gui, dir) === :busy
+        finally
+            chmod(file, 0o644)
+        end
+        @test GUI._save_to!(gui, dir) === :saved
+        @test occursin("pos = (0.0, 0.2, 0.01)", pos_line(dir, "M1"))
+    end
     @testset "the own presence file, written by the looks" begin
         withenv("BMO_PERSON" => "anna") do
             own = GUI._presence_file(dir, GUI._person().id)

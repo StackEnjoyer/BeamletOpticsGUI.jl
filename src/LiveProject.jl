@@ -738,7 +738,9 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     end
     new = !isfile(joinpath(dir, "Project.toml"))
     # Refuses a line that another participant claimed (see `BeamletOpticsProjects.claim!`)
-    path = save_project(project; packages = _project_packages(), force, by = _person().id)
+    path = _without_looks(gui) do
+        save_project(project; packages = _project_packages(), force, by = _person().id)
+    end
     # A new project gets the skills of BeamletOptics and BeamletOpticsProjects from its scaffold,
     # and the one of the GUI here; derived copies, not part of the versions
     new && Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
@@ -798,7 +800,9 @@ Saves the `gui` to `dir` (`:saved`); if the files changed meanwhile, they are me
 `_composed`). A line that another participant claimed since the last read of the claims (the save
 refuses it) keeps the files' state too: the claims are read again and it is saved again without it.
 `:busy` while another participant holds the write lock of the files (they did not change, or
-changed again right after the merge): nothing is written, the status line stays. `:failed` after
+changed again right after the merge), or while the file system refuses the write (an `IOError` or
+`SystemError` of the project of the `gui`, e.g. a file of a shared drive that is open elsewhere):
+nothing is written, the status line stays. `:failed` after
 any other error, also of the second save, which is logged and shown in the status line, or after
 files that do not load.
 """
@@ -819,10 +823,37 @@ function _save_to!(gui::LiveView, dir::AbstractString; force::Bool = false)
                 gui.sync.failed && return :failed
             elseif e isa ArgumentError && !refreshed && _refresh_claims!(gui, dir)
                 refreshed = true
+            elseif e isa Union{Base.IOError, SystemError} && dir == gui.project
+                # The file system refused the write for now (e.g. a file of a shared drive that
+                # another one reads): tried again soon, like a busy write lock
+                @debug "save_project: the files are busy" exception = e
+                return :busy
             else
                 return _save_failed!(gui, e)
             end
         end
+    end
+end
+
+"""
+    _without_looks(f, gui)
+
+Calls `f()`, e.g. the write of `system.jl`, while no look of the watcher of the `gui` reads the
+files (see `_take_look!`): it waits up to `_LOOK_DRAIN` seconds for the look that runs and starts
+none meanwhile. Windows can not replace a file that is open, also not for the window's own read
+in the background. A look that takes longer (e.g. behind a solve on the only thread of the
+background) is not waited for: the write then tries again or overwrites the file in place, see
+`BeamletOpticsProjects.save_project`.
+"""
+function _without_looks(f, gui::LiveView)
+    s = gui.sync
+    s.saving = true
+    try
+        run = s.look
+        isnothing(run) || timedwait(() -> istaskdone(run.task), _LOOK_DRAIN; pollint = 0.01)
+        return f()
+    finally
+        s.saving = false
     end
 end
 
@@ -897,7 +928,7 @@ function _save_target(path::AbstractString)
 end
 
 # The status line of a save while another participant writes the files, see `_save_to!`
-const _BUSY_TEXT = "project not saved: another participant is writing the files, try again"
+const _BUSY_TEXT = "project not saved: the files are busy (another participant writes them, or the drive), try again"
 
 # Runs `f` after the key callback returned, e.g. a dialog, which blocks
 _run_later(f) = (_DIALOG_TASK[] = @async f())

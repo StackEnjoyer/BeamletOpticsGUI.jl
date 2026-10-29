@@ -19,6 +19,8 @@ const _POLL_WITH_MONITOR = 0.2
 const _STAMP_EVERY = 2.0
 # How long a look may wait in the background before the window reads the files itself [s]
 const _LOOK_WAIT = 1.0
+# How long a save of the window waits for the look that runs, see `_without_looks` [s]
+const _LOOK_DRAIN = 0.5
 # How long the files must stay unchanged before they are loaded [s], an agent writes in steps
 const _SETTLE = 0.3
 # How long the files may keep changing before they are loaded anyway [s], e.g. while several
@@ -89,9 +91,12 @@ to a file waits for the network, often longer than a frame: the window never wai
   the background (a solve does not yield), the files are read here instead, without the stamp, at
   most every `_LOOK_WAIT` seconds, so that changes of the files and the own presence go on.
 - An error of a look is thrown here once, after the next look started.
+- While the window writes the files (`saving`, see `_without_looks`) no look starts.
 """
 function _take_look!(gui::LiveView; now::Real = time())
     s = gui.sync
+    # The window writes the files: a look would keep them open, see `_without_looks`
+    s.saving && return nothing
     dir = gui.project
     run = s.look
     if !isnothing(run) && !istaskdone(run.task)
