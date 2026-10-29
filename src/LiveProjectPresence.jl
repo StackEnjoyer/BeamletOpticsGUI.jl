@@ -8,7 +8,9 @@ The file holds the name and host of the participant, its `kind` (`"person"` for 
 for a coding agent; default `"person"`), a counter `beat` that grows with every write, `ttl` (the
 seconds that a beat counts; windows write `_ALIVE`, agents e.g. 600, since they write only when
 they act), the object it works on (`selected`: its uid, `selected_id`: its readable id; `""` if
-nothing; the readable id counts when the uid is missing or unknown, an agent writes only that),
+nothing; of a selection of several all of them in `selected_uids` and `selected_ids`, the first also
+in `selected` and `selected_id`; the readable id counts when the uid is missing or unknown, an agent
+writes only that),
 of a window the keys of the lines that its person claims (`claimed`, see `LiveProjectClaims.jl`),
 optionally `doing` (a few words, shown under the name) and the stamp of the files after its last
 write (`written`; of a window: its last save, never files it merged). A window writes its file when it saves, when its selection changes and every
@@ -44,22 +46,31 @@ _presence_file(dir::AbstractString, id::AbstractString) = BMOP.presence_file(dir
 """
 The machine id and the readable id of the selected object of the `gui`, `("", "")` if none: of the
 innermost item with an id that holds the selection, e.g. a group (`@group`), a member of a group, or
-the component of a selected part of it.
+the component of a selected part of it; of a selection of several the first object, see
+`_presence_selection`.
 """
 function _presence_selected(gui::LiveView)
+    uids, ids = _presence_selection(gui)
+    return isempty(ids) ? ("", "") : (first(uids), first(ids))
+end
+
+"""
+The machine ids and readable ids of the selected objects of the `gui`, `(uids, ids)`: of each
+object of a selection of several, else of the one selected (see `_presence_selected`); empty if
+nothing with an id is selected.
+"""
+function _presence_selection(gui::LiveView)
     sel = gui.controls.selected[]
-    isnothing(sel) && return ("", "")
-    chain = try
-        _chain(gui.controls, sel)
-    catch
-        Any[sel]
-    end
-    for x in chain
-        haskey(gui.sync.ids, x) || continue
+    objs = sel isa _MultiSelection ? sel.objects : isnothing(sel) ? Any[] : Any[sel]
+    uids, ids = String[], String[]
+    for o in objs
+        x = _id_holder(gui, o)
+        isnothing(x) && continue
         id, uid = gui.sync.ids[x]
-        return (uid, String(id))
+        push!(uids, uid)
+        push!(ids, String(id))
     end
-    return ("", "")
+    return uids, ids
 end
 
 """
@@ -90,9 +101,11 @@ window, written by `_write_presence_file`, also in the background.
 """
 function _presence_data(gui::LiveView)
     me = _person()
-    uid, id = _presence_selected(gui)
+    uids, ids = _presence_selection(gui)
+    uid, id = isempty(ids) ? ("", "") : (first(uids), first(ids))
     data = Dict{String, Any}("name" => me.name, "host" => me.host, "kind" => "person", "ttl" => _ALIVE,
-        "selected" => uid, "selected_id" => id, "claimed" => _claimed_keys(gui))
+        "selected" => uid, "selected_id" => id, "selected_uids" => uids, "selected_ids" => ids,
+        "claimed" => _claimed_keys(gui))
     own = get(_OWN_SAVE, gui, nothing)
     return (; id = me.id, data, own = !isnothing(own) && own == gui.sync.stamp ? own : nothing)
 end
@@ -210,8 +223,9 @@ function _check_presence!(gui::LiveView; now::Real = time(), look = nothing)
         old = get(s.others, id, nothing)
         seen_at = isnothing(old) || old.beat != beat ? Float64(now) : old.seen_at
         s.others[id] = (; name = data["name"], kind = data["kind"], selected_uid = data["selected"],
-            selected_id = data["selected_id"], doing = first(data["doing"], _DOING_CHARS), written = data["written"],
-            ttl = data["ttl"], seen_at, beat)
+            selected_id = data["selected_id"], selected_uids = _string_list(get(data, "selected_uids", nothing)),
+            selected_ids = _string_list(get(data, "selected_ids", nothing)),
+            doing = first(data["doing"], _DOING_CHARS), written = data["written"], ttl = data["ttl"], seen_at, beat)
     end
     # A file that is skipped (it does not parse) keeps its participant as it was; a file that is gone drops it
     for id in collect(keys(s.others))
@@ -248,6 +262,23 @@ function _object_of_other(gui::LiveView, o)
     return isnothing(obj) ? _object_of_id(gui, o.selected_id) : obj
 end
 
+# The objects of the view that the other `o` has selected: those of a selection of several
+# (`selected_uids`, `selected_ids` of its file, each by uid, else by readable id), else the one of
+# `_object_of_other`
+function _objects_of_other(gui::LiveView, o)
+    isempty(o.selected_ids) && return (obj = _object_of_other(gui, o); isnothing(obj) ? Any[] : Any[obj])
+    objs = Any[]
+    for (i, id) in enumerate(o.selected_ids)
+        uid = get(o.selected_uids, i, "")
+        obj = something(_object_of_uid(gui, uid), _object_of_id(gui, id), Some(nothing))
+        isnothing(obj) || _has(objs, obj) || push!(objs, obj)
+    end
+    return objs
+end
+
+# The strings of a list field of a presence file, `String[]` if it is missing or not a list
+_string_list(x) = x isa AbstractVector ? String[s for s in x if s isa AbstractString] : String[]
+
 # The label of the other `o`: its name, with what it is doing in a second line
 _other_label(o) = isempty(o.doing) ? o.name : o.name * "\n" * o.doing
 
@@ -262,10 +293,14 @@ function _presence_shown(gui::LiveView, now::Real)
         o = get(gui.sync.others, id, nothing)
         objs = get(claimed, id, Any[])
         if !isnothing(o) && _alive(o, now)
-            obj = _object_of_other(gui, o)
-            if !isnothing(obj) && !_has(objs, obj)
+            # the name at the first object of a selection of several
+            label = _other_label(o)
+            for obj in _objects_of_other(gui, o)
+                _has(objs, obj) && continue
                 bb = _part_box(gui, obj)
-                isnothing(bb) || push!(shown, (_bbox_wireframe(bb), _other_label(o), false))
+                isnothing(bb) && continue
+                push!(shown, (_bbox_wireframe(bb), label, false))
+                label = ""
             end
         end
         for obj in objs

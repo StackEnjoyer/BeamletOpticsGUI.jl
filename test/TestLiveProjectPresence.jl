@@ -175,6 +175,16 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
             @test all(p -> p.visible[], gui.sync.presence)
         end
 
+        @testset "an other with a selection of several" begin
+            other!(dir, "bob@PC9"; name = "Bob", beat = 2, selected = uid(gui, :M1), selected_id = "M1",
+                selected_uids = [uid(gui, :M1), uid(gui, :L1)], selected_ids = ["M1", "L1"])
+            GUI._check_presence!(gui; now = 503.0)
+            @test gui.sync.others["bob@PC9"].selected_ids == ["M1", "L1"]
+            # a box at each, the name at the first; Carl at L1 too
+            @test sort(labels(gui)) == ["", "Bob", "Carl"]
+            @test length(boxes(gui)) == 3
+        end
+
         @testset "writer" begin
             other!(dir, "bob@PC9"; name = "Bob", beat = 10, written = "stamp-b")
             other!(dir, "carl@PC8"; name = "Carl", beat = 10, written = "stamp-c")

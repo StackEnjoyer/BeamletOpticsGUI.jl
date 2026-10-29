@@ -22,7 +22,7 @@ When this Skill is active:
   confirm them with the docstrings and tell the user that
   `using BeamletOpticsGUI; BeamletOpticsGUI.install_agent_skill()` installs the matching skill.
 - Use only documented API. **Do not invent functions or keywords.** Print the docstring before use:
-  `julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc live_view)'`, or list the exports with
+  `julia --project=<env> -e 'using REPL, BeamletOpticsGUI; display(@doc live_view)'`, or list the exports with
   `names(BeamletOpticsGUI)`.
 - Every script starts with `using BeamletOptics, BeamletOpticsGUI, GLMakie`. The order makes a
   difference: GLMakie is loaded last. The window works in any order, but with GLMakie loaded before

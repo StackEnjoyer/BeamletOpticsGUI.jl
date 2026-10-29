@@ -97,33 +97,37 @@ end
 
 """
 The id, label, type and position of the selected object of the `gui`, or `nothing`: of the
-innermost item with an id that holds the selection, as `_presence_selected`.
+innermost item with an id that holds the selection, as `_presence_selected`; of a selection of
+several, the number of objects and each of them.
 """
 function _session_selected(gui::LiveView)
     sel = gui.controls.selected[]
-    isnothing(sel) && return nothing
-    chain = try
-        _chain(gui.controls, sel)
-    catch
-        Any[sel]
+    objs = sel isa _MultiSelection ? sel.objects : isnothing(sel) ? Any[] : Any[sel]
+    items = String[]
+    for o in objs
+        x = _id_holder(gui, o)
+        isnothing(x) || push!(items, _session_item(gui, x))
     end
-    for x in chain
-        haskey(gui.sync.ids, x) || continue
-        id = gui.sync.ids[x][1]
-        text = String(id)
-        label = get(gui.labels, x, nothing)
-        isnothing(label) || isempty(label) || label == text || (text *= " \"$label\"")
-        text *= " ($(nameof(typeof(x))))"
-        try
-            text *= " at " * _session_pos(BMO.position(x))
-        catch
-        end
-        return text
-    end
-    return nothing
+    isempty(items) && return nothing
+    length(items) == 1 && return only(items)
+    return "$(length(items)) objects: " * join(items, "; ")
 end
 
-_session_clock(t) = Libc.strftime("%H:%M:%S", t)
+# The id, label, type and position of the item `x` with an id of the `gui`
+function _session_item(gui::LiveView, @nospecialize(x))
+    text = String(gui.sync.ids[x][1])
+    label = get(gui.labels, x, nothing)
+    isnothing(label) || isempty(label) || label == text || (text *= " \"$label\"")
+    text *= " ($(nameof(typeof(x))))"
+    try
+        text *= " at " * _session_pos(BMO.position(x))
+    catch
+    end
+    return text
+end
+
+# With the day: a session file of a window that was not closed may be read days later
+_session_clock(t) = Libc.strftime("%Y-%m-%d %H:%M:%S", t)
 
 # The readable id of the entry, group or system of a conflict `key` (a uid, or "id:L1")
 function _conflict_id(gui::LiveView, key::String)
@@ -164,6 +168,9 @@ function _session_text(gui::LiveView; kept = _closed_kept(gui))
     io = IOBuffer()
     println(io, _session_header(gui.project))
     println(io, "Written by the open BeamletOpticsGUI window: what the person sees and did there.")
+    println(io, "While the window is open, its presence file .bmo/presence-$(_person().id).toml changes at")
+    println(io, "least every $(round(Int, _BEAT)) s; if it is older than $(round(Int, _ALIVE)) s or gone, the window was not closed")
+    println(io, "properly and this file is out of date (`look` marks such a participant \"likely gone\").")
     println(io, "system.jl holds the state of the window (it saves every finished action), except the objects")
     println(io, "of an open conflict, which keep the state of the file until the person decides, those that")
     println(io, "another participant claims, until the claim is released, and while the files do not load:")

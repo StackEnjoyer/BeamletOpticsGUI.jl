@@ -16,7 +16,7 @@ script = export_script(gui) # the whole setup as a script (constructors of catal
 ```
 
 Look up the docstring of any name before use, e.g.
-`julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc live_view)'`. Do not invent keywords.
+`julia --project=<env> -e 'using REPL, BeamletOpticsGUI; display(@doc live_view)'`. Do not invent keywords.
 
 ## Exported names (by category)
 

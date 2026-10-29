@@ -61,6 +61,16 @@ session(dir) = read(GUI._session_file(dir), String)
         gui.controls.selected[] = obj(gui, :L1)
         @test occursin("Selected: L1 \"Kollimator\" (Lens)", session(dir))
         @test !isfile(file * ".tmp")
+        # how to tell a file of a window that was not closed
+        @test occursin("presence-$(p.id).toml changes at", text)
+        # a selection of several: each object, in the session and the presence file
+        gui.controls.selected[] = GUI._MultiSelection(Any[obj(gui, :L1), obj(gui, :M1)])
+        @test occursin(r"Selected: 2 objects: L1 \"Kollimator\" \(Lens\) at [^;]*; M1 \(", session(dir))
+        data = GUI._presence_data(gui).data
+        @test data["selected_ids"] == ["L1", "M1"] && data["selected_id"] == "L1"
+        @test length(data["selected_uids"]) == 2 && data["selected"] == data["selected_uids"][1]
+        gui.controls.selected[] = nothing
+        @test GUI._presence_data(gui).data["selected_ids"] == String[]
     end
 
     @testset "conflict and failure" begin
@@ -114,7 +124,8 @@ session(dir) = read(GUI._session_file(dir), String)
         @test any(l -> startswith(l, "added M4 = RoundPlanoMirror("), lines)
         text = session(dir)
         @test occursin("Recent changes by the person (newest first):", text)
-        @test occursin(r"- \d\d:\d\d:\d\d moved L1 to \(0\.0, 0\.1051, 0\.0\)", text)
+        # with the day: a file of a window that was not closed may be read days later
+        @test occursin(r"- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d moved L1 to \(0\.0, 0\.1051, 0\.0\)", text)
         # newest first
         @test findfirst("added M4", text).start < findfirst("moved L1", text).start
 
