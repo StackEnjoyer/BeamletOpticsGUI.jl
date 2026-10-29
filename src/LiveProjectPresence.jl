@@ -69,13 +69,13 @@ Writes the presence file of the person of the `gui` (see `_person`, `_presence_f
 its name and host, `kind = "person"`, `ttl = _ALIVE`, the `beat` one higher than in the file, the
 selected object and `written`, the stamp of the files after the last save of the window (see
 `_own_written`). Sets `gui.sync.beat_at` to `now`. Does nothing without a project. An error of
-writing propagates; the watcher logs it. The watcher writes it in the background instead, see
-`_presence_due!`.
+writing is no error: the file is written again with the next look. The watcher writes it in the
+background instead, see `_presence_due!`.
 """
 function _write_presence!(gui::LiveView; now::Real = time())
     dir = gui.project
     isnothing(dir) && return nothing
-    _write_presence_file(dir, _presence_data(gui))
+    _write_presence_file(dir, _presence_data(gui)) || (gui.sync.presence_due = true)
     gui.sync.beat_at = Float64(now)
     return nothing
 end
@@ -103,12 +103,24 @@ function _claimed_keys(gui::LiveView)
     return c isa _ClaimState ? sort!(collect(keys(c.held))) : String[]
 end
 
-"""Writes the presence file of `_presence_data` `p` into the project folder `dir`."""
+"""
+    _write_presence_file(dir, p) -> Bool
+
+Writes the presence file of `_presence_data` `p` into the project folder `dir`. Returns whether it
+was written: a write that fails on the file system (e.g. the file of a shared drive is busy, see
+`BeamletOpticsProjects.write_presence`) is no error, the caller writes it again later.
+"""
 function _write_presence_file(dir::AbstractString, p)
     data = copy(p.data)
-    data["written"] = something(p.own, _file_written(_presence_file(dir, p.id)))
-    BMOP.write_presence(dir, p.id, data)
-    return nothing
+    try
+        data["written"] = something(p.own, _file_written(_presence_file(dir, p.id)))
+        BMOP.write_presence(dir, p.id, data)
+    catch e
+        (e isa Base.IOError || e isa SystemError) || rethrow()
+        @debug "live_view: the presence file was not written" exception = e
+        return false
+    end
+    return true
 end
 
 """

@@ -629,7 +629,8 @@ What the view knows of the files of its project, which an agent may change while
 - `others`: the other people who have the project open (by the id of their presence file, see
   `LiveProjectPresence.jl`), `presence` the plots that show their selection, `beat_at` the time
   the view last wrote its own presence file (or gave it to a look to write) and `presence_due`
-  whether it is to be written again, see `_presence_due!`;
+  whether it is to be written again, see `_presence_due!`; `presence_cache` the presence files of
+  the others as the looks read them last (see `BeamletOpticsProjects.read_presences`);
 - `timer`: the watcher, and `closed` whether the view was closed (no watcher starts again);
   `look` the look of the watcher that reads the files in the background, `(; task, gen,
   presence)` (see `_take_look!`), `look_at` the time it started, `gen` a counter that drops the
@@ -664,6 +665,7 @@ Base.@kwdef mutable struct _ProjectSync
     timer::Union{Nothing, Timer} = nothing
     closed::Bool = false
     presence_due::Bool = false
+    presence_cache::Dict{String, Any} = Dict{String, Any}()
     look::Union{Nothing, @NamedTuple{task::Task, gen::Int, presence::Bool}} = nothing
     look_at::Float64 = 0.0
     gen::Int = 0

@@ -384,6 +384,36 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
     end
 end
 
+@testset "A presence file that can not be written stops nothing" begin
+    gui, dir = opened()
+    try
+        # e.g. Windows can not replace it while another participant reads it: here it is a folder
+        own = GUI._presence_file(dir, GUI._person().id)
+        rm(own; force = true)
+        mkpath(own)
+        look = GUI._files_look(dir; presence = GUI._presence_data(gui), cache = Dict{String, Any}())
+        @test !look.presence_written
+        @test any(m -> m[1] == "system.jl", look.marks) && !isnothing(look.stamp)
+        # the window writes it again with its next look, the watcher goes on
+        gui.sync.presence_due = false
+        GUI._write_presence!(gui; now = 100.0)
+        @test gui.sync.presence_due && gui.sync.beat_at == 100.0
+        gui.sync.presence_due = true
+        @test isnothing(GUI._take_look!(gui; now = 200.0))
+        wait(gui.sync.look.task)
+        # the failed look gives the write to the next look, which it starts at once
+        GUI._take_look!(gui; now = 201.0)
+        @test gui.sync.look.presence
+        wait(gui.sync.look.task)
+        # once it can be written again, it is
+        rm(own; recursive = true)
+        GUI._write_presence!(gui; now = 300.0)
+        @test isfile(own)
+    finally
+        close(gui)
+    end
+end
+
 @testset "Presence without a project" begin
     gui = live_view(BeamletOptics.System(); const_kw...)
     @test isnothing(GUI._write_presence!(gui))
