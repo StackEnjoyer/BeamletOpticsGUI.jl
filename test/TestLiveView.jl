@@ -94,7 +94,7 @@ _points(h) = only(render_plots(h))[1][]
         # for new objects
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss();
-            detectors = [pd => (:intensity, (; n = 20, x_min = -2.5e-3, x_max = 2.5e-3,
+            detectors = [pd => (:intensity, (; num_points = 20, x_min = -2.5e-3, x_max = 2.5e-3,
                 z_min = -2.5e-3, z_max = 2.5e-3))])
         @test size(_field(gui)[3]) == (20, 20)
         @test _field(gui)[1] ≈ LinRange(-2.5e-3, 2.5e-3, 20)
@@ -109,7 +109,7 @@ _points(h) = only(render_plots(h))[1][]
         # a vector of pairs with different values, i.e. a `Vector{Pair{Detector, Any}}`
         pd2 = Detector(5e-3)
         translate3d!(pd2, [0.2, 0.1, 0])
-        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:intensity, (; n = 20)), pd2 => :spot])
+        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:intensity, (; num_points = 20)), pd2 => :spot])
         @test _pinned(gui, pd) && _pinned(gui, pd2)
         close(gui)
 
@@ -460,7 +460,7 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), _gauss(); throttle = false, mode = :rotate,
-            fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; n = 40))],
+            fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; num_points = 40))],
             trace_budget = 0.5, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test size(_field(gui)[3]) == (40, 40)
@@ -640,7 +640,7 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         # small area and coarse grid, such that the edges contribute to the integral
         window = (; x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; n = 5, window...))])
+        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; num_points = 5, window...))])
         P = optical_power(pd, RegularGrid(; num_points = 5, window...))
         @test _result(gui).metrics.P ≈ P
         @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
@@ -1511,9 +1511,9 @@ _points(h) = only(render_plots(h))[1][]
         # the options of the `detectors` kwarg
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity,
-            (; n = 20, colorscale = :log, colorrange = (0, 5), profiles = true, x_min = -2.5e-3, x_max = 2.5e-3))])
+            (; num_points = 20, colorscale = :log, colorrange = (0, 5), profiles = true, x_min = -2.5e-3, x_max = 2.5e-3))])
         opts = GUI._detector_state(gui, pd).opts
-        @test opts.n == 20 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
+        @test opts.num_points == 20 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
         @test opts.kwargs == (; x_min = -2.5e-3, x_max = 2.5e-3)
         @test size(_field(gui)[3]) == (20, 20)
         close(gui)

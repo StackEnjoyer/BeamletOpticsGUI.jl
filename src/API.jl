@@ -40,7 +40,7 @@ only for their rendered beams (`preview = true`), the full group once the moveme
 Main keyword arguments: `detectors` (`:auto` or `[]`: every detector has its page "Results", no
 card is pinned at start; a vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the cards of
 these detectors at start, with `kind` one of `:auto`, `:spot`, `:psf` and `:intensity` and the
-options `n`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
+options `num_points`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects without a system that are

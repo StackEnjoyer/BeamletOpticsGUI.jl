@@ -1018,7 +1018,7 @@ plot), a drag with the right button pans, and Ctrl + click, a double click or "f
 view. A spot diagram only changes its limits. A field is computed again for the visible window on its full
 grid once the mouse rests for `idle_delay`, not per step of the wheel; "fit" returns to the
 automatic window around the beam, or to `x_min`, `x_max`, `z_min` and `z_max` if they are given.
-One field grows with `n²` times the number of hits; the computation uses all threads, start
+One field grows with `num_points²` times the number of hits; the computation uses all threads, start
 Julia with `julia -t auto`. Moving a detector empties it (BeamletOptics 0.14): with auto trace off,
 its view reads "no hits" until the next solve, with auto trace on the solve after the move updates it.
 
@@ -1030,10 +1030,10 @@ cards, a thumbnail on a grid of at most 48 points; a view that is shown later is
 the hits of the last solve. Pin the card of a detector to keep its view, or list the detector in
 `detectors` to start with its card pinned.
 
-The options of a view in the `kwargs` of `detectors`, which are not keywords of its sampling
-`BeamletOptics.RegularGrid`:
+The options of a view in the `kwargs` of `detectors`; all other entries are keywords of its
+sampling `BeamletOptics.RegularGrid`:
 
-- `n = 100`: number of points per axis of a field
+- `num_points = 100`: number of points per axis of a field, the `num_points` of its `RegularGrid`
 - `colorscale = :linear`: `:log` starts with "log" on
 - `colorrange = nothing`: fixed color range of a field, in `log10` units for `:log`
 - `colorbar = true`: `false` starts with "bar" off
@@ -1426,7 +1426,7 @@ takes the mode over. Only while it is on, the compile time of Julia is measured.
   the start (also for `[]`). A vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the
   cards of these detectors at the start and sets the options of their views: `kind` is `:auto`,
   `:spot`, `:psf` or `:intensity`; `kwargs` holds the options of the view, e.g.
-  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are keywords of the sampling
+  `(; num_points = 200, colorscale = :log, expanded = false)`, all other entries are keywords of the sampling
   `BeamletOptics.RegularGrid` of the field, e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
   part of the systems throws an `ArgumentError`.
 - `on_change = (gui, obj) -> nothing`: called after each full solve with the moved object, or

@@ -294,8 +294,8 @@ In the expanded view, the mouse acts like on an `Axis` of Makie: the wheel zooms
 a drag with the left button selects the rectangle to zoom to (of the shape of the plot, i.e. a
 square in a square plot), a drag with the right button pans, and Ctrl + click, a double click or
 "fit" resets the view. In a spot view, this only changes the limits. In a PSF or intensity view, the
-field is recomputed for the visible window on the full grid `n` once the mouse rests for
-`idle_delay`, not per wheel step. The cost of one field is proportional to `n² ·` the number of
+field is recomputed for the visible window on the full grid `num_points` once the mouse rests for
+`idle_delay`, not per wheel step. The cost of one field is proportional to `num_points² ·` the number of
 hits. The computation uses all threads, start Julia with `julia -t auto`. Long
 computations run in the background with the progress window and its "Cancel", like long solves;
 computations slower than `trace_budget` show a coarse preview first.
@@ -318,7 +318,7 @@ right sidebar in the app layout, and sets their options; a listed detector that 
 the systems throws an `ArgumentError`:
 
 ```julia
-gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity, (; n = 200))])
+gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity, (; num_points = 200))])
 ```
 
 `kind` is `:auto` (default, the first kind of the hits), `:spot`, `:psf` or `:intensity`. The
@@ -326,11 +326,12 @@ gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity
 `RegularGrid` of BeamletOptics, with which the view evaluates `intensity`;
 most useful is a fixed extent via `x_min`, `x_max`, `z_min` and `z_max` (in meters, like the rest
 of this package), which is the area that "fit" shows, instead of the automatic crop around the
-beam. The following options are not keywords of the `RegularGrid`:
+beam. The following options are not keywords of the `RegularGrid`, except `num_points`, which the
+view passes on to it:
 
 | Option                  | Effect                                                               |
 |:------------------------|:---------------------------------------------------------------------|
-| `n = 100`               | grid points per axis of a field                                      |
+| `num_points = 100`      | grid points per axis of a field                                      |
 | `colorscale = :linear`  | `:log` shows `log10` of the intensity, with a floor of 1e-4 times the maximum |
 | `colorrange = nothing`  | `(lo, hi)`: fixed color range of the intensity (in `log10` units for `:log`) |
 | `colorbar = true`       | `false` hides the colorbar below the plot of a field                  |
