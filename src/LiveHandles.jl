@@ -27,7 +27,7 @@ end
 Combines the children of the system `handles` into one handle, whose `rendered` is `sys`.
 """
 function LiveSystemHandle(sys::BMO.AbstractSystem, handles)
-    children = AbstractObjectRenderHandle[c for h in handles for c in render_children(h)]
+    children = AbstractObjectRenderHandle[c for h in handles for c in AbstractTrees.children(h)]
     return LiveSystemHandle(sys, children, AbstractSystemRenderHandle[handles...])
 end
 
@@ -36,7 +36,7 @@ function Base.show(io::IO, h::LiveSystemHandle)
 end
 
 rendered(h::LiveSystemHandle) = h.sys
-render_children(h::LiveSystemHandle) = h.children
+AbstractTrees.children(h::LiveSystemHandle) = h.children
 
 function render_parent(h::LiveSystemHandle, @nospecialize(obj))
     for s in h.sources
@@ -125,7 +125,7 @@ Returns the rendered (leaf) object of `plot`, i.e. an object of a group, or `not
 looked up in the children of `h`, since a rerender replaces the plots of a child.
 """
 function _pick_leaf(h::AbstractSystemRenderHandle, plot)
-    for child in render_children(h)
+    for child in AbstractTrees.children(h)
         leaf = pick_object(child, plot)
         isnothing(leaf) || return leaf
     end
@@ -134,8 +134,8 @@ end
 
 """Returns the object handle of `obj` among the children of `h`, or `nothing`."""
 function _child_handle(h::AbstractSystemRenderHandle, @nospecialize(obj))
-    i = findfirst(oh -> rendered(oh) === obj, render_children(h))
-    return isnothing(i) ? nothing : render_children(h)[i]
+    i = findfirst(oh -> rendered(oh) === obj, AbstractTrees.children(h))
+    return isnothing(i) ? nothing : AbstractTrees.children(h)[i]
 end
 
 """The plots of `oh` that select its object, see `BeamletOptics.pickable_plots`."""
@@ -171,6 +171,15 @@ _pose(@nospecialize(x)) = _pose(BMO.kinematic_trait_of(x), x)
 _pose(::Any, @nospecialize(x)) = (Point3{Float64}(position(x)), Matrix{Float64}(BMO.orientation(x)))
 # Beams only have a direction, which is the local y-axis of the frame
 _pose(::BMO.Movable{BMO.Directed}, @nospecialize(x)) = (Point3{Float64}(position(x)), _direction_frame(BMO.direction(x)))
+
+"""
+Returns `true` if `x` can not be moved, i.e. its `BeamletOptics.kinematic_trait_of` is `Static`. Only
+for types that declare a kinematic trait (the abstract types of BeamletOptics, systems, clip planes,
+selections of several), for any other type `kinematic_trait_of` throws.
+"""
+_is_static(@nospecialize(x)) = _is_static(BMO.kinematic_trait_of(x))
+_is_static(::BMO.Static) = true
+_is_static(::BMO.Movable) = false
 
 """Returns a right-handed orthonormal frame with the local y-axis along `d`."""
 function _direction_frame(d)

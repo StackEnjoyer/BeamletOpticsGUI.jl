@@ -109,7 +109,7 @@ GLMakie.activate!(; visible = false)
         @test !occursin("heatmap", source)
         @test !occursin("BMO._", source)
         called = Set(m.captures[1] for m in eachmatch(r"BMO\.(\w+)\(", source))
-        @test called ⊆ Set(["spot_diagram", "intensity", "hits", "hit_count", "is_cancelled", "RegularGrid",
+        @test called ⊆ Set(["spot_diagram", "intensity", "hits", "is_cancelled", "RegularGrid",
             "RectilinearGrid", "sample_points"])
     end
 
@@ -143,11 +143,11 @@ GLMakie.activate!(; visible = false)
 
     @testset "options" begin
         o = GUI._ViewOptions()
-        @test o.kind == :auto && o.n == 100 && o.kwargs == (;) && o.colorscale == :linear
+        @test o.kind == :auto && o.num_points == 100 && o.kwargs == (;) && o.colorscale == :linear
         @test isnothing(o.colorrange) && o.colorbar && !o.profiles && isnothing(o.window)
         @test !GUI._ViewOptions(o; colorbar = false).colorbar
         p = GUI._ViewOptions(o; kind = :psf, window = (-1, 1, -2, 2))
-        @test p.kind == :psf && p.n == 100 && p.window === (-1.0, 1.0, -2.0, 2.0)
+        @test p.kind == :psf && p.num_points == 100 && p.window === (-1.0, 1.0, -2.0, 2.0)
         @test o.kind == :auto
         @test GUI._ViewOptions(p; window = nothing) == GUI._ViewOptions(; kind = :psf)
         @test GUI._ViewOptions(; kwargs = (; crop_factor = 2)) != o
@@ -162,16 +162,16 @@ GLMakie.activate!(; visible = false)
         @test isnothing(r.error) && !r.coarse && !r.preview && r.n == 100
 
         # the PSF: the intensity of the rays, normalized to its peak, without a power
-        o = GUI._ViewOptions(; kind = :psf, n = 20)
+        o = GUI._ViewOptions(; kind = :psf, num_points = 20)
         r = GUI._view_result(pd, o)
-        x, z, I = BMO.intensity(pd, RegularGrid(; n = 20))
+        x, z, I = BMO.intensity(pd, RegularGrid(; num_points = 20))
         @test r.kind == PSF && r.n == 20
         @test r.data[1] == x && r.data[2] == z && r.data[3] ≈ I ./ maximum(I)
         @test maximum(r.data[3]) ≈ 1
         @test !haskey(r.metrics, :P) && isfinite(r.metrics.wx)
         # the grid: of the options, of the call, coarse
         @test size(GUI._view_result(pd, o; n = GUI._THUMB_N).data[3]) == (48, 48)
-        r = GUI._view_result(pd, GUI._ViewOptions(o; n = 100); coarse = true, preview = true)
+        r = GUI._view_result(pd, GUI._ViewOptions(o; num_points = 100); coarse = true, preview = true)
         @test size(r.data[3]) == (25, 25) && r.n == 25 && r.coarse && r.preview
         @test size(GUI._view_result(pd, o; coarse = true).data[3]) == (16, 16)
         # the window, over the area of the kwargs
@@ -183,18 +183,18 @@ GLMakie.activate!(; visible = false)
 
         # Gaussian beamlet: the intensity, a choice that the hits do not offer falls back
         pd = _gauss()
-        r = GUI._view_result(pd, GUI._ViewOptions(; n = 40))
+        r = GUI._view_result(pd, GUI._ViewOptions(; num_points = 40))
         @test r.kinds == (Intensity, Spot) && r.kind == Intensity
-        @test r.data[3] == BMO.intensity(pd, RegularGrid(; n = 40))[3]
-        @test isapprox(r.metrics.P, optical_power(pd, RegularGrid(; n = 40)); rtol = 1e-9)
+        @test r.data[3] == BMO.intensity(pd, RegularGrid(; num_points = 40))[3]
+        @test isapprox(r.metrics.P, optical_power(pd, RegularGrid(; num_points = 40)); rtol = 1e-9)
         # zoomed: the power in the window, that of `optical_power` with the same sampling
         w = (-0.2e-3, 0.3e-3, -0.25e-3, 0.25e-3)
-        r = GUI._view_result(pd, GUI._ViewOptions(; n = 40, window = w))
-        zoomed = RegularGrid(; n = 40, x_min = w[1], x_max = w[2], z_min = w[3], z_max = w[4])
+        r = GUI._view_result(pd, GUI._ViewOptions(; num_points = 40, window = w))
+        zoomed = RegularGrid(; num_points = 40, x_min = w[1], x_max = w[2], z_min = w[3], z_max = w[4])
         @test r.data[3] == BMO.intensity(pd, zoomed)[3]
         @test isapprox(r.metrics.P, optical_power(pd, zoomed); rtol = 1e-12)
-        @test r.metrics.P < optical_power(pd, RegularGrid(; n = 40))
-        @test GUI._view_result(pd, GUI._ViewOptions(; kind = :psf, n = 20)).kind == Intensity
+        @test r.metrics.P < optical_power(pd, RegularGrid(; num_points = 40))
+        @test GUI._view_result(pd, GUI._ViewOptions(; kind = :psf, num_points = 20)).kind == Intensity
         r = GUI._view_result(pd, GUI._ViewOptions(; kind = :spot))
         @test r.kind == Spot && haskey(r.metrics, :rms)
 
@@ -203,12 +203,12 @@ GLMakie.activate!(; visible = false)
         @test r.kinds == () && isnothing(r.kind) && isnothing(r.data) && isnothing(r.metrics) && isnothing(r.error)
         r = GUI._view_result(pd, GUI._ViewOptions(; kwargs = (; crop_factor = "wide")))
         @test r.error isa Exception && r.kinds == (Intensity, Spot) && r.kind == Intensity && isnothing(r.data)
-        @test fetch(Threads.@spawn GUI._view_result(pd, GUI._ViewOptions(; n = 20))).kind == Intensity
+        @test fetch(Threads.@spawn GUI._view_result(pd, GUI._ViewOptions(; num_points = 20))).kind == Intensity
         # hits whose field can not be evaluated: the spot diagram, with the kind :auto only
         astigmatic = BMO.AstigmaticGaussianBeamletHit{Float64}[]
         failing = Detector(1e-3)
         @test_throws "No hits available" GUI._shown_data(Intensity, failing, astigmatic, GUI._ViewOptions(), 20, false)
-        @test GUI._shown_data(Intensity, pd, astigmatic, GUI._ViewOptions(; n = 20), 20, false)[1] == Intensity
+        @test GUI._shown_data(Intensity, pd, astigmatic, GUI._ViewOptions(; num_points = 20), 20, false)[1] == Intensity
     end
 
     @testset "metrics" begin
@@ -249,7 +249,7 @@ GLMakie.activate!(; visible = false)
               "P = 1.000 mW, peak 0 W/m²\nno intensity"
 
         # logarithmic color scale with a floor
-        _, _, I = BMO.intensity(pd, RegularGrid(; n = 20, x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3))
+        _, _, I = BMO.intensity(pd, RegularGrid(; num_points = 20, x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3))
         Imax = maximum(I)
         values, range = GUI._display_intensity(I, :log)
         @test values ≈ log10.(max.(I, 1e-4 * Imax))
@@ -279,7 +279,7 @@ GLMakie.activate!(; visible = false)
 
         # the axis: y axis on the right, nothing outside the frame, which spans the widget
         pd = _gauss()
-        _show!(v, pd, GUI._ViewOptions(; n = 30))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30))
         @test v.ax.yaxisposition[] == :right
         for ax in (v.ax, v.thumb_ax)
             pr = ax.layoutobservables.protrusions[]
@@ -345,24 +345,24 @@ GLMakie.activate!(; visible = false)
         @test collect(_limits(v.bar_ax)) ≈ [s.limits..., 0, 1] && collect(v.bar_image[1][]) ≈ collect(s.limits)
         @test v.bar_image.transformation.translation[][3] > 0
         h_bar = GUI._view_size(v)[2]
-        _show!(v, pd, GUI._ViewOptions(; n = 30, colorbar = false))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30, colorbar = false))
         @test !v.bar_shown && !v.bar_ax.blockscene.visible[] && !v.bar_toggle.active[]
         @test GUI._view_size(v)[2] < h_bar - GUI._VIEW_BAR_HEIGHT
         h_none = GUI._view_size(v)[2]
         # without the bar, the profiles take its row
-        _show!(v, pd, GUI._ViewOptions(; n = 30, colorbar = false, profiles = true))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30, colorbar = false, profiles = true))
         @test v.profiles_shown && !v.bar_shown
         h_profiles = GUI._view_size(v)[2]
-        _show!(v, pd, GUI._ViewOptions(; n = 30, profiles = true))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30, profiles = true))
         @test maximum(Rect2f(v.profiles_ax.scene.viewport[]))[2] < minimum(Rect2f(v.bar_ax.scene.viewport[]))[2]
         @test GUI._view_size(v)[2] - h_profiles ≈ h_bar - h_none atol = 1
-        _show!(v, pd, GUI._ViewOptions(; n = 30))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30))
         @test v.bar_shown && GUI._view_size(v)[2] ≈ h_bar
 
         # profiles of a field, below the axis
         @test !v.profiles_shown && !v.profiles_ax.blockscene.visible[]
         h = GUI._view_size(v)[2]
-        _show!(v, pd, GUI._ViewOptions(; n = 30, profiles = true))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30, profiles = true))
         @test v.profiles_shown && v.profiles_ax.blockscene.visible[] && v.profiles_toggle.active[]
         @test GUI._view_size(v)[2] > h + GUI._VIEW_PROFILES_HEIGHT
         @test length(v.profile_x[1][]) == 30 && length(v.profile_z[1][]) == 30
@@ -386,11 +386,11 @@ GLMakie.activate!(; visible = false)
         @test v.cut_x[1][] ≈ [Point2f(x0, c[2]), Point2f(x1, c[2])]
         @test v.cut_z[1][] ≈ [Point2f(c[1], z0), Point2f(c[1], z1)]
         # and leave with the profiles
-        _show!(v, pd, GUI._ViewOptions(; n = 30))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30))
         @test all(p -> isempty(p[1][]), v.crosses) && isempty(v.cut_x[1][]) && isempty(v.cut_z[1][])
-        _show!(v, pd, GUI._ViewOptions(; n = 30, profiles = true))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30, profiles = true))
         @test !isempty(v.cut_x[1][])
-        _show!(v, pd, GUI._ViewOptions(; n = 30, kind = :spot, profiles = true))
+        _show!(v, pd, GUI._ViewOptions(; num_points = 30, kind = :spot, profiles = true))
         @test !v.profiles_shown && GUI._view_size(v)[2] <= h + 1
         # a spot diagram keeps the centroid, without the lines
         @test length(v.crosses[2][1][]) == 1 && isempty(v.cut_x[1][]) && isempty(v.cut_z[1][])
@@ -425,7 +425,7 @@ GLMakie.activate!(; visible = false)
         @test all(q -> x0 < q[1] < x1 && z0 < q[2] < z1, v.xy)
 
         # the PSF, normalized: white texts with a glow, a logarithmic scale, a fixed color range
-        o = GUI._ViewOptions(; kind = :psf, n = 20)
+        o = GUI._ViewOptions(; kind = :psf, num_points = 20)
         _show!(v, rays, o)
         @test v.switch.selected[] == :psf && v.images[2].visible[] && !v.spots[2].visible[]
         @test maximum(v.images[2][3][]) ≈ 1
@@ -464,7 +464,7 @@ GLMakie.activate!(; visible = false)
         @test startswith(v.metrics_label.text[], "PSF")
 
         # the limits of a field: the extent of its samples, or its window
-        wide = GUI._ViewOptions(; n = 20, kwargs = (; x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3))
+        wide = GUI._ViewOptions(; num_points = 20, kwargs = (; x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3))
         _show!(v, gauss, wide)
         @test collect(_limits(v.ax)) ≈ [-2.5, 2.5, -2.5, 2.5]
         # the logarithmic scale of an intensity has a floor relative to its peak
@@ -524,7 +524,7 @@ GLMakie.activate!(; visible = false)
         @test v.metrics_label.text[] == "error" && v.kind_label.text[] == "error"
         @test v.switch.keys == [:intensity, :spot] && !v.images[2].visible[]
         @test_logs _show!(v, gauss, bad)
-        _show!(v, gauss, GUI._ViewOptions(; n = 20))
+        _show!(v, gauss, GUI._ViewOptions(; num_points = 20))
         @test startswith(v.metrics_label.text[], "P = ") && v.images[2].visible[]
 
         # a single ray: limits around it
@@ -540,8 +540,8 @@ GLMakie.activate!(; visible = false)
     @testset "texts inside the frame" begin
         fig, _, v = _host()
         gauss, rays = _gauss(), _rays()
-        for (pd, o) in ((gauss, GUI._ViewOptions(; n = 30)), (rays, GUI._ViewOptions()),
-                (rays, GUI._ViewOptions(; kind = :psf, n = 20, window = (-0.012345, 0.023456, -0.01, 0.02559))))
+        for (pd, o) in ((gauss, GUI._ViewOptions(; num_points = 30)), (rays, GUI._ViewOptions()),
+                (rays, GUI._ViewOptions(; kind = :psf, num_points = 20, window = (-0.012345, 0.023456, -0.01, 0.02559))))
             _show!(v, pd, o; preview = true)
             for size in (160, 400)
                 GUI._resize_view!(v, size, size)
@@ -570,7 +570,7 @@ GLMakie.activate!(; visible = false)
 
         # the texts follow zoom and pan
         _connect!(fig, v)
-        _show!(v, gauss, GUI._ViewOptions(; n = 30))
+        _show!(v, gauss, GUI._ViewOptions(; num_points = 30))
         before = copy(v.xlabels.positions[])
         _move!(fig, _center(v.ax) .+ Point2f(40, 30))
         _scroll!(fig, 3)
@@ -588,7 +588,7 @@ GLMakie.activate!(; visible = false)
         camera = cameracontrols(ls.scene)
         eye = copy(camera.eyeposition[])
         gauss, rays = _gauss(), _rays()
-        o = GUI._ViewOptions(; n = 20)
+        o = GUI._ViewOptions(; num_points = 20)
         _show!(v, gauss, o)
 
         # the wheel over the axis zooms about the cursor and leaves the camera of the 3D view
@@ -720,7 +720,7 @@ GLMakie.activate!(; visible = false)
         # the switch, the toggles and the chevrons
         v.switch.buttons[2].clicks[] += 1
         @test options == Any[:kind => :psf]
-        _show!(v, rays, GUI._ViewOptions(; kind = :psf, n = 20))
+        _show!(v, rays, GUI._ViewOptions(; kind = :psf, num_points = 20))
         empty!(options)
         v.log_toggle.active[] = true
         v.profiles_toggle.active[] = true

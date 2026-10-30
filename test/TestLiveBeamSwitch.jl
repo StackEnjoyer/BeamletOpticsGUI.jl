@@ -1,6 +1,7 @@
 module TestLiveBeamSwitch
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOpticsGUI: AbstractTrees
 using BeamletOptics: render_plots
 using Makie
 using Test
@@ -33,7 +34,7 @@ const GUI = BeamletOpticsGUI
     _visible(gui, b) = all(p -> p.visible[], _plots(gui, b))
     _hidden(gui, b) = all(p -> !p.visible[], _plots(gui, b))
     # the plots of the source marker of `b`
-    _marker(gui, b) = only(h for h in BMO.render_children(gui.controls.h) if BMO.rendered(h) === b)
+    _marker(gui, b) = only(h for h in AbstractTrees.children(gui.controls.h) if BMO.rendered(h) === b)
 
     @testset "off and on again" begin
         sys, pd, b1, b2 = _fixture()

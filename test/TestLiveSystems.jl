@@ -1,7 +1,8 @@
 module TestLiveSystems
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 
@@ -23,7 +24,7 @@ const GUI = BeamletOpticsGUI
         return m
     end
     # The number of object handles of `obj` in the controls: one, also for an object of two systems
-    _handles(gui, obj) = count(oh -> rendered(oh) === obj, render_children(gui.controls.h))
+    _handles(gui, obj) = count(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))
     function _target(beam)
         isect = BMO.intersection(first(BMO.rays(beam)))
         return isnothing(isect) ? nothing : BMO.object(isect)
@@ -39,7 +40,7 @@ const GUI = BeamletOpticsGUI
         b1, b2 = _beam(), _beam(0.05)
         gui = _live_view(tx => b1, rx => b2; layout)
         # one object, drawn once
-        @test _handles(gui, m) == 1 && length(render_children(gui.pool)) == 1
+        @test _handles(gui, m) == 1 && length(AbstractTrees.children(gui.pool)) == 1
         @test GUI._member_systems(gui, m) == [tx, rx]
         @test _target(b1) === m && _target(b2) === m
         GUI._set_hidden!(gui, m, true)
@@ -70,7 +71,7 @@ const GUI = BeamletOpticsGUI
         add_component!(gui, m; system = tx, select = false)
         remove_component!(gui, m)
         @test _handles(gui, m) == 0 && isempty(tx.objects) && isempty(rx.objects)
-        @test isempty(render_children(gui.pool))
+        @test isempty(AbstractTrees.children(gui.pool))
         @test _undo!(gui)
         @test tx.objects == [m] && rx.objects == [m] && _handles(gui, m) == 1
         @test _target(b1) === m && _target(b2) === m

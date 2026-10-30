@@ -1023,7 +1023,7 @@ typical size are not affected, nor are the objects of a scene with one or two ob
 """
 function _gizmo_cap(ctrl::KinematicController)
     sizes = Float64[]
-    for oh in render_children(ctrl.h)
+    for oh in AbstractTrees.children(ctrl.h)
         bbs = filter(_is_finite_box, [Makie.boundingbox(p) for p in render_plots(oh) if p.visible[]])
         isempty(bbs) || push!(sizes, maximum(GeometryBasics.widths(reduce(GeometryBasics.union, bbs))))
     end
@@ -2069,9 +2069,9 @@ function kinematic_controls!(
     movable = _LiveMovable[]
     if isnothing(objects)
         # Top-level objects, since the handles of groups belong to the objects of the group
-        for oh in render_children(h)
+        for oh in AbstractTrees.children(h)
             top = _top_level(h, rendered(oh))
-            BMO.is_static(top) && continue
+            _is_static(top) && continue
             _has(movable, top) || push!(movable, top)
         end
     else

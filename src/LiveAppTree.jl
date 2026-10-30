@@ -24,7 +24,7 @@ _tree_kind(::LiveClipPlane) = :clip_plane
 _tree_kind(::Union{AbstractSystemRenderHandle, BMO.AbstractSystem}) = :system
 
 """The rendered objects of the system of `h`, i.e. the leaves of its groups, see `_set_hidden!`."""
-_leaves(h::AbstractSystemRenderHandle) = _LiveMovable[rendered(oh) for oh in render_children(h)]
+_leaves(h::AbstractSystemRenderHandle) = _LiveMovable[rendered(oh) for oh in AbstractTrees.children(h)]
 
 """
 The objects of the system `sys` as they are rendered, i.e. the leaves of its groups (see
@@ -36,7 +36,7 @@ _leaves(sys::BMO.AbstractSystem) = reduce(vcat, (_leaves(obj) for obj in sys.obj
 function _top_levels(h::AbstractSystemRenderHandle)
     tops = _LiveMovable[]
     seen = Base.IdSet{Any}()
-    for oh in render_children(h)
+    for oh in AbstractTrees.children(h)
         top = _top_level(h, rendered(oh))
         top in seen && continue
         push!(seen, top)
@@ -120,7 +120,7 @@ The row of a system has the buttons "+" and "−", which pick its members with t
 `_tree_button!`; the one of the pick that is going on (see `_member_pick`) is highlighted.
 """
 function _tree_rows(gui::AppView)
-    drawn = Base.IdSet{Any}(rendered(oh) for oh in render_children(gui.controls.h))
+    drawn = Base.IdSet{Any}(rendered(oh) for oh in AbstractTrees.children(gui.controls.h))
     rows = _TreeRow[]
     pick = _member_pick(gui)
     for h in gui.system_handles
@@ -129,7 +129,7 @@ function _tree_rows(gui::AppView)
         _push_system_rows!(rows, gui, drawn, h, :system, _sources_of(gui, sys), buttons)
     end
     unassigned = Any[src for src in _sources(gui) if src in gui.beams.unassigned]
-    if !isempty(unassigned) || !isempty(render_children(gui.extras))
+    if !isempty(unassigned) || !isempty(AbstractTrees.children(gui.extras))
         _push_system_rows!(rows, gui, drawn, gui.extras, :group, unassigned, nothing)
     end
     foreach(plane -> _push_tree_rows!(rows, gui, drawn, plane, 0), gui.clip.planes)

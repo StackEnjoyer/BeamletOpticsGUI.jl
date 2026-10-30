@@ -57,13 +57,13 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         @test [s.opts.kind for s in specs] == [:auto, :spot]
         @test all(s -> s.expanded, specs)
         # a vector of pairs with different values is a `Vector{Pair{Detector, Any}}`
-        mixed = [pd => (:intensity, (; n = 50, x_min = -1e-3, x_max = 1e-3)), pd2 => :spot]
+        mixed = [pd => (:intensity, (; num_points = 50, x_min = -1e-3, x_max = 1e-3)), pd2 => :spot]
         @test eltype(mixed) <: Pair{<:Detector, Any}
         specs = GUI._detector_specs(mixed)
-        @test specs[1].opts.kind == :intensity && specs[1].opts.n == 50
+        @test specs[1].opts.kind == :intensity && specs[1].opts.num_points == 50
         # the options of the view are not passed to `intensity`
         @test specs[1].opts.kwargs == (; x_min = -1e-3, x_max = 1e-3)
-        @test specs[2].opts.kind == :spot && specs[2].opts.n == 100
+        @test specs[2].opts.kind == :spot && specs[2].opts.num_points == 100
         opts = only(GUI._detector_specs([pd => (:psf, (; colorscale = :log, colorrange = (-3, 0),
             profiles = true, expanded = false))]))
         @test opts.opts.kind == :psf && opts.opts.colorscale == :log && opts.opts.profiles
@@ -94,12 +94,12 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         state = GUI._detector_state(gui, pd)
         @test state === GUI._detector_state(gui, pd)
         @test state.stale && isnothing(state.result) && state.opts.kind == :auto
-        opts = GUI._ViewOptions(state.opts; kind = :spot, n = 30)
-        @test opts.kind == :spot && opts.n == 30 && opts.colorscale == state.opts.colorscale
+        opts = GUI._ViewOptions(state.opts; kind = :spot, num_points = 30)
+        @test opts.kind == :spot && opts.num_points == 30 && opts.colorscale == state.opts.colorscale
         GUI._resolve!(gui, nothing)
         @test state.stale && isnothing(state.result)
-        GUI._init_detectors!(gui, GUI._detector_specs([pd => (:spot, (; n = 30))]))
-        @test state.opts.kind == :spot && state.opts.n == 30 && only(gui.detectors.start).pd === pd
+        GUI._init_detectors!(gui, GUI._detector_specs([pd => (:spot, (; num_points = 30))]))
+        @test state.opts.kind == :spot && state.opts.num_points == 30 && only(gui.detectors.start).pd === pd
         close(gui)
     end
 
@@ -149,18 +149,18 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         view = _view!(gui, pd; expanded = false)
         state = GUI._detector_state(gui, pd)
         @test GUI._kind_name(state.result.kind) == :intensity
-        @test state.result.n == GUI._THUMB_N < state.opts.n
+        @test state.result.n == GUI._THUMB_N < state.opts.num_points
         @test startswith(GUI._signal_text(gui, pd), "P = ")
         # the expanded view needs the grid of the options
         GUI._set_expanded!(view, true)
-        @test only(GUI._view_requests(gui; stale_only = true)).n == state.opts.n
+        @test only(GUI._view_requests(gui; stale_only = true)).n == state.opts.num_points
         GUI._view_needed!(gui, pd)
-        @test state.result.n == state.opts.n && !state.stale
+        @test state.result.n == state.opts.num_points && !state.stale
         # a second, collapsed view of the same detector shares the result
         _view!(gui, pd; expanded = false)
         @test length(GUI._shown_views(gui)) == 2 && length(GUI._view_requests(gui)) == 1
         GUI._resolve!(gui, nothing)
-        @test state.result.n == state.opts.n
+        @test state.result.n == state.opts.num_points
         # the beams of a Gaussian beamlet as a spot diagram
         GUI._set_view!(gui, pd; kind = :spot)
         @test GUI._kind_name(state.result.kind) == :spot
@@ -200,7 +200,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         # compact layout: a floating card on the page "Results", whose view is computed by the
         # initial solve
         m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; n = 20))])
+        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; num_points = 20))])
         c = only(GUI._floating_cards(gui, pd))
         @test c.page == :results && c.view_expanded && GUI._card_view(c) === only(GUI._shown_views(gui))[2]
         state = GUI._detector_state(gui, pd)
@@ -244,7 +244,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         GUI._trace!(gui)
         @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
         translate3d!(gui, pd, [0, 0, 0.5e-3])
-        @test BMO.hit_count(pd) == 0 && gui.trace.stale
+        @test length(pd) == 0 && gui.trace.stale
         @test !state.stale && isempty(state.result.kinds) && view.kind_label.text[] == "no hits"
         @test GUI._signal_text(gui, pd) == "no hits"
         GUI._trace!(gui)
@@ -267,7 +267,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         bms = BMO.beams(bg)
         shown = 1:k:length(bms)
         GUI._solve_preview!(sys, bg, k)
-        @test BMO.hit_count(pd) == length(shown)
+        @test length(pd) == length(shown)
         @test all(i -> length(BMO.rays(bms[i])) > 1, shown)
         @test all(i -> length(BMO.rays(bms[i])) == 1, setdiff(eachindex(bms), shown))
         points = sort([collect(BMO.hit_point(h)) for h in BMO.hits(pd)])

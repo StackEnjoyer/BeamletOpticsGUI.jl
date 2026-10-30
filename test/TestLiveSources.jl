@@ -1,7 +1,8 @@
 module TestLiveSources
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using LinearAlgebra: norm, normalize, dot, cross
 using Test
@@ -248,7 +249,7 @@ const GUI = BeamletOpticsGUI
         first_beam = _beam()
         gui = _live_view(sys => first_beam; layout)
         nplots = length(gui.ax.scene.plots)
-        nchildren = length(render_children(gui.controls.h))
+        nchildren = length(AbstractTrees.children(gui.controls.h))
         @test _nhits(pd) == 1
 
         src = _beam()
@@ -258,7 +259,7 @@ const GUI = BeamletOpticsGUI
         @test GUI._is_pinned(gui, src)
         @test remove_component!(gui, src) === src
         @test !_paired(gui, src) && length(gui.pairs) == length(gui.beam_handles) == 1
-        @test isnothing(_handle(gui, src)) && length(render_children(gui.controls.h)) == nchildren
+        @test isnothing(_handle(gui, src)) && length(AbstractTrees.children(gui.controls.h)) == nchildren
         @test !_in(src, gui.controls.movable) && !haskey(gui.controls.init_poses, src)
         # all of its plots are gone: the beam, the marker, the card
         @test length(gui.ax.scene.plots) == nplots

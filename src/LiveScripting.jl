@@ -9,7 +9,7 @@ Throws an `ArgumentError` unless `obj` is an object of the live view `gui` that 
 not static (see `kinematic_trait_of`). Static objects can not be selected in the window either.
 """
 function _scriptable(gui::LiveView, @nospecialize(obj))
-    BMO.is_static(obj) && throw(ArgumentError("$(typeof(obj)) is static and can not be moved"))
+    _is_static(obj) && throw(ArgumentError("$(typeof(obj)) is static and can not be moved"))
     haskey(gui.controls.init_poses, obj) ||
         throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))
     return nothing

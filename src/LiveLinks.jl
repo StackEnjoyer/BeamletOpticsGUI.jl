@@ -138,7 +138,7 @@ function _open_kwargs(gui::LiveView, system, sources)
     ctrl = gui.controls
     trace = gui.trace
     # The markers of the sources, as in a view with `movable_sources`
-    markers = all(src -> BMO.is_static(src) || !isnothing(_child_handle(ctrl.h, src)), sources)
+    markers = all(src -> _is_static(src) || !isnothing(_child_handle(ctrl.h, src)), sources)
     return (; layout = _layout_name(gui.layout), theme = _theme_name(gui.layout.theme),
         auto_trace = trace.auto[], trace_budget = trace.budget, trace.idle_delay,
         preview = trace.preview_enabled, trace.progress_delay,

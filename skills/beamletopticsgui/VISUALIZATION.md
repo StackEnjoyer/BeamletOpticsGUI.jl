@@ -38,7 +38,7 @@ opens on "Results" for a detector, else on "Pose"; a pinned card keeps its page.
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
 beamsplitters, the polarizer axis, detector `signal` (power or number of rays of its view while a
 view is shown, else number of hits), the ray count slider of sources
-(`set_num_rays!`), and on every beam, beam group, source and beamlet the toggle "on" (off: not
+(`num_rays!`), and on every beam, beam group, source and beamlet the toggle "on" (off: not
 solved, not drawn, rays removed from detectors; only the source marker stays), for Gaussian
 beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true)`), for polarized
 beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength and amplitude of
@@ -126,13 +126,13 @@ are the flux through the detector (Poynting vector along its normal, a hit under
 with cos θ); the automatic window of beamlet hits reaches 3 beam radii beyond the hits. Mouse as on a Makie `Axis`: wheel zooms
 about the cursor, left drag selects the rectangle to zoom to (shape of the plot), right drag pans,
 Ctrl + click, double click or "fit" resets; in a PSF or intensity view the field is recomputed
-for the visible window on the full grid `n` once the mouse rests for `idle_delay`. A field grows
-with n² · hits and uses all threads: start Julia with `julia -t auto`. Slow computations run in the background with the
+for the visible window on the full grid `num_points` once the mouse rests for `idle_delay`. A field grows
+with num_points² · hits and uses all threads: start Julia with `julia -t auto`. Slow computations run in the background with the
 progress window and "Cancel"; above `trace_budget` a coarse preview comes first. Only shown views
 are computed (page "Results" of the selected detector or of a pinned, not collapsed card; a
 thumbnail on at most 48 points per axis). A floating card with an expanded view is resizable by its
 grip at the bottom right (160 px up to the size of the 3D view). `detectors = [pd => (:intensity,
-(; n = 100, colorscale = :log, colorrange = (lo, hi), colorbar = false, profiles = true, expanded = false, x_min, ...))]`
+(; num_points = 100, colorscale = :log, colorrange = (lo, hi), colorbar = false, profiles = true, expanded = false, x_min, ...))]`
 pins the card at start (floating next to the detector in compact, docked in the right sidebar in
 app); other entries are keywords of `BeamletOptics.RegularGrid` (the sampling of the field),
 `x_min`/`x_max`/`z_min`/`z_max` set the area

@@ -29,9 +29,9 @@ describe it as available in docs or the skill.
   (via `live_render!(draw, ax, x)`), measurements, the view cube, panels, icons.
 - **The GUI prefers declared BMO API**: exported names, the render handle protocol
   (`AbstractObjectRenderHandle`, `AbstractSystemRenderHandle`, `AbstractBeamRenderHandle`,
-  `rendered`, `render_plots`, `render_children`, `render_parent`, `render_settings`,
+  `rendered`, `render_plots`, `AbstractTrees.children`, `render_parent`, `render_settings`,
   `pickable_plots`, `look_colors`, `push!`/`delete!` of system handles) and the `public` developer
-  API (`is_static`, `hit_count`, `wavelength`, `min_num_rays`, `ProgressSink`, `PROGRESS_SINK`,
+  API (`wavelength`, `min_num_rays`, `ProgressSink`, `PROGRESS_SINK`,
   `progress_state`, `is_cancelled`, the sampling types). It also uses some internal BMO names
   without underscore (the abstract types, the kinematic and shape traits, getters such as
   `intersection`, `hits` or `objects`); these may change with any BMO release, which the compat

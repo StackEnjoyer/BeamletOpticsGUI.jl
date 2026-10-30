@@ -732,7 +732,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test c.view_size == GUI._CARD_VIEW_SIZE && v.ax.width[] == 280 && v.ax.height[] == 280
         # computed from the hits of the last solve and shown
         state = GUI._detector_state(gui, pd)
-        @test !state.stale && state.result.n == state.opts.n
+        @test !state.stale && state.result.n == state.opts.num_points
         @test v.result === state.result && GUI._kind_name(v.kind) == :intensity && v.name == "PD"
         # the view below the page bar, inside the card, at its left edge below the icon
         r, bg = Rect2f(v.full.layoutobservables.computedbbox[]), _rect(c.background)

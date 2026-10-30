@@ -1,7 +1,8 @@
 module TestLivePick
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 
@@ -71,7 +72,7 @@ const GUI = BeamletOpticsGUI
     _w(gui, name) = GUI._card_widget(_card(gui), name)
     _text(gui, name) = _w(gui, name).text[]
     _push!(gui, name) = (_w(gui, name).clicks[] += 1; nothing)
-    _handles(gui, obj) = count(oh -> rendered(oh) === obj, render_children(gui.controls.h))
+    _handles(gui, obj) = count(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))
     _alpha(gui, obj) = first(render_plots(GUI._child_handle(gui.controls.h, obj))).alpha[]
     _picks(gui, sys, add) = (p = GUI._member_pick(gui); !isnothing(p) && p.sys === sys && p.add == add)
     _target(beam) = (i = BMO.intersection(first(BMO.rays(beam))); isnothing(i) ? nothing : BMO.object(i))

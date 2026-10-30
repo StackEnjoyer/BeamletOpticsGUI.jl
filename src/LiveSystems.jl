@@ -93,7 +93,7 @@ function _take_system!(gui::LiveView, sys::BMO.AbstractSystem)
         (isempty(_member_systems(gui, obj)) && !_has(extras.objects, obj)) || continue
         push!(orphans, obj)
         push!(extras, obj)
-        foreach(oh -> _has(render_children(gui.extras), oh) || push!(gui.extras, oh), _pool_handles(gui, obj))
+        foreach(oh -> _has(AbstractTrees.children(gui.extras), oh) || push!(gui.extras, oh), _pool_handles(gui, obj))
         # nothing of the last solve of a system that is gone, e.g. no hits of a detector
         initialize!(obj)
     end

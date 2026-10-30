@@ -51,12 +51,12 @@ _view_kinds(::AbstractVector{<:BMO.AbstractBeamletHit}) = (_IntensityKind(), _Sp
 const _THUMB_N = 48
 
 """
-    _ViewOptions(; kind = :auto, n = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
+    _ViewOptions(; kind = :auto, num_points = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
         colorbar = true, profiles = false, window = nothing)
     _ViewOptions(opts; changed...)
 
 Options of the view of a detector: the `kind` (`:auto` or a name, see `_kind_name`; a kind that the
-hits do not offer falls back to their default), the grid `n` of a field and further `kwargs` of
+hits do not offer falls back to their default), the grid `num_points` of a field and further `kwargs` of
 `BeamletOptics.intensity`, the `colorscale` (`:linear` or `:log`) and the fixed `colorrange` of a
 field (or `nothing`), whether the `colorbar` and the `profiles` of a field are shown, and the
 `window` `(x_min, x_max, z_min, z_max)` [m] of a field, `nothing` for the automatic limits of
@@ -64,7 +64,7 @@ BeamletOptics. The second form copies `opts` with changed fields.
 """
 struct _ViewOptions
     kind::Symbol
-    n::Int
+    num_points::Int
     kwargs::NamedTuple
     colorscale::Symbol
     colorrange::Any
@@ -73,13 +73,13 @@ struct _ViewOptions
     window::Union{Nothing, NTuple{4, Float64}}
 end
 
-_ViewOptions(; kind = :auto, n = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
+_ViewOptions(; kind = :auto, num_points = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
     colorbar = true, profiles = false, window = nothing) =
-    _ViewOptions(kind, n, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
+    _ViewOptions(kind, num_points, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
 
-_ViewOptions(o::_ViewOptions; kind = o.kind, n = o.n, kwargs = o.kwargs, colorscale = o.colorscale,
+_ViewOptions(o::_ViewOptions; kind = o.kind, num_points = o.num_points, kwargs = o.kwargs, colorscale = o.colorscale,
     colorrange = o.colorrange, colorbar = o.colorbar, profiles = o.profiles, window = o.window) =
-    _ViewOptions(kind, n, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
+    _ViewOptions(kind, num_points, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
 
 _view_window(::Nothing) = nothing
 _view_window(w) = NTuple{4, Float64}(Float64.(Tuple(w)))
@@ -132,7 +132,7 @@ the `opts` (see `_ViewOptions`), for the PSF divided by its maximum. The grid is
 """
 _kind_data(::_SpotKind, pd, _, _, _, _) = BMO.spot_diagram(pd)
 function _kind_data(::_IntensityKind, pd, _, opts::_ViewOptions, n, coarse)
-    kwargs = merge(opts.kwargs, (; n = _view_grid(n, coarse)), _window_kwargs(opts.window))
+    kwargs = merge(opts.kwargs, (; num_points = _view_grid(n, coarse)), _window_kwargs(opts.window))
     x, z, I = BMO.intensity(pd, BMO.RegularGrid(; kwargs...))
     return (x, z, I)
 end
@@ -169,7 +169,7 @@ _result_n(::_FieldKind, n, coarse) = _view_grid(n, coarse)
 _result_n(::_ViewKind, n, _) = Int(n)
 
 """
-    _view_result(pd, opts::_ViewOptions; n = opts.n, coarse = false, preview = false) -> _ViewResult
+    _view_result(pd, opts::_ViewOptions; n = opts.num_points, coarse = false, preview = false) -> _ViewResult
 
 Computes what the view of the detector `pd` shows with the options `opts`: the kinds of its hits,
 the kind of the options or their default, its data (`BeamletOptics.spot_diagram`, or
@@ -177,7 +177,7 @@ the kind of the options or their default, its data (`BeamletOptics.spot_diagram`
 metrics. Creates no plot and touches no observable, such that it can run in a background task.
 An error is returned in the result, a cancelled solve is rethrown, see `BMO.is_cancelled`.
 """
-function _view_result(pd, opts::_ViewOptions; n::Integer = opts.n, coarse::Bool = false,
+function _view_result(pd, opts::_ViewOptions; n::Integer = opts.num_points, coarse::Bool = false,
         preview::Bool = false)
     kinds, kind = (), nothing
     try

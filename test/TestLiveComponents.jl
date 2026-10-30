@@ -1,7 +1,8 @@
 module TestLiveComponents
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, render_parent, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, render_parent, rendered
 using Makie
 using LinearAlgebra: norm, normalize
 using Test
@@ -55,7 +56,7 @@ const GUI = BeamletOpticsGUI
         @test add_component!(gui, m; label = "m1") === m
         @test sys.objects == [m] && sys.objects[1] === m
         @test _rendered(gui, m)
-        @test _in(m, rendered.(render_children(gui.system_handles[1])))
+        @test _in(m, rendered.(AbstractTrees.children(gui.system_handles[1])))
         @test _in(m, gui.controls.movable)
         @test gui.controls.init_poses[m] == GUI._pose(m)
         @test GUI._label(gui, m) == "m1"
@@ -141,7 +142,7 @@ const GUI = BeamletOpticsGUI
         @test remove_component!(gui, m) === m
         @test sys.objects == [m2] && sys.objects[1] === m2
         @test !_rendered(gui, m)
-        @test !_in(m, rendered.(render_children(gui.system_handles[1])))
+        @test !_in(m, rendered.(AbstractTrees.children(gui.system_handles[1])))
         @test !_in_scene(gui, plots)
         @test !_in(m, gui.controls.movable)
         @test !haskey(gui.controls.init_poses, m)
@@ -229,7 +230,7 @@ const GUI = BeamletOpticsGUI
         # an extra is an object without a system: it becomes a member of one and is taken out again
         add_component!(gui, housing; system = sys, select = false)
         @test sys.objects == [m, housing] && !GUI._is_extra(gui, housing)
-        @test count(oh -> rendered(oh) === housing, render_children(gui.controls.h)) == 1
+        @test count(oh -> rendered(oh) === housing, AbstractTrees.children(gui.controls.h)) == 1
         remove_component!(gui, housing; system = sys)
         @test sys.objects == [m] && GUI._is_extra(gui, housing) && _rendered(gui, housing)
         @test occursin("no system", gui.status.text[])
@@ -261,7 +262,7 @@ const GUI = BeamletOpticsGUI
         # an object of the view becomes a member of a second system and stays one object
         add_component!(gui, c; system = sys2)
         @test _in(c, sys1.objects) && _in(c, sys2.objects)
-        @test count(oh -> rendered(oh) === c, render_children(gui.controls.h)) == 1
+        @test count(oh -> rendered(oh) === c, AbstractTrees.children(gui.controls.h)) == 1
         @test_throws ArgumentError add_component!(gui, c; system = sys2)
         @test_throws ArgumentError add_component!(gui, c)
         remove_component!(gui, c; system = sys1)
@@ -287,7 +288,7 @@ const GUI = BeamletOpticsGUI
         add_component!(gui, pd; label = "PD")
         tick!()
         # traced, with the page "Results" like the detectors the view started with
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         @test GUI._card_pages(pd) == (:pose, :results, :properties)
         # its card, the card of the selection, shows its view, which is computed for its hits
         @test _card(gui).page == :results
@@ -296,7 +297,7 @@ const GUI = BeamletOpticsGUI
         @test !state.stale && !isnothing(state.result)
         # the solves empty it like the other detectors
         GUI._resolve!(gui, nothing)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
 
         # pinned and removed: its cards are unpinned and the views forget it
         GUI._toggle_pin!(gui, pd)
@@ -307,14 +308,14 @@ const GUI = BeamletOpticsGUI
         @test !GUI._is_pinned(gui, pd)
         @test !haskey(gui.detectors.states, pd)
         @test !any(((p, _),) -> p === pd, GUI._shown_views(gui))
-        @test BMO.hit_count(pd) == 0
+        @test length(pd) == 0
         # it is no longer traced
         GUI._resolve!(gui, nothing)
-        @test BMO.hit_count(pd) == 0 && !haskey(gui.detectors.states, pd)
+        @test length(pd) == 0 && !haskey(gui.detectors.states, pd)
         # and can be added again
         add_component!(gui, pd)
         tick!()
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         @test !GUI._detector_state(gui, pd).stale
         close(gui)
     end

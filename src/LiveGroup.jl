@@ -52,7 +52,7 @@ function _member_reason(gui, @nospecialize(obj))
     name = _label(gui, obj)
     _is_source(obj) && return "$name is a source, sources can not be grouped"
     _groupable(obj) || return "$name is not a component, it can not be grouped"
-    BMO.is_static(obj) && return "$name is static, it can not be grouped"
+    _is_static(obj) && return "$name is static, it can not be grouped"
     if !_shown_top(gui, obj)
         top = _component_top(gui, obj)
         top === obj && return "$name is not a component of the live view"

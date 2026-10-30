@@ -341,7 +341,7 @@ const _EMPTY_VIEW_SIZE = 0.4
 
 """Whether the `gui` shows nothing yet: no object of a system, no extra and no source."""
 _view_empty(gui::LiveView) = isempty(gui.pairs) &&
-    all(h -> isempty(render_children(h)), (gui.system_handles..., gui.extras))
+    all(h -> isempty(AbstractTrees.children(h)), (gui.system_handles..., gui.extras))
 
 """
     _show_origin!(gui)
