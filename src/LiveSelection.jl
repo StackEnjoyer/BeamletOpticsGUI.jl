@@ -364,7 +364,7 @@ Shows the markers of all movable sources of the `gui` if they are to be shown (s
 """
 function _update_source_markers!(gui::LiveView)
     show = _sources_shown(gui)
-    for oh in render_children(gui.controls.h)
+    for oh in AbstractTrees.children(gui.controls.h)
         _is_source(rendered(oh)) || continue
         visible = show && !(rendered(oh) in gui.objects.hidden)
         for plot in render_plots(oh)

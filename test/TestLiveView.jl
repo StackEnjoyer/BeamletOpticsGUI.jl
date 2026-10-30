@@ -1,7 +1,8 @@
 module TestLiveView
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using LinearAlgebra: normalize, dot, norm
 using Test
@@ -136,7 +137,7 @@ _points(h) = only(render_plots(h))[1][]
         @test sprint(show, gui) == "LiveView(2 systems, 2 sources, 1 detectors)"
         # both systems and the markers of both sources are handled by one controller; the detector
         # of both systems is rendered once
-        @test length(render_children(gui.controls.h)) == 4
+        @test length(AbstractTrees.children(gui.controls.h)) == 4
         @test length(BMO.hits(pd)) == 2
         gui.controls.selected[] = m
         _key!(gui, Keyboard.left)
@@ -159,9 +160,9 @@ _points(h) = only(render_plots(h))[1][]
         n_calls = Ref(0)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(sys, beam; throttle = false, mode = :rotate, fine_angle = 1e-2,
-            on_change = (g, obj) -> (n_calls[] += 1), pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            on_change = (g, obj) -> (n_calls[] += 1), pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
-        @test render_children(gui.controls.h)[1].obj === m
+        @test AbstractTrees.children(gui.controls.h)[1].obj === m
         n0 = n_calls[]
         _select!(gui)
         @test gui.controls.selected[] === m
@@ -287,7 +288,7 @@ _points(h) = only(render_plots(h))[1][]
     end
 
     @testset "movable sources" begin
-        _marker(gui, src) = render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === src, render_children(gui.controls.h))]
+        _marker(gui, src) = AbstractTrees.children(gui.controls.h)[findfirst(oh -> rendered(oh) === src, AbstractTrees.children(gui.controls.h))]
 
         # Beam: select the marker, move the source along its direction
         m, pd = _fixture()
@@ -370,7 +371,7 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_view(System([m, pd]), beam; movable_sources = false)
-        @test !any(oh -> rendered(oh) === beam, render_children(gui.controls.h))
+        @test !any(oh -> rendered(oh) === beam, AbstractTrees.children(gui.controls.h))
         @test !(beam in gui.controls.movable)
         close(gui)
     end
@@ -380,7 +381,7 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             fine_step = 1e-3, labels = Dict(m => "Mirror 1", pd => "PD"),
-            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test GUI._label(gui, pd) == "PD"
         _select!(gui)
@@ -435,7 +436,7 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             mode = :rotate, fine_angle = 1e-2, trace_budget = 0.0, idle_delay = 0.1,
-            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         gui.trace.solve_time = 1.0 # pretend that the solve is slow, independent of the machine
         _select!(gui)
@@ -460,7 +461,7 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), _gauss(); throttle = false, mode = :rotate,
             fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; n = 40))],
-            trace_budget = 0.5, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            trace_budget = 0.5, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test size(_field(gui)[3]) == (40, 40)
         # pretend that the solve is fast and the views are slow, independent of the machine
@@ -489,7 +490,7 @@ _points(h) = only(render_plots(h))[1][]
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), src; throttle = false, mode = :move,
-            progress_delay = 0.2, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            progress_delay = 0.2, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         scene = gui.ax.scene
         tick!() = notify(events(scene).tick)
@@ -638,9 +639,9 @@ _points(h) = only(render_plots(h))[1][]
     @testset "power of a view matches optical_power" begin
         m, pd = _fixture()
         # small area and coarse grid, such that the edges contribute to the integral
-        area = (; n = 5, x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, area)])
-        P = optical_power(pd, RegularGrid(; area...))
+        window = (; x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
+        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; n = 5, window...))])
+        P = optical_power(pd, RegularGrid(; num_points = 5, window...))
         @test _result(gui).metrics.P ≈ P
         @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)
@@ -701,7 +702,7 @@ _points(h) = only(render_plots(h))[1][]
             # the object moves, but nothing is solved
             @test Matrix{Float64}(BMO.orientation(m)) ≈ BMO.rotate3d([0, 0, 1], 1e-2) * R0
             # the model matrix of the plots of m is the rotation
-            m_plot = first(render_plots(render_children(gui.system_handles[1])[1]))
+            m_plot = first(render_plots(AbstractTrees.children(gui.system_handles[1])[1]))
             model = Makie.transformationmatrix(m_plot)[]
             @test isapprox(model[1:3, 1:3], BMO.rotate3d([0, 0, 1], 1e-2); atol = 1e-6)
             @test n_calls[] == 1
@@ -768,7 +769,7 @@ _points(h) = only(render_plots(h))[1][]
             notify(events(gui.ax.scene).tick)
             # the callback and update_render! run, but no solve
             @test called == [1.0]
-            pd_plot = first(render_plots(render_children(gui.system_handles[1])[2]))
+            pd_plot = first(render_plots(AbstractTrees.children(gui.system_handles[1])[2]))
             shift = Vector{Float64}(Makie.translation(pd_plot)[])
             @test isapprox(shift, BMO.position(pd) - p0; atol = 1e-9)
             @test n_calls[] == 1
@@ -813,13 +814,13 @@ _points(h) = only(render_plots(h))[1][]
     end
 
     @testset "clip planes" begin
-        _handle(gui, obj) = render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, render_children(gui.controls.h))]
+        _handle(gui, obj) = AbstractTrees.children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))]
         # all plots of the system objects, including the nested plots of recipes
         _nested(p) = AbstractPlot[p; reduce(vcat, _nested.(p.plots); init = AbstractPlot[])]
-        _optics_plots(gui) = reduce(vcat, (_nested(p) for h in gui.system_handles for oh in render_children(h)
+        _optics_plots(gui) = reduce(vcat, (_nested(p) for h in gui.system_handles for oh in AbstractTrees.children(h)
                                            for p in render_plots(oh)); init = AbstractPlot[])
         # markers of the sources and clip planes
-        _marker_plots(gui) = reduce(vcat, (_nested(p) for oh in render_children(gui.controls.h)
+        _marker_plots(gui) = reduce(vcat, (_nested(p) for oh in AbstractTrees.children(gui.controls.h)
                                            if !(rendered(oh) isa BMO.AbstractObject) for p in render_plots(oh)); init = AbstractPlot[])
         _beam_plots(gui) = reduce(vcat, (_nested(p) for h in gui.beam_handles for p in GUI._beam_plots(h)))
         _control_plots(gui) = reduce(vcat, (_nested(p) for p in gui.controls.plots[1:4]))
@@ -980,7 +981,7 @@ _points(h) = only(render_plots(h))[1][]
             # everything below y = 0.5 is clipped, i.e. all objects
             gui = _live_view(System([m, pd]), _beam(); throttle = false,
                 clip_planes = [[0, 0.5, 0] => [0, 1, 0]])
-            @test Makie.boundingbox(render_plots(render_children(gui.system_handles[1])[1])[1]) == Makie.Rect3d()
+            @test Makie.boundingbox(render_plots(AbstractTrees.children(gui.system_handles[1])[1])[1]) == Makie.Rect3d()
             gui.controls.selected[] = m
             GUI._update_selection_box!(gui.controls)
             pts = gui.controls.box_obs[]
@@ -1047,7 +1048,7 @@ _points(h) = only(render_plots(h))[1][]
             @test isnothing(gui.controls.selected[])
             @test !(plane2 in gui.controls.movable)
             @test !haskey(gui.controls.init_poses, plane2)
-            @test !any(oh -> rendered(oh) === plane2, render_children(gui.controls.h))
+            @test !any(oh -> rendered(oh) === plane2, AbstractTrees.children(gui.controls.h))
             @test !any(p -> any(q -> q === p, gui.ax.scene.plots), marker_plots)
             @test _planes(gui) == [GUI._plane3f(plane)]
             # the undo history of the removed plane is dropped, undo still works
@@ -1173,7 +1174,7 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref = Ref{Any}(nothing)
         @test_logs (:error, r"on_change") begin
             gui_ref[] = _live_view(sys, beam; throttle = false, on_change = (g, obj) -> error("boom"),
-                pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+                pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
             gui = gui_ref[]
             _select!(gui)
             _key!(gui, Keyboard.up)
@@ -1300,7 +1301,7 @@ _points(h) = only(render_plots(h))[1][]
         translate3d!(lens, [0.01, 0.05, 0.002])
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            fine_angle = 1e-3, fine_step = 1e-3, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[2])[1], 0))
+            fine_angle = 1e-3, fine_step = 1e-3, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[2])[1], 0))
         gui_ref[] = gui
         box(k) = GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[k])
         texts() = [isnothing(box(k)) ? "" : box(k).displayed_string[] for k in 1:6]
@@ -1618,7 +1619,7 @@ _points(h) = only(render_plots(h))[1][]
         pick_plot = Ref{Any}(nothing)
         gui = _live_view(System([m1, m2]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             labels = Dict(m1 => "M1", m2 => "M2"), pick = ax -> (pick_plot[], 0))
-        _plot(obj) = render_plots(render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, render_children(gui.controls.h))])[1]
+        _plot(obj) = render_plots(AbstractTrees.children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))])[1]
         gui.widgets.measure_toggle.active[] = true
         @test startswith(gui.status.text[], "measure:")
         pick_plot[] = _plot(m1)
@@ -1645,7 +1646,7 @@ _points(h) = only(render_plots(h))[1][]
 
     @testset "theme and info label" begin
         _rgb(c) = RGBf(Makie.to_color(c))
-        _plots(gui, obj) = render_plots(only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj))
+        _plots(gui, obj) = render_plots(only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === obj))
         _detector_color(gui, pd) = _rgb(first(p for p in _plots(gui, pd) if p isa Makie.Mesh).color[])
         _help(gui) = only(p for p in gui.controls.plots if p isa Makie.Text && p.parent === gui.ax.blockscene)
         _strokes(gui, objs...) = [_rgb(p.strokecolor[]) for o in objs for p in _plots(gui, o) if p isa Makie.Scatter]
@@ -1771,7 +1772,7 @@ _points(h) = only(render_plots(h))[1][]
         _tick!(gui)
         @test isnothing(gui.camera.animation)
         eye, lookat, _ = _view()
-        bbs = [Makie.boundingbox(p) for h in gui.system_handles for oh in render_children(h) for p in render_plots(oh)]
+        bbs = [Makie.boundingbox(p) for h in gui.system_handles for oh in AbstractTrees.children(h) for p in render_plots(oh)]
         bb = reduce(GUI.GeometryBasics.union, bbs)
         @test lookat ≈ collect(minimum(bb) .+ Makie.widths(bb) ./ 2) atol = 1e-6
 
@@ -1829,10 +1830,10 @@ end
     # edges of a mirror in the `:cad` look on by default, off via `edges = false`
     set_render_look(:cad)
     gui = live_view(System([m]), beam; detectors = [])
-    @test length(edge_plots(render_plots(only(render_children(gui.system_handles[1]))))) == 1
+    @test length(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1]))))) == 1
     close(gui)
     gui = live_view(System([m]), beam; detectors = [], edges = false)
-    @test isempty(edge_plots(render_plots(only(render_children(gui.system_handles[1])))))
+    @test isempty(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1])))))
     close(gui)
     set_render_look(:modern)
 end

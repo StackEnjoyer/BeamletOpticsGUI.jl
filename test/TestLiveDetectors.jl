@@ -244,7 +244,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         GUI._trace!(gui)
         @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
         translate3d!(gui, pd, [0, 0, 0.5e-3])
-        @test BMO.hit_count(pd) == 0 && gui.trace.stale
+        @test length(pd) == 0 && gui.trace.stale
         @test !state.stale && isempty(state.result.kinds) && view.kind_label.text[] == "no hits"
         @test GUI._signal_text(gui, pd) == "no hits"
         GUI._trace!(gui)
@@ -267,7 +267,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         bms = BMO.beams(bg)
         shown = 1:k:length(bms)
         GUI._solve_preview!(sys, bg, k)
-        @test BMO.hit_count(pd) == length(shown)
+        @test length(pd) == length(shown)
         @test all(i -> length(BMO.rays(bms[i])) > 1, shown)
         @test all(i -> length(BMO.rays(bms[i])) == 1, setdiff(eachindex(bms), shown))
         points = sort([collect(BMO.hit_point(h)) for h in BMO.hits(pd)])

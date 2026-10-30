@@ -1,6 +1,7 @@
 module TestLiveCompact
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOpticsGUI: AbstractTrees
 using Makie
 using Test
 
@@ -363,10 +364,10 @@ const GUI = BeamletOpticsGUI
         # the markers of the sources are hidden in the mode and follow their toggle afterwards
         gui, m, _ = _fixture()
         ctrl, toggle = gui.controls, gui.widgets.sources_toggle
-        marker = only(oh for oh in BMO.render_children(ctrl.h) if GUI._is_source(BMO.rendered(oh)))
+        marker = only(oh for oh in AbstractTrees.children(ctrl.h) if GUI._is_source(BMO.rendered(oh)))
         shown() = all(p -> p.visible[], BMO.render_plots(marker))
         hidden() = !any(p -> p.visible[], BMO.render_plots(marker))
-        mirror = BMO.render_plots(only(oh for oh in BMO.render_children(ctrl.h) if BMO.rendered(oh) === m))
+        mirror = BMO.render_plots(only(oh for oh in AbstractTrees.children(ctrl.h) if BMO.rendered(oh) === m))
         @test toggle.active[] && shown() && GUI._sources_shown(gui)
         _key!(gui, Keyboard.v)
         @test hidden() && toggle.active[] && !GUI._sources_shown(gui)
@@ -401,7 +402,7 @@ const GUI = BeamletOpticsGUI
         _tick!(gui)
         @test o.hidden && _parked(o.more) && !gui.widgets.view_cube.scene.visible[]
         @test !GUI._sources_shown(gui) && !any(p -> p.visible[], BMO.render_plots(
-            only(oh for oh in BMO.render_children(gui.controls.h) if GUI._is_source(BMO.rendered(oh)))))
+            only(oh for oh in AbstractTrees.children(gui.controls.h) if GUI._is_source(BMO.rendered(oh)))))
         @test same(Rect2f(gui.ax.scene.viewport[]), Rect2f(gui.fig.scene.viewport[]))
         notify(gui.layout.help.spectator_button.clicks)
         _tick!(gui)

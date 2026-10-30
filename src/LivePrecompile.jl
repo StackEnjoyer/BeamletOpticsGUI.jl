@@ -28,7 +28,7 @@
         end
 
         # Select the mirror, then drag it and use the keys in both modes
-        mirror_plot = first(render_plots(first(render_children(h))))
+        mirror_plot = first(render_plots(first(AbstractTrees.children(h))))
         ctrl = kinematic_controls!(ax, h; throttle = false, pick = _ -> (mirror_plot, 0))
         scene = ax.scene
         events(scene).mouseposition[] = (10.0, 10.0)

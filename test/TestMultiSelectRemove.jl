@@ -1,7 +1,8 @@
 module TestMultiSelectRemove
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: rendered
 using Makie
 using Test
 
@@ -44,7 +45,7 @@ const GUI = BeamletOpticsGUI
         sys = System([m1, m2, pd])
         gui = _live_view(sys => _beam(); layout)
         ctrl = gui.controls
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         s = _select_several!(gui, [m1, pd])
         n = length(ctrl.undo_stack)
         @test GUI._delete_selected!(gui, s)
@@ -60,7 +61,7 @@ const GUI = BeamletOpticsGUI
         @test length(sys.objects) == 3 && _in(m1, sys.objects) && _in(pd, sys.objects)
         @test _rendered(gui, m1) && _rendered(gui, pd)
         wait_solve(gui)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         sel = ctrl.selected[]
         @test sel isa GUI._MultiSelection && sel.objects == Any[m1, pd]
 
@@ -116,7 +117,7 @@ const GUI = BeamletOpticsGUI
         sys = System([m1, m2, pd])
         calls = Any[]
         gui = _live_view(sys => _beam(); layout, on_change = (gui, obj) -> push!(calls, obj))
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         s = _select_several!(gui, [m1, pd])
         # the systems of the first object get new components, see `_target_system`
         @test GUI._target_system(gui) === sys
@@ -126,7 +127,7 @@ const GUI = BeamletOpticsGUI
         gui.controls.on_change(s)
         wait_solve(gui)
         @test isnothing(gui.trace.error) && !gui.trace.stale
-        @test BMO.hit_count(pd) == 0
+        @test length(pd) == 0
         @test calls == Any[m1, pd]
         @test !any(c -> c isa GUI._MultiSelection, calls)
         @test occursin("2 objects", gui.status.text[])
@@ -135,7 +136,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(s, [-0.05, 0, 0])
         gui.controls.on_change(s)
         wait_solve(gui)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         @test calls == Any[m1, pd]
         # tracing on request with the selection
         empty!(calls)

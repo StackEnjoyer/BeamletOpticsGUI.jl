@@ -132,7 +132,7 @@ the `opts` (see `_ViewOptions`), for the PSF divided by its maximum. The grid is
 """
 _kind_data(::_SpotKind, pd, _, _, _, _) = BMO.spot_diagram(pd)
 function _kind_data(::_IntensityKind, pd, _, opts::_ViewOptions, n, coarse)
-    kwargs = merge(opts.kwargs, (; n = _view_grid(n, coarse)), _window_kwargs(opts.window))
+    kwargs = merge(opts.kwargs, (; num_points = _view_grid(n, coarse)), _window_kwargs(opts.window))
     x, z, I = BMO.intensity(pd, BMO.RegularGrid(; kwargs...))
     return (x, z, I)
 end

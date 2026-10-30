@@ -1,7 +1,8 @@
 module TestLiveApp
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 
@@ -29,7 +30,7 @@ const GUI = BeamletOpticsGUI
 
     _width(block) = widths(block.layoutobservables.computedbbox[])[1]
     _height(block) = widths(block.layoutobservables.computedbbox[])[2]
-    _marker(gui, src) = only(oh for oh in render_children(gui.controls.h) if rendered(oh) === src)
+    _marker(gui, src) = only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === src)
 
     @testset "construction" begin
         m, pd = _fixture()
@@ -90,7 +91,7 @@ const GUI = BeamletOpticsGUI
 
         # the colors of the 3D view and of the detector view follow the theme
         _rgb(c) = RGBf(Makie.to_color(c))
-        _plots(gui, obj) = render_plots(only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj))
+        _plots(gui, obj) = render_plots(only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === obj))
         _detector_color(gui, pd) = _rgb(first(p for p in _plots(gui, pd) if p isa Makie.Mesh).color[])
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
@@ -333,7 +334,7 @@ const GUI = BeamletOpticsGUI
         tree.expand_clicked[] = gui.system_handles[1]
         @test length(_rows(gui)) == 7
         # the eye hides and shows, the row is muted
-        handle(obj) = only(oh for oh in render_children(ctrl.h) if rendered(oh) === obj)
+        handle(obj) = only(oh for oh in AbstractTrees.children(ctrl.h) if rendered(oh) === obj)
         tree.eye_clicked[] = o.housing
         @test o.housing in gui.objects.hidden
         @test !any(p -> p.visible[], render_plots(handle(o.housing)))

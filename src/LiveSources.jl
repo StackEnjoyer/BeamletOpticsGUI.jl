@@ -180,7 +180,7 @@ function _attach!(gui::LiveView, src::_Source, sys::Union{Nothing, BMO.AbstractS
     end
     # The marker selects and moves the source, and removes it again: also in a view without
     # `movable_sources`
-    if !BMO.is_static(src)
+    if !_is_static(src)
         oh = _live_render_source!(gui.ax, src; size = gui.beams.marker_size[],
             strokecolor = _marker_stroke(gui.layout))
         push!(ctrl.h, oh)

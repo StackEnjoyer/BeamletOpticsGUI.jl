@@ -73,7 +73,7 @@ amplitude of `_pol_view` and `show_polarization = true`, stored in `gui.beams.po
 overlay is removed. This changes the display only: nothing is solved or marked as outdated.
 Nothing happens if the state does not change.
 
-The overlay of a group renders its central `Beam` object itself. `set_num_rays!` would replace
+The overlay of a group renders its central `Beam` object itself. `num_rays!` would replace
 that object, but no polarized group has a ray slider (all of them wrap given beams, `NoSampling`),
 hence the overlay needs no re-sync after a change of the ray count.
 """

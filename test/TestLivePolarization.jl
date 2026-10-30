@@ -72,7 +72,7 @@ const GUI = BeamletOpticsGUI
         end
         # ... also after their rays were generated again
         line = UniformLineSource(pos, dir, 4e-3, 633e-9; num_rays = 11)
-        set_num_rays!(line, 21)
+        num_rays!(line, 21)
         @test GUI._central_beam(line) === first(BMO.beams(line)) && position(GUI._central_beam(line)) == pos
         # A source from given beams keeps the search, see `_wrapped`
         @test isnothing(BMO.min_num_rays(first(_wrapped())))

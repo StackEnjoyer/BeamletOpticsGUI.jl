@@ -1606,7 +1606,7 @@ function live_view(
     marker_size = beam_state.marker_size[] = 0.08 * extent
     if movable_sources
         for src in unique(objectid, last.(ps))
-            BMO.is_static(src) || push!(markers,
+            _is_static(src) || push!(markers,
                 _live_render_source!(ax, src; size = marker_size, strokecolor = _marker_stroke(lay)))
         end
     end
@@ -1614,9 +1614,9 @@ function live_view(
     # hence one handle of the objects of all systems, the source markers and the extras; the clip
     # planes are added later
     # an object of several systems has one handle
-    members = unique(objectid, AbstractObjectRenderHandle[c for h in system_handles for c in render_children(h)])
+    members = unique(objectid, AbstractObjectRenderHandle[c for h in system_handles for c in AbstractTrees.children(h)])
     combined = LiveSystemHandle(rendered(pool), AbstractObjectRenderHandle[
-            members..., markers..., render_children(extras_handle)...],
+            members..., markers..., AbstractTrees.children(extras_handle)...],
         AbstractSystemRenderHandle[pool])
     # Colors of the render look that the theme of the layout replaces, e.g. of dark detectors
     _theme_render!(lay, combined)

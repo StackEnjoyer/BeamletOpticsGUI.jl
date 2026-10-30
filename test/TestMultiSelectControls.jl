@@ -1,7 +1,8 @@
 module TestMultiSelectControls
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 using LinearAlgebra
@@ -23,7 +24,7 @@ const GUI = BeamletOpticsGUI
         ax = LScene(fig[1, 1])
         h = live_render!(ax, System([m1, m2, g]))
         target = Ref{Any}(m1)
-        plot_of(obj) = render_plots(only(oh for oh in render_children(h) if rendered(oh) === obj))[1]
+        plot_of(obj) = render_plots(only(oh for oh in AbstractTrees.children(h) if rendered(oh) === obj))[1]
         pick = ax2 -> (isnothing(target[]) ? (nothing, 0) : (plot_of(target[]), 0))
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick, kwargs...)
         return (; ctrl, scene = ax.scene, target, m1, m2, m3, g)
@@ -101,7 +102,7 @@ const GUI = BeamletOpticsGUI
         fig = Figure()
         ax = LScene(fig[1, 1])
         h = live_render!(ax, System([g, o]))
-        find_handle(hh, obj) = only(oh for oh in render_children(hh) if rendered(oh) === obj)
+        find_handle(hh, obj) = only(oh for oh in AbstractTrees.children(hh) if rendered(oh) === obj)
         target = Ref{Any}(a)
         pick = ax2 -> (render_plots(find_handle(h, target[]))[1], 0)
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick)

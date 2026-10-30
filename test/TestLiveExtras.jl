@@ -1,7 +1,8 @@
 module TestLiveExtras
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 
@@ -28,7 +29,7 @@ const GUI = BeamletOpticsGUI
     end
     _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf, throttle = false), kwargs)...)
     _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0))
-    _handle(gui, obj) = only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj)
+    _handle(gui, obj) = only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === obj)
     _alphas(gui, obj) = [p.alpha[] for p in render_plots(_handle(gui, obj))]
     _card_names(c) = [w.name for (_, w) in c.widgets]
 
@@ -216,7 +217,7 @@ const GUI = BeamletOpticsGUI
         @test_throws ArgumentError _live_view(sys, beam; extras = [housing, housing])
         # no extras: an empty handle, nothing in the tree
         gui = _live_view(sys, beam)
-        @test isempty(render_children(gui.extras))
+        @test isempty(AbstractTrees.children(gui.extras))
         close(gui)
     end
 
@@ -256,8 +257,8 @@ const GUI = BeamletOpticsGUI
             fig = Figure()
             ax = LScene(fig[1, 1])
             h = live_render!(ax, System([h_obj]))
-            foreach(p -> p.alpha[] = alpha, render_plots(render_children(h)[1]))
-            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = _ -> (render_plots(render_children(h)[1])[1], 0))
+            foreach(p -> p.alpha[] = alpha, render_plots(AbstractTrees.children(h)[1]))
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = _ -> (render_plots(AbstractTrees.children(h)[1])[1], 0))
             scene = ax.scene
             events(scene).mouseposition[] = Tuple(Float64.(minimum(scene.viewport[]) .+ 50))
             for action in (Mouse.press, Mouse.release)
@@ -284,7 +285,7 @@ const GUI = BeamletOpticsGUI
         housing = NonInteractableObject(BMO.CubeMesh(0.5))
         bb_housing = let fig = Figure(), ax = LScene(fig[1, 1])
             h = live_render!(ax, System([housing]))
-            reduce(Makie.GeometryBasics.union, Makie.boundingbox.(render_plots(render_children(h)[1])))
+            reduce(Makie.GeometryBasics.union, Makie.boundingbox.(render_plots(AbstractTrees.children(h)[1])))
         end
         gui = _live_view(System([m, pd]), beam; extras = [housing])
         ctrl = gui.controls

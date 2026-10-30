@@ -270,7 +270,7 @@ function _attach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
     new = isempty(_pool_handles(gui, obj))
     ohs = _pool_handles!(gui.pool, obj, comp.render_kwargs)
     h = _member_handle(gui, sys)
-    foreach(oh -> _has(render_children(h), oh) || push!(h, oh), ohs)
+    foreach(oh -> _has(AbstractTrees.children(h), oh) || push!(h, oh), ohs)
     extras = rendered(gui.extras)
     if isnothing(sys)
         _has(extras.objects, obj) || push!(extras, obj)
@@ -283,7 +283,7 @@ function _attach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
         foreach(oh -> push!(ctrl.h, oh), ohs)
         _theme_render!(gui.layout, ctrl.h)
         _apply_clip_planes!(gui)
-        if !BMO.is_static(obj)
+        if !_is_static(obj)
             push!(ctrl.movable, obj)
             for o in _descendants(obj)
                 ctrl.init_poses[o] = _pose(o)
@@ -651,7 +651,7 @@ function _detach!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup),
         (keep && !isnothing(sys)) || return _drop!(gui, obj, sys)
         # without a system now
         _has(extras.objects, obj) || push!(extras, obj)
-        foreach(oh -> _has(render_children(gui.extras), oh) || push!(gui.extras, oh), ohs)
+        foreach(oh -> _has(AbstractTrees.children(gui.extras), oh) || push!(gui.extras, oh), ohs)
     end
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)

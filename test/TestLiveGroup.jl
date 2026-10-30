@@ -1,7 +1,8 @@
 module TestLiveGroup
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using LinearAlgebra: norm, I
 using Test
@@ -46,7 +47,7 @@ const GUI = BeamletOpticsGUI
 
     _in(obj, list) = any(o -> o === obj, list)
     # the number of the handles of the controls that draw `obj`
-    _drawn(gui, obj) = count(oh -> rendered(oh) === obj, render_children(gui.controls.h))
+    _drawn(gui, obj) = count(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))
     _top(gui, obj) = GUI._top_level(gui.controls.h, obj)
     _close(a, b) = norm(Vector{Float64}(a) .- Vector{Float64}(b)) < 1e-9
     _same_pose(obj, pose) = _close(position(obj), pose[1]) && norm(BMO.orientation(obj) .- pose[2]) < 1e-9
@@ -60,7 +61,7 @@ const GUI = BeamletOpticsGUI
         gui, sys, m, pd = fx.gui, fx.sys, fx.m, fx.pd
         ctrl = gui.controls
         wait_solve(gui)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         name_m, name_pd = GUI._label(gui, m), GUI._label(gui, pd)
         P_m, P_pd = position(m), position(pd)
         n = length(ctrl.undo_stack)
@@ -93,7 +94,7 @@ const GUI = BeamletOpticsGUI
         # traced again
         wait_solve(gui)
         @test isnothing(gui.trace.error) && !gui.trace.stale
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
 
         # the object tree shows the group with its members
         if layout === :app
@@ -124,7 +125,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(gui, g, [0.0, 0, -0.01])
         wait_solve(gui)
         @test _close(position(m), P_m) && _close(position(pd), P_pd)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
 
         # hides as one
         GUI._toggle_hidden!(gui, g)
@@ -177,7 +178,7 @@ const GUI = BeamletOpticsGUI
         @test _close(position(m), P_m) && _close(position(pd), P_pd)
         @test !GUI._is_window_group(gui, g) && _top(gui, m) === m
         wait_solve(gui)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         # redo of grouping: the same group
         @test GUI._redo!(ctrl)
         @test _in(g, sys.objects) && GUI._is_window_group(gui, g) && ctrl.selected[] === g
@@ -415,7 +416,7 @@ const GUI = BeamletOpticsGUI
         @test isempty(gui.components.removed) && gui.components.added == Any[g]
         @test _top(gui, m) === g
         wait_solve(gui)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         @test GUI._ungroup!(gui, g)
         @test _in(m, sys.objects) && _in(pd, sys.objects)
         close(gui)

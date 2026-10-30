@@ -251,7 +251,7 @@ _signal_metric(m::NamedTuple, pd) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW"
                                     haskey(m, :n) ? "N = $(m.n)" : _hits_text(pd)
 _signal_metric(_, pd) = _hits_text(pd)
 
-_hits_text(pd) = (n = BMO.hit_count(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit" : "$n hits")
+_hits_text(pd) = (n = length(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit" : "$n hits")
 
 _source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.wavelength(src))), $(_size_text(src))"
 # the size of a collimated source per sampling: the width of a line (`UniformLineSource`), else the diameter
@@ -344,7 +344,7 @@ end
 """
     _set_num_rays!(gui, src, n)
 
-Regenerates the rays of the source `src` of the `gui` with `n` rays (see `BeamletOptics.set_num_rays!`),
+Regenerates the rays of the source `src` of the `gui` with `n` rays (see `BeamletOptics.num_rays!`),
 a change of the source (a running solve is cancelled first, see `_change!`), and solves again or
 marks the beams as outdated like after a move, via the `on_change` of the controls. The slider
 snaps to its steps, hence `n` may be the current count.
@@ -352,7 +352,7 @@ snaps to its steps, hence `n` may be the current count.
 function _set_num_rays!(gui::LiveView, src, n)
     n = round(Int, n)
     length(src) == n && return nothing
-    _change!(() -> set_num_rays!(src, n), gui.controls, src)
+    _change!(() -> num_rays!(src, n), gui.controls, src)
     gui.controls.on_change(src)
     return nothing
 end

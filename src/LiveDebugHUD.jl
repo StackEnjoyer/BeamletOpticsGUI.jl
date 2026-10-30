@@ -295,7 +295,7 @@ end
 
 function _hud_rows(gui::LiveView, ::_Debug, ::Val{:scene})
     systems = length(gui.system_handles)
-    objects = length(render_children(gui.pool))
+    objects = length(AbstractTrees.children(gui.pool))
     sources = length(_sources(gui))
     detectors = length(_find_detectors(_systems(gui)))
     cards = gui.cards.all

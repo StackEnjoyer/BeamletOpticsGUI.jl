@@ -1,7 +1,8 @@
 module TestLiveSelection
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 
@@ -43,7 +44,7 @@ const GUI = BeamletOpticsGUI
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd, g]), beam; throttle = false,
             labels = Dict(m => "M1", g.objects[1] => "G1"),
-            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         # the system, then every movable object once, the objects of the group after the group,
         # indented
@@ -84,7 +85,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.controls.selected[])
         @test gui.widgets.menu.i_selected[] == 0
         @test m in gui.objects.hidden
-        @test all(p -> !p.visible[], render_plots(render_children(gui.controls.h)[1]))
+        @test all(p -> !p.visible[], render_plots(AbstractTrees.children(gui.controls.h)[1]))
         @test isnothing(first(GUI._ray_pick(gui.controls, scene)))
         # also not via the `pick` function
         _select!(gui)
@@ -98,7 +99,7 @@ const GUI = BeamletOpticsGUI
         @test gui.controls.selected[] === m
         (eye = GUI._card_widget(gui.cards.selection, :hide); eye.active[] = !eye.active[])
         @test !(m in gui.objects.hidden)
-        @test all(p -> p.visible[], render_plots(render_children(gui.controls.h)[1]))
+        @test all(p -> p.visible[], render_plots(AbstractTrees.children(gui.controls.h)[1]))
         @test gui.controls.selected[] === m
 
         # groups: all objects, show all
@@ -107,7 +108,7 @@ const GUI = BeamletOpticsGUI
         gui.widgets.menu.i_selected[] = 2
         (eye = GUI._card_widget(gui.cards.selection, :hide); eye.active[] = !eye.active[])
         @test length(gui.objects.hidden) == 3
-        leaf_plots = [p for oh in render_children(gui.controls.h) if rendered(oh) in (m, g.objects...) for p in render_plots(oh)]
+        leaf_plots = [p for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) in (m, g.objects...) for p in render_plots(oh)]
         @test all(p -> !p.visible[], leaf_plots)
         notify(gui.widgets.show_all_button.clicks)
         @test isempty(gui.objects.hidden)

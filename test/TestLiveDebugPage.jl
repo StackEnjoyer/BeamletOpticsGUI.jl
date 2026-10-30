@@ -130,7 +130,7 @@ GUI._debug_kind(::GUI.LiveView, ::DebugPageBroken) = Any[() -> error("broken row
         # a detector
         rows = GUI._debug_rows(gui, pd)
         @test _names(rows) ⊇ ["hit type", "hit count", "view", "position [m]"]
-        @test _value(rows, "hit count") == string(BMO.hit_count(pd))
+        @test _value(rows, "hit count") == string(length(pd))
         # outdated beams are shown as such
         translate3d!(m, [0.0, 0.0, 0.001])
         GUI._mark_stale!(gui, m)

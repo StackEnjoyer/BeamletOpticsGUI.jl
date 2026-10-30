@@ -265,7 +265,7 @@ _card_cell(w::CardWidget) = w
 Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s, chosen by multiple
 dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams, beam groups and
 sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length of the final rays), a source whose rays can be regenerated (see
-`BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
+`num_rays!`) a slider for the number of rays, a `Detector`
 its signal (the power or the number of rays of its detector view while a view is shown, else the
 number of hits), mechanics (`NonInteractableObject`, e.g. a
 `NonInteractableObject(loadpath)` of an STL file, and `IntersectableObject`) a slider for their opacity. A system (`AbstractSystem`)

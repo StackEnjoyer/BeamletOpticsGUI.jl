@@ -38,7 +38,7 @@ opens on "Results" for a detector, else on "Pose"; a pinned card keeps its page.
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
 beamsplitters, the polarizer axis, detector `signal` (power or number of rays of its view while a
 view is shown, else number of hits), the ray count slider of sources
-(`set_num_rays!`), and on every beam, beam group, source and beamlet the toggle "on" (off: not
+(`num_rays!`), and on every beam, beam group, source and beamlet the toggle "on" (off: not
 solved, not drawn, rays removed from detectors; only the source marker stays), for Gaussian
 beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true)`), for polarized
 beams the toggle "polarization" and the sliders `pol λ`, `pol amp` (wavelength and amplitude of
