@@ -21,7 +21,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.1, 0])
         return m, pd
     end
-    # A housing next to the beam path, as a mesh like a `MeshDummy` of an STL file
+    # A housing next to the beam path, as a mesh like a `NonInteractableObject` of an STL file
     function _housing(p = [0.05, 0.05, 0])
         housing = NonInteractableObject(BMO.CubeMesh(0.02))
         translate3d!(housing, p)

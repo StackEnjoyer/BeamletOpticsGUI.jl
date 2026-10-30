@@ -238,7 +238,7 @@ _points(h) = only(render_plots(h))[1][]
         # Makie's default camera instead of the initial Front-Right-Top view of `live_view`
         set_view(gui.ax, [3.0, 3, 3], [0.0, 0, 0], [0.0, 0, 1])
 
-        # A MeshDummy-like housing in front of the mirror along the camera ray, not part of the
+        # A housing (like a `NonInteractableObject`) in front of the mirror along the camera ray, not part of the
         # system: added directly to the axis, as described for `render!(gui.ax, ...)`
         cube = BMO.CubeMesh(1)
         translate3d!(cube, -[0.5, 0.5, 0.5])
