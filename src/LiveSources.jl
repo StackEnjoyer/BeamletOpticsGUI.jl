@@ -257,6 +257,8 @@ function remove_component!(gui::LiveView, src::_Source; system = nothing)
     _on_change!(gui, nothing)
     isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
     _record_removed!(gui, src, snap)
+    # The table fits what is left, see `_table_fit!`
+    _table_fit!(gui)
     return src
 end
 
@@ -347,13 +349,17 @@ _rename!(gui::LiveView, src::_Source, name) = _rename_object!(gui, src, name)
 Names the component, the group or the source `obj` of the `gui` `name`, the input of the textbox of
 the title of its card: in the component menu, the object tree, on the cards, in the status line and
 in the exported code, like an entry of the `labels` kwarg of `live_view`. An empty name only shows
-a message in the status line. The name is not part of the undo history.
+a message in the status line. The name is not part of the undo history. A gesture on `obj`: an
+`obj` that another participant of the project claims keeps its name, the status line names the
+holder (see `_gesture!`).
 """
 function _rename_object!(gui::LiveView, @nospecialize(obj), name)
     name = strip(something(name, ""))
     old = _label(gui, obj)
     if isempty(name)
         gui.status.text[] = "enter a name for $old"
+    elseif name != old && !_gesture!(gui, obj)
+        # claimed by another participant, see `_gesture!`
     elseif name != old
         gui.labels[obj] = gui.objects.names[obj] = String(name)
         _refresh_menu_options!(gui, gui.widgets.menu)

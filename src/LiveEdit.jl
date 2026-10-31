@@ -108,9 +108,16 @@ _takes_edit_text(::LiveView, _, ::CatalogSurface, ::Int, text) = !isempty(text)
 (see `_read_edit_inputs!`, unless `read` is `false`) and puts the new object in the place of `obj`,
 see `_replace!`. An
 invalid input or an error of the constructor only shows a message in the status line; unchanged
-inputs do nothing.
+inputs do nothing. An `obj` that another participant of the project claims is not changed, the
+status line names the holder (see `_claim_refusal`); else the new object holds the claims of `obj`
+(see `_hold!`).
 """
 function _apply_edit!(gui::LiveView, @nospecialize(obj); read::Bool = true)
+    refusal = _claim_refusal(gui, obj)
+    if !isnothing(refusal)
+        gui.status.text[] = refusal
+        return nothing
+    end
     _editable(gui, obj) || return nothing
     read && _read_edit_inputs!(gui, obj)
     origin = gui.components.origin[obj]
@@ -128,7 +135,10 @@ function _apply_edit!(gui::LiveView, @nospecialize(obj); read::Bool = true)
         return nothing
     end
     name = _label(gui, obj)
+    # none without a project
+    claims = _claim_keys(gui, obj)
     _replace!(gui, obj, c.obj, c.origin)
+    _hold!(gui, claims)
     gui.status.text[] = "$name changed"
     return nothing
 end
@@ -148,13 +158,29 @@ function _replacement_snapshot(gui::LiveView, old, new, origin, snap)
 end
 
 """
+    _Replacement(new, old)
+
+The object of the entry of the undo history of a replacement (see `_replace!`): `new` in the place
+of `old`. Its objects (see `_selection_objects`) are both, of which the one in the view holds the
+entry of the project (see `_move_id!`), such that an undo and a redo ask the claims of that entry
+(see `gesture` of the controls) and the entry goes with the history of either of them, see
+`_drop_history!`.
+"""
+struct _Replacement
+    new::Any
+    old::Any
+end
+_selection_objects(r::_Replacement) = Any[r.new, r.old]
+
+"""
     _replace!(gui, old, new, origin)
 
 Puts the component or source `new` with its `origin` in the place of `old` in the `gui`: `new` gets
 the pose of `old`, i.e. it is moved and rotated from its pose as constructed like `old` was from
 its own, then `old` is removed and `new` is added to the same system with the label of `old` and
 selected, and the card of the selection shows its page "Edit" again. The replacement is one action
-of the undo history: undo brings `old` back, redo `new`.
+of the undo history (see `_Replacement`): undo brings `old` back, redo `new`; both are refused while
+another participant of the project claims the entry.
 """
 function _replace!(gui::LiveView, old, new, origin)
     comp = gui.components
@@ -175,12 +201,16 @@ function _replace!(gui::LiveView, old, new, origin)
     swap!(out, out_state, in, in_state) = begin
         out_state[] = _remove_unrecorded!(gui, out)
         delete!(comp.edits, out)
+        # the same entry of the project, also of the view of a window of `open_system`, see
+        # `_move_id!` and `_project_view`
+        _move_id!(something(_project_view(gui), gui), out, in)
         _restore!(gui, in, in_state[])
         _show_edit_page!(gui, in)
         return nothing
     end
     swap!(old, old_state, new, new_snap)
-    comp.recording && _push_action!(gui.controls, new, () -> swap!(new, new_snap, old, old_state),
+    comp.recording && _push_action!(gui.controls, _Replacement(new, old),
+        () -> swap!(new, new_snap, old, old_state),
         () -> swap!(old, old_state, new, new_snap))
     return new
 end

@@ -31,7 +31,8 @@ end
 The beam that the component `obj` of the `gui` is aligned to: of the central beams that are switched
 on, as far as they do not depend on `obj` (see `_snap_lines`), the one closest to its position, see
 `_nearest_line`. `nothing` with the reason in the status line: for an object that is not movable,
-while a solve in the background traces the beams, and without a beam.
+that another participant of the project claims (see `_gesture!`), while a solve in the background
+traces the beams, and without a beam. The start of the gesture of aligning `obj`.
 """
 function _align_line(gui::LiveView, @nospecialize(obj))
     name = _label(gui, obj)
@@ -39,6 +40,7 @@ function _align_line(gui::LiveView, @nospecialize(obj))
         gui.status.text[] = "$name is not movable, it can not be aligned"
         return nothing
     end
+    _gesture!(gui, obj) || return nothing
     if _running(gui)
         gui.status.text[] = "the beams are being traced, align $name afterwards"
         return nothing

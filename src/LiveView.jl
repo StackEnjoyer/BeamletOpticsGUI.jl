@@ -603,6 +603,82 @@ end
 _ViewLinks() = _ViewLinks(Any[], false)
 
 """
+    _ProjectSync
+
+What the view knows of the files of its project, which an agent may change while it is open, see
+`LiveProjectSync.jl`:
+- `base`: the project (`BeamletOpticsProjects.Project`) of the state that the view and the files
+  last agreed on (opened, saved or merged), and `stamp`, the stamp of its files
+  (`BeamletOpticsProjects.project_stamp`);
+- `ids`: the readable id and the machine id of each object, source and system of the view that is
+  in the project;
+- `marks`: the times and sizes of the files at the last look of the watcher, `src` those of `src/`
+  when `base` was taken, `changed_at` the time the files last changed (`nothing`: settled);
+- `handled`: the stamp of the files that the view last reacted to, `failed` whether that failed
+  (e.g. a syntax error, shown in the status line) and `load_error` the reason, `conflicts` the names of the objects changed
+  both in the view and in the files, and `theirs` the project of the files of that conflict;
+- `written`: per machine id the last states of an entry that the view itself wrote, each after the
+  state it overwrote, `nothing` for a removal (the guard against an agent that writes from an older
+  read, see `_stale`), `text` the person's own pending change at the last look of the autosave (see
+  `_own_change`) and `edited_at` the time it last changed, `skipped` the objects without a recipe that the last save
+  left out (warned once);
+- `journal`: the recent changes of the person in the view, `(time, line)`, newest last, and
+  `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`;
+- `gliding`: the objects that glide to a pose of the files, `obj => (P, R, entry)`, and a group
+  that glides as one, `group => _GroupGlide`, see `_glide_all!`;
+- `others`: the other people who have the project open (by the id of their presence file, see
+  `LiveProjectPresence.jl`), `presence` the plots that show their selection, `beat_at` the time
+  the view last wrote its own presence file (or gave it to a look to write) and `presence_due`
+  whether it is to be written again, see `_presence_due!`; `presence_cache` the presence files of
+  the others as the looks read them last (see `BeamletOpticsProjects.read_presences`);
+- `timer`: the watcher, and `closed` whether the view was closed (no watcher starts again);
+  `look` the look of the watcher that reads the files in the background, `(; task, gen,
+  presence)` (see `_take_look!`), `look_at` the time it started, `gen` a counter that drops the
+  looks started before it (`gen` of a look), and `stamp_at` the time a look last read the stamp of
+  the contents of the files; `first_change_at` the time the files began to change since the last
+  merge, `adopting` whether a merge is being applied (its solves wait for its end), `saving`
+  whether the view writes the files (no look reads them meanwhile, see `_without_looks`) and
+  `monitor` the notifications of changes of the files, see `LiveProjectWatch.jl`;
+- `claim`: the claims of the person of the view and of the others, see `LiveProjectClaims.jl`.
+"""
+Base.@kwdef mutable struct _ProjectSync
+    base::Any = nothing
+    stamp::Union{Nothing, String} = nothing
+    ids::IdDict{Any, Tuple{Symbol, String}} = IdDict{Any, Tuple{Symbol, String}}()
+    marks::Vector{Tuple{String, Float64, Int}} = Tuple{String, Float64, Int}[]
+    src::Vector{Tuple{String, Float64, Int}} = Tuple{String, Float64, Int}[]
+    changed_at::Union{Nothing, Float64} = nothing
+    handled::Union{Nothing, String} = nothing
+    failed::Bool = false
+    load_error::String = ""
+    conflicts::Vector{String} = String[]
+    theirs::Any = nothing
+    written::Dict{String, Vector{Any}} = Dict{String, Vector{Any}}()
+    text::Union{Nothing, String} = nothing
+    edited_at::Union{Nothing, Float64} = nothing
+    journal::Vector{Tuple{Float64, String}} = Tuple{Float64, String}[]
+    session::Vector{Any} = Any[]
+    gliding::IdDict{Any, Any} = IdDict{Any, Any}()
+    skipped::Vector{String} = String[]
+    others::Dict{String, Any} = Dict{String, Any}()
+    presence::Vector{Any} = Any[]
+    beat_at::Float64 = 0.0
+    timer::Union{Nothing, Timer} = nothing
+    closed::Bool = false
+    presence_due::Bool = false
+    presence_cache::Dict{String, Any} = Dict{String, Any}()
+    look::Union{Nothing, @NamedTuple{task::Task, gen::Int, presence::Bool}} = nothing
+    look_at::Float64 = 0.0
+    gen::Int = 0
+    stamp_at::Float64 = 0.0
+    first_change_at::Union{Nothing, Float64} = nothing
+    adopting::Bool = false
+    saving::Bool = false
+    monitor::Any = nothing
+    claim::Any = nothing
+end
+
+"""
     LiveView
 
 Interactive window returned by [`live_view`](@ref). The `Figure` is stored in `fig`, the `LScene`
@@ -624,6 +700,9 @@ they are rendered, selectable and movable, but not traced, see `_live_render_ext
 `custom`, see `LiveCustom.jl`. `background_card` is the kwarg of [`live_view`](@ref): the object
 (or `gui -> object`) whose card a click on the empty background shows, see `_show_background!`.
 `links` holds the views that show systems of this one in other windows, see `_ViewLinks`.
+`project` is the folder of the project that the view was opened from or saved to (`nothing`
+before), which `Ctrl+S` saves to, see [`save_project`](@ref) and [`open_project`](@ref); `sync`
+what the view knows of its files, which an agent may change meanwhile, see `_ProjectSync`.
 
 The type parameter `L` is the type of the `layout`, see `AbstractLiveLayout`: `CompactView` and
 `AppView` are the `LiveView`s of `live_view(...; layout = :compact)` and `layout = :app`.
@@ -657,6 +736,10 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     spectator::_SpectatorState = _SpectatorState()
     background_card::Any = nothing
     links::_ViewLinks = _ViewLinks()
+    # the folder of the project that `Ctrl+S` saves to, see `save_project`
+    project::Union{Nothing, String} = nothing
+    # the files of the project when it was opened or saved, see `_ProjectSync`
+    sync::_ProjectSync = _ProjectSync()
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
@@ -706,6 +789,7 @@ end
 function Base.close(gui::LiveView)
     # The linked views no longer follow it, and it stops only its own solve
     _unlink!(gui)
+    _stop_watching!(gui)
     _cancel_solve!(gui)
     _close_debug!(gui)
     _end_placement!(gui)
@@ -1655,6 +1739,8 @@ function live_view(
             catalog = CatalogEntry[catalog...]),
         background_card, widgets, layout = lay)
     gui_ref[] = gui
+    # The table fits the setup again after a drag, see `_table_fit!`
+    controls.drag_end = obj -> (_table_fit!(gui); nothing)
     # Names of the objects without a label, e.g. for the object tree, see `_name_objects!`
     _name_objects!(gui)
     # The parents of the parts of groups and multi-shape objects, for the selection card
@@ -1701,6 +1787,9 @@ function live_view(
     _connect_placement!(gui)
     # Copying and pasting of the components of the catalog, see `_copy_selected!`
     _connect_copy!(gui)
+    # Saving and opening projects with `Ctrl+S` and `Ctrl+O` and the tools "Save" and "Open", see
+    # `save_project` and `open_project`
+    _connect_project!(gui)
     # Grouping the selection of several with `Ctrl+G`, see `_group!`
     _connect_group_keys!(gui)
     # What linked views share beside their objects, see `open_system`

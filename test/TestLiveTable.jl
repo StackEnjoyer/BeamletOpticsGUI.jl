@@ -304,10 +304,10 @@ const GUI = BeamletOpticsGUI
     @testset "grows with the setup" begin
         gui, sys, m, lens, a = _fixture(; table = true)
         t = gui.components.table
-        r = t.range
-        # moved within the table: as it is
+        # moved within the table: when the drag ends, the table fits the setup (see `_table_fit!`)
         _drag!(gui, lens, _to(gui, lens, [0.062, 0.139, 0.0]))
-        @test t.range == r
+        @test t.range == GUI._table_range(t, GUI._table_points(gui))
+        r = t.range
         # added beyond it: two holes around the new component
         far = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(far, [0.5, 0.1, 0])

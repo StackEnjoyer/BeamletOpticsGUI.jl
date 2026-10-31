@@ -15,6 +15,7 @@ const GUI = BeamletOpticsGUI
 const BMO = BeamletOptics
 
 include("session.jl")
+include("title.jl")
 
 @setup_workload begin
     # A step that fails only loses its part of the precompilation; `test/TestPrecompileSession.jl`

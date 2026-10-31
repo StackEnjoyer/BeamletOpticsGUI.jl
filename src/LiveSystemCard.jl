@@ -513,13 +513,16 @@ The name
 
 Names the system `sys` of the `gui` `name`, the input of the textbox of the title of its card: in
 the component menu, the object tree, the catalog and on the cards. An empty name only shows a
-message in the status line.
+message in the status line. A gesture on `sys`: a system that another participant of the project
+claims keeps its name, the status line names the holder (see `_gesture!`).
 """
 function _rename_system!(gui::LiveView, sys::BMO.AbstractSystem, name)
     name = strip(something(name, ""))
     old = _label(gui, sys)
     if isempty(name)
         gui.status.text[] = "enter a name for $old"
+    elseif name != old && !_gesture!(gui, sys)
+        # claimed by another participant, see `_gesture!`
     elseif name != old
         gui.labels[sys] = gui.objects.names[sys] = String(name)
         h = _system_handle(gui, sys)
