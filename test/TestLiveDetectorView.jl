@@ -206,8 +206,11 @@ GLMakie.activate!(; visible = false)
         @test fetch(Threads.@spawn GUI._view_result(pd, GUI._ViewOptions(; num_points = 20))).kind == Intensity
         # hits whose field can not be evaluated: the spot diagram, with the kind :auto only
         astigmatic = BMO.AstigmaticGaussianBeamletHit{Float64}[]
-        failing = Detector(1e-3)
-        @test_throws "No hits available" GUI._shown_data(Intensity, failing, astigmatic, GUI._ViewOptions(), 20, false)
+        # an invalid sampling keyword makes the field fail
+        failing = (; num_points = 20, kwargs = (; crop_factor = "wide"))
+        @test GUI._shown_data(Intensity, pd, astigmatic, GUI._ViewOptions(; failing...), 20, false)[1] == Spot
+        @test_throws TypeError GUI._shown_data(Intensity, pd, astigmatic,
+            GUI._ViewOptions(; kind = :intensity, failing...), 20, false)
         @test GUI._shown_data(Intensity, pd, astigmatic, GUI._ViewOptions(; num_points = 20), 20, false)[1] == Intensity
     end
 
