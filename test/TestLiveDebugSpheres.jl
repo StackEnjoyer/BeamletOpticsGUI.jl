@@ -34,9 +34,9 @@ const GUI = BeamletOpticsGUI
     # groups with a main sphere, in contrast to the group with the mesh
     function _setup()
         lens = _lens(0.05)
-        doublet = SphericalDoubletLens(0.1, -0.08, -0.2, 6e-3, 3e-3, 0.02, 1.6, 1.7)
+        doublet = SphericalDoubletLens(0.1, -0.08, -0.2, 6e-3, 3e-3, 0.02, ConstantRefractiveIndex(1.6), ConstantRefractiveIndex(1.7))
         translate3d!(doublet, [0, 0.1, 0])
-        cube = CubeBeamsplitter(0.02, 1.5)
+        cube = CubeBeamsplitter(0.02, ConstantRefractiveIndex(1.5))
         translate3d!(cube, [0, 0.15, 0])
         inner = _lens(0.2)
         dummy = BMO.NonInteractableObject(BMO.CubeMesh(0.01))
@@ -333,7 +333,7 @@ const GUI = BeamletOpticsGUI
 
         # added while the mode is off: drawn when it is switched on
         GUI._set_debug!(gui, false)
-        cube = CubeBeamsplitter(0.02, 1.5)
+        cube = CubeBeamsplitter(0.02, ConstantRefractiveIndex(1.5))
         translate3d!(cube, [0.1, 0.1, 0])
         add_component!(gui, cube)
         GUI._debug_attached!(gui, cube)

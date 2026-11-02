@@ -408,8 +408,8 @@ const GUI = BeamletOpticsGUI
         @test n == 0 && occursin("# no changes", code)
 
         # a lens of the catalog: constructed, placed, added, then moved
-        lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
-        origin = (; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)", pose0 = GUI._pose(lens))
+        lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
+        origin = (; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))", pose0 = GUI._pose(lens))
         rotate3d!(lens, normalize([1.0, 2, 3]), 0.3)
         translate_to3d!(lens, [0.01, 0.1, -0.02])
         add_component!(gui, lens; origin, label = "lens")
@@ -419,7 +419,7 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard.left)
         code, n = GUI._export_code(gui)
         @test n == 1
-        @test occursin("# lens ($(nameof(typeof(lens)))), added\nlens = ThinLens(0.05, -0.05, 0.0254, 1.5)\n" *
+        @test occursin("# lens ($(nameof(typeof(lens)))), added\nlens = ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))\n" *
             "push!(system, lens)\nrotate3d!(lens, [", code)
         @test count("translate_to3d!(lens, ", code) == 1
         @test !occursin("# no changes", code)
@@ -431,12 +431,12 @@ const GUI = BeamletOpticsGUI
         @test _same_pose(copy, lens)
 
         # in the pose as constructed: no pose lines
-        lens2 = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+        lens2 = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         add_component!(gui, lens2; label = "lens2", select = false,
-            origin = (; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)", pose0 = GUI._pose(lens2)))
+            origin = (; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))", pose0 = GUI._pose(lens2)))
         code, n = GUI._export_code(gui)
         @test n == 2
-        @test occursin("lens2 = ThinLens(0.05, -0.05, 0.0254, 1.5)\npush!(system, lens2)\n", code)
+        @test occursin("lens2 = ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))\npush!(system, lens2)\n", code)
         @test !occursin("(lens2, [", code)
         objs = _run(code)
         @test length(objs) == 2 && _same_pose(objs[2], lens2)
@@ -464,8 +464,8 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a group with an origin, moved as a whole before and after it is added
-        _pair() = ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)])
-        pair_code = "ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)])"
+        _pair() = ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))])
+        pair_code = "ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))])"
         sys = System()
         gui = _live_view(sys => _beam(); fine_step = 1e-3, fine_angle = 1e-2)
         g = _pair()

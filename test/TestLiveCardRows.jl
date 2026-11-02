@@ -59,13 +59,13 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "lens, beamsplitters, polarizer" begin
-        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         bs = RoundThinBeamsplitter(25e-3; reflectance = 0.3)
         translate3d!(bs, [0, 0.1, 0])
-        cube = CubeBeamsplitter(10e-3, λ -> 1.5)
+        cube = CubeBeamsplitter(10e-3, ConstantRefractiveIndex(1.5))
         translate3d!(cube, [0, 0.2, 0])
-        pol = RoundLinearPolarizer(25e-3, 1e-3, 1e-3, λ -> 1.5)
+        pol = RoundLinearPolarizer(25e-3, 1e-3, 1e-3, ConstantRefractiveIndex(1.5))
         translate3d!(pol, [0, 0.3, 0])
         gui = _live_view(System([lens, bs, cube, pol]), Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9))
         _select!(gui, lens)
@@ -343,7 +343,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "solve in the background" begin
-        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         m, pd = _fixture()
         gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9))

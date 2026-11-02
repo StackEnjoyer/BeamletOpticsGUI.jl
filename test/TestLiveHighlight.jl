@@ -16,10 +16,10 @@ const WARN = Base.CoreLogging.Warn
         translate3d!(m2, [0, 0.05, 0])
         translate3d!(m3, [0, 0.25, 0])
         pair = ObjectGroup([m1, m2])
-        dl = SphericalDoubletLens(0.0617, -0.0446, -0.1296, 6e-3, 2.5e-3, 25.4e-3, 1.5, 1.6)
+        dl = SphericalDoubletLens(0.0617, -0.0446, -0.1296, 6e-3, 2.5e-3, 25.4e-3, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.6))
         translate3d!(dl, [0, 0.15, 0])
         bench = ObjectGroup([pair, dl, m3])
-        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0.1, 0.1, 0])
         return (; bench, pair, dl, m1, m2, m3, lens)
     end

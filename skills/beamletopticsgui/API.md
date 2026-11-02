@@ -144,7 +144,7 @@ attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `De
 selected component or source. It moves in the plane of the table (perpendicular to `rotation_axis`,
 at the height of the source of its system) and snaps onto beams while `snap` is on; the first component or source of
 an empty view is placed at the origin. `export_changes` writes a glass as `SellmeierEquation(...)` and a constant
-refractive index as `λ -> n`; an added source is its constructor at the origin along +y, its
+refractive index as `ConstantRefractiveIndex(n)`; an added source is its constructor at the origin along +y, its
 `rotate3d!`/`translate_to3d!` and `solve_system!(system, name)`, a removed source of the start a comment.
 
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
