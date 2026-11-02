@@ -162,8 +162,13 @@ describe it as available in docs or the skill.
 - GLMakie is the backend of the tests; on headless Linux run under `xvfb-run -a`.
 - Single test module: `julia --project=test -e 'using Pkg; Pkg.instantiate()'` once, then
   `julia --project=test test/<file>.jl`.
-- Full suite: `julia --project=test test/runtests.jl`.
-- New test files are `module TestXyz ... end` and are included in `test/runtests.jl`.
+- Full suite: `julia --project=test test/runtests.jl`. It runs the files of `test/` in worker
+  processes (ParallelTestRunner), up to 8 by default (`--jobs=N`), each file on its own and in any
+  order, and prints the duration of each. A failure does not stop the others.
+- Several modules: names select the files that start with them, e.g.
+  `julia --project=test test/runtests.jl TestLiveCard TestLiveSnap`; `--help` lists the options.
+- New test files are `module TestXyz ... end` in `test/`, which `test/runtests.jl` finds by itself.
+  A file does not depend on another one, and sets no global state that others rely on.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
 
