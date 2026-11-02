@@ -403,7 +403,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
             @test GUI._catalog_strings(w.widget) == ["1.38", "Own glass"]
             close(gui)
         finally
-            filter!(g -> g !== own, catalog_glasses())
+            # by name: the vector holds a pair of another type than `own`
+            filter!(g -> first(g) != first(own), catalog_glasses())
         end
     end
 

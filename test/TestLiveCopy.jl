@@ -423,6 +423,8 @@ const GUI = BeamletOpticsGUI
         @test GUI._CLIPBOARD[] === kept && occursin("copied only on its own", gui.status.text[])
         close(gui)
     end
+
+    GUI._CLIPBOARD[] = nothing
 end
 
 end
