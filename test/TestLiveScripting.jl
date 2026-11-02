@@ -179,7 +179,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # a window on the same system: its solve in the background is waited for as well
         new = open_system(gui, first(gui.pairs).first; display = false)
         translate3d!(new, m, [0.05, 0, 0])
-        @test !isnothing(new.trace.job) && gui.trace.stale
+        # with `progress_delay = 0`, a small solve may also end at once when the code is compiled
+        @test isnothing(new.trace.job) || gui.trace.stale
         @test wait_solve(gui; timeout = 60)
         @test isnothing(new.trace.job) && !gui.trace.stale && !new.trace.stale
         @test _nhits(pd) == 0

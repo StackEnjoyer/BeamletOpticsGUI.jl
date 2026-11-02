@@ -60,7 +60,8 @@ const GUI = BeamletOpticsGUI
         GUI._choose_entry!(gui, 2)
         return nothing
     end
-    # Clicks on the entries right after they changed count, see `_BROWSE_GUARD`
+    # Clicks on the entries right after they changed count, see `_BROWSE_GUARD`. Restored at the end
+    browse_guard = GUI._BROWSE_GUARD[]
     GUI._BROWSE_GUARD[] = 0.0
     _labels(gui) = copy(_card(gui).labels)
     _shown(gui) = _card(gui).scene.visible[]
@@ -721,6 +722,8 @@ const GUI = BeamletOpticsGUI
         end
         @test GUI._part_children(cube) == BMO.shape(cube)
     end
+
+    GUI._BROWSE_GUARD[] = browse_guard
 end
 
 end
