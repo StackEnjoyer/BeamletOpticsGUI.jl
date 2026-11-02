@@ -9,8 +9,8 @@ display(gui)</code></pre><p><code>layout = :app</code> arranges the window like 
 
 laser = add(CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 5e-3, 632.8e-9),
     &quot;CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 5e-3, 632.8e-9)&quot;, &quot;laser&quot;)
-lens1 = add(ThinLens(50e-3, -50e-3, 12.7e-3, 1.5), &quot;ThinLens(50e-3, -50e-3, 12.7e-3, 1.5)&quot;, &quot;lens1&quot;)
-lens2 = add(ThinLens(100e-3, -100e-3, 25.4e-3, 1.5), &quot;ThinLens(100e-3, -100e-3, 25.4e-3, 1.5)&quot;, &quot;lens2&quot;)
+lens1 = add(ThinLens(50e-3, -50e-3, 12.7e-3, ConstantRefractiveIndex(1.5)), &quot;ThinLens(50e-3, -50e-3, 12.7e-3, ConstantRefractiveIndex(1.5))&quot;, &quot;lens1&quot;)
+lens2 = add(ThinLens(100e-3, -100e-3, 25.4e-3, ConstantRefractiveIndex(1.5)), &quot;ThinLens(100e-3, -100e-3, 25.4e-3, ConstantRefractiveIndex(1.5))&quot;, &quot;lens2&quot;)
 mirror = add(RoundPlanoMirror(25.4e-3, 6e-3), &quot;RoundPlanoMirror(25.4e-3, 6e-3)&quot;, &quot;mirror&quot;)
 detector = add(Detector(15e-3), &quot;Detector(15e-3)&quot;, &quot;detector&quot;)</code></pre><p>Every object is added as its constructor builds it and moved afterwards, with the verbs of BeamletOptics that take the window as first argument, see <a href="../../live_view/#scripting_live_view">Scripting the live view</a>. The focal lengths of the lenses are 50 mm and 100 mm, hence they are 150 mm apart and widen the beam by a factor of 2:</p><pre><code class="language-julia hljs">translate_to3d!(gui, lens1, [0, 50e-3, 0])
 translate_to3d!(gui, lens2, [0, 200e-3, 0])
@@ -26,11 +26,11 @@ wait_solve(gui)</code></pre><h2 id="The-setup-as-a-script"><a class="docs-headin
 using BeamletOptics
 
 # lens1 (Lens)
-lens1 = ThinLens(50e-3, -50e-3, 12.7e-3, 1.5)
+lens1 = ThinLens(50e-3, -50e-3, 12.7e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens1, [0.0, 0.05, 0.0])
 
 # lens2 (Lens)
-lens2 = ThinLens(100e-3, -100e-3, 25.4e-3, 1.5)
+lens2 = ThinLens(100e-3, -100e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens2, [0.0, 0.2, 0.0])
 
 # mirror (Mirror)
@@ -61,4 +61,4 @@ gui = live_view(
         detector =&gt; &quot;detector&quot;,
         laser =&gt; &quot;laser&quot;,
     )
-)</code></pre><p>The first part runs with BeamletOptics alone, e.g. for an analysis without a window. A view that was built with the catalog gives the same kind of script; an object that the view started with is a comment in it, since its constructor is not known.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../live_michelson/">« Interactive Michelson</a><a class="docs-footer-nextpage" href="../../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Sunday 1 November 2026 23:20">Sunday 1 November 2026</span>. Using Julia version 1.13.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+)</code></pre><p>The first part runs with BeamletOptics alone, e.g. for an analysis without a window. A view that was built with the catalog gives the same kind of script; an object that the view started with is a comment in it, since its constructor is not known.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../live_michelson/">« Interactive Michelson</a><a class="docs-footer-nextpage" href="../../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Monday 2 November 2026 23:58">Monday 2 November 2026</span>. Using Julia version 1.13.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
