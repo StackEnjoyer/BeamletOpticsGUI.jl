@@ -211,6 +211,12 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   prints the compile time of each step; `benchmark/jit_trace_summary.jl` lists the methods of a
   trace. The scene `other` holds types that no workload has seen. A step of a new action that
   compiles more than a few 10 ms in the scene `same` is not covered by the workload.
+- **The tests on CI run without the workloads**: every change of the package would compile them
+  again, which took half of a job. The step "Switch off the precompile workloads" sets the
+  preference `precompile_workload` of the package, which the workload of the extension reads as
+  well. It is not a file of the repository, since `benchmark/` runs in `--project=test` and would
+  measure a build without them. The docs build with the workloads, and
+  `test/TestPrecompileSession.jl` runs the sessions.
 - The workload of the extension is built with GLMakie loaded after the package. Code that Julia
   cached is checked against the methods of the session when it is loaded, and in a session that
   loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as

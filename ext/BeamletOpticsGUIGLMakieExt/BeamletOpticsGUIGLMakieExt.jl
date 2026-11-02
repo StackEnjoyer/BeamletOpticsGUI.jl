@@ -10,6 +10,7 @@ module BeamletOpticsGUIGLMakieExt
 
 using BeamletOpticsGUI, BeamletOptics, GLMakie, Makie
 using PrecompileTools: @setup_workload, @compile_workload
+using Preferences: load_preference
 
 const GUI = BeamletOpticsGUI
 const BMO = BeamletOptics
@@ -32,7 +33,9 @@ include("session.jl")
         # Without an OpenGL context, e.g. on a headless machine, the package loads all the same and
         # the window works, only its first actions compile
         try
-            _precompile_sessions(quiet)
+            # `PrecompileTools` does not find the preference for an extension: the one of the package
+            # switches off both workloads
+            load_preference(BeamletOpticsGUI, "precompile_workload", true) && _precompile_sessions(quiet)
             isempty(failed) || @debug "BeamletOpticsGUI: steps of the precompile workload failed" failed
         catch e
             @warn "BeamletOpticsGUI: the precompile workload for GLMakie did not run, the first " *
