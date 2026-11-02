@@ -22,10 +22,10 @@ const GUI = BeamletOpticsGUI
         translate3d!(m2, [0, 0.05, 0])
         translate3d!(m3, [0, 0.25, 0])
         pair = ObjectGroup([m1, m2])
-        dl = SphericalDoubletLens(0.0617, -0.0446, -0.1296, 6e-3, 2.5e-3, 25.4e-3, 1.5, 1.6)
+        dl = SphericalDoubletLens(0.0617, -0.0446, -0.1296, 6e-3, 2.5e-3, 25.4e-3, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.6))
         translate3d!(dl, [0, 0.15, 0])
         bench = ObjectGroup([pair, dl, m3])
-        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0.1, 0.1, 0])
         return (; bench, pair, dl, m1, m2, m3, lens)
     end
@@ -715,8 +715,8 @@ const GUI = BeamletOpticsGUI
     @testset "no parts row" begin
         @test !isdefined(GUI, :parts_card_rows)
         @test !isdefined(GUI, :_PartsMenu)
-        cube = CubeBeamsplitter(10e-3, λ -> 1.5)
-        for obj in (fx.bench, fx.dl, fx.lens, cube, RoundLinearPolarizer(25e-3, 1e-3, 1e-3, λ -> 1.5))
+        cube = CubeBeamsplitter(10e-3, ConstantRefractiveIndex(1.5))
+        for obj in (fx.bench, fx.dl, fx.lens, cube, RoundLinearPolarizer(25e-3, 1e-3, 1e-3, ConstantRefractiveIndex(1.5)))
             @test !any(r -> any(c -> c == "part" || (c isa CardWidget && c.name === :parts), r.cells),
                 card_rows(obj))
         end

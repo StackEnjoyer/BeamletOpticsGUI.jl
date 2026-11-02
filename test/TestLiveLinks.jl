@@ -20,7 +20,7 @@ const GUI = BeamletOpticsGUI
 
     # A system at `x`: a beam along +y, a lens and a mirror, which reflects the beam along +x
     function _setup(x)
-        lens = ThinLens(100e-3, -100e-3, 25e-3, 1.5)
+        lens = ThinLens(100e-3, -100e-3, 25e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [x, 0.05, 0])
         mirror = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(mirror, deg2rad(45))

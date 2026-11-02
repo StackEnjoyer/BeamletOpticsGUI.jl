@@ -53,8 +53,8 @@ add(obj, code, label) = add_component!(gui, obj; code, label, select = false)
 
 laser = add(CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 5e-3, 632.8e-9),
     "CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 5e-3, 632.8e-9)", "laser")
-lens1 = add(ThinLens(50e-3, -50e-3, 12.7e-3, 1.5), "ThinLens(50e-3, -50e-3, 12.7e-3, 1.5)", "lens1")
-lens2 = add(ThinLens(100e-3, -100e-3, 25.4e-3, 1.5), "ThinLens(100e-3, -100e-3, 25.4e-3, 1.5)", "lens2")
+lens1 = add(ThinLens(50e-3, -50e-3, 12.7e-3, ConstantRefractiveIndex(1.5)), "ThinLens(50e-3, -50e-3, 12.7e-3, ConstantRefractiveIndex(1.5))", "lens1")
+lens2 = add(ThinLens(100e-3, -100e-3, 25.4e-3, ConstantRefractiveIndex(1.5)), "ThinLens(100e-3, -100e-3, 25.4e-3, ConstantRefractiveIndex(1.5))", "lens2")
 mirror = add(RoundPlanoMirror(25.4e-3, 6e-3), "RoundPlanoMirror(25.4e-3, 6e-3)", "mirror")
 detector = add(Detector(15e-3), "Detector(15e-3)", "detector")
 ```

@@ -6,8 +6,8 @@ using Test
 const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
-# A glass that is a named function
-flat_glass(λ) = 1.6
+# A glass without dispersion
+const flat_glass = ConstantRefractiveIndex(1.6)
 
 @testset "Catalog glasses" begin
 
@@ -73,7 +73,7 @@ flat_glass(λ) = 1.6
         code = GUI._glass_code(table)
         @test code == "DiscreteRefractiveIndex([5.32e-7, 1.064e-6], [1.5195, 1.5066])"
         @test Core.eval(@__MODULE__, Meta.parse(code)).data == table.data
-        # a named function by its name
+        @test GUI._glass_code(flat_glass) == "ConstantRefractiveIndex(1.6)"
         @test Core.eval(@__MODULE__, Meta.parse(GUI._glass_code(flat_glass))) === flat_glass
     end
 
@@ -98,8 +98,8 @@ flat_glass(λ) = 1.6
         # the argument of the constructor and its code
         @test GUI._catalog_arg(p, "N-SF11") === GUI._glass("N-SF11")
         n = GUI._catalog_arg(p, 1.6)
-        @test n isa Function && n(532e-9) === 1.6 && n(1) === 1.6
-        @test GUI._catalog_arg_code(p, 1.6) == "λ -> 1.6"
+        @test n === ConstantRefractiveIndex(1.6)
+        @test GUI._catalog_arg_code(p, 1.6) == "ConstantRefractiveIndex(1.6)"
         twin = Core.eval(@__MODULE__, Meta.parse(GUI._catalog_arg_code(p, 1.6)))
         @test Base.invokelatest(twin, 1e-6) === 1.6
         @test GUI._catalog_arg_code(p, "N-BK7") == GUI._glass_code(GUI._glass("N-BK7"))

@@ -118,7 +118,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a lens of several parts counts as a whole
-        doublet = SphericalDoubletLens(62.8e-3, -45.7e-3, -128.2e-3, 4e-3, 2.5e-3, 25.4e-3, 1.5, 1.6)
+        doublet = SphericalDoubletLens(62.8e-3, -45.7e-3, -128.2e-3, 4e-3, 2.5e-3, 25.4e-3, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.6))
         translate_to3d!(doublet, [0, 0.1, 0])
         gui = live_view(System([doublet]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf)
         lines = GUI._snap_lines(gui, doublet)

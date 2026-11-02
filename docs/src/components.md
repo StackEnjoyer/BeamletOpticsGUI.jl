@@ -20,7 +20,7 @@ with the controls and solves the systems again:
 beam = Beam([0.0, 0, 0], [0.0, 1, 0])
 gui = live_view(System() => beam)
 
-lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens, [0, 0.1, 0])
 add_component!(gui, lens; label = "lens")
 
@@ -153,7 +153,7 @@ The button "remove" at the end of the page "Pose" of the card of a component or 
 key `Delete` remove it again, from the view and from all its systems; a component without a system,
 e.g. an extra, can be removed the same way. The added and removed
 components are part of the code of [`export_changes`](@ref), which writes a glass as its
-`SellmeierEquation` and a constant refractive index as `λ -> n`, such that the code runs without
+`SellmeierEquation` and a constant refractive index as `ConstantRefractiveIndex(n)`, such that the code runs without
 BeamletOpticsGUI. An added source is its constructor at the origin along +y, the `rotate3d!` and
 `translate_to3d!` to its pose and the `solve_system!` that traces it; a removed source that the
 view started with is a comment.
@@ -245,8 +245,8 @@ Julia code. Add it as `code` constructs it and move it afterwards, since the scr
 followed by the change of the pose since it was added:
 
 ```julia
-code = "SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)"
-lens = add_component!(gui, SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5); code, label = "lens")
+code = "SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))"
+lens = add_component!(gui, SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5)); code, label = "lens")
 retrace!(gui) do
     translate_to3d!(lens, [0, 0.1, 0])
 end

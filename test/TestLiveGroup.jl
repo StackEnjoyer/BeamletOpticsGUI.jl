@@ -37,7 +37,7 @@ const GUI = BeamletOpticsGUI
 
     # A lens, a mirror and a detector on the beam
     function _fixture(; layout = :compact, kwargs...)
-        lens = ThinLens(100e-3, -100e-3, 25e-3, 1.5)
+        lens = ThinLens(100e-3, -100e-3, 25e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         m, pd = _mirror(), _detector()
         sys = System([lens, m, pd])

@@ -412,7 +412,7 @@ member of `sys2` as well, like "+" of that system in the window. It stays one ob
 pose, one card and one set of plots, and the beams of all its systems are traced through it, e.g.
 a mirror that the transmitter and the receiver of a lidar share.
 
-`code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, 1.5)"`,
+`code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))"`,
 which constructs `obj` in the pose that it has when it is added. [`export_script`](@ref) then writes
 this call followed by the change of the pose of `obj` since it was added, like for a component of
 the catalog; without `code` the constructor is not known and the script marks where to construct
@@ -451,7 +451,7 @@ constructor call of the `source` in its current pose, as for a component.
 ```julia
 gui = live_view(System())
 add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); label = "laser")
-lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens, [0, 0.1, 0])
 add_component!(gui, lens; label = "lens")
 ```
@@ -598,8 +598,7 @@ is chosen at first, or `"constant"`; a name that [`catalog_glasses`](@ref) does 
 `ArgumentError`. `name` and `keyword` as for [`CatalogParam`](@ref).
 
 The constructor gets the glass as it is stored in [`catalog_glasses`](@ref), e.g. a
-`SellmeierEquation`, and for "constant" a function `λ -> n`, which every constructor of
-BeamletOptics with a refractive index takes.
+`SellmeierEquation`, and for "constant" a `ConstantRefractiveIndex(n)`.
 """
 struct CatalogGlass
     name::String
@@ -686,15 +685,15 @@ end
     catalog_glasses() -> Vector{Pair{String, Any}}
 
 The glasses that the component catalog of [`live_view`](@ref) offers for the entries with a
-[`CatalogGlass`](@ref), as `name => n`, where `n(λ)` is the refractive index at the wavelength `λ`
-[m] as BeamletOptics takes it, e.g. a `SellmeierEquation`. The built-in glasses are common optical
+[`CatalogGlass`](@ref), as `name => n`, where `n` is a `BeamletOptics.AbstractRefractiveIndex`, e.g.
+a `SellmeierEquation`. The built-in glasses are common optical
 glasses and crystals with the dispersion formulas of the database refractiveindex.info: N-BK7,
 fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2, N-BAF10 and N-LAK22.
 
 A package adds its glasses to the returned vector; views opened afterwards show them.
-[`export_changes`](@ref) prints a `SellmeierEquation` and a `DiscreteRefractiveIndex` as their
-constructor call and any other glass via `repr`, hence an own glass should be one of the two or a
-named function.
+[`export_changes`](@ref) prints a `SellmeierEquation`, a `DiscreteRefractiveIndex` and a
+`ConstantRefractiveIndex` as their constructor call and any other glass via `repr`, hence an own
+glass should be one of the three or an own subtype whose `repr` is valid code.
 
 ```julia
 push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))

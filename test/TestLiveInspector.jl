@@ -161,7 +161,7 @@ const GUI = BeamletOpticsGUI
         @test insp.icon[] === GUI._icon(:beamsplitter)
         @test GUI._tree_kind(o.bs) == :beamsplitter
         @test _value(gui, "Reflectance") == "0.3"
-        @test GUI._tree_kind(RoundLinearPolarizer(25e-3, 1e-3, 1e-3, λ -> 1.5)) == :polarizer
+        @test GUI._tree_kind(RoundLinearPolarizer(25e-3, 1e-3, 1e-3, ConstantRefractiveIndex(1.5))) == :polarizer
         @test GUI._tree_kind(PolarizationFilter(1e-2)) == :polarizer
         # a clip plane
         _properties!(gui, gui.clip.planes[1])

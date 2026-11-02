@@ -199,7 +199,7 @@ const GUI = BeamletOpticsGUI
     @testset "objects added with their code" begin
         gui = _live_view(System())
         # built in code, e.g. by an agent: added in the pose of its code, moved afterwards
-        lens_code = "SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)"
+        lens_code = "SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))"
         lens = add_component!(gui, include_string(@__MODULE__, lens_code); code = lens_code,
             label = "lens", select = false)
         laser_code = "GaussianBeamlet([0.0, -0.05, 0.0], [0.0, 1.0, 0.0], 1.064e-6, 0.001)"
