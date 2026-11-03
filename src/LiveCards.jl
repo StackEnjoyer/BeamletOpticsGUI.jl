@@ -7,11 +7,11 @@ their widgets and moving them with the mouse; the card widget is in LiveCard.jl
 Pose inspector
 =#
 
-"""Labels of the boxes of the pose inspector: position [mm] and rotations about the axes [mrad]."""
-const _POSE_FIELDS = ("x [mm]", "y [mm]", "z [mm]", "rx [mrad]", "ry [mrad]", "rv [mrad]")
-
-"""Gizmo axes (see `_axis_vectors`) of the rotation boxes of the pose inspector."""
-const _POSE_AXES = (:x, :y, :v)
+"""
+Names of the boxes of the pose card (see `pose_card_rows`) by their index `k`: the position and the
+Euler angles; their units are those shown, see `_pose_field`.
+"""
+const _POSE_FIELDS = ("x", "y", "z", "rx", "ry", "rz")
 
 """Label colors of the pose inspector: the colors of the gizmo axes for the rotations."""
 const _POSE_COLORS = (:black, :black, :black, :red, :green, :blue)
@@ -68,67 +68,295 @@ e.g. the inspector of the app layout; nothing by default.
 """
 _refresh_inspector!(::LiveView; force::Bool = false) = nothing
 
-"""Returns `true` if the constraints of `obj` allow a move by `Δ`, see `kinematic_controls!`."""
-function _move_allowed(ctrl::KinematicController, @nospecialize(obj), Δ)
-    haskey(_constraints_of(ctrl, obj), :move) || return true
-    allowed = _allowed_axes(ctrl, obj, :move)
-    isempty(allowed) && return iszero(Δ)
-    A = hcat(_axis_vectors(ctrl, obj, allowed)...)
-    return norm(Δ - A * (pinv(A) * Δ)) <= 1e-12 + 1e-9 * norm(Δ)
+#=
+Values of the pose card in the frame of the controls, see `pose_card_rows` and `_PoseDisplay`
+=#
+
+# Whether the pose cards of the `gui` show the offsets of the frame "local"
+_posecard_local(gui::LiveView) = gui.controls.frame[] === :local
+
+"""
+    _posecard_unit(gui, k) -> NamedTuple
+
+The unit in which the pose box `k` of the cards of the `gui` shows its value (an entry of
+`_LENGTH_UNITS` for `k ≤ 3`, else of `_ANGLE_UNITS`): the one of the frame of the controls, see
+`_PoseDisplay`.
+"""
+function _posecard_unit(gui::LiveView, k::Int)
+    lengths, angles = gui.pose_display.units[gui.controls.frame[]]
+    return k <= 3 ? _pose_unit(_LENGTH_UNITS, lengths) : _pose_unit(_ANGLE_UNITS, angles)
 end
+
+"""The name of the pose box `k` of the `gui` with its unit, e.g. `"x [mm]"` or `"Δrz [mrad]"`."""
+_pose_field(gui::LiveView, k::Int) =
+    "$(_posecard_local(gui) ? "Δ" : "")$(_POSE_FIELDS[k]) [$(_posecard_unit(gui, k).label)]"
+
+"""
+    _posecard_reference!(gui, obj) -> (P, R)
+
+The reference pose of `obj` in the frame "local" of the `gui`, from which its card shows the
+offsets: made from its current pose if it has none yet, see `_PoseDisplay`.
+"""
+function _posecard_reference!(gui::LiveView, @nospecialize(obj))
+    refs = gui.pose_display.references
+    haskey(refs, obj) && return refs[obj]
+    P, R = _pose(obj)
+    return refs[obj] = (Vector{Float64}(P), Matrix{Float64}(R))
+end
+
+"""
+    _posecard_values(gui, obj) -> (p, angles)
+
+The position [m] and the Euler angles [rad] of `obj` as its pose card shows them in the frame of the
+controls of the `gui`, in the order of the `_PoseDisplay`: in "global", the position and the angles
+of the orientation; in "local", the offsets from the reference pose (see `_posecard_reference!`),
+`Δp = Rrefᵀ (P − Pref)` and the angles of `Rrefᵀ R`, see `_relative_pose`.
+"""
+function _posecard_values(gui::LiveView, @nospecialize(obj))
+    P, R = _pose(obj)
+    order = gui.pose_display.order
+    _posecard_local(gui) || return Vector{Float64}(P), _euler_angles(R, order)
+    Pref, Rref = _posecard_reference!(gui, obj)
+    Δp, Rrel = _relative_pose(P, R, Pref, Rref)
+    return Δp, _euler_angles(Rrel, order)
+end
+
+"""The text of the pose box `k` of the card of `obj`, see `_posecard_values` and `_format_pose_value`."""
+function _posecard_text(gui::LiveView, @nospecialize(obj), k::Int)
+    p, angles = _posecard_values(gui, obj)
+    return _format_pose_value(k <= 3 ? p[k] : angles[k - 3], _posecard_unit(gui, k);
+        signed = _posecard_local(gui))
+end
+
+"""
+    _posecard_target(gui, obj, k, x) -> (P, R)
+
+The pose of `obj` in which its pose box `k` shows the value `x` [m or rad] and the other boxes keep
+theirs: in "global", the position with the coordinate `k` replaced, or the orientation of the Euler
+angles with the angle `k - 3` replaced; in "local", the same for the offsets from the reference
+pose, `P = Pref + Rref Δp` and `R = Rref · _euler_matrix(Δangles)`, see `_absolute_pose`.
+"""
+function _posecard_target(gui::LiveView, @nospecialize(obj), k::Int, x::Float64)
+    P, R = _pose(obj)
+    P, R = Vector{Float64}(P), Matrix{Float64}(R)
+    order = gui.pose_display.order
+    if _posecard_local(gui)
+        Pref, Rref = _posecard_reference!(gui, obj)
+        Δp, Rrel = _relative_pose(P, R, Pref, Rref)
+        k <= 3 ? (Δp[k] = x) : (Rrel = _replace_angle(Rrel, order, k - 3, x))
+        return _absolute_pose(Δp, Rrel, Pref, Rref)
+    end
+    k <= 3 ? (P[k] = x) : (R = _replace_angle(R, order, k - 3, x))
+    return P, R
+end
+
+# The orientation `R` with its Euler angle `i` in the `order` replaced by `x`, the others kept
+function _replace_angle(R::AbstractMatrix, order::Symbol, i::Int, x::Float64)
+    angles = collect(_euler_angles(R, order))
+    angles[i] = x
+    return _euler_matrix(angles, order)
+end
+
+"""
+    _PoseInput(k)
+
+The input of the pose box `k` of a card (see `pose_card_rows`), the `on` of its declaration: calls
+`_apply_pose_input!`. By its type, the card also gives the box the steps of the keys ↑ and ↓, see
+`_track_pose_keys!`.
+"""
+struct _PoseInput
+    k::Int
+end
+(f::_PoseInput)(gui::LiveView, @nospecialize(obj), s) = _apply_pose_input!(gui, obj, f.k, s)
 
 """
     _apply_pose_input!(gui, obj, k, s)
 
-Applies the input `s` of the pose box `k` of a card (see `_POSE_FIELDS`) to its object `obj`: for
-`k ≤ 3`, moves it to the absolute position x, y or z [mm], otherwise rotates it about the red,
-green or blue axis of the controls [mrad], like a key step in the rotate mode. The change is
-recorded in the undo history and solved like a key step. An invalid input only shows a message in
-the status line, and so does an input for an object that is not movable, e.g. an inspected one (see
+Applies the input `s` of the pose box `k` of a card (see `_POSE_FIELDS`) to its object `obj`: a
+bare number in the unit that the box shows (see `_posecard_unit`), which becomes the value of the
+box, see `_set_pose_value!`. Of a selection of several objects, an angle by which it turns about
+the global axis x, y or z. An invalid input only shows a message in the status line, e.g. "enter a
+number in mm", and so does an input for an object that is not movable, e.g. an inspected one (see
 `_inspect!`).
 """
 _apply_pose_input!(gui::LiveView, ::Nothing, ::Int, _) = _update_inspector!(gui; force = true)
 function _apply_pose_input!(gui::LiveView, @nospecialize(obj), k::Int, s)
-    ctrl = gui.controls
-    if !_is_movable(ctrl, obj)
-        gui.status.text[] = "$(_label(gui, obj)) is not movable, its pose can not be changed"
-        _update_inspector!(gui; force = true)
-        return nothing
-    end
+    _posecard_movable(gui, obj) || return nothing
+    unit = _posecard_unit(gui, k)
     x = isnothing(s) ? nothing : tryparse(Float64, strip(s))
     if isnothing(x) || !isfinite(x)
-        gui.status.text[] = "invalid input \"$(something(s, ""))\" for $(_POSE_FIELDS[k]), enter a number"
+        gui.status.text[] = "invalid input \"$(something(s, ""))\" for $(_pose_field(gui, k)), " *
+                            "enter a number in $(unit.label)"
         return nothing
     end
+    _set_pose_value!(gui, obj, k, x * unit.factor)
+    return nothing
+end
+
+# Whether the pose of `obj` can be changed on its card, else a message in the status line
+function _posecard_movable(gui::LiveView, @nospecialize(obj))
+    _is_movable(gui.controls, obj) && return true
+    gui.status.text[] = "$(_label(gui, obj)) is not movable, its pose can not be changed"
+    _update_inspector!(gui; force = true)
+    return false
+end
+
+"""
+    _set_pose_value!(gui, obj, k, x)
+
+Changes the pose of `obj` such that its pose box `k` shows the value `x` [m or rad] and the others
+keep theirs (see `_posecard_target`): a move by `P − P0` or one rotation about the axis of
+`R · R0ᵀ` (see `_rotation_axis_angle`), each checked against the constraints of `obj` (see
+`_within_constraints`), which reject it with a message in the status line. Of a selection of
+several objects (see `_MultiSelection`), a rotation box `k` turns it by `x` about the global axis
+x, y or z. The change is one entry of the undo history, solved like a key step.
+"""
+function _set_pose_value!(gui::LiveView, @nospecialize(obj), k::Int, x::Float64)
+    ctrl = gui.controls
     P0, R0 = _pose(obj)
+    P, R = _posecard_target(gui, obj, k, x)
     if k <= 3
-        P = Vector{Float64}(P0)
-        P[k] = x / 1e3
-        if !_move_allowed(ctrl, obj, P - P0)
-            gui.status.text[] = "$(_label(gui, obj)) can not move along $(_POSE_FIELDS[k][1]), see the constraints"
-            _update_inspector!(gui; force = true)
-            return nothing
-        end
-        _change!(ctrl, obj) do
+        Δ = P - Vector{Float64}(P0)
+        _within_constraints(ctrl, obj, :move, Δ) ||
+            return _posecard_locked(gui, obj, "can not move along $(_POSE_FIELDS[k])")
+        iszero(Δ) || _change!(ctrl, obj) do
             translate_to3d!(obj, P)
             # `translate_to3d!` moves by `P - position`, which may round
             r = P - Vector{Float64}(position(obj))
             iszero(r) || translate3d!(obj, r)
         end
     else
-        sym = _POSE_AXES[k - 3]
-        if !(sym in _allowed_axes(ctrl, obj, :rotate))
-            gui.status.text[] = "$(_label(gui, obj)) can not rotate about this axis, see the constraints"
-            _update_inspector!(gui; force = true)
-            return nothing
-        end
-        iszero(x) || _change!(() -> rotate3d!(obj, only(_axis_vectors(ctrl, obj, (sym,))), x / 1e3),
-            ctrl, obj)
+        _turn_pose!(gui, obj, _rotation_axis_angle(R * Matrix{Float64}(R0)')...) || return nothing
     end
+    _record_pose_change!(gui, obj, P0, R0)
+    return nothing
+end
+function _set_pose_value!(gui::LiveView, s::_MultiSelection, k::Int, x::Float64)
+    k <= 3 && return nothing
+    P0, R0 = _pose(s)
+    axis = zeros(3)
+    axis[k - 3] = 1.0
+    _turn_pose!(gui, s, axis, x) || return nothing
+    _record_pose_change!(gui, s, P0, R0)
+    return nothing
+end
+
+# Turns `obj` by `θ` about `axis` if its constraints allow it, else a message; returns whether allowed
+function _turn_pose!(gui::LiveView, @nospecialize(obj), axis::AbstractVector, θ::Real)
+    # the rounding of an orientation that the box keeps, e.g. `Rref · I`, is no rotation
+    abs(θ) < 1e-14 && return true
+    _within_constraints(gui.controls, obj, :rotate, axis) ||
+        return _posecard_locked(gui, obj, "can not turn about this axis")
+    _change!(() -> rotate3d!(obj, axis, θ), gui.controls, obj)
+    return true
+end
+
+function _posecard_locked(gui::LiveView, @nospecialize(obj), what::String)
+    gui.status.text[] = "$(_label(gui, obj)) $what, see the constraints"
+    _update_inspector!(gui; force = true)
+    return false
+end
+
+# The change of the pose of `obj` from (P0, R0) by a pose box: in the undo history, solved
+function _record_pose_change!(gui::LiveView, @nospecialize(obj), P0, R0)
+    ctrl = gui.controls
     P1, R1 = _pose(obj)
     ctrl.last_key_step = nothing
     _push_history!(ctrl, obj, P0, R0, P1, R1)
     _request_update!(ctrl)
+    _update_inspector!(gui; force = true)
+    return nothing
+end
+
+"""
+    _step_pose!(gui, obj, k, n)
+
+The step of the key ↑ (`n = 1`) or ↓ (`n = -1`, Shift multiplies by 10) in the focused pose box
+`k` of the card of `obj`: like an input of its value plus `n` keyboard steps of the controls
+(`fine_step` for the positions, `fine_angle` for the angles), one entry of the undo history each;
+of a selection of several objects, a turn by `n` steps.
+"""
+function _step_pose!(gui::LiveView, @nospecialize(obj), k::Int, n::Int)
+    _posecard_movable(gui, obj) || return nothing
+    ctrl = gui.controls
+    δ = n * (k <= 3 ? ctrl.fine_step : ctrl.fine_angle)
+    p, angles = _posecard_values(gui, obj)
+    _set_pose_value!(gui, obj, k, (k <= 3 ? p[k] : angles[k - 3]) + δ)
+    return nothing
+end
+function _step_pose!(gui::LiveView, s::_MultiSelection, k::Int, n::Int)
+    _posecard_movable(gui, s) || return nothing
+    _set_pose_value!(gui, s, k, n * gui.controls.fine_angle)
+    return nothing
+end
+_step_pose!(::LiveView, ::Nothing, ::Int, ::Int) = nothing
+
+"""
+    _track_pose_keys!(gui, c, tb, on)
+
+The keys ↑ and ↓ in the pose box `tb` of the card `c` while it has the focus (see `_PoseInput`):
+a step of its value, see `_step_pose!`. Before the textbox (60), which would move its cursor; the
+3D view does not get keys while a box has the focus, see `_typing`.
+"""
+function _track_pose_keys!(gui::LiveView, c::_AbstractCard, tb::Textbox, f::_PoseInput)
+    scene = gui.ax.scene
+    push!(c.listeners, on(events(tb.blockscene).keyboardbutton; priority = 65) do event
+        (tb.focused[] && event.action in (Keyboard.press, Keyboard.repeat) &&
+         event.key in (Keyboard.up, Keyboard.down)) || return Consume(false)
+        n = (event.key == Keyboard.up ? 1 : -1) * (_shift_pressed(scene) ? 10 : 1)
+        _step_pose!(gui, _card_object(gui, c), f.k, n)
+        _update_cards!(gui)
+        return Consume(true)
+    end)
+    return nothing
+end
+_track_pose_keys!(::LiveView, ::_AbstractCard, _, _) = nothing
+
+"""
+    _zero_pose!(gui, obj)
+
+"zero" of the pose card of `obj`: in the frame "local", makes the current pose of `obj` its
+reference, such that all its boxes show 0, see `_PoseDisplay`. In "global", only a message.
+"""
+function _zero_pose!(gui::LiveView, @nospecialize(obj))
+    if !_posecard_local(gui)
+        gui.status.text[] = "\"zero\" sets the reference of the frame local, switch to local first"
+        return nothing
+    end
+    P, R = _pose(obj)
+    gui.pose_display.references[obj] = (Vector{Float64}(P), Matrix{Float64}(R))
+    gui.status.text[] = "reference of $(_label(gui, obj)) set to its current pose"
+    _update_inspector!(gui; force = true)
+    return nothing
+end
+_zero_pose!(::LiveView, ::Nothing) = nothing
+
+"""
+    _set_pose_order!(gui, order)
+
+Shows the Euler angles of the pose cards of the `gui` in the `order` `:xyz` or `:zyx` (see
+`_euler_matrix`); the objects do not move.
+"""
+function _set_pose_order!(gui::LiveView, order::Symbol)
+    order in _EULER_ORDERS || throw(ArgumentError("order must be :xyz or :zyx, got :$order"))
+    gui.pose_display.order = order
+    _update_inspector!(gui; force = true)
+    return nothing
+end
+
+"""
+    _next_pose_unit!(gui, kind)
+
+Shows the lengths (`kind = :length`) or the angles (`:angle`) of the pose cards of the `gui` in the
+next unit of the frame of the controls, see `_LENGTH_UNITS` and `_ANGLE_UNITS`; the units of the
+other frame are kept.
+"""
+function _next_pose_unit!(gui::LiveView, kind::Symbol)
+    units = gui.pose_display.units
+    frame = gui.controls.frame[]
+    lengths, angles = units[frame]
+    units[frame] = kind === :length ? (_next_unit(_LENGTH_UNITS, lengths), angles) :
+                   (lengths, _next_unit(_ANGLE_UNITS, angles))
     _update_inspector!(gui; force = true)
     return nothing
 end
@@ -632,6 +860,8 @@ function _add_cell!(gui::LiveView, c::_AbstractCard, pos, w::CardWidget)
     i = length(c.widgets)
     _fix_caret!(c, b)
     _track_textbox!(gui, c, b)
+    # ↑ and ↓ in a pose box step its value
+    _track_pose_keys!(gui, c, b, w.on)
     _listen_input!(gui, c, i, card_input(b))
     return nothing
 end

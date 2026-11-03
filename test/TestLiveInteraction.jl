@@ -124,6 +124,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         h = live_render!(ax, sys)
         return fig, ax, h, m1, m2
     end
+    # Ctrl+M, which switches the frame of the controls
+    _ctrl_m!(scene) = (push!(events(scene).keyboardstate, Keyboard.left_control);
+                       events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.m, Keyboard.press);
+                       delete!(events(scene).keyboardstate, Keyboard.left_control))
 
     @testset "default pick (nothing) selects via ray casting" begin
         fig, ax, h, m1, m2 = _fixture()
@@ -183,45 +187,40 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         close(ctrl)
     end
 
-    @testset "drag with a local axis parallel to the rotation axis" begin
-        # the local x-axis of m1 points along -z, i.e. along the rotation axis: the axes of the
-        # controls would span only the y-z plane, hence the axis perpendicular to the local y-axis
-        # and the rotation axis takes its place
+    @testset "drag of a turned object, axes in both frames" begin
+        # the local x-axis of m1 points along -z
         fig, ax, h, m1, m2 = _fixture()
         BMO.yrotate3d!(m1, π / 2)
         GUI.update_render!(h)
         scene = ax.scene
         P0 = collect(Float64.(BMO.position(m1)))
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = ax2 -> (render_plots(AbstractTrees.children(h)[1])[1], 0))
-        @test abs(GUI._pose(m1)[2][3, 1]) ≈ 1 atol = 1e-12
-        y, x, v = GUI._control_axes(ctrl, m1)
-        @test abs(det(hcat(y, x, v))) ≈ 1 atol = 1e-12
-        @test y ≈ GUI._pose(m1)[2][:, 2] && v == [0, 0, 1]
-        @test x ≈ cross(y, v) atol = 1e-12
-        # the same for the local y-axis, e.g. of an object that looks upwards
-        BMO.xrotate3d!(m2, π / 2)
-        y2, x2, v2 = GUI._control_axes(ctrl, m2)
-        @test abs(GUI._pose(m2)[2][3, 2]) ≈ 1 atol = 1e-9
-        @test abs(det(hcat(y2, x2, v2))) ≈ 1 atol = 1e-9
-        @test x2 ≈ GUI._pose(m2)[2][:, 1]
-        # a tilted object: the frame stays orthonormal, e.g. after a rotation in the rotate mode; the
-        # heading comes from the local axis that lies more in the plane perpendicular to the rotation
-        # axis, here the local x-axis turned by 90°, since the local y-axis points almost upwards
+        @test ctrl.frame[] == :global
+        R1 = GUI._pose(m1)[2]
+        @test abs(R1[3, 1]) ≈ 1 atol = 1e-12
+        # global: e_y, e_x, e_z for any orientation
+        @test GUI._control_axes(ctrl, m1) == ([0.0, 1, 0], [1.0, 0, 0], [0.0, 0, 1])
         BMO.xrotate3d!(m2, 0.3)
-        Rm2 = GUI._pose(m2)[2]
-        y3, x3, v3 = GUI._control_axes(ctrl, m2)
-        @test y3 ≈ cross([0, 0, 1], normalize([Rm2[1, 1], Rm2[2, 1], 0.0])) && v3 == [0, 0, 1]
-        @test abs(dot(y3, x3)) < 1e-12 && abs(dot(y3, v3)) < 1e-12 && abs(dot(x3, v3)) < 1e-12
-        @test cross(x3, y3) ≈ v3
-        # an object turned only about the rotation axis keeps its local axes
-        m3 = RoundPlanoMirror(25e-3, 5e-3)
-        BMO.zrotate3d!(m3, 0.7)
-        y4, x4, _ = GUI._control_axes(ctrl, m3)
-        @test y4 ≈ GUI._pose(m3)[2][:, 2] && x4 ≈ GUI._pose(m3)[2][:, 1]
-        # the key of the x-axis moves m1 along the new axis, i.e. sideways
+        BMO.zrotate3d!(m2, 1.1)
+        @test GUI._control_axes(ctrl, m2) == ([0.0, 1, 0], [1.0, 0, 0], [0.0, 0, 1])
+        # local: the columns 2, 1, 3 of the orientation, which turn with the object
+        GUI._set_frame!(ctrl, :local)
+        R2 = GUI._pose(m2)[2]
+        y, x, z = GUI._control_axes(ctrl, m2)
+        @test y == R2[:, 2] && x == R2[:, 1] && z == R2[:, 3]
+        @test cross(x, y) ≈ z atol = 1e-12
+        y, x, z = GUI._control_axes(ctrl, m1)
+        @test y == R1[:, 2] && x == R1[:, 1] && z == R1[:, 3]
+        # the key of the red axis moves m1 along its local x-axis, i.e. downwards
         ctrl.selected[] = m1
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)
         @test collect(Float64.(BMO.position(m1))) .- P0 ≈ ctrl.fine_step .* x atol = 1e-12
+        @test abs(collect(Float64.(BMO.position(m1)))[3] - P0[3]) ≈ ctrl.fine_step rtol = 1e-9
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
+        # global: the same key moves along e_x
+        GUI._set_frame!(ctrl, :global)
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)
+        @test collect(Float64.(BMO.position(m1))) .- P0 ≈ [ctrl.fine_step, 0, 0] atol = 1e-12
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
         ctrl.selected[] = nothing
         events(scene).mouseposition[] = (100.0, 100.0)
@@ -506,7 +505,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, fine_step = 10e-9, fine_angle = 10e-6)
-        @test ctrl.help_obs[] == "move mode, step 10 nm, +/-: step, m: switch mode, v: spectator, h: show controls"
+        @test ctrl.help_obs[] == "move mode, global frame, step 10 nm, +/-: step, m: switch mode, ctrl+m: switch frame, v: spectator, h: show controls"
 
         # move mode, no object selected: 1-2-5 sequence on fine_step only
         @test isnothing(ctrl.selected[])
@@ -517,7 +516,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         end
         @test steps ≈ [20e-9, 50e-9, 100e-9, 50e-9]
         @test ctrl.fine_angle == 10e-6
-        @test ctrl.help_obs[] == "move mode, step 50 nm, +/-: step, m: switch mode, v: spectator, h: show controls"
+        @test ctrl.help_obs[] == "move mode, global frame, step 50 nm, +/-: step, m: switch mode, ctrl+m: switch frame, v: spectator, h: show controls"
 
         # help overlay shows the new step as well
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
@@ -533,7 +532,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         end
         @test steps ≈ [20e-6, 50e-6, 100e-6, 50e-6]
         @test ctrl.fine_step ≈ 50e-9
-        @test occursin("rotate mode, step 50 µrad", ctrl.help_obs[])
+        @test occursin("rotate mode, global frame, step 50 µrad", ctrl.help_obs[])
 
         # clamping at the bounds
         ctrl.fine_angle = π / 4
@@ -1252,7 +1251,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             close(ctrl)
         end
 
-        @testset "rotate drag is blocked when :v is locked" begin
+        @testset "rotate drag is blocked when :z is locked" begin
             fig, ax, h, m1, m2 = _fixture()
             scene = ax.scene
             pick_m1 = ax2 -> (render_plots(AbstractTrees.children(h)[1])[1], 0)
@@ -1266,7 +1265,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mouseposition[] = (110.0, 100.0)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
-            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0 # :v (rotation_axis) is locked
+            @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0 # the rotation axis (local z) is locked
             close(ctrl)
         end
 
@@ -1278,12 +1277,124 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
                 constraints = Dict(m1 => (; move = (:x,))))
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
-            # order is [y, x, v]: y locked, x allowed, v locked
+            # order is [y, x, z]: y locked, x allowed, z locked
             @test ctrl.arrow_color[][1].alpha ≈ GUI._GIZMO_FADE_ALPHA
             @test ctrl.arrow_color[][2].alpha ≈ 1.0
             @test ctrl.arrow_color[][3].alpha ≈ GUI._GIZMO_FADE_ALPHA
             close(ctrl)
         end
+
+        @testset "a rail along the local y-axis of a turned object, in both frames" begin
+            fig, ax, h, m1, m2 = _fixture()
+            BMO.zrotate3d!(m1, deg2rad(30))
+            GUI.update_render!(h)
+            scene = ax.scene
+            pick_m1 = ax2 -> (render_plots(AbstractTrees.children(h)[1])[1], 0)
+            ctrl = GUI.kinematic_controls!(ax, h; throttle = false, pick = pick_m1,
+                constraints = Dict(m1 => (; move = (:y,), rotate = (:z,))))
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+            events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+            @test ctrl.selected[] === m1
+            R = GUI._pose(m1)[2]
+            # the check of the span of the local axes
+            @test GUI._within_constraints(ctrl, m1, :move, 3e-3 .* R[:, 2])
+            @test !GUI._within_constraints(ctrl, m1, :move, [0.0, 1e-3, 0])
+            @test !GUI._within_constraints(ctrl, m1, :move, R[:, 2] .+ 1e-6 .* R[:, 1])
+            @test GUI._within_constraints(ctrl, m1, :move, zeros(3))
+            @test GUI._within_constraints(ctrl, m1, :rotate, -R[:, 3])
+            @test !GUI._within_constraints(ctrl, m1, :rotate, R[:, 1])
+            # global: neither the arrow x nor y lies on the rail, the axis z is the rotation axis
+            @test GUI._gizmo_free(ctrl, m1, :move) == (false, false, false)
+            @test all(c -> c.alpha ≈ GUI._GIZMO_FADE_ALPHA, ctrl.arrow_color[])
+            P0 = collect(Float64.(BMO.position(m1)))
+            for key in (Keyboard.up, Keyboard.right, Keyboard.page_up)
+                events(scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press)
+            end
+            @test collect(Float64.(BMO.position(m1))) == P0
+            @test GUI._gizmo_free(ctrl, m1, :rotate) == (false, false, true)
+            # local: the green arrow is free and moves along the rail
+            _ctrl_m!(scene)
+            @test ctrl.frame[] == :local
+            @test GUI._gizmo_free(ctrl, m1, :move) == (true, false, false)
+            @test ctrl.arrow_color[][1].alpha ≈ 1.0
+            @test ctrl.arrow_color[][2].alpha ≈ GUI._GIZMO_FADE_ALPHA
+            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.up, Keyboard.press)
+            @test collect(Float64.(BMO.position(m1))) - P0 ≈ ctrl.fine_step .* R[:, 2] atol = 1e-15
+            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.right, Keyboard.press)
+            @test collect(Float64.(BMO.position(m1))) - P0 ≈ ctrl.fine_step .* R[:, 2] atol = 1e-15
+            # a drag on the body projects onto the rail in both frames
+            for frame in (:local, :global)
+                GUI._set_frame!(ctrl, frame)
+                P1 = collect(Float64.(BMO.position(m1)))
+                events(scene).mouseposition[] = (100.0, 100.0)
+                events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.press)
+                events(scene).mouseposition[] = (140.0, 160.0)
+                events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
+                d = collect(Float64.(BMO.position(m1))) - P1
+                @test norm(d) > 1e-6
+                @test norm(d - dot(d, R[:, 2]) .* R[:, 2]) < 1e-12
+            end
+            close(ctrl)
+        end
+
+        @testset ":v is no constraint axis any more" begin
+            fig, ax, h, m1, m2 = _fixture()
+            err = try
+                GUI.kinematic_controls!(ax, h; constraints = Dict(m1 => (; rotate = (:v,))))
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError && occursin(":z", err.msg)
+            @test_throws ArgumentError GUI.kinematic_controls!(ax, h; constraints = Dict(m1 => (; move = (:w,))))
+        end
+    end
+
+    @testset "Ctrl+M switches the frame" begin
+        fig, ax, h, m1, m2 = _fixture()
+        scene = ax.scene
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, frame = :local)
+        @test ctrl.frame[] == :local
+        @test occursin("local frame", ctrl.help_obs[])
+        # also without a selection; Ctrl+M leaves the mode as it is
+        _ctrl_m!(scene)
+        @test ctrl.mode[] == :move
+        @test ctrl.frame[] == :global
+        @test ctrl.help_obs[] == GUI._help_hint(:move, 10e-9, 10e-6, :global)
+        @test occursin("global frame", ctrl.help_obs[])
+        _ctrl_m!(scene)
+        @test ctrl.frame[] == :local
+        # the help names the frame and the key
+        e = only(filter(e -> e.keys == ["Ctrl", "M"], GUI._help_sections(ctrl)[2].second))
+        @test e.text == "local axes, switch to global"
+        # the gizmo follows the frame
+        BMO.zrotate3d!(m1, 0.4)
+        GUI.update_render!(h)
+        ctrl.selected[] = m1
+        GUI._update_selection_box!(ctrl)
+        R = GUI._pose(m1)[2]
+        @test Vector{Float64}(ctrl.arrow_dir[][1]) ≈ ctrl.gizmo_size[] .* R[:, 2] rtol = 1e-6
+        _ctrl_m!(scene)
+        @test Vector{Float64}(ctrl.arrow_dir[][1]) ≈ ctrl.gizmo_size[] .* [0, 1, 0] rtol = 1e-6
+        # ignored in the spectator mode and while typing
+        GUI._set_spectator!(ctrl, true)
+        _ctrl_m!(scene)
+        @test ctrl.frame[] == :global
+        GUI._set_spectator!(ctrl, false)
+        close(ctrl)
+        typing = Ref(true)
+        ctrl = GUI.kinematic_controls!(ax, h; throttle = false, ignore_keys = () -> typing[])
+        _ctrl_m!(scene)
+        @test ctrl.frame[] == :global
+        typing[] = false
+        _ctrl_m!(scene)
+        @test ctrl.frame[] == :local
+        # the key l alone is the camera's (pan), M alone the mode
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+        @test ctrl.frame[] == :local
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.m, Keyboard.press)
+        @test ctrl.frame[] == :local && ctrl.mode[] == :rotate
+        close(ctrl)
     end
 
     @testset "grab point" begin
@@ -1445,7 +1556,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             a = _vertex_px(ctrl, scene, 3, 8)
             events(scene).mouseposition[] = a
             ring = GUI._pick_ring(ctrl, scene)
-            @test first(ring) === :v
+            @test first(ring) === :z
             _press!(scene, a)
             _move!(scene, a .+ (20.0, 0.0))
             _release!(scene)
@@ -1467,7 +1578,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
                 _press!(scene, a)
                 _move!(scene, a .+ (30.0, 10.0))
                 _release!(scene)
-                # a drag on a locked ring starts no ring drag, and :v is locked, too
+                # a drag on a locked ring starts no ring drag, and :z is locked, too
                 @test Matrix{Float64}(BMO.orientation(m1)) ≈ R0
                 @test isempty(ctrl.undo_stack)
             end
@@ -1727,7 +1838,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         # cursor and the grabbed point after the drag. `move` are the axes it may move along
         function dragged(eye, up; ortho = false, d = (40.0, 25.0), move = nothing, tilt = 0.0, kwargs...)
             fig, ax, h, m1, m2 = _fixture()
-            # the local x-axis along -z for a quarter turn, see `_control_axes`
+            # the local x-axis along -z for a quarter turn
             if tilt != 0
                 BMO.yrotate3d!(m1, tilt)
                 GUI.update_render!(h)
@@ -1779,8 +1890,8 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         Δ, n, _ = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true)
         @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
 
-        # ... also if a local axis of the object is parallel to the rotation axis, e.g. the local
-        # x-axis of a beam group along +y: it still moves sideways
+        # ... also for a turned object, e.g. with its local x-axis along -z: without constraints
+        # the drag is not projected onto its axes
         Δ, n, miss = dragged([0.0, 0.0, 0.5], [0, 1, 0]; ortho = true, tilt = π / 2)
         @test Δ[1] > 1e-4 && Δ[2] > 1e-4 && abs(Δ[3]) < 1e-12
         @test miss < 0.5

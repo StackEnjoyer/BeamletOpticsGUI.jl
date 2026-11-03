@@ -18,8 +18,9 @@ display(gui)
 the mouse and keyboard (`kinematic_controls!`, `h` shows all controls), the system is re-solved
 after each change and the detector views update live. `export_changes(gui)` prints the changed poses
 as Julia code. Needs an interactive display; not for headless scripts. A selected component opens a
-card next to it in the 3D view: exact position `x`, `y`, `z` [mm], rotations `rx`, `ry`, `rv`
-[mrad] about the gizmo axes and an eye icon in its head that hides it (crossed out on a hidden
+card next to it in the 3D view: exact position `x`, `y`, `z`, Euler angles `rx`, `ry`, `rz` (unit
+buttons for lengths and angles; switches "global | local" = keys `Ctrl+M`, "xyz | zyx" order, button
+"zero"; in "local" the boxes are offsets Δ from a reference pose; `↑`/`↓` step a focused box) and an eye icon in its head that hides it (crossed out on a hidden
 object: shows it again). The pencil next to its label renames a component, a source or a system
 (`Enter` renames, `Esc` keeps the name); the name is the one of `labels`. The pin keeps a card
 with its component, so several components can be edited side by side. Dragging the head of a card

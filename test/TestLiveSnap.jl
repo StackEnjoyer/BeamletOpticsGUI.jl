@@ -263,7 +263,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(lens, deg2rad(20))
         translate_to3d!(lens, [0.03, 0.1, 0])
         gui = live_view(System([lens]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
-            throttle = false, snap = :pose, constraints = Dict(lens => (; rotate = (:v,))))
+            throttle = false, snap = :pose, constraints = Dict(lens => (; rotate = (:z,))))
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         R0 = _pose(lens)[2]
         _drag!(gui, lens, _to(gui, lens, [0.003, 0.12, 0.0]))

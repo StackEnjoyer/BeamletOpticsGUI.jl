@@ -439,7 +439,8 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "cards keep off the overlay" begin
-        gui, m, _ = _fixture(; size = (700, 450), detectors = [])
+        # high enough for the card of the selection (the pose in two columns) beside the overlay
+        gui, m, _ = _fixture(; size = (700, 520), detectors = [])
         o = gui.layout.overlay
         o.more_button.active[] = true
         o.camera_shown = true

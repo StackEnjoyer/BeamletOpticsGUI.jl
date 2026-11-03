@@ -149,7 +149,7 @@ const GUI = BeamletOpticsGUI
         translate_to3d!(lens, [0.03, 0.1, 0.004])
         sys = System([m, lens])
         gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false,
-            constraints = Dict(lens => (; move = (:x,), rotate = (:v,))))
+            constraints = Dict(lens => (; move = (:x,), rotate = (:z,))))
         @test GUI._center_on_beam!(gui, lens)
         # along its local x-axis only: the height is kept
         @test _pose(lens)[1] ≈ [0.0, 0.1, 0.004] atol = 1e-9

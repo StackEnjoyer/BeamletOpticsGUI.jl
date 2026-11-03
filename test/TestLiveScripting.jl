@@ -107,7 +107,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
     end
 
     @testset "constraints and static objects" begin
-        gui, m, pd = _fixture(; constraints = m -> Dict(m => (; move = (:x,), rotate = (:v,))))
+        gui, m, pd = _fixture(; constraints = m -> Dict(m => (; move = (:x,), rotate = (:z,))))
         P0 = Vector{Float64}(position(m))
         # projected onto the local x axis of the mirror, like a drag
         x = Vector{Float64}(BMO.orientation(m)[:, 1])

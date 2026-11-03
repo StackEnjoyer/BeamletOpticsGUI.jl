@@ -246,6 +246,50 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _events(gui).unicode_input[] = '-'
         settle!()
     end
+    # the frame of the gizmo and the keys: Ctrl+M, steps along the local axes, the chip of the help
+    step("ctrl+m (local frame), key steps, chip of the frame") do
+        _key!(gui, Keyboard.m, Keyboard.left_control)
+        frame!()
+        _check(gui.controls.frame[] === :local, "Ctrl+M did not switch to the local frame")
+        foreach(k -> _key!(gui, k), (Keyboard.up, Keyboard.page_up))
+        settle!()
+        _click!(gui, _rect_center(gui.layout.help.frame_button))
+        frame!()
+        _check(gui.controls.frame[] === :global, "the chip of the frame did not switch to the global frame")
+    end
+    # the pose card of the lens: the switches of the frame and the order, "zero", the unit buttons,
+    # a typed angle and a step of the key ↑ in a box
+    step("pose card: frame, zero, units, order, an angle, a step") do
+        card() = (cards = GUI._edit_cards(gui);
+            i = findfirst(c -> !isnothing(GUI._card_widget(c, :frame)), cards);
+            _check(!isnothing(i), "no card of the lens has the switch of the frame"); cards[i])
+        widget(name) = GUI._card_widget(card(), name)
+        option(name, i) = widget(name).segmented.buttons[i]
+        _click!(gui, _rect_center(option(:frame, 2)))
+        frame!()
+        _check(gui.controls.frame[] === :local, "the switch did not set the frame local")
+        foreach(name -> (_click!(gui, _rect_center(widget(name))); frame!()), (:zero, :angle_unit, :length_unit))
+        _click!(gui, _rect_center(option(:order, 2)))
+        frame!()
+        _check(gui.pose_display.order === :zyx, "the switch did not set the order zyx")
+        R = GUI._pose(fx.lens)[2]
+        _click!(gui, _rect_center(widget(:rz)))
+        frame!()
+        foreach(char -> (_events(gui).unicode_input[] = char), "5")
+        _key!(gui, Keyboard.enter)
+        settle!()
+        _check(GUI._pose(fx.lens)[2] != R, "the typed angle did not turn the lens")
+        _click!(gui, _rect_center(widget(:y)))
+        _key!(gui, Keyboard.up)
+        settle!()
+        # a click on a label of the card takes the focus from the box
+        _click!(gui, _rect_center(widget(:pose_label_rx)))
+        _click!(gui, _rect_center(option(:order, 1)))
+        _click!(gui, _rect_center(option(:frame, 1)))
+        frame!()
+        _check(gui.controls.frame[] === :global && gui.pose_display.order === :xyz,
+            "the switches did not go back to global and xyz")
+    end
     step(() -> (_key!(gui, Keyboard.z, Keyboard.left_control); settle!()), "undo")
     step(() -> (_key!(gui, Keyboard.y, Keyboard.left_control); settle!()), "redo")
     step(() -> (_key!(gui, Keyboard.backspace); settle!()), "reset pose")

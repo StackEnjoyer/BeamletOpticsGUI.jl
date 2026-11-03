@@ -37,7 +37,7 @@ control on its page "Pose" (the rows of `card_rows`), and every card, also a pin
    `:flen` for the drawn length of rays that hit nothing).
 2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
-3. `value(gui, obj)` returns what the widget shows, in display units (mm, mrad, %); it must be cheap,
+3. `value(gui, obj)` returns what the widget shows, in display units (e.g. mm, %); it must be cheap,
    it runs after every move, solve and input.
 4. `on(gui, obj, v)` applies the input `v` to `obj` in SI units. `solve = true` if the input changes
    the optics (a running solve is cancelled first, the systems are solved again afterwards).

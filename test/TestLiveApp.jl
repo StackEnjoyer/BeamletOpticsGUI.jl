@@ -224,7 +224,7 @@ const GUI = BeamletOpticsGUI
         @test gui.layout.inspector.type.text[] == string(nameof(typeof(m)))
         # the pose rows of the card, docked in the inspector
         card = gui.layout.inspector.card
-        @test GUI._card_widget(card, :y).displayed_string[] == "100.0"
+        @test GUI._card_widget(card, :y).displayed_string[] == "100.000000"
         GUI._card_widget(card, :x).stored_string[] = "5"
         @test BMO.position(m)[1] ≈ 5e-3
         @test gui.layout.inspector.mode.selected[] == :move

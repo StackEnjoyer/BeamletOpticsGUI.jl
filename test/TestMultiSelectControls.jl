@@ -263,28 +263,47 @@ const GUI = BeamletOpticsGUI
         close(ctrl)
     end
 
-    @testset "the axes stay orthogonal after a tilt of the selection" begin
+    @testset "the global axes in both frames, also after a tilt of the selection" begin
         f = _fixture(; fine_angle = 0.3)
         ctrl, scene = f.ctrl, f.scene
         s = _select3!(f)
         _key!(scene, Keyboard.m)
         # ↑ about the red axis, page up about the green one: the selection is tilted
+        R0 = copy(BMO.orientation(s))
         _key!(scene, Keyboard.up)
         _key!(scene, Keyboard.page_up)
         @test abs(BMO.orientation(s)[3, 2]) > 0.1
-        y, x, v = GUI._control_axes(ctrl, s)
-        @test v == ctrl.rotation_axis
-        @test abs(dot(y, v)) < 1e-12 && abs(dot(x, v)) < 1e-12 && abs(dot(x, y)) < 1e-12
-        @test norm(y) ≈ 1 && norm(x) ≈ 1 && cross(x, y) ≈ v
-        # ← about the blue axis turns the arrows with the selection
+        @test BMO.orientation(s) ≈ BMO.rotate3d([0.0, 1, 0], 0.3) * BMO.rotate3d([1.0, 0, 0], 0.3) * R0 atol = 1e-12
+        for frame in (:global, :local)
+            GUI._set_frame!(ctrl, frame)
+            @test GUI._control_axes(ctrl, s) == ([0.0, 1, 0], [1.0, 0, 0], [0.0, 0, 1])
+        end
+        # ← turns about e_z, ↑ moves along e_y, in the frame `:local` as well
+        R1 = copy(BMO.orientation(s))
         _key!(scene, Keyboard.left)
-        y2, _, _ = GUI._control_axes(ctrl, s)
-        @test y2 ≈ BMO.rotate3d(v, 0.3) * y atol = 1e-12
-        # the move arrows stay orthogonal, e.g. ↑ moves within the plane perpendicular to v
+        @test BMO.orientation(s) ≈ BMO.rotate3d([0.0, 0, 1], 0.3) * R1 atol = 1e-12
         _key!(scene, Keyboard.m)
         P0 = Vector{Float64}(position(s))
         _key!(scene, Keyboard.up)
-        @test abs(dot(Vector{Float64}(position(s)) - P0, v)) < 1e-12
+        @test Vector{Float64}(position(s)) - P0 ≈ [0, ctrl.fine_step, 0] atol = 1e-15
+        close(ctrl)
+    end
+
+    @testset "constraints of a selection: the names of the axes, on the global axes" begin
+        f = _fixture()
+        ctrl, scene = f.ctrl, f.scene
+        # turned objects: their constraints still name the global axes of the selection
+        BMO.zrotate3d!(f.m1, 0.5)
+        ctrl.constraints[f.m1] = (; move = (:x, :y))
+        ctrl.constraints[f.m2] = (; move = (:x,))
+        s = _select3!(f)
+        @test GUI._allowed_axes(ctrl, s, :move) == (:x,)
+        for frame in (:global, :local)
+            GUI._set_frame!(ctrl, frame)
+            @test GUI._gizmo_free(ctrl, s, :move) == (false, true, false)
+            @test GUI._within_constraints(ctrl, s, :move, [1e-3, 0, 0])
+            @test !GUI._within_constraints(ctrl, s, :move, [1e-3, 1e-3, 0])
+        end
         close(ctrl)
     end
 
@@ -325,7 +344,7 @@ const GUI = BeamletOpticsGUI
         n = 2 * GUI._RING_RES
         vertex(j) = _px(scene, ctrl.ring_pts[][2n + 2j - 1])
         events(scene).mouseposition[] = vertex(4)
-        @test first(GUI._pick_ring(ctrl, scene)) === :v
+        @test first(GUI._pick_ring(ctrl, scene)) === :z
         _press!(scene)
         @test ctrl.press_kind == :pending_ring
         events(scene).mouseposition[] = vertex(12)

@@ -307,6 +307,8 @@ function _detach!(gui::LiveView, src::_Source)
     delete!(gui.beams.kwargs, src)
     delete!(gui.beams.overlay_kwargs, src)
     delete!(gui.beams.pol_view, src)
+    # the reference of the frame "local" of the pose cards, see `_PoseDisplay`
+    delete!(gui.pose_display.references, src)
     # A source the view started with is listed by `export_changes` as removed, under its name
     added = _index(comp.added, src)
     _release!(gui, src, Base.IdSet{Any}((src,)); keep_name = isnothing(added))

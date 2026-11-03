@@ -132,7 +132,7 @@ _table_kwarg(t) = (; t.shown, t.pitch, t.height, t.snap)
 The kwargs of `live_view` with which [`open_system`](@ref) opens the `system` of the `gui` with its
 `sources`: what the new window takes over, i.e. the layout, the theme, the catalog, the labels, how
 the system and the beams are drawn, the beams that are switched off, the tracing, the snapping, the
-table and the settings of the controls, e.g. the steps of the keys and the constraints.
+table and the settings of the controls, e.g. the steps of the keys, the constraints and the frame.
 """
 function _open_kwargs(gui::LiveView, system, sources)
     ctrl = gui.controls
@@ -155,7 +155,7 @@ function _open_kwargs(gui::LiveView, system, sources)
         # the controls
         ctrl.rotation_axis, ctrl.plane_normal, ctrl.rotate_speed, ctrl.fine_step, ctrl.fine_angle,
         ctrl.throttle, ctrl.select_modifier, ctrl.drag_threshold, ctrl.constraints,
-        ctrl.source_pick_radius)
+        ctrl.source_pick_radius, frame = ctrl.frame[])
 end
 
 function open_system(gui::LiveView, system::BMO.AbstractSystem; display::Bool = true, kwargs...)

@@ -380,6 +380,25 @@ Base.@kwdef mutable struct _CardState
 end
 
 """
+    _PoseDisplay
+
+How the pose cards of a `LiveView` show the poses, one setting per view (see `pose_card_rows`):
+the `order` of the Euler angles (`:xyz` or `:zyx`, see `_euler_matrix`), the `units` of the
+lengths and the angles per frame of the controls (`:global` and `:local`, see `_set_frame!`), keys
+of `_LENGTH_UNITS` and `_ANGLE_UNITS`, and the `references` of the frame "local": the pose
+(position, orientation) of each object from which its card shows the offsets, made when the object
+is first shown in "local" and set by "zero", see `_posecard_reference!`. A removed object loses its
+reference, see `_drop!`.
+"""
+Base.@kwdef mutable struct _PoseDisplay
+    order::Symbol = :xyz
+    units::Dict{Symbol, Tuple{Symbol, Symbol}} =
+        Dict{Symbol, Tuple{Symbol, Symbol}}(:global => (:mm, :rad), :local => (:um, :mrad))
+    references::IdDict{Any, Tuple{Vector{Float64}, Matrix{Float64}}} =
+        IdDict{Any, Tuple{Vector{Float64}, Matrix{Float64}}}()
+end
+
+"""
     _ObjectState
 
 The objects of a `LiveView` as the selection shows them: the movable objects of the component
@@ -612,7 +631,7 @@ remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
 (`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
-`objects` (`_ObjectState`), `beams` (`_BeamState`), `detectors` (`_DetectorStates`) and `components`
+`pose_display` (`_PoseDisplay`), `objects` (`_ObjectState`), `beams` (`_BeamState`), `detectors` (`_DetectorStates`) and `components`
 (`_ComponentState`); the widgets that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. Every
@@ -650,6 +669,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     measure::_MeasureState = _MeasureState()
     camera::_CameraState
     cards::_CardState
+    # how the pose cards show the poses: order, units, references, see `pose_card_rows`
+    pose_display::_PoseDisplay = _PoseDisplay()
     objects::_ObjectState
     beams::_BeamState = _BeamState()
     detectors::_DetectorStates = _DetectorStates()
@@ -1680,6 +1701,8 @@ function live_view(
     # The marker of the pivot of a group or a selection of several, before the cards, which cover it
     _connect_pivot!(gui)
     _connect_cards!(gui)
+    # The pose cards show the pose in the frame of the controls, see `pose_card_rows`
+    push!(controls.listeners, on(_ -> _update_inspector!(gui; force = true), controls.frame))
     # The selection card of groups, see `_browse!`
     _connect_browse!(gui)
     push!(controls.listeners, on(v -> v == gui.clip.beams || _set_clip_beams!(gui, v),
