@@ -38,7 +38,7 @@ overlay (see `_overlay_scene`) in the colors of the `theme` tokens:
   opens and closes the help card like the key `h`
 - `chips`, right of the pill: the mode (`mode_button`, a click switches it like the key `m`), the
   frame of the gizmo and the keys (`frame_button`, "Global" or "Local", a click switches it like
-  the key `l`, see `_set_frame!`), the keyboard step (`step_label`, changed by the `step_buttons` "+" and "−" like the keys) and the
+  the keys `Ctrl+M`, see `_set_frame!`), the keyboard step (`step_label`, changed by the `step_buttons` "+" and "−" like the keys) and the
   snapping onto beams (`snap_button`, which names its state; a click switches it to the next one
   like the key `Tab`, see `_cycle_snap!`). In
   the spectator mode, the part `spectator` is shown instead, whose `spectator_button` switches
@@ -96,7 +96,7 @@ function _HelpUI(scene::Scene, t::NamedTuple, ax::LScene, pill::_OverlayPart,
     mode_button = _help_button(g[1, 1], t, "Move"; accent = true)
     _help_cap!(g[1, 2], t, "M")
     frame_button = _help_button(g[1, 3], t, _frame_label(:global))
-    _help_cap!(g[1, 4], t, "L")
+    _help_cap!(g[1, 4], t, "Ctrl+M")
     Box(g[1, 5]; width = 1, height = 14, color = t.border, strokewidth = 0)
     step_label = Label(g[1, 6], "step"; _card_style(t, Label)...)
     step_buttons = (_help_button(g[1, 7], t, "+"), _help_button(g[1, 8], t, "−"))

@@ -124,6 +124,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         h = live_render!(ax, sys)
         return fig, ax, h, m1, m2
     end
+    # Ctrl+M, which switches the frame of the controls
+    _ctrl_m!(scene) = (push!(events(scene).keyboardstate, Keyboard.left_control);
+                       events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.m, Keyboard.press);
+                       delete!(events(scene).keyboardstate, Keyboard.left_control))
 
     @testset "default pick (nothing) selects via ray casting" begin
         fig, ax, h, m1, m2 = _fixture()
@@ -501,7 +505,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, fine_step = 10e-9, fine_angle = 10e-6)
-        @test ctrl.help_obs[] == "move mode, global frame, step 10 nm, +/-: step, m: switch mode, l: switch frame, v: spectator, h: show controls"
+        @test ctrl.help_obs[] == "move mode, global frame, step 10 nm, +/-: step, m: switch mode, ctrl+m: switch frame, v: spectator, h: show controls"
 
         # move mode, no object selected: 1-2-5 sequence on fine_step only
         @test isnothing(ctrl.selected[])
@@ -512,7 +516,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         end
         @test steps ≈ [20e-9, 50e-9, 100e-9, 50e-9]
         @test ctrl.fine_angle == 10e-6
-        @test ctrl.help_obs[] == "move mode, global frame, step 50 nm, +/-: step, m: switch mode, l: switch frame, v: spectator, h: show controls"
+        @test ctrl.help_obs[] == "move mode, global frame, step 50 nm, +/-: step, m: switch mode, ctrl+m: switch frame, v: spectator, h: show controls"
 
         # help overlay shows the new step as well
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.h, Keyboard.press)
@@ -1309,7 +1313,7 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
             @test collect(Float64.(BMO.position(m1))) == P0
             @test GUI._gizmo_free(ctrl, m1, :rotate) == (false, false, true)
             # local: the green arrow is free and moves along the rail
-            events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+            _ctrl_m!(scene)
             @test ctrl.frame[] == :local
             @test GUI._gizmo_free(ctrl, m1, :move) == (true, false, false)
             @test ctrl.arrow_color[][1].alpha ≈ 1.0
@@ -1346,21 +1350,22 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         end
     end
 
-    @testset "L switches the frame" begin
+    @testset "Ctrl+M switches the frame" begin
         fig, ax, h, m1, m2 = _fixture()
         scene = ax.scene
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, frame = :local)
         @test ctrl.frame[] == :local
         @test occursin("local frame", ctrl.help_obs[])
-        # also without a selection
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+        # also without a selection; Ctrl+M leaves the mode as it is
+        _ctrl_m!(scene)
+        @test ctrl.mode[] == :move
         @test ctrl.frame[] == :global
         @test ctrl.help_obs[] == GUI._help_hint(:move, 10e-9, 10e-6, :global)
         @test occursin("global frame", ctrl.help_obs[])
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+        _ctrl_m!(scene)
         @test ctrl.frame[] == :local
         # the help names the frame and the key
-        e = only(filter(e -> e.keys == ["L"], GUI._help_sections(ctrl)[2].second))
+        e = only(filter(e -> e.keys == ["Ctrl", "M"], GUI._help_sections(ctrl)[2].second))
         @test e.text == "local axes, switch to global"
         # the gizmo follows the frame
         BMO.zrotate3d!(m1, 0.4)
@@ -1369,21 +1374,26 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         GUI._update_selection_box!(ctrl)
         R = GUI._pose(m1)[2]
         @test Vector{Float64}(ctrl.arrow_dir[][1]) ≈ ctrl.gizmo_size[] .* R[:, 2] rtol = 1e-6
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+        _ctrl_m!(scene)
         @test Vector{Float64}(ctrl.arrow_dir[][1]) ≈ ctrl.gizmo_size[] .* [0, 1, 0] rtol = 1e-6
         # ignored in the spectator mode and while typing
         GUI._set_spectator!(ctrl, true)
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+        _ctrl_m!(scene)
         @test ctrl.frame[] == :global
         GUI._set_spectator!(ctrl, false)
         close(ctrl)
         typing = Ref(true)
         ctrl = GUI.kinematic_controls!(ax, h; throttle = false, ignore_keys = () -> typing[])
-        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
+        _ctrl_m!(scene)
         @test ctrl.frame[] == :global
         typing[] = false
+        _ctrl_m!(scene)
+        @test ctrl.frame[] == :local
+        # the key l alone is the camera's (pan), M alone the mode
         events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.l, Keyboard.press)
         @test ctrl.frame[] == :local
+        events(scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.m, Keyboard.press)
+        @test ctrl.frame[] == :local && ctrl.mode[] == :rotate
         close(ctrl)
     end
 

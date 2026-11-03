@@ -150,7 +150,7 @@ refractive index as `ConstantRefractiveIndex(n)`; an added source is its constru
 `kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step, frame = :global)` adds the mouse and
 keyboard controls to a live-rendered system on its own, without `live_view`. The gizmo (green, red,
 blue: y-, x-, z-axis) is in the global axes (`frame = :global`) or in the local axes of the
-selected component (`:local`); the key `l` switches. In the rotate mode a
+selected component (`:local`); the keys `Ctrl+M` switch. In the rotate mode a
 mouse drag on a ring of the gizmo (highlighted under the cursor) rotates the selected component around
 that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) can not be dragged, a
 drag elsewhere on the selection rotates around `rotation_axis` as before. In the move mode a drag on

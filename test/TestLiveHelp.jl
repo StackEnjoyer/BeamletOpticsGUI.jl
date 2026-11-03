@@ -52,7 +52,7 @@ const GUI = BeamletOpticsGUI
         @test entries[2].text == "along the green arrow"
         @test any(e -> e.text == "keyboard step, now 10 nm", entries)
         # the key of the frame names the current one
-        @test entries[5].keys == ["L"] && entries[5].text == "global axes, switch to local"
+        @test entries[5].keys == ["Ctrl", "M"] && entries[5].combo && entries[5].text == "global axes, switch to local"
         @test GUI._help_sections(:move, 10e-9, 10e-6; frame = :local)[2].second[5].text ==
               "local axes, switch to global"
         # the axes of the keys in the rotate mode, like the gizmo
@@ -107,8 +107,8 @@ const GUI = BeamletOpticsGUI
         # each key of the live view (see `_LIVE_VIEW_KEYS`) is on a key cap; `h` is in the head of
         # the card
         ctrl = GUI._ctrl_cap()
-        @test Set(_caps(sections)) == Set(["Esc", "Enter", "G", "M", "L", "↑", "↓", "←", "→", "PgUp", "PgDn", "+",
-            "−", "Shift", "Bksp", ctrl, "Z", "Y", "V", "1", "P", "Del", "C", "T", "Ins", "Tab"])
+        @test Set(_caps(sections)) == Set(["Esc", "Enter", "G", "M", "↑", "↓", "←", "→", "PgUp", "PgDn", "+",
+            "−", "Shift", "Bksp", ctrl, "Ctrl", "Z", "Y", "V", "1", "P", "Del", "C", "T", "Ins", "Tab"])
         # no key is listed twice; Esc is the key of the groups, a trace is cancelled by a button
         keys = [(e.keys, e.combo) for (_, entries) in sections for e in entries if !(e.keys[1] isa Pair)]
         @test allunique(keys)
@@ -193,10 +193,12 @@ const GUI = BeamletOpticsGUI
         help.step_buttons[2].clicks[] += 1
         help.step_buttons[2].clicks[] += 1
         @test ctrl.fine_step ≈ 10e-9 && "keyboard step, now 10 nm" in _texts(help)
-        # the frame: the chip and the card follow the key l, the button acts like it
+        # the frame: the chip and the card follow Ctrl+M, the button acts like it
         @test help.frame_button.label[] == "Global" && "global axes, switch to local" in _texts(help)
-        _key!(gui, Keyboard.l)
-        @test ctrl.frame[] == :local && help.frame_button.label[] == "Local"
+        push!(ev(gui).keyboardstate, Keyboard.left_control)
+        _key!(gui, Keyboard.m)
+        delete!(ev(gui).keyboardstate, Keyboard.left_control)
+        @test ctrl.frame[] == :local && help.frame_button.label[] == "Local" && ctrl.mode[] == :move
         @test "local axes, switch to global" in _texts(help)
         help.frame_button.clicks[] += 1
         @test ctrl.frame[] == :global && help.frame_button.label[] == "Global"

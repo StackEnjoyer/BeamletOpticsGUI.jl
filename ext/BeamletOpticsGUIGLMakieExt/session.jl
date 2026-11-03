@@ -246,11 +246,11 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         _events(gui).unicode_input[] = '-'
         settle!()
     end
-    # the frame of the gizmo and the keys: the key l, steps along the local axes, the chip of the help
-    step("key l (local frame), key steps, chip of the frame") do
-        _key!(gui, Keyboard.l)
+    # the frame of the gizmo and the keys: Ctrl+M, steps along the local axes, the chip of the help
+    step("ctrl+m (local frame), key steps, chip of the frame") do
+        _key!(gui, Keyboard.m, Keyboard.left_control)
         frame!()
-        _check(gui.controls.frame[] === :local, "the key l did not switch to the local frame")
+        _check(gui.controls.frame[] === :local, "Ctrl+M did not switch to the local frame")
         foreach(k -> _key!(gui, k), (Keyboard.up, Keyboard.page_up))
         settle!()
         _click!(gui, _rect_center(gui.layout.help.frame_button))

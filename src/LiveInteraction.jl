@@ -72,6 +72,8 @@ _modifier_name(btns) = join(string.(btns), "/")
 # Ctrl (Windows/Linux) or Cmd (macOS) held, used for the undo/redo shortcuts
 const _CTRL_OR_CMD_KEYS = (Keyboard.left_control, Keyboard.right_control,
     Keyboard.left_super, Keyboard.right_super)
+# Ctrl held, also on macOS, e.g. for Ctrl+M, the frame of the controls
+const _CTRL_KEYS = (Keyboard.left_control, Keyboard.right_control)
 
 """
 The name of the `key` in the keyboard layout of the user, e.g. `"z"`, or `nothing` if the backend
@@ -152,7 +154,7 @@ _default_hint(ctrl) =
 
 function _help_hint(mode::Symbol, fine_step, fine_angle, frame::Symbol = :global)
     step = _step_string(mode, fine_step, fine_angle)
-    return "$mode mode, $frame frame, step $step, +/-: step, m: switch mode, l: switch frame, " *
+    return "$mode mode, $frame frame, step $step, +/-: step, m: switch mode, ctrl+m: switch frame, " *
            "v: spectator, h: show controls"
 end
 
@@ -233,7 +235,7 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["↑", "↓"], along(up); color = up),
             _HelpEntry(["←", "→"], along(left); color = left),
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
-            _HelpEntry(["L"], "$frame axes, switch to $(_other_frame(frame))"),
+            _HelpEntry(["Ctrl", "M"], "$frame axes, switch to $(_other_frame(frame))"; combo = true),
             _HelpEntry([:mouse => "drag"],
                 !move ? "rotate around the ring you grab, else the rotation axis" :
                 view_plane ? "move along the arrow you grab, else in the plane of the view" :
@@ -1975,7 +1977,7 @@ The controls have a move and a rotate mode, which are switched with the key `m`.
 is marked by a box and three perpendicular axes above the object, the gizmo: green, red and blue are
 the y-, x- and z-axis of the `frame`. In the frame `:global`, these are the fixed global axes, for
 any orientation of the object; in the frame `:local`, its local axes (the columns 2, 1 and 3 of its
-orientation), which turn with it. The key `l` switches the frame. A selection of several objects
+orientation), which turn with it. The keys `Ctrl+M` switch the frame. A selection of several objects
 has the global axes in both frames. In the move mode the axes are shown as arrows, in the rotate
 mode as rings. The key `h` shows or hides an overlay of all controls.
 
@@ -2116,7 +2118,7 @@ the constraints of the object (or subgroup) that is currently selected apply.
   throws an `ArgumentError`, use `:z`
 - `source_pick_radius = 15`: [px] screen-space pick radius of source markers, see "Mouse controls"
 - `frame = :global`: the frame of the gizmo and the keys (and of the pose card of
-  [`live_view`](@ref)), `:global` or `:local`, switched with the key `l`
+  [`live_view`](@ref)), `:global` or `:local`, switched with the keys `Ctrl+M`
 - `ignore_keys = () -> false`: predicate checked before any keyboard handling (including `v`, `h`,
   `m` and undo/redo); while `true`, keys are not handled and passed on, e.g. while a text field
   elsewhere in the figure is focused
@@ -2429,7 +2431,15 @@ function kinematic_controls!(
         end
         # Only the overlay can be toggled in the spectator mode
         ctrl.spectator[] && event.key != Keyboard.h && return Consume(false)
-        if event.action == Keyboard.press && event.key in (Keyboard.h, Keyboard.m)
+        # Ctrl+M: the frame of the gizmo, the keys and the pose card, see `_set_frame!`; by the letter
+        # of the key like Ctrl+Z, and Ctrl also on macOS, where Cmd+M minimizes the window. The
+        # letters of `Camera3D` (e.g. `l`, which pans) are no choice
+        ctrl_held = _modifier_held(scene, _CTRL_KEYS)
+        if event.action == Keyboard.press && ctrl_held && _layout_key(event.key) == Keyboard.m
+            _set_frame!(ctrl, _other_frame(ctrl.frame[]))
+            return Consume(true)
+        end
+        if event.action == Keyboard.press && !ctrl_held && event.key in (Keyboard.h, Keyboard.m)
             if event.key == Keyboard.h
                 ctrl.help_shown = !ctrl.help_shown
             else
@@ -2437,11 +2447,6 @@ function kinematic_controls!(
                 _update_selection_box!(ctrl)
             end
             _update_help!(ctrl)
-            return Consume(true)
-        end
-        # The frame of the gizmo, the keys and the pose card, see `_set_frame!`
-        if event.action == Keyboard.press && event.key == Keyboard.l
-            _set_frame!(ctrl, _other_frame(ctrl.frame[]))
             return Consume(true)
         end
         # By the letter of the key, not by its place: "Z" and "Y" are swapped on e.g. a German keyboard

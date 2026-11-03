@@ -46,7 +46,7 @@ mode, which is switched with `m`:
 | `Esc`                        | Select the enclosing group, or deselect at the top level        |
 | Left-click on empty space    | Deselect                                                        |
 | `v`                          | Switch the spectator mode on or off                             |
-| `l`                          | Switch the frame of the gizmo and the keys between global and local |
+| `Ctrl+M`                     | Switch the frame of the gizmo and the keys between global and local |
 | `h`                          | Show or hide an overlay of all controls                         |
 
 In the spectator mode, the selection is cleared and all mouse and keyboard input goes to the
@@ -57,7 +57,7 @@ whose kinematic trait is `Static` can not be selected.
 
 The selected component is marked by a box and three perpendicular axes above it, the gizmo: green,
 red and blue are the y-, x- and z-axis of the frame, the keyword `frame`, `:global` (default) or
-`:local`, which the key `l` switches. In `:global` these are the fixed global axes, for any
+`:local`, which the keys `Ctrl+M` switch (Ctrl also on macOS). In `:global` these are the fixed global axes, for any
 orientation of the component; in `:local` they are its local axes, which turn with it. A selection
 of several components has the global axes in both frames. In the move mode the axes are shown as
 arrows, in the rotate mode as rings. The first key of each pair moves the component in the

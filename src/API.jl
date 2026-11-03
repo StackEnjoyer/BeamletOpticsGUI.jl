@@ -301,7 +301,7 @@ shown in the frame of the controls (`frame` of [`kinematic_controls!`](@ref), `:
    above the second;
 2. one row per axis: the position `x` beside the Euler angle `rx`, then `y` and `ry`, `z` and `rz`
    (the labels of the angles in the colors of the red, green and blue gizmo axes);
-3. the switches "global | local" (the frame of the controls, like the key `L`) and "xyz | zyx" (the
+3. the switches "global | local" (the frame of the controls, like the keys `Ctrl+M`) and "xyz | zyx" (the
    order of the angles), and the button "zero".
 
 In "global", the boxes show the position of `obj` and the angles of its orientation about the

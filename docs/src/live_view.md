@@ -568,8 +568,8 @@ the menus, like in the object tree of the app layout:
   the typed name, `Esc` keeps the old one. The name is used like an entry of `labels`, also in the
   exported code.
 - The pose has two columns, see [`pose_card_rows`](@ref): the position `x`, `y`, `z` beside the
-  Euler angles `rx`, `ry`, `rz`, one row per axis, and below them the switches "global | local" (the frame of the controls, as the key
-  `l`) and "xyz | zyx" (the order of the angles) with the button "zero". In "global", the boxes show
+  Euler angles `rx`, `ry`, `rz`, one row per axis, and below them the switches "global | local" (the frame of the controls, as the keys
+  `Ctrl+M`) and "xyz | zyx" (the order of the angles) with the button "zero". In "global", the boxes show
   the position and the angles about the fixed global axes; typing a number and pressing `Enter`
   sets that coordinate or angle and keeps the others. In "local", the labels start with "Δ" and the
   boxes show the offsets from a reference pose, the pose when the card first showed the component
