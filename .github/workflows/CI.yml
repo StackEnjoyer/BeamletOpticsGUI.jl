@@ -62,7 +62,11 @@ jobs:
         run: |
           xvfb-run -a --server-args="-screen 0 1280x1024x24" \
             julia --project=test --color=yes -e "using BeamletOptics, BeamletOpticsGUI, GLMakie"
+      # The test environment on the load path, such that the preference also holds in the environment
+      # in which Aqua precompiles the package (persistent tasks), which otherwise runs the workload
       - name: Run tests with xvfb
+        env:
+          JULIA_LOAD_PATH: "@:${{ github.workspace }}/test:@stdlib"
         run: |
           xvfb-run -a --server-args="-screen 0 1280x1024x24" \
             julia --project=test --color=yes ${{ matrix.coverage }} test/runtests.jl --jobs=4
