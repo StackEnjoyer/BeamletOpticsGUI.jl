@@ -77,7 +77,9 @@ const GUI = BeamletOpticsGUI
         gui, a, b = _views(; layout, theme = :dark, snap = :pose, table = (; pitch = 0.05))
         GUI._set_beam_color!(gui, b.beam, :green)
         gui.labels[b.mirror] = "fold"
+        GUI._set_frame!(gui.controls, :local)
         new = open_system(gui, b.sys; display = false)
+        @test new.controls.frame[] == :local
         @test new isa typeof(gui)
         @test GUI._systems(new) == [b.sys] && only(GUI._systems(new)) === b.sys
         @test length(new.pairs) == 1 && _paired(new, b.sys, b.beam)

@@ -293,9 +293,35 @@ function card_rows end
 """
     pose_card_rows(obj)
 
-The rows of the pose of `obj` on its card in [`live_view`](@ref), see [`card_rows`](@ref): the
-position `x`, `y`, `z` [mm], where `Enter` moves `obj` to the typed coordinate, and the rotations
-`rx`, `ry`, `rv` [mrad] about the red, green and blue axis of the controls.
+The rows of the pose of `obj` on its card in [`live_view`](@ref), see [`card_rows`](@ref),
+shown in the frame of the controls (`frame` of [`kinematic_controls!`](@ref), `:global` or
+`:local`), in two columns, the lengths and the angles:
+
+1. a button with the unit of the lengths above the first column, one with the unit of the angles
+   above the second;
+2. one row per axis: the position `x` beside the Euler angle `rx`, then `y` and `ry`, `z` and `rz`
+   (the labels of the angles in the colors of the red, green and blue gizmo axes);
+3. the switches "global | local" (the frame of the controls, like the key `L`) and "xyz | zyx" (the
+   order of the angles), and the button "zero".
+
+In "global", the boxes show the position of `obj` and the angles of its orientation about the
+fixed global axes: in the order "xyz", `R = R_z(rz) · R_y(ry) · R_x(rx)`, in "zyx",
+`R = R_x(rx) · R_y(ry) · R_z(rz)`, with `rx` and `rz` in (−π, π] and `ry` in [−π/2, π/2]. In
+"local", the labels start with "Δ" and the boxes show the offsets from a reference pose of `obj`
+(`Pref`, `Rref`), in the frame of the reference: `Δp = Rrefᵀ (P − Pref)` and the angles of
+`Rrefᵀ R`. The reference is the pose of `obj` when it is first shown in "local"; "zero" makes the
+current pose the reference, such that all boxes show 0 ("zero" acts only in "local").
+
+A box takes a bare number in the unit shown above its column; `Enter` changes only that
+coordinate or angle, the others are kept, as one step of the undo history. An input that the
+`constraints` of the controls do not allow, or that is not a number, is rejected with a message in
+the status line. While a box has the focus, `↑` and `↓` change its value by the keyboard step of
+the controls (`fine_step` or `fine_angle`), with `Shift` by ten steps.
+
+The unit buttons cycle mm → µm → nm → m and rad → mrad → µrad → ° → arcmin → arcsec; the order
+switch and the units change only the display, the object does not move. Order and units are one
+setting of the window, the units one per frame: mm and rad in "global", µm and mrad in "local" at
+the start.
 """
 function pose_card_rows end
 

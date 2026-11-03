@@ -247,7 +247,7 @@ const GUI = BeamletOpticsGUI
         box.stored_string[] = "1"
         @test position(housing) == P
         @test occursin("not movable", gui.status.text[])
-        @test box.displayed_string[] == "300.0"
+        @test box.displayed_string[] == "300.000000"
         # selecting an object ends the inspection
         tree.clicked[] = m
         @test ctrl.selected[] === m

@@ -46,6 +46,7 @@ mode, which is switched with `m`:
 | `Esc`                        | Select the enclosing group, or deselect at the top level        |
 | Left-click on empty space    | Deselect                                                        |
 | `v`                          | Switch the spectator mode on or off                             |
+| `l`                          | Switch the frame of the gizmo and the keys between global and local |
 | `h`                          | Show or hide an overlay of all controls                         |
 
 In the spectator mode, the selection is cleared and all mouse and keyboard input goes to the
@@ -54,11 +55,11 @@ camera, such that the system can be viewed without moving a component by acciden
 help. Components
 whose kinematic trait is `Static` can not be selected.
 
-The selected component is marked by a box and three perpendicular axes above it: the vertical
-rotation axis (blue), the heading of the component in the horizontal plane (green, its local y-axis
-projected onto that plane) and the horizontal axis beside it (red). For a component that is only
-turned about the vertical, these are its local y- and x-axes; a tilted component keeps
-perpendicular axes. In the move mode the axes are shown as
+The selected component is marked by a box and three perpendicular axes above it, the gizmo: green,
+red and blue are the y-, x- and z-axis of the frame, the keyword `frame`, `:global` (default) or
+`:local`, which the key `l` switches. In `:global` these are the fixed global axes, for any
+orientation of the component; in `:local` they are its local axes, which turn with it. A selection
+of several components has the global axes in both frames. In the move mode the axes are shown as
 arrows, in the rotate mode as rings. The first key of each pair moves the component in the
 direction of the arrow, or rotates it in the direction of the ring. In the rotate mode, a drag on
 a ring (the ring under the cursor is highlighted) rotates the component around that ring, through
@@ -89,11 +90,11 @@ or source are entries of the same history. `Ctrl+Z` and `Ctrl+Y` are the keys wi
 the keyboard layout, e.g. on a German keyboard, where the two are swapped.
 
 The `constraints` lock axes of individual components, e.g. a mirror in a kinematic mount that can
-only be tilted. The axes are named after the gizmo: `:x` (red), `:y` (green) and `:v` (blue, the
-`rotation_axis`). Missing fields allow all axes, locked axes are shown faded:
+only be tilted. The axes are the local axes `:x`, `:y` and `:z` of the component in both frames, since a mount
+turns with the component. Missing fields allow all axes, locked axes are shown faded:
 
 ```julia
-ctrl = kinematic_controls!(ax, hsys; constraints = Dict(mirror => (; move = (), rotate = (:x, :v))))
+ctrl = kinematic_controls!(ax, hsys; constraints = Dict(mirror => (; move = (), rotate = (:x, :z))))
 ```
 
 Call `close(ctrl)` to remove the controls.

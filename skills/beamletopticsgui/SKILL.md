@@ -78,7 +78,7 @@ When this Skill is active:
   and rotated as one about the mean of their positions with the world axes as gizmo axes, without
   snapping, only on the axes that all allow; one drag, run of keys or `Backspace` is one undo step,
   and `on_change` is called once per object. Their card (compact) or the inspector (app) shows "N
-  objects" ("Selection"), the row "pivot", one row per object (click: that object alone), hide and
+  objects" ("Selection"), the rotation boxes `rx`, `ry`, `rz` (an input turns the selection about the global axis), the row "pivot", one row per object (click: that object alone), hide and
   remove, no pages and no pin. `Ctrl+C` copies them if all their components are from the catalog. `gui.controls.selected[]` then holds an internal value, not a
   component.
 - `Ctrl+G` (`Cmd+G`) makes a selection of several an `ObjectGroup`: the systems hold the group

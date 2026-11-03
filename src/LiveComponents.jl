@@ -678,6 +678,9 @@ function _drop!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup), sys)
     _record_dropped!(comp, obj, units, sys)
     # the groups made in the window among its parts, which its snapshot keeps, see `_snapshot`
     foreach(p -> delete!(comp.groups, p), _component_parts(obj))
+    # the references of the frame "local" of the pose cards, see `_PoseDisplay`
+    refs = gui.pose_display.references
+    foreach(p -> delete!(refs, p), _component_parts(obj))
     _refresh_menu_options!(gui, gui.widgets.menu)
     _on_components_changed!(gui)
     return nothing

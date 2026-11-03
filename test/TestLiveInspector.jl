@@ -106,9 +106,9 @@ const GUI = BeamletOpticsGUI
         @test card.bar.keys == [:pose, :properties] && card.bar.selected[] == :pose
         @test [b.label[] for b in card.bar.buttons] == ["Pose", "Properties"]
         @test _parts(card) == [:bar_part, :rows_part, :step_part]
-        @test _w(gui, :y).displayed_string[] == "40.0"
+        @test _w(gui, :y).displayed_string[] == "40.000000"
         @test _w(gui, :hide) isa BeamletOpticsGUI._IconToggle && !_w(gui, :hide).active[]
-        @test all(k -> _w(gui, k) isa Textbox, (:x, :y, :z, :rx, :ry, :rv))
+        @test all(k -> _w(gui, k) isa Textbox, (:x, :y, :z, :rx, :ry, :rz))
         @test insp.pin.box.visible[] && !insp.pin.active[]
         # the properties are on their own page: the list is empty and has no height
         @test isempty(_rows(gui)) && _height(insp.list.box) == 0 && !_visible(insp.list.box)
@@ -196,7 +196,8 @@ const GUI = BeamletOpticsGUI
         @test insp.name.text[] == "No selection"
         @test isempty(card.blocks) && isempty(card.widgets)
         # the eye in the head is no block, but is drawn by one
-        @test all(b -> (b isa Makie.Block ? b : b.box).parent === nothing, blocks)
+        @test all(b -> b isa GUI._PoseSwitch ? all(x -> x.parent === nothing, b.segmented.buttons) :
+                      (b isa Makie.Block ? b : b.box).parent === nothing, blocks)
         @test _parts(card) == [:step_part, :properties_part] && _value(gui, "Systems") == "1"
         @test _visible(insp.step_box) && !any(_visible, card.bar.buttons)
         close(gui)
@@ -214,7 +215,7 @@ const GUI = BeamletOpticsGUI
         # take inputs while another page is shown
         _w(gui, :z).stored_string[] = "10"
         @test _value(gui, "Hits") == "0"
-        @test _w(gui, :z).displayed_string[] == "10.0"
+        @test _w(gui, :z).displayed_string[] == "10.000000"
         @test insp.card.blocks == blocks
         @test (insp.list.labels, insp.list.values, insp.list.lines) === plots
         _w(gui, :z).stored_string[] = "0"
@@ -222,7 +223,7 @@ const GUI = BeamletOpticsGUI
         # a move in the 3D view, too
         translate3d!(o.pd, [0, 0, 0.002])
         GUI._update_inspector!(gui)
-        @test _w(gui, :z).displayed_string[] == "2.0"
+        @test _w(gui, :z).displayed_string[] == "2.000000"
         translate3d!(o.pd, [0, 0, -0.002])
         # another detector keeps the widgets, the page bar and the view
         bar = insp.card.bar
@@ -459,7 +460,7 @@ const GUI = BeamletOpticsGUI
         ctrl.selected[] = o.l1
         GUI._card_widget(c, :z).stored_string[] = "5"
         @test BMO.position(o.m)[3] ≈ 5e-3
-        @test GUI._card_widget(c, :z).displayed_string[] == "5.0"
+        @test GUI._card_widget(c, :z).displayed_string[] == "5.000000"
         # and take the keyboard
         GUI._card_widget(c, :y).focused[] = true
         @test GUI._typing(gui)

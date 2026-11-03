@@ -53,7 +53,8 @@ const GUI = BeamletOpticsGUI
         @test isnothing(GUI._card_widget(gui.cards.selection, :panel_mode))
         # refreshed after the solve of a change: the mirror rotated by 1° about z
         _select!(gui, m)
-        GUI._card_widget(gui.cards.selection, :rv).stored_string[] = string(1e3 * deg2rad(1))
+        rz = GUI._euler_angles(Matrix(BMO.orientation(m)), :xyz)[3]
+        GUI._card_widget(gui.cards.selection, :rz).stored_string[] = string(rz + deg2rad(1))
         @test _text(gui, :beam) in ("1 ray, AOI 44.0°", "1 ray, AOI 46.0°")
         close(gui)
     end
@@ -377,7 +378,7 @@ const GUI = BeamletOpticsGUI
         @test _text(gui, :index) == GUI._TRACING_VALUE
         # a property of the lens, not a result
         @test _text(gui, :thickness) == "5 mm"
-        @test GUI._card_widget(gui.cards.selection, :y).displayed_string[] == "50.0"
+        @test GUI._card_widget(gui.cards.selection, :y).displayed_string[] == "50.000000"
         _select!(gui, pd)
         @test _text(gui, :signal) == GUI._TRACING_VALUE
         # shown again once the solve is done

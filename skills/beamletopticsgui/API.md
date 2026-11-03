@@ -39,7 +39,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `theme = :light` or `:dark` | colors of the whole window |
 | `sidebar_width = (240, 300)`, `dock_height = nothing` | app layout only (compact ignores them): start widths [px] of the left and right sidebar (a number sets both, each within 160 and 600) and start height [px] of the dock (within 80 and 70 % of the figure height; `nothing`: 36 % of the window); outside the limits throws `ArgumentError`. In the window: drag the edge of a sidebar or the upper edge of the dock, a double click restores the start size |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
-| `constraints = Dict(obj => (; move = (), rotate = (:x, :v)))` | lock axes of components |
+| `constraints = Dict(obj => (; move = (), rotate = (:x, :z)))` | lock local axes `:x`, `:y`, `:z` of components (`:v` is an error) |
 | `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; num_points, colorscale, colorrange, colorbar, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries go to `BeamletOptics.intensity`; `history` throws `ArgumentError`) |
 | `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units); compact: entry "Sliders" of the tool rail, app: "Parameters" |
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
@@ -147,8 +147,10 @@ an empty view is placed at the origin. `export_changes` writes a glass as `Sellm
 refractive index as `ConstantRefractiveIndex(n)`; an added source is its constructor at the origin along +y, its
 `rotate3d!`/`translate_to3d!` and `solve_system!(system, name)`, a removed source of the start a comment.
 
-`kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step)` adds the mouse and
-keyboard controls to a live-rendered system on its own, without `live_view`. In the rotate mode a
+`kinematic_controls!(ax, hsys; on_change, constraints, rotation_axis, fine_step, frame = :global)` adds the mouse and
+keyboard controls to a live-rendered system on its own, without `live_view`. The gizmo (green, red,
+blue: y-, x-, z-axis) is in the global axes (`frame = :global`) or in the local axes of the
+selected component (`:local`); the key `l` switches. In the rotate mode a
 mouse drag on a ring of the gizmo (highlighted under the cursor) rotates the selected component around
 that ring, e.g. to tilt it out of the table plane; locked rings (`constraints`) can not be dragged, a
 drag elsewhere on the selection rotates around `rotation_axis` as before. In the move mode a drag on
@@ -190,7 +192,7 @@ internals or `gui.controls.on_change` for this.
 
 ## Rules
 
-- Everything is SI (meters, radians); cards show mm and mrad and convert.
+- Everything is SI (meters, radians); cards show mm and rad (global) or µm and mrad (local) at the start, switchable with unit buttons, and convert.
 - Changes of the optics from own controls go through `retrace!(f, gui)`, never directly.
 - The live view initializes its systems before every solve (`BeamletOptics.initialize!`, once for
   all sources): a detector holds the hits of the last solve of all sources. Do not `empty!` a

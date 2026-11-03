@@ -145,15 +145,19 @@ const _SPECTATOR_HINT = "spectator mode, v: edit, h: show controls"
     _default_hint(ctrl) -> String
 
 The line of the controls overlay while its help is hidden (see the key `h`): the spectator hint,
-otherwise the mode, the step and the keys, see `_help_hint`.
+otherwise the mode, the frame, the step and the keys, see `_help_hint`.
 """
 _default_hint(ctrl) =
-    ctrl.spectator[] ? _SPECTATOR_HINT : _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle)
+    ctrl.spectator[] ? _SPECTATOR_HINT : _help_hint(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.frame[])
 
-function _help_hint(mode::Symbol, fine_step, fine_angle)
+function _help_hint(mode::Symbol, fine_step, fine_angle, frame::Symbol = :global)
     step = _step_string(mode, fine_step, fine_angle)
-    return "$mode mode, step $step, +/-: step, m: switch mode, v: spectator, h: show controls"
+    return "$mode mode, $frame frame, step $step, +/-: step, m: switch mode, l: switch frame, " *
+           "v: spectator, h: show controls"
 end
+
+# The other frame of the controls, see `_set_frame!`
+_other_frame(frame::Symbol) = frame === :global ? :local : :global
 
 # What a click does by default, see `_drill_select`
 const _CLICK_HELP = "select, again: part of a group"
@@ -197,9 +201,11 @@ its `help_extra` sections are merged in, e.g. the keys of `live_view`, see `_mer
 - `click_help = _CLICK_HELP`: what a click does
 - `spectator = false`: the entries of the spectator mode instead
 - `view_plane = true`: whether the mouse moves objects in the plane of the view, see `_drag_normal`
+- `frame = :global`: the frame of the gizmo and the keys, see `_set_frame!`
 """
 function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = nothing;
-        click_help::String = _CLICK_HELP, spectator::Bool = false, view_plane::Bool = true)
+        click_help::String = _CLICK_HELP, spectator::Bool = false, view_plane::Bool = true,
+        frame::Symbol = :global)
     spectator && return _HelpSection["Spectator mode" => [
         _HelpEntry(["V"], "switch to edit mode"),
         _HelpEntry([:mouse => "drag"], "all clicks and drags: camera"),
@@ -227,11 +233,11 @@ function _help_sections(mode::Symbol, fine_step, fine_angle, select_modifier = n
             _HelpEntry(["↑", "↓"], along(up); color = up),
             _HelpEntry(["←", "→"], along(left); color = left),
             _HelpEntry(["PgUp", "PgDn"], along(page); color = page),
+            _HelpEntry(["L"], "$frame axes, switch to $(_other_frame(frame))"),
             _HelpEntry([:mouse => "drag"],
-                !move ? "rotate around the ring you grab, else the blue ring" :
+                !move ? "rotate around the ring you grab, else the rotation axis" :
                 view_plane ? "move along the arrow you grab, else in the plane of the view" :
-                "move along the arrow you grab, else in the plane";
-                color = move ? "" : "blue"),
+                "move along the arrow you grab, else in the plane"),
             _HelpEntry(["+", "−"], "keyboard step, now $step"),
             _HelpEntry(["Shift"], "with a key: 10× step"),
             _HelpEntry(["Bksp"], "reset the pose")],
@@ -305,12 +311,12 @@ function _next_step(x::Real, dir::Int)
     return dir > 0 ? grid[findfirst(>(x), grid)] : grid[findlast(<(x), grid)]
 end
 
-# Green, red and blue axes of the controls: heading, the axis beside it and rotation axis, see
+# Green, red and blue axes of the controls: the y-, x- and z-axis of the frame of the controls, see
 # `_control_axes`
 const _AXES_COLORS = [:green, :red, :blue]
 # Symbols of the gizmo axes in the same order as _AXES_COLORS, and as accepted by `constraints`
-const _AXES_SYMS = (:y, :x, :v)
-const _GIZMO_AXES = (:x, :y, :v)
+const _AXES_SYMS = (:y, :x, :z)
+const _GIZMO_AXES = (:x, :y, :z)
 const _GIZMO_FADE_ALPHA = 0.15
 const _RING_RES = 32
 # Pick radius of the rings [px], share of white of the ring under the cursor, and the smallest
@@ -375,7 +381,7 @@ end
 """
     _RingDrag
 
-The state of a mouse drag on a ring of the gizmo in the rotate mode: the `sym` (`:x`, `:y` or `:v`)
+The state of a mouse drag on a ring of the gizmo in the rotate mode: the `sym` (`:x`, `:y` or `:z`)
 and the unit vector `axis` of the ring and its `center` [m] at the press, which stay fixed during
 the drag (the gizmo rests meanwhile, see `_update_selection_box!`), the angle `θ` [rad] of the
 cursor on the plane of the ring at the last step (`nothing` if it was seen edge-on), and the
@@ -393,7 +399,7 @@ end
 """
     _ArrowDrag
 
-The state of a mouse drag on an arrow of the gizmo in the move mode: the `sym` (`:x`, `:y` or `:v`)
+The state of a mouse drag on an arrow of the gizmo in the move mode: the `sym` (`:x`, `:y` or `:z`)
 and the unit vector `axis` of the arrow and the `origin` [m] of the gizmo at the press, i.e. the
 line along which the object is moved, which stays fixed during the drag, and the coordinate `s` [m]
 of the cursor along that line at the last step (`nothing` if the line was seen end-on), see
@@ -447,6 +453,8 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     init_poses::IdDict{_LiveMovable, Tuple{Point3{Float64}, Matrix{Float64}}}
     selected::Observable{Union{Nothing, _LiveMovable}}
     mode::Observable{Symbol}
+    # frame of the gizmo, the keys and the pose card: `:global` or `:local`, see `_set_frame!`
+    frame::Observable{Symbol}
     on_change::Function
     # normal of the plane of the mouse drags, `nothing` for the plane of the view, see `_drag_normal`
     plane_normal::Union{Nothing, Vector{Float64}}
@@ -546,7 +554,7 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     drag_beam_angle::Union{Nothing, Float64}
     # center of the gizmo, i.e. of its rings [m], set by `_update_selection_box!`
     gizmo_origin::Vector{Float64}
-    # the ring (`:x`, `:y` or `:v`) under the cursor, highlighted, see `_update_hover!`, or `nothing`
+    # the ring (`:x`, `:y` or `:z`) under the cursor, highlighted, see `_update_hover!`, or `nothing`
     ring_hover::Union{Nothing, Symbol}
     # the drag of a ring in the rotate mode, from its press to its release, see `_pick_ring`
     ring::Union{Nothing, _RingDrag}
@@ -840,66 +848,136 @@ level and for a selection of several objects."""
 _parent_selection(ctrl::KinematicController, @nospecialize(obj)) = render_parent(ctrl.h, obj)
 _parent_selection(::KinematicController, ::_MultiSelection) = nothing
 
+# The global axes in the order of the gizmo (green, red, blue): e_y, e_x, e_z
+_frame_global_axes() = ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0])
+
+# The column of an orientation, or of the identity, that a constraint axis `:x`, `:y` or `:z` names
+_frame_axis_index(sym::Symbol) = sym === :x ? 1 : sym === :y ? 2 : 3
+
 """
-    _control_axes(ctrl, obj) -> (y, x, v)
+    _control_axes(ctrl, obj) -> (y, x, z)
 
 Axes of the controls of `obj`, i.e. of its gizmo, the keyboard and the mouse, an orthonormal frame
-(`x × y = v`): the heading of `obj` in the plane perpendicular to the rotation axis `v` of the
-`ctrl` (green), the axis perpendicular to it in that plane (red), and `v` (blue). The heading is the
-local y-axis of `obj` projected onto that plane, or the local x-axis turned by 90° about `v`,
-whichever is longer in the plane, e.g. for an object whose local y-axis points along `v`. For an
-object that is only turned about `v`, e.g. on a table, these are its local y- and x-axes; a tilt
-about one of the other axes does not skew them, a rotation about `v` turns them with the object.
+(`x × y = z`) in the order green, red, blue, after the frame of the `ctrl` (`ctrl.frame`, see
+`_set_frame!`): in `:global` the global axes `e_y`, `e_x`, `e_z` for any orientation of `obj`, in
+`:local` its local axes `R[:, 2]`, `R[:, 1]`, `R[:, 3]` of its orientation `R`, which turn with it.
+A selection of several objects (see `_MultiSelection`) has the global axes in both frames.
 """
 function _control_axes(ctrl::KinematicController, @nospecialize(obj))
-    R, v = _pose(obj)[2], ctrl.rotation_axis
-    y = Vector{Float64}(R[:, 2]) .- dot(R[:, 2], v) .* v
-    x = Vector{Float64}(R[:, 1]) .- dot(R[:, 1], v) .* v
-    norm(y) >= norm(x) || (y = cross(v, x))
-    y = normalize(y)
-    return (y, normalize(cross(y, v)), v)
+    ctrl.frame[] === :local || return _frame_global_axes()
+    R = _pose(obj)[2]
+    return (Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1]), Vector{Float64}(R[:, 3]))
 end
+_control_axes(::KinematicController, ::_MultiSelection) = _frame_global_axes()
 
-# A clip plane is moved along its normal (its local y-axis) and turned about its own local x-axis,
-# whatever its tilt: its axes are its local ones and the rotation axis, of which a local axis that is
-# parallel to the rotation axis (`|a × v| < 10⁻⁶`) is replaced by the axis perpendicular to the other
-# local axis and the rotation axis
-function _control_axes(ctrl::KinematicController, p::LiveClipPlane)
-    R, v = _pose(p)[2], ctrl.rotation_axis
-    y, x = Vector{Float64}(R[:, 2]), Vector{Float64}(R[:, 1])
-    parallel(a) = norm(cross(a, v)) < 1e-6
-    if parallel(x) && !parallel(y)
-        x = normalize(cross(y, v))
-    elseif parallel(y) && !parallel(x)
-        y = normalize(cross(v, x))
-    end
-    return (y, x, v)
-end
-
-"""Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:v`) of `obj`."""
+"""Returns the vectors of the gizmo axes `syms` (a subset of `:x`, `:y`, `:z`) of `obj`."""
 function _axis_vectors(ctrl::KinematicController, @nospecialize(obj), syms)
-    y, x, v = _control_axes(ctrl, obj)
-    lookup = (y = y, x = x, v = v)
+    y, x, z = _control_axes(ctrl, obj)
+    lookup = (y = y, x = x, z = z)
     return [lookup[s] for s in syms]
 end
+
+"""
+    _constraint_vectors(ctrl, obj, syms) -> Vector{Vector{Float64}}
+
+The vectors of the constraint axes `syms` (a subset of `:x`, `:y`, `:z`) of `obj`: its local axes,
+the columns of its orientation, in both frames of the controls, since a constraint describes a mount
+or a rail that turns with the object. For a selection of several objects (see `_MultiSelection`),
+the global axes.
+"""
+function _constraint_vectors(::KinematicController, @nospecialize(obj), syms)
+    R = _pose(obj)[2]
+    return [Vector{Float64}(R[:, _frame_axis_index(s)]) for s in syms]
+end
+_constraint_vectors(::KinematicController, ::_MultiSelection, syms) =
+    [Float64.(1:3 .== _frame_axis_index(s)) for s in syms]
 
 """Returns the constraints `NamedTuple` of `obj` (`(; move, rotate)`, either field possibly
 missing), or `(;)` if `obj` has no entry in `ctrl.constraints`."""
 _constraints_of(ctrl::KinematicController, @nospecialize(obj)) = get(ctrl.constraints, obj, (;))
 
-"""Returns the allowed axes (a tuple of `:x`, `:y`, `:v`) of `obj` for `kind` (`:move` or
-`:rotate`), all axes by default."""
+"""Returns the allowed axes (a tuple of `:x`, `:y`, `:z`, the local axes of `obj`) of `obj` for
+`kind` (`:move` or `:rotate`), all axes by default."""
 function _allowed_axes(ctrl::KinematicController, @nospecialize(obj), kind::Symbol)
     return get(_constraints_of(ctrl, obj), kind, _GIZMO_AXES)
 end
 
 # A selection of several objects (see `_MultiSelection`) moves along the axes that all its objects
-# allow, see `constraints`, and is movable while all its objects are
+# allow, see `constraints`, taken as global axes, and is movable while all its objects are
 function _allowed_axes(ctrl::KinematicController, s::_MultiSelection, kind::Symbol)
     sets = [_allowed_axes(ctrl, obj, kind) for obj in s.objects]
     return Tuple(a for a in _GIZMO_AXES if all(set -> a in set, sets))
 end
 _is_movable(ctrl::KinematicController, s::_MultiSelection) = all(obj -> _is_movable(ctrl, obj), s.objects)
+
+"""
+    _within_constraints(ctrl, obj, kind, a) -> Bool
+
+Whether the `constraints` of `obj` allow a move by the vector `a` (`kind = :move`) or a rotation
+about the axis `a` (`kind = :rotate`): `a` lies in the span of the allowed axes `A` (see
+`_allowed_axes` and `_constraint_vectors`, the local axes of `obj`), i.e.
+`|a − A·A⁺·a| ≤ 10⁻⁹·|a| + 10⁻¹²`, in both frames of the controls. Always `true` without
+constraints of that `kind`.
+"""
+function _within_constraints(ctrl::KinematicController, @nospecialize(obj), kind::Symbol,
+        a::AbstractVector)
+    allowed = _allowed_axes(ctrl, obj, kind)
+    Set(allowed) == Set(_GIZMO_AXES) && return true
+    a = Vector{Float64}(a)
+    tol = 1e-9 * norm(a) + 1e-12
+    isempty(allowed) && return norm(a) <= tol
+    A = hcat(_constraint_vectors(ctrl, obj, allowed)...)
+    return norm(a - A * (pinv(A) * a)) <= tol
+end
+
+"""
+    _project_constraints(ctrl, obj, Δ) -> Vector{Float64}
+
+The move `Δ` [m] of `obj` projected onto the span of its allowed move axes (see
+`_constraint_vectors`), which may be linearly dependent; `Δ` itself without constraints, zero if all
+move axes are locked.
+"""
+function _project_constraints(ctrl::KinematicController, @nospecialize(obj), Δ::AbstractVector)
+    allowed = _allowed_axes(ctrl, obj, :move)
+    Δ = Vector{Float64}(Δ)
+    Set(allowed) == Set(_GIZMO_AXES) && return Δ
+    isempty(allowed) && return zero(Δ)
+    A = hcat(_constraint_vectors(ctrl, obj, allowed)...)
+    return A * (pinv(A) * Δ)
+end
+
+"""
+    _gizmo_free(ctrl, obj, kind) -> NTuple{3, Bool}
+
+Whether each axis of the gizmo of `obj` (in the order `_AXES_SYMS`, see `_control_axes`) is free
+for `kind` (`:move` or `:rotate`), i.e. a move along it or a rotation about it passes
+`_within_constraints`. A locked axis is shown faded and is not grabbed, and its keys do not move.
+"""
+function _gizmo_free(ctrl::KinematicController, @nospecialize(obj), kind::Symbol)
+    y, x, z = _control_axes(ctrl, obj)
+    return (_within_constraints(ctrl, obj, kind, y), _within_constraints(ctrl, obj, kind, x),
+        _within_constraints(ctrl, obj, kind, z))
+end
+
+"""Throws an `ArgumentError` unless `frame` is a frame of the controls, `:global` or `:local`."""
+_check_frame(frame::Symbol) = frame in (:global, :local) ||
+    throw(ArgumentError("frame must be :global or :local, got :$frame"))
+
+"""
+    _set_frame!(ctrl, frame)
+
+Sets the frame of the gizmo, the keys and the pose card of the `ctrl` to `:global` (the fixed
+global axes) or `:local` (the axes of the selected object), see `kinematic_controls!`, and shows
+it in the selection box and the hint.
+"""
+function _set_frame!(ctrl::KinematicController, frame::Symbol)
+    _check_frame(frame)
+    ctrl.frame[] == frame && return nothing
+    ctrl.frame[] = frame
+    _update_selection_box!(ctrl)
+    _update_help!(ctrl)
+    return nothing
+end
 
 """Validates the `constraints` kwarg of [`kinematic_controls!`](@ref)."""
 function _validate_constraints(constraints)
@@ -911,22 +989,24 @@ function _validate_constraints(constraints)
         for kind in (:move, :rotate)
             haskey(c, kind) || continue
             for a in c[kind]
+                a === :v && throw(ArgumentError(
+                    "constraint axis :v was removed, use :z (the local z-axis of the object)"))
                 a in _GIZMO_AXES ||
-                    throw(ArgumentError("invalid constraint axis :$a for :$kind, use :x, :y or :v"))
+                    throw(ArgumentError("invalid constraint axis :$a for :$kind, use :x, :y or :z"))
             end
         end
     end
     return nothing
 end
 
-"""Returns the colors of the gizmo axes `[y, x, v]` (green, red, blue) of `obj`'s `kind` controls
-(`:move` or `:rotate`), faded to indicate axes locked by the `constraints`."""
+"""Returns the colors of the gizmo axes `[y, x, z]` (green, red, blue) of `obj`'s `kind` controls
+(`:move` or `:rotate`), faded to indicate axes locked by the `constraints`, see `_gizmo_free`."""
 function _gizmo_colors(ctrl::KinematicController, @nospecialize(obj), kind::Symbol)
-    allowed = _allowed_axes(ctrl, obj, kind)
+    free = _gizmo_free(ctrl, obj, kind)
     colors = Makie.RGBAf[]
-    for (sym, c) in zip(_AXES_SYMS, _AXES_COLORS)
+    for (ok, c) in zip(free, _AXES_COLORS)
         rgba = Makie.RGBAf(Makie.to_color(c))
-        push!(colors, sym in allowed ? rgba : Makie.RGBAf(rgba.r, rgba.g, rgba.b, _GIZMO_FADE_ALPHA))
+        push!(colors, ok ? rgba : Makie.RGBAf(rgba.r, rgba.g, rgba.b, _GIZMO_FADE_ALPHA))
     end
     return colors
 end
@@ -959,7 +1039,8 @@ end
 
 _help_sections(ctrl::KinematicController) = _merge_sections(
     _help_sections(ctrl.mode[], ctrl.fine_step, ctrl.fine_angle, ctrl.select_modifier;
-        ctrl.click_help, spectator = ctrl.spectator[], view_plane = isnothing(ctrl.plane_normal)),
+        ctrl.click_help, spectator = ctrl.spectator[], view_plane = isnothing(ctrl.plane_normal),
+        frame = ctrl.frame[]),
     ctrl.spectator[] ? _HelpSection[] : ctrl.help_extra)
 
 """
@@ -1466,25 +1547,26 @@ end
     _key_step!(ctrl, obj, key, factor)
 
 Moves or rotates the `obj` depending on the mode of the `ctrl`. Returns `false` if the `key` is
-not a control key. If the corresponding axis is locked by the `constraints` of `obj`, the key is
-still consumed (returns `true`) but nothing moves.
+not a control key. The step is along or about an axis of the gizmo, see `_control_axes`. If that
+axis is locked by the `constraints` of `obj` (see `_within_constraints`), the key is still consumed
+(returns `true`) but nothing moves.
 """
 function _key_step!(ctrl::KinematicController, @nospecialize(obj), key, factor)
-    y, x, v = _control_axes(ctrl, obj)
+    y, x, z = _control_axes(ctrl, obj)
     # Axis and sign of the step for each key, see _help_text
-    axis_sym, axis, sign = if ctrl.mode[] == :move
-        key == Keyboard.up ? (:y, y, 1) : key == Keyboard.down ? (:y, y, -1) :
-        key == Keyboard.right ? (:x, x, 1) : key == Keyboard.left ? (:x, x, -1) :
-        key == Keyboard.page_up ? (:v, v, 1) : key == Keyboard.page_down ? (:v, v, -1) :
-        (nothing, nothing, 0)
+    axis, sign = if ctrl.mode[] == :move
+        key == Keyboard.up ? (y, 1) : key == Keyboard.down ? (y, -1) :
+        key == Keyboard.right ? (x, 1) : key == Keyboard.left ? (x, -1) :
+        key == Keyboard.page_up ? (z, 1) : key == Keyboard.page_down ? (z, -1) :
+        (nothing, 0)
     else
-        key == Keyboard.up ? (:x, x, 1) : key == Keyboard.down ? (:x, x, -1) :
-        key == Keyboard.left ? (:v, v, 1) : key == Keyboard.right ? (:v, v, -1) :
-        key == Keyboard.page_up ? (:y, y, 1) : key == Keyboard.page_down ? (:y, y, -1) :
-        (nothing, nothing, 0)
+        key == Keyboard.up ? (x, 1) : key == Keyboard.down ? (x, -1) :
+        key == Keyboard.left ? (z, 1) : key == Keyboard.right ? (z, -1) :
+        key == Keyboard.page_up ? (y, 1) : key == Keyboard.page_down ? (y, -1) :
+        (nothing, 0)
     end
     isnothing(axis) && return false
-    axis_sym in _allowed_axes(ctrl, obj, ctrl.mode[]) || return true # locked: consumed, no motion
+    _within_constraints(ctrl, obj, ctrl.mode[], axis) || return true # locked: consumed, no motion
     _change!(ctrl, obj) do
         if ctrl.mode[] == :move
             translate3d!(obj, (sign * factor * ctrl.fine_step) .* axis)
@@ -1592,7 +1674,7 @@ _default_pick(ax) = Makie.pick(Makie.get_scene(ax))
 
 Returns the ring of the gizmo under the cursor in the rotate mode as `(sym, tangent)`, or `nothing`:
 the unlocked ring (see `constraints`) whose polyline is nearest to the cursor in pixels, within
-`_RING_PICK_RADIUS`. `sym` is `:x`, `:y` or `:v`, `tangent` is the unit vector in pixels along the
+`_RING_PICK_RADIUS`. `sym` is `:x`, `:y` or `:z`, `tangent` is the unit vector in pixels along the
 positive direction of rotation at the nearest point, `(1, 0)` if the ring is seen end-on there.
 """
 function _pick_ring(ctrl::KinematicController, scene)
@@ -1600,11 +1682,11 @@ function _pick_ring(ctrl::KinematicController, scene)
     (ctrl.mode[] == :rotate && ctrl.gizmo_visible[] && !isnothing(obj)) || return nothing
     origin, dir = _cursor_ray(scene)
     cursor = _px(scene)
-    allowed = _allowed_axes(ctrl, obj, :rotate)
+    free = _gizmo_free(ctrl, obj, :rotate)
     best, dmin = nothing, _RING_PICK_RADIUS
     n = 2 * _RING_RES
     for (i, sym) in enumerate(_AXES_SYMS)
-        sym in allowed || continue
+        free[i] || continue
         for k in 1:2:n
             a, b = ctrl.ring_pts[][(i - 1) * n + k], ctrl.ring_pts[][(i - 1) * n + k + 1]
             # Segments behind the camera are not visible
@@ -1643,7 +1725,7 @@ end
 """
     _pick_arrow(ctrl, scene) -> Union{Nothing, Symbol}
 
-Returns the arrow of the gizmo under the cursor in the move mode (`:x`, `:y` or `:v`), or `nothing`:
+Returns the arrow of the gizmo under the cursor in the move mode (`:x`, `:y` or `:z`), or `nothing`:
 the unlocked arrow (see `constraints`) that is nearest to the cursor in pixels, within
 `_RING_PICK_RADIUS`. The start of the arrows, where the three meet, is not grabbed (see
 `_ARROW_PICK_START` and `_ARROW_PICK_FREE`), such that the object below it can be, nor is an
@@ -1656,10 +1738,10 @@ function _pick_arrow(ctrl::KinematicController, scene)
     length(ctrl.arrow_pos[]) == length(_AXES_SYMS) || return nothing
     origin, dir = _cursor_ray(scene)
     cursor = _px(scene)
-    allowed = _allowed_axes(ctrl, obj, :move)
+    free = _gizmo_free(ctrl, obj, :move)
     best, dmin = nothing, _RING_PICK_RADIUS
     for (i, sym) in enumerate(_AXES_SYMS)
-        sym in allowed || continue
+        free[i] || continue
         p, d = ctrl.arrow_pos[][i], ctrl.arrow_dir[][i]
         a, b = p, p .+ d
         # An arrow behind the camera is not visible
@@ -1822,7 +1904,8 @@ function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
         δ = isnothing(θ) || isnothing(ring.θ) ? ctrl.rotate_speed * (Δ[1] * ring.tangent[1] + Δ[2] * ring.tangent[2]) :
             mod(θ - ring.θ + π, 2π) - π
         ring.θ = θ
-        δ = ring.sym == :v ? _snap_rotation!(ctrl, δ) : δ
+        # snaps only on a ring about the rotation axis, see the start of the drag
+        δ = _snap_rotation!(ctrl, δ)
         if δ != 0
             _change!(() -> rotate3d!(obj, ring.axis, δ), ctrl, obj)
             _request_update!(ctrl)
@@ -1843,8 +1926,7 @@ function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
         hit = _mouse_plane_hit(scene, ctrl)
         if !isnothing(hit)
             target = hit .+ ctrl.grab_offset
-            allowed = _allowed_axes(ctrl, obj, :move)
-            if !isempty(allowed)
+            if !isempty(_allowed_axes(ctrl, obj, :move))
                 # A selection of several snaps neither onto beams nor onto the grid, see `_drag_snaps`
                 snaps = _drag_snaps(obj)
                 snapped = (!snaps || ctrl.snap[] == :off) ? nothing : ctrl.snap_beam(obj, target)
@@ -1856,13 +1938,11 @@ function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
                 else
                     target = Vector{Float64}(snapped.point)
                 end
-                Δ = target .- Vector{Float64}(position(obj))
-                A = hcat(_axis_vectors(ctrl, obj, allowed)...)
+                # Projection onto the allowed axes, the local axes of the object
+                Δ = _project_constraints(ctrl, obj, target .- Vector{Float64}(position(obj)))
                 R = snaps ? _snap_orientation(ctrl, obj, snapped) : nothing
-                # Projection onto the allowed axes, which may be linearly dependent, e.g. if
-                # a local axis is almost parallel to the rotation axis
                 _change!(ctrl, obj) do
-                    translate3d!(obj, A * (pinv(A) * Δ))
+                    translate3d!(obj, Δ)
                     isnothing(R) || _set_pose!(obj, _pose(obj)[1], R)
                 end
                 _request_update!(ctrl)
@@ -1872,7 +1952,7 @@ function _drag_step!(ctrl::KinematicController, scene, @nospecialize(obj))
         mp = _px(scene)
         dx = mp[1] - ctrl.last_mouse[1]
         ctrl.last_mouse = mp
-        if dx != 0 && :v in _allowed_axes(ctrl, obj, :rotate)
+        if dx != 0 && _within_constraints(ctrl, obj, :rotate, ctrl.rotation_axis)
             δ = _snap_rotation!(ctrl, ctrl.rotate_speed * dx)
             if δ != 0
                 _change!(() -> rotate3d!(obj, ctrl.rotation_axis, δ), ctrl, obj)
@@ -1892,13 +1972,12 @@ Enables mouse and keyboard controls for the objects of the live-rendered system 
 can be used as usual as long as no object is grabbed. Returns a `KinematicController`.
 
 The controls have a move and a rotate mode, which are switched with the key `m`. The selected object
-is marked by a box and three perpendicular axes above the object: the `rotation_axis` (blue) and,
-perpendicular to it, the heading of the object (green, its local y-axis projected onto the plane
-perpendicular to the `rotation_axis`) and the axis beside it (red). For an object that is only
-turned about the `rotation_axis`, e.g. on a table, green and red are its local y- and x-axes; a
-tilt does not skew them, and an object whose local y-axis points along the `rotation_axis` takes its
-local x-axis for red. In the move mode the axes are shown as arrows, in the rotate mode as rings.
-The key `h` shows or hides an overlay of all controls.
+is marked by a box and three perpendicular axes above the object, the gizmo: green, red and blue are
+the y-, x- and z-axis of the `frame`. In the frame `:global`, these are the fixed global axes, for
+any orientation of the object; in the frame `:local`, its local axes (the columns 2, 1 and 3 of its
+orientation), which turn with it. The key `l` switches the frame. A selection of several objects
+has the global axes in both frames. In the move mode the axes are shown as arrows, in the rotate
+mode as rings. The key `h` shows or hides an overlay of all controls.
 
 The key `v` switches the spectator mode on or off, in which the selection is cleared and all
 mouse and keyboard input goes to the camera, such that nothing can be moved by accident. Leaving
@@ -1949,9 +2028,9 @@ A click selects, a drag moves only what is already selected, every other drag ro
   `Ctrl`+drag on the selection moves it
 
 A selection of several objects moves and rotates as one, with the mouse, the gizmo and the keys:
-about its center, the mean of the positions of its objects when it was made, with the axes of the
-world (rotating it turns its axes along). It moves along the axes that all of its objects allow,
-see "Constraints", and does not snap onto beams or a grid. A click on one of its objects selects
+about its center, the mean of the positions of its objects when it was made, with the global axes
+in both frames. It moves along the global axes whose names all of its objects allow, see
+"Constraints", and does not snap onto beams or a grid. A click on one of its objects selects
 that object alone, a drag on any of them moves all; `esc` deselects it, `Backspace` resets each of
 its objects to its initial pose. `on_change` is called with the selection (`ctrl.selected[]`),
 not with each of its objects.
@@ -1995,9 +2074,15 @@ object and re-triggers `on_change`. A new gesture clears the redo history. Not a
 # Constraints
 
 `constraints` locks the move and/or rotate axes of specific objects, e.g. a mirror in a kinematic
-mount that may only tilt. A locked axis does not move via the mouse or the keyboard (the key is
-still consumed) and is shown faded on the gizmo. For an object inside a group, the constraints of
-the object (or subgroup) that is currently selected apply.
+mount that may only tilt. The axes `:x`, `:y` and `:z` of a constraint are the local axes of the
+object in both frames, since a mount or a rail turns with the object: a move or a rotation is
+allowed if its direction or its axis lies in the span of the allowed local axes (to `10⁻⁹`
+relative). An axis of the gizmo that is not allowed, a locked axis, does not move via the mouse or
+the keyboard (the key is still consumed) and is shown faded. E.g. a lens on a rail along its local
+y-axis, `move = (:y,)`, turned by 30° about z: in the frame `:global`, the arrows x and y are both
+locked, since neither lies on the rail; in the frame `:local`, the green arrow is free. A drag on
+the object itself is projected onto the allowed axes in both frames. For an object inside a group,
+the constraints of the object (or subgroup) that is currently selected apply.
 
 # Keyword args
 
@@ -2006,7 +2091,8 @@ the object (or subgroup) that is currently selected apply.
 - `on_change = obj -> nothing`: called with the moved object after each change, e.g. to solve the system
 - `plane_normal = nothing`: normal of the plane for mouse translation, e.g. `[0, 0, 1]` to keep
   the height of the objects; by default the plane of the view, see "Mouse controls"
-- `rotation_axis = [0, 0, 1]`: rotation axis for mouse rotation, blue axis of the keyboard controls
+- `rotation_axis = [0, 0, 1]`: rotation axis of a drag on the object in the rotate mode, and the
+  axis about which a rotation snaps onto beams
 - `rotate_speed = deg2rad(0.5)`: mouse rotation angle per pixel [rad]
 - `fine_step = 10e-9`: keyboard translation step [m]
 - `fine_angle = 10e-6`: keyboard rotation step [rad]
@@ -2025,10 +2111,12 @@ the object (or subgroup) that is currently selected apply.
   drag
 - `spectator = false`: starts in the spectator mode
 - `constraints = Dict()`: maps an object to a `NamedTuple` `(; move = axes, rotate = axes)`, where
-  `axes` is a tuple of the allowed gizmo axes `:x` (red), `:y` (green, the heading) and `:v`
-  (blue, `rotation_axis`); a missing field means all axes are allowed, `()` means none, see
-  "Constraints"
+  `axes` is a tuple of the allowed local axes `:x`, `:y` and `:z` of the object; a missing field
+  means all axes are allowed, `()` means none, see "Constraints". The axis `:v` of earlier versions
+  throws an `ArgumentError`, use `:z`
 - `source_pick_radius = 15`: [px] screen-space pick radius of source markers, see "Mouse controls"
+- `frame = :global`: the frame of the gizmo and the keys (and of the pose card of
+  [`live_view`](@ref)), `:global` or `:local`, switched with the key `l`
 - `ignore_keys = () -> false`: predicate checked before any keyboard handling (including `v`, `h`,
   `m` and undo/redo); while `true`, keys are not handled and passed on, e.g. while a text field
   elsewhere in the figure is focused
@@ -2052,11 +2140,13 @@ function kinematic_controls!(
         spectator::Bool = false,
         constraints = Dict(),
         source_pick_radius = 15,
+        frame::Symbol = :global,
         ignore_keys = () -> false
     )
     # One compiled method for all axes, handles and keyword arguments, e.g. the closure `on_change`
     @nospecialize
     mode in (:move, :rotate) || throw(ArgumentError("mode must be :move or :rotate, got :$mode"))
+    _check_frame(frame)
     # Objects are compared by identity
     constraints_dict = IdDict{Any, NamedTuple}(constraints)
     _validate_constraints(constraints_dict)
@@ -2129,7 +2219,7 @@ function kinematic_controls!(
 
     ctrl = KinematicController(
         ax, h, movable, init_poses, Observable{Union{Nothing, _LiveMovable}}(nothing),
-        mode_obs, on_change, isnothing(plane_normal) ? nothing : normalize(Float64.(plane_normal)),
+        mode_obs, Observable(frame), on_change, isnothing(plane_normal) ? nothing : normalize(Float64.(plane_normal)),
         normalize(Float64.(rotation_axis)),
         Float64(rotate_speed), Float64(fine_step), Float64(fine_angle), throttle,
         Observable(spectator), true, nothing, select_modifier, Float64(drag_threshold),
@@ -2320,8 +2410,10 @@ function kinematic_controls!(
             ctrl.dragging = true
             ctrl.drag_start = _pose(ctrl.selected[])
             _start_snap!(ctrl, ctrl.selected[])
-            # The snapping to beams is of the rotation around the rotation axis
-            !isnothing(ctrl.ring) && ctrl.ring.sym != :v && (ctrl.drag_beam_angle = nothing)
+            # The snapping to beams is of the rotation around the rotation axis: only a ring about
+            # it snaps, e.g. the blue ring in the frame `:global` with the default rotation axis
+            !isnothing(ctrl.ring) && dot(ctrl.ring.axis, ctrl.rotation_axis) < 1 - 1e-9 &&
+                (ctrl.drag_beam_angle = nothing)
         end
         _drag_step!(ctrl, scene, ctrl.selected[])
         return Consume(true)
@@ -2345,6 +2437,11 @@ function kinematic_controls!(
                 _update_selection_box!(ctrl)
             end
             _update_help!(ctrl)
+            return Consume(true)
+        end
+        # The frame of the gizmo, the keys and the pose card, see `_set_frame!`
+        if event.action == Keyboard.press && event.key == Keyboard.l
+            _set_frame!(ctrl, _other_frame(ctrl.frame[]))
             return Consume(true)
         end
         # By the letter of the key, not by its place: "Z" and "Y" are swapped on e.g. a German keyboard
