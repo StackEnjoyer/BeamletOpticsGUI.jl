@@ -435,7 +435,7 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            mode = :rotate, fine_angle = 1e-2, trace_budget = 0.0, idle_delay = 0.1,
+            mode = :rotate, fine_angle = 1e-2, trace_budget = 0.0, idle_delay = 10.0,
             pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         gui.trace.solve_time = 1.0 # pretend that the solve is slow, independent of the machine
@@ -446,10 +446,10 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.trace.stale
         @test _points(gui.beam_handles[1]) == pts0
         @test occursin("tracing when the movement pauses", gui.status.text[])
-        # still moving
+        # still moving: the delay is long, such that a slow machine does not pause before the tick
         notify(events(gui.ax.scene).tick)
         @test gui.trace.pending
-        gui.trace.last_change -= 1
+        gui.trace.last_change -= 100
         notify(events(gui.ax.scene).tick)
         @test !gui.trace.pending
         @test !gui.trace.stale

@@ -215,8 +215,12 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   again, which took half of a job. The step "Switch off the precompile workloads" sets the
   preference `precompile_workload` of the package, which the workload of the extension reads as
   well. It is not a file of the repository, since `benchmark/` runs in `--project=test` and would
-  measure a build without them. The docs build with the workloads, and
-  `test/TestPrecompileSession.jl` runs the sessions.
+  measure a build without them. The test step puts `test/` on `JULIA_LOAD_PATH`, such that the
+  preference also holds in the environment in which Aqua precompiles the package. The docs build
+  with the workloads, and `test/TestPrecompileSession.jl` runs the sessions.
+- **A test does not depend on the speed of the machine.** The job without coverage compiles each
+  first call during the tests, and workers share 4 CPUs: an `idle_delay` or a `trace_budget` that a
+  test relies on is long against that, or the test sets the time itself (`trace.last_change`).
 - The workload of the extension is built with GLMakie loaded after the package. Code that Julia
   cached is checked against the methods of the session when it is loaded, and in a session that
   loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as
