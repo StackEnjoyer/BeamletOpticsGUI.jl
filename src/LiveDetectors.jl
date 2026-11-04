@@ -123,7 +123,7 @@ function _view_requests(gui::LiveView; stale_only::Bool = false)
         push!(seen, pd)
         state = _detector_state(gui, pd)
         expanded = any(((p, v),) -> p === pd && v.expanded, views)
-        n = expanded ? state.opts.n : min(state.opts.n, _THUMB_N)
+        n = expanded ? state.opts.num_points : min(state.opts.num_points, _THUMB_N)
         (stale_only && !_needs_result(gui, state, n)) && continue
         push!(requests, _ViewRequest(pd, state, state.opts, n))
     end
@@ -313,8 +313,8 @@ The `detectors` kwarg of `live_view`
 # The kinds of a view that the `detectors` kwarg accepts, see `_view_kinds`
 const _DETECTOR_KINDS = (:auto, :spot, :psf, :intensity)
 
-# Options of a view in the kwargs of a detector, which are not keywords of its `RegularGrid`
-const _VIEW_OPTION_KEYS = (:n, :colorscale, :colorrange, :colorbar, :profiles, :expanded)
+# Options of a view in the kwargs of a detector; `num_points` is passed on to its `RegularGrid`, the others are not keywords of it
+const _VIEW_OPTION_KEYS = (:num_points, :colorscale, :colorrange, :colorbar, :profiles, :expanded)
 
 const _DETECTOR_SPEC_HINT = "use `pd`, `pd => kind` or `pd => (kind, kwargs)`"
 
@@ -331,7 +331,7 @@ _detector_spec(pd, x) = throw(ArgumentError("invalid detector $(pd => x), $_DETE
 The detectors of the `detectors` kwarg of [`live_view`](@ref) whose cards start pinned, each as
 `(; pd, opts, expanded)` with the options of its view (a `_ViewOptions`) and whether the view
 starts expanded: none for `:auto`, otherwise an entry per `pd`, `pd => kind` or
-`pd => (kind, kwargs)`. The `kwargs` hold the options `n`, `colorscale`, `colorrange`, `colorbar`,
+`pd => (kind, kwargs)`. The `kwargs` hold the options `num_points`, `colorscale`, `colorrange`, `colorbar`,
 `profiles` and `expanded`; all others are keywords of the sampling `BeamletOptics.RegularGrid`.
 """
 function _detector_specs(detectors)
@@ -367,7 +367,7 @@ function _view_spec(pd, kind::Symbol, kwargs::NamedTuple)
     colorscale in (:linear, :log) ||
         throw(ArgumentError("colorscale of a detector view must be :linear or :log, got $(repr(colorscale))"))
     rest = NamedTuple(k => v for (k, v) in pairs(kwargs) if !(k in _VIEW_OPTION_KEYS))
-    opts = _ViewOptions(; kind, n = Int(get(kwargs, :n, 100)), kwargs = rest, colorscale,
+    opts = _ViewOptions(; kind, num_points = Int(get(kwargs, :num_points, 100)), kwargs = rest, colorscale,
         colorrange = get(kwargs, :colorrange, nothing), colorbar = Bool(get(kwargs, :colorbar, true)),
         profiles = Bool(get(kwargs, :profiles, false)))
     return (; pd, opts, expanded = Bool(get(kwargs, :expanded, true)))

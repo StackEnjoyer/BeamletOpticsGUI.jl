@@ -88,10 +88,11 @@ end
     _glass_code(n) -> String
 
 The glass `n` as Julia code for [`export_changes`](@ref), which runs without this package: the call
-of the constructor of a `SellmeierEquation` and of a `DiscreteRefractiveIndex`, `repr` otherwise,
-e.g. the name of a function.
+of the constructor of a `SellmeierEquation`, a `DiscreteRefractiveIndex` and a
+`ConstantRefractiveIndex`, `repr` otherwise.
 """
 _glass_code(n) = repr(n)
+_glass_code(n::BMO.ConstantRefractiveIndex) = "ConstantRefractiveIndex($(repr(n.n)))"
 _glass_code(n::BMO.SellmeierEquation) =
     "SellmeierEquation(" * join(repr.((n.B1, n.B2, n.B3, n.C1, n.C2, n.C3)), ", ") * ")"
 function _glass_code(n::BMO.DiscreteRefractiveIndex)

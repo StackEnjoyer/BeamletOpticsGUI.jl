@@ -1,7 +1,8 @@
 module TestLiveView
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using LinearAlgebra: normalize, dot, norm
 using Test
@@ -93,7 +94,7 @@ _points(h) = only(render_plots(h))[1][]
         # for new objects
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss();
-            detectors = [pd => (:intensity, (; n = 20, x_min = -2.5e-3, x_max = 2.5e-3,
+            detectors = [pd => (:intensity, (; num_points = 20, x_min = -2.5e-3, x_max = 2.5e-3,
                 z_min = -2.5e-3, z_max = 2.5e-3))])
         @test size(_field(gui)[3]) == (20, 20)
         @test _field(gui)[1] ≈ LinRange(-2.5e-3, 2.5e-3, 20)
@@ -108,7 +109,7 @@ _points(h) = only(render_plots(h))[1][]
         # a vector of pairs with different values, i.e. a `Vector{Pair{Detector, Any}}`
         pd2 = Detector(5e-3)
         translate3d!(pd2, [0.2, 0.1, 0])
-        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:intensity, (; n = 20)), pd2 => :spot])
+        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:intensity, (; num_points = 20)), pd2 => :spot])
         @test _pinned(gui, pd) && _pinned(gui, pd2)
         close(gui)
 
@@ -136,7 +137,7 @@ _points(h) = only(render_plots(h))[1][]
         @test sprint(show, gui) == "LiveView(2 systems, 2 sources, 1 detectors)"
         # both systems and the markers of both sources are handled by one controller; the detector
         # of both systems is rendered once
-        @test length(render_children(gui.controls.h)) == 4
+        @test length(AbstractTrees.children(gui.controls.h)) == 4
         @test length(BMO.hits(pd)) == 2
         gui.controls.selected[] = m
         _key!(gui, Keyboard.left)
@@ -159,9 +160,9 @@ _points(h) = only(render_plots(h))[1][]
         n_calls = Ref(0)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(sys, beam; throttle = false, mode = :rotate, fine_angle = 1e-2,
-            on_change = (g, obj) -> (n_calls[] += 1), pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            on_change = (g, obj) -> (n_calls[] += 1), pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
-        @test render_children(gui.controls.h)[1].obj === m
+        @test AbstractTrees.children(gui.controls.h)[1].obj === m
         n0 = n_calls[]
         _select!(gui)
         @test gui.controls.selected[] === m
@@ -237,7 +238,7 @@ _points(h) = only(render_plots(h))[1][]
         # Makie's default camera instead of the initial Front-Right-Top view of `live_view`
         set_view(gui.ax, [3.0, 3, 3], [0.0, 0, 0], [0.0, 0, 1])
 
-        # A MeshDummy-like housing in front of the mirror along the camera ray, not part of the
+        # A housing (like a `NonInteractableObject`) in front of the mirror along the camera ray, not part of the
         # system: added directly to the axis, as described for `render!(gui.ax, ...)`
         cube = BMO.CubeMesh(1)
         translate3d!(cube, -[0.5, 0.5, 0.5])
@@ -287,7 +288,7 @@ _points(h) = only(render_plots(h))[1][]
     end
 
     @testset "movable sources" begin
-        _marker(gui, src) = render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === src, render_children(gui.controls.h))]
+        _marker(gui, src) = AbstractTrees.children(gui.controls.h)[findfirst(oh -> rendered(oh) === src, AbstractTrees.children(gui.controls.h))]
 
         # Beam: select the marker, move the source along its direction
         m, pd = _fixture()
@@ -370,7 +371,7 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         gui = _live_view(System([m, pd]), beam; movable_sources = false)
-        @test !any(oh -> rendered(oh) === beam, render_children(gui.controls.h))
+        @test !any(oh -> rendered(oh) === beam, AbstractTrees.children(gui.controls.h))
         @test !(beam in gui.controls.movable)
         close(gui)
     end
@@ -380,7 +381,7 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             fine_step = 1e-3, labels = Dict(m => "Mirror 1", pd => "PD"),
-            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test GUI._label(gui, pd) == "PD"
         _select!(gui)
@@ -434,8 +435,8 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            mode = :rotate, fine_angle = 1e-2, trace_budget = 0.0, idle_delay = 0.1,
-            pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            mode = :rotate, fine_angle = 1e-2, trace_budget = 0.0, idle_delay = 10.0,
+            pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         gui.trace.solve_time = 1.0 # pretend that the solve is slow, independent of the machine
         _select!(gui)
@@ -445,10 +446,10 @@ _points(h) = only(render_plots(h))[1][]
         @test gui.trace.stale
         @test _points(gui.beam_handles[1]) == pts0
         @test occursin("tracing when the movement pauses", gui.status.text[])
-        # still moving
+        # still moving: the delay is long, such that a slow machine does not pause before the tick
         notify(events(gui.ax.scene).tick)
         @test gui.trace.pending
-        gui.trace.last_change -= 1
+        gui.trace.last_change -= 100
         notify(events(gui.ax.scene).tick)
         @test !gui.trace.pending
         @test !gui.trace.stale
@@ -459,8 +460,8 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), _gauss(); throttle = false, mode = :rotate,
-            fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; n = 40))],
-            trace_budget = 0.5, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            fine_angle = 1e-4, idle_delay = 0.1, detectors = [pd => (:intensity, (; num_points = 40))],
+            trace_budget = 0.5, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         @test size(_field(gui)[3]) == (40, 40)
         # pretend that the solve is fast and the views are slow, independent of the machine
@@ -489,7 +490,7 @@ _points(h) = only(render_plots(h))[1][]
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([m, pd]), src; throttle = false, mode = :move,
-            progress_delay = 0.2, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+            progress_delay = 0.2, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
         gui_ref[] = gui
         scene = gui.ax.scene
         tick!() = notify(events(scene).tick)
@@ -638,9 +639,9 @@ _points(h) = only(render_plots(h))[1][]
     @testset "power of a view matches optical_power" begin
         m, pd = _fixture()
         # small area and coarse grid, such that the edges contribute to the integral
-        area = (; n = 5, x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, area)])
-        P = optical_power(pd, RegularGrid(; area...))
+        window = (; x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
+        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; num_points = 5, window...))])
+        P = optical_power(pd, RegularGrid(; num_points = 5, window...))
         @test _result(gui).metrics.P ≈ P
         @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)
@@ -701,7 +702,7 @@ _points(h) = only(render_plots(h))[1][]
             # the object moves, but nothing is solved
             @test Matrix{Float64}(BMO.orientation(m)) ≈ BMO.rotate3d([0, 0, 1], 1e-2) * R0
             # the model matrix of the plots of m is the rotation
-            m_plot = first(render_plots(render_children(gui.system_handles[1])[1]))
+            m_plot = first(render_plots(AbstractTrees.children(gui.system_handles[1])[1]))
             model = Makie.transformationmatrix(m_plot)[]
             @test isapprox(model[1:3, 1:3], BMO.rotate3d([0, 0, 1], 1e-2); atol = 1e-6)
             @test n_calls[] == 1
@@ -768,7 +769,7 @@ _points(h) = only(render_plots(h))[1][]
             notify(events(gui.ax.scene).tick)
             # the callback and update_render! run, but no solve
             @test called == [1.0]
-            pd_plot = first(render_plots(render_children(gui.system_handles[1])[2]))
+            pd_plot = first(render_plots(AbstractTrees.children(gui.system_handles[1])[2]))
             shift = Vector{Float64}(Makie.translation(pd_plot)[])
             @test isapprox(shift, BMO.position(pd) - p0; atol = 1e-9)
             @test n_calls[] == 1
@@ -813,13 +814,13 @@ _points(h) = only(render_plots(h))[1][]
     end
 
     @testset "clip planes" begin
-        _handle(gui, obj) = render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, render_children(gui.controls.h))]
+        _handle(gui, obj) = AbstractTrees.children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))]
         # all plots of the system objects, including the nested plots of recipes
         _nested(p) = AbstractPlot[p; reduce(vcat, _nested.(p.plots); init = AbstractPlot[])]
-        _optics_plots(gui) = reduce(vcat, (_nested(p) for h in gui.system_handles for oh in render_children(h)
+        _optics_plots(gui) = reduce(vcat, (_nested(p) for h in gui.system_handles for oh in AbstractTrees.children(h)
                                            for p in render_plots(oh)); init = AbstractPlot[])
         # markers of the sources and clip planes
-        _marker_plots(gui) = reduce(vcat, (_nested(p) for oh in render_children(gui.controls.h)
+        _marker_plots(gui) = reduce(vcat, (_nested(p) for oh in AbstractTrees.children(gui.controls.h)
                                            if !(rendered(oh) isa BMO.AbstractObject) for p in render_plots(oh)); init = AbstractPlot[])
         _beam_plots(gui) = reduce(vcat, (_nested(p) for h in gui.beam_handles for p in GUI._beam_plots(h)))
         _control_plots(gui) = reduce(vcat, (_nested(p) for p in gui.controls.plots[1:4]))
@@ -980,7 +981,7 @@ _points(h) = only(render_plots(h))[1][]
             # everything below y = 0.5 is clipped, i.e. all objects
             gui = _live_view(System([m, pd]), _beam(); throttle = false,
                 clip_planes = [[0, 0.5, 0] => [0, 1, 0]])
-            @test Makie.boundingbox(render_plots(render_children(gui.system_handles[1])[1])[1]) == Makie.Rect3d()
+            @test Makie.boundingbox(render_plots(AbstractTrees.children(gui.system_handles[1])[1])[1]) == Makie.Rect3d()
             gui.controls.selected[] = m
             GUI._update_selection_box!(gui.controls)
             pts = gui.controls.box_obs[]
@@ -1018,13 +1019,13 @@ _points(h) = only(render_plots(h))[1][]
             @test all(p -> p.clip_planes[] == [GUI._plane3f(plane)], _optics_plots(gui))
             @test all(p -> p.clip_planes[] == Plane3f[], _marker_plots(gui))
 
-            # moved and rotated with keys like a component
+            # moved and rotated with keys like a component, along the global axes of the frame
+            # "global": ↑ along y, in the rotate mode about x
             _key!(gui, Keyboard.up)
-            @test collect(position(plane)) ≈ lookat + 1e-3 * view_dir
-            x_axis = plane.dir[:, 1]
+            @test collect(position(plane)) ≈ lookat + [0, 1e-3, 0]
             _key!(gui, Keyboard.m)
             _key!(gui, Keyboard.up)
-            @test GUI._normal(plane) ≈ BMO.rotate3d(x_axis, 1e-2) * view_dir
+            @test GUI._normal(plane) ≈ BMO.rotate3d([1.0, 0, 0], 1e-2) * view_dir
             @test all(p -> p.clip_planes[] == [GUI._plane3f(plane)], _optics_plots(gui))
             _key!(gui, Keyboard.m)
             @test n_calls[] == n0
@@ -1047,7 +1048,7 @@ _points(h) = only(render_plots(h))[1][]
             @test isnothing(gui.controls.selected[])
             @test !(plane2 in gui.controls.movable)
             @test !haskey(gui.controls.init_poses, plane2)
-            @test !any(oh -> rendered(oh) === plane2, render_children(gui.controls.h))
+            @test !any(oh -> rendered(oh) === plane2, AbstractTrees.children(gui.controls.h))
             @test !any(p -> any(q -> q === p, gui.ax.scene.plots), marker_plots)
             @test _planes(gui) == [GUI._plane3f(plane)]
             # the undo history of the removed plane is dropped, undo still works
@@ -1186,7 +1187,7 @@ _points(h) = only(render_plots(h))[1][]
         gui_ref = Ref{Any}(nothing)
         @test_logs (:error, r"on_change") begin
             gui_ref[] = _live_view(sys, beam; throttle = false, on_change = (g, obj) -> error("boom"),
-                pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[1])[1], 0))
+                pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[1])[1], 0))
             gui = gui_ref[]
             _select!(gui)
             _key!(gui, Keyboard.up)
@@ -1313,104 +1314,259 @@ _points(h) = only(render_plots(h))[1][]
         translate3d!(lens, [0.01, 0.05, 0.002])
         gui_ref = Ref{Any}(nothing)
         gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            fine_angle = 1e-3, fine_step = 1e-3, pick = ax -> (render_plots(render_children(gui_ref[].controls.h)[2])[1], 0))
+            fine_angle = 1e-3, fine_step = 1e-3, pick = ax -> (render_plots(AbstractTrees.children(gui_ref[].controls.h)[2])[1], 0))
         gui_ref[] = gui
-        box(k) = GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[k])
+        ctrl = gui.controls
+        c = gui.cards.selection
+        pose_names = (:x, :y, :z, :rx, :ry, :rz)
+        box(k) = GUI._card_widget(c, pose_names[k])
         texts() = [isnothing(box(k)) ? "" : box(k).displayed_string[] for k in 1:6]
+        label(k) = GUI._card_widget(c, Symbol(:pose_label_, pose_names[k])).text[]
+        unit(kind) = GUI._card_widget(c, Symbol(kind, :_unit)).label[]
+        click!(name) = (b = GUI._card_widget(c, name); b.clicks[] += 1)
+        switch!(name, v) = (GUI._card_widget(c, name).segmented.selected[] = v)
+        angles(obj, order = gui.pose_display.order) = GUI._euler_angles(Matrix(BMO.orientation(obj)), order)
         @test texts() == fill("", 6)
+        # the signature is kept, the rows are three
+        @test hasmethod(pose_card_rows, Tuple{Any}) && length(pose_card_rows(lens)) == 5
 
         # nothing selected: the card has no widgets yet, `_apply_pose_input!` ignores the input
         @test isnothing(box(1))
         GUI._apply_pose_input!(gui, nothing, 1, "5")
         @test collect(BMO.position(lens)) == [0.01, 0.05, 0.002]
 
-        # the boxes follow the selection
+        # the boxes follow the selection: the frame "global" in mm and rad
         gui.widgets.menu.i_selected[] = findfirst(o -> o === lens, gui.objects.menu)
-        @test gui.controls.selected[] === lens
-        @test texts() == ["10.0", "50.0", "2.0", "", "", ""]
+        @test ctrl.selected[] === lens
+        @test texts() == ["10.000000", "50.000000", "2.000000", "0.000000", "0.000000", "0.000000"]
+        @test label(1) == "x" && label(6) == "rz" && unit(:length) == "mm" && unit(:angle) == "rad"
+        @test GUI._card_widget(c, :frame).segmented.selected[] === :global
+        @test GUI._card_widget(c, :order).segmented.selected[] === :xyz
         _select!(gui)
-        @test gui.controls.selected[] === m
-        @test texts() == ["0.0", "100.0", "0.0", "", "", ""]
+        @test ctrl.selected[] === m
+        @test texts() == ["0.000000", "100.000000", "0.000000", "0.000000", "0.000000", "0.785398"]
         gui.widgets.menu.i_selected[] = findfirst(o -> o === lens, gui.objects.menu)
 
-        # absolute position [mm]
+        # absolute position: only that coordinate, one undo step
         P0 = collect(BMO.position(lens))
         R0 = Matrix(BMO.orientation(lens))
+        n = length(ctrl.undo_stack)
         box(1).stored_string[] = "12.5"
         P = collect(BMO.position(lens))
         @test P[1] == 0.0125
         @test P[2:3] == P0[2:3]
         @test BMO.orientation(lens) == R0
-        @test texts() == ["12.5", "50.0", "2.0", "", "", ""]
+        @test texts() == ["12.500000", "50.000000", "2.000000", "0.000000", "0.000000", "0.000000"]
         @test occursin("at (12.5, 50.0, 2.0) mm", gui.status.text[])
+        @test length(ctrl.undo_stack) == n + 1
 
-        # a rotation of 1 mrad about the blue axis equals one key step
-        ref = deepcopy(lens)
-        _key!(gui, Keyboard.m)
-        @test gui.controls.mode[] == :rotate
-        @test GUI._key_step!(gui.controls, ref, Keyboard.left, 1)
-        box(6).stored_string[] = "1"
-        @test BMO.orientation(lens) == BMO.orientation(ref)
-        @test collect(BMO.position(lens)) == P
-        @test texts() == ["12.5", "50.0", "2.0", "", "", ""]
-        # red and green axes, like the keys up and page up
-        for (k, key) in ((4, Keyboard.up), (5, Keyboard.page_up))
-            GUI._key_step!(gui.controls, ref, key, 1)
-            box(k).stored_string[] = "1"
-            @test BMO.orientation(lens) ≈ BMO.orientation(ref) atol = 1e-15
+        # an angle: only that angle changes, in both orders, one undo step each
+        for order in (:xyz, :zyx)
+            switch!(:order, order)
+            @test gui.pose_display.order === order
+            for (i, x) in enumerate((0.3, -0.2, 0.25))
+                a0, P1 = angles(lens), collect(BMO.position(lens))
+                n = length(ctrl.undo_stack)
+                box(3 + i).stored_string[] = string(x)
+                a = angles(lens)
+                @test a[i] ≈ x atol = 1e-12
+                @test all(j -> j == i || abs(a[j] - a0[j]) < 1e-12, 1:3)
+                @test collect(BMO.position(lens)) ≈ P1 atol = 1e-15
+                @test length(ctrl.undo_stack) == n + 1
+                @test texts()[3 + i] == GUI._format_pose_value(x, GUI._pose_unit(GUI._ANGLE_UNITS, :rad))
+            end
         end
-
-        # undo
-        for _ in 1:3
-            _ctrl_z!(gui)
-        end
-        @test _angle(Matrix(BMO.orientation(lens)), R0) < 1e-12
+        # the order switch changes only the display
+        R1 = Matrix(BMO.orientation(lens))
+        switch!(:order, :xyz)
+        @test BMO.orientation(lens) == R1
+        @test texts()[4:6] == [GUI._format_pose_value(a, GUI._pose_unit(GUI._ANGLE_UNITS, :rad))
+                               for a in angles(lens, :xyz)]
+        @test texts()[4:6] != ["0.300000", "-0.200000", "0.250000"]
+        # undo of the last angle
+        R2 = Matrix(BMO.orientation(lens))
+        box(6).stored_string[] = "0.5"
         _ctrl_z!(gui)
-        @test collect(BMO.position(lens)) ≈ P0 atol = 1e-15
-        @test texts()[1] == "10.0"
+        @test _angle(Matrix(BMO.orientation(lens)), R2) < 1e-12
+
+        # a lens turned by 90° about z shows rz = 1.570796 rad in both orders
+        for k in 4:6
+            box(k).stored_string[] = "0"
+        end
+        Id = [1.0 0 0; 0 1 0; 0 0 1]
+        @test _angle(Matrix(BMO.orientation(lens)), Id) < 1e-12
+        zrotate3d!(lens, π / 2)
+        GUI._update_inspector!(gui; force = true)
+        for order in (:xyz, :zyx)
+            switch!(:order, order)
+            @test texts()[4:6] == ["0.000000", "0.000000", "1.570796"]
+        end
+        switch!(:order, :xyz)
+        box(6).stored_string[] = "0"
+        @test _angle(Matrix(BMO.orientation(lens)), Id) < 1e-12
 
         # invalid input changes nothing
+        P0, R0 = collect(BMO.position(lens)), Matrix(BMO.orientation(lens))
         for s in ("abc", "1 mm", "NaN")
             box(2).stored_string[] = s
-            @test startswith(gui.status.text[], "invalid input \"$s\"")
-            @test collect(BMO.position(lens)) ≈ P0 atol = 1e-15
+            @test gui.status.text[] == "invalid input \"$s\" for y [mm], enter a number in mm"
+            @test collect(BMO.position(lens)) == P0
         end
 
         # keys are ignored while a box is focused, the focused box is not overwritten
-        _key!(gui, Keyboard.m)
-        @test gui.controls.mode[] == :move
+        @test ctrl.mode[] == :move
         box(1).focused[] = true
         box(1).displayed_string[] = "3"
-        _key!(gui, Keyboard.up)
+        _key!(gui, Keyboard.right)
         _key!(gui, Keyboard.m)
-        @test gui.controls.mode[] == :move
-        @test collect(BMO.position(lens)) ≈ P0 atol = 1e-15
+        @test ctrl.mode[] == :move
+        @test collect(BMO.position(lens)) == P0
         translate3d!(lens, [0, 0, 1e-3])
-        GUI._request_update!(gui.controls)
-        @test texts()[1:3] == ["3", "50.0", "3.0"]
+        GUI._request_update!(ctrl)
+        @test texts()[1:3] == ["3", "50.000000", "3.000000"]
         box(1).focused[] = false
         # the boxes follow key steps
         _key!(gui, Keyboard.up)
-        @test texts()[1:3] == ["10.0", "51.0", "3.0"]
+        @test texts()[1:3] == ["12.500000", "51.000000", "3.000000"]
 
-        # deselect
-        _key!(gui, Keyboard.escape)
-        @test isnothing(gui.controls.selected[])
-        @test !gui.cards.selection.scene.visible[]
+        # ↑ and ↓ in a focused box: a keyboard step of its value, ×10 with Shift
+        P0 = collect(BMO.position(lens))
+        box(3).focused[] = true
+        n = length(ctrl.undo_stack)
+        _key!(gui, Keyboard.up)
+        @test collect(BMO.position(lens)) ≈ P0 + [0, 0, 1e-3] atol = 1e-15
+        @test box(3).displayed_string[] == "4.000000"
+        push!(events(gui.ax.scene).keyboardstate, Keyboard.left_shift)
+        _key!(gui, Keyboard.down)
+        delete!(events(gui.ax.scene).keyboardstate, Keyboard.left_shift)
+        @test collect(BMO.position(lens)) ≈ P0 + [0, 0, -9e-3] atol = 1e-15
+        @test box(3).displayed_string[] == "-6.000000"
+        # the 3D view did not take the keys, each step is one undo step
+        @test ctrl.mode[] == :move && length(ctrl.undo_stack) == n + 2
+        box(3).focused[] = false
+        a0 = angles(lens)
+        box(5).focused[] = true
+        _key!(gui, Keyboard.up)
+        box(5).focused[] = false
+        @test angles(lens)[2] ≈ a0[2] + 1e-3 atol = 1e-12
+        @test abs(angles(lens)[1] - a0[1]) < 1e-12 && abs(angles(lens)[3] - a0[3]) < 1e-12
+        # ↑ outside a box moves the object again
+        P0 = collect(BMO.position(lens))
+        _key!(gui, Keyboard.up)
+        @test collect(BMO.position(lens)) ≈ P0 + [0, 1e-3, 0] atol = 1e-15
+
+        # the frame "local": the switch of the card sets the frame of the controls, the reference
+        # is made on the first display, the units are µm and mrad
+        @test !haskey(gui.pose_display.references, lens)
+        switch!(:frame, :local)
+        @test ctrl.frame[] === :local
+        @test haskey(gui.pose_display.references, lens)
+        @test texts() == fill("+0.000", 6)
+        @test label(1) == "Δx" && label(6) == "Δrz" && unit(:length) == "µm" && unit(:angle) == "mrad"
+        # offsets from the reference, in its frame
+        Pref, Rref = gui.pose_display.references[lens]
+        GUI._set_frame!(ctrl, :global)
+        @test texts()[1] == "12.500000"
+        box(1).stored_string[] = "13"
+        GUI._set_frame!(ctrl, :local)
+        @test GUI._card_widget(c, :frame).segmented.selected[] === :local
+        @test texts()[1:3] == [GUI._format_pose_value(x, GUI._pose_unit(GUI._LENGTH_UNITS, :um);
+            signed = true) for x in Rref' * [0.5e-3, 0, 0]]
+        # "zero": the current pose is the reference
+        click!(:zero)
+        @test texts() == fill("+0.000", 6)
+        Pref, Rref = gui.pose_display.references[lens]
+        @test Pref == collect(BMO.position(lens)) && Rref == Matrix(BMO.orientation(lens))
+        # Δ is placed at reference + Δ in the frame of the reference
+        n = length(ctrl.undo_stack)
+        box(2).stored_string[] = "12.5"
+        @test collect(BMO.position(lens)) ≈ Pref + Rref * [0, 12.5e-6, 0] atol = 1e-15
+        @test Matrix(BMO.orientation(lens)) == Rref
+        box(6).stored_string[] = "1.25"
+        @test _angle(Matrix(BMO.orientation(lens)), Rref * GUI._euler_matrix((0, 0, 1.25e-3), :xyz)) < 1e-12
+        @test collect(BMO.position(lens)) ≈ Pref + Rref * [0, 12.5e-6, 0] atol = 1e-15
+        @test texts() == ["+0.000", "+12.500", "+0.000", "+0.000", "+0.000", "+1.250"]
+        @test length(ctrl.undo_stack) == n + 2
+        # the unit buttons change only the display, and only the units of this frame
+        P1, R1 = collect(BMO.position(lens)), Matrix(BMO.orientation(lens))
+        click!(:length_unit)
+        click!(:angle_unit)
+        @test unit(:length) == "nm" && unit(:angle) == "µrad"
+        @test texts()[[2, 6]] == ["+12500.0", "+1250.0"]
+        @test collect(BMO.position(lens)) == P1 && Matrix(BMO.orientation(lens)) == R1
+        @test gui.pose_display.units == Dict(:global => (:mm, :rad), :local => (:nm, :urad))
+        # "zero" acts only in "local"
+        switch!(:frame, :global)
+        @test ctrl.frame[] === :global && unit(:length) == "mm"
+        click!(:zero)
+        @test gui.pose_display.references[lens] == (Pref, Rref)
+        @test occursin("switch to local", gui.status.text[])
+
+        # a selection of several objects: the rotation boxes show the placeholder, an input turns
+        # it about the global axis
+        Pl, Rl = collect(BMO.position(lens)), Matrix(BMO.orientation(lens))
+        Pm, Rm = collect(BMO.position(m)), Matrix(BMO.orientation(m))
+        sel = GUI._MultiSelection(Any[lens, m])
+        GUI._select!(gui, sel)
+        @test ctrl.selected[] === sel
+        @test isnothing(box(1)) && all(k -> box(k).displayed_string[] == "" && box(k).placeholder[] == "0", 4:6)
+        pivot = collect(BMO.position(sel))
+        n = length(ctrl.undo_stack)
+        box(6).stored_string[] = "0.1"
+        Rz = GUI._euler_matrix((0, 0, 0.1), :xyz)
+        @test Matrix(BMO.orientation(lens)) ≈ Rz * Rl atol = 1e-12
+        @test Matrix(BMO.orientation(m)) ≈ Rz * Rm atol = 1e-12
+        @test collect(BMO.position(m)) ≈ pivot + Rz * (Pm - pivot) atol = 1e-12
+        @test box(6).displayed_string[] == ""
+        @test length(ctrl.undo_stack) == n + 1
+        _ctrl_z!(gui)
+        @test collect(BMO.position(m)) ≈ Pm atol = 1e-12
+        GUI._select!(gui, lens)
+
+        # removing an object forgets its reference
+        @test haskey(gui.pose_display.references, lens)
+        remove_component!(gui, lens)
+        @test !haskey(gui.pose_display.references, lens)
         close(gui)
 
-        # constraints are respected
+        # constraints are respected, on the local axes
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            constraints = Dict(m => (; move = (:v,), rotate = ())))
+            constraints = Dict(m => (; move = (:z,), rotate = ())))
         gui.widgets.menu.i_selected[] = findfirst(o -> o === m, gui.objects.menu)
+        c = gui.cards.selection
         P0, R0 = collect(BMO.position(m)), Matrix(BMO.orientation(m))
-        GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[1]).stored_string[] = "5"
-        GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[6]).stored_string[] = "5"
+        n = length(gui.controls.undo_stack)
+        GUI._card_widget(c, :x).stored_string[] = "5"
+        @test occursin("can not move along x, see the constraints", gui.status.text[])
+        GUI._card_widget(c, :rz).stored_string[] = "0.5"
+        @test occursin("can not turn about this axis, see the constraints", gui.status.text[])
         @test collect(BMO.position(m)) == P0
         @test BMO.orientation(m) == R0
-        GUI._card_widget(gui.cards.selection, (:x, :y, :z, :rx, :ry, :rv)[3]).stored_string[] = "5"
+        @test length(gui.controls.undo_stack) == n
+        @test GUI._card_widget(c, :rz).displayed_string[] == "0.785398"
+        GUI._card_widget(c, :z).stored_string[] = "5"
         @test collect(BMO.position(m)) ≈ [0, 0.1, 0.005]
+        close(gui)
+
+        # a rail along the local y of a mirror yawed by 30°: in "local", Δy moves along the rail and
+        # Δx is rejected; in "global", x and y both leave the rail
+        m = RoundPlanoMirror(25e-3, 5e-3)
+        zrotate3d!(m, deg2rad(30))
+        translate3d!(m, [0, 0.1, 0])
+        gui = _live_view(System([m]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false, frame = :local,
+            constraints = Dict(m => (; move = (:y,))))
+        gui.widgets.menu.i_selected[] = findfirst(o -> o === m, gui.objects.menu)
+        c = gui.cards.selection
+        P0, R = collect(BMO.position(m)), Matrix(BMO.orientation(m))
+        GUI._card_widget(c, :x).stored_string[] = "5"
+        @test collect(BMO.position(m)) == P0
+        GUI._card_widget(c, :y).stored_string[] = "5"
+        @test collect(BMO.position(m)) ≈ P0 + R[:, 2] * 5e-6 atol = 1e-15
+        GUI._set_frame!(gui.controls, :global)
+        P0 = collect(BMO.position(m))
+        GUI._card_widget(c, :y).stored_string[] = "1"
+        @test collect(BMO.position(m)) == P0
         close(gui)
     end
 
@@ -1523,9 +1679,9 @@ _points(h) = only(render_plots(h))[1][]
         # the options of the `detectors` kwarg
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity,
-            (; n = 20, colorscale = :log, colorrange = (0, 5), profiles = true, x_min = -2.5e-3, x_max = 2.5e-3))])
+            (; num_points = 20, colorscale = :log, colorrange = (0, 5), profiles = true, x_min = -2.5e-3, x_max = 2.5e-3))])
         opts = GUI._detector_state(gui, pd).opts
-        @test opts.n == 20 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
+        @test opts.num_points == 20 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
         @test opts.kwargs == (; x_min = -2.5e-3, x_max = 2.5e-3)
         @test size(_field(gui)[3]) == (20, 20)
         close(gui)
@@ -1631,7 +1787,7 @@ _points(h) = only(render_plots(h))[1][]
         pick_plot = Ref{Any}(nothing)
         gui = _live_view(System([m1, m2]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
             labels = Dict(m1 => "M1", m2 => "M2"), pick = ax -> (pick_plot[], 0))
-        _plot(obj) = render_plots(render_children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, render_children(gui.controls.h))])[1]
+        _plot(obj) = render_plots(AbstractTrees.children(gui.controls.h)[findfirst(oh -> rendered(oh) === obj, AbstractTrees.children(gui.controls.h))])[1]
         gui.widgets.measure_toggle.active[] = true
         @test startswith(gui.status.text[], "measure:")
         pick_plot[] = _plot(m1)
@@ -1658,7 +1814,7 @@ _points(h) = only(render_plots(h))[1][]
 
     @testset "theme and info label" begin
         _rgb(c) = RGBf(Makie.to_color(c))
-        _plots(gui, obj) = render_plots(only(oh for oh in render_children(gui.controls.h) if rendered(oh) === obj))
+        _plots(gui, obj) = render_plots(only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === obj))
         _detector_color(gui, pd) = _rgb(first(p for p in _plots(gui, pd) if p isa Makie.Mesh).color[])
         _help(gui) = only(p for p in gui.controls.plots if p isa Makie.Text && p.parent === gui.ax.blockscene)
         _strokes(gui, objs...) = [_rgb(p.strokecolor[]) for o in objs for p in _plots(gui, o) if p isa Makie.Scatter]
@@ -1784,7 +1940,7 @@ _points(h) = only(render_plots(h))[1][]
         _tick!(gui)
         @test isnothing(gui.camera.animation)
         eye, lookat, _ = _view()
-        bbs = [Makie.boundingbox(p) for h in gui.system_handles for oh in render_children(h) for p in render_plots(oh)]
+        bbs = [Makie.boundingbox(p) for h in gui.system_handles for oh in AbstractTrees.children(h) for p in render_plots(oh)]
         bb = reduce(GUI.GeometryBasics.union, bbs)
         @test lookat ≈ collect(minimum(bb) .+ Makie.widths(bb) ./ 2) atol = 1e-6
 
@@ -1842,10 +1998,10 @@ end
     # edges of a mirror in the `:cad` look on by default, off via `edges = false`
     set_render_look(:cad)
     gui = live_view(System([m]), beam; detectors = [])
-    @test length(edge_plots(render_plots(only(render_children(gui.system_handles[1]))))) == 1
+    @test length(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1]))))) == 1
     close(gui)
     gui = live_view(System([m]), beam; detectors = [], edges = false)
-    @test isempty(edge_plots(render_plots(only(render_children(gui.system_handles[1])))))
+    @test isempty(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1])))))
     close(gui)
     set_render_look(:modern)
 end

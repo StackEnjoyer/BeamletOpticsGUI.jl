@@ -1,7 +1,8 @@
 module TestViewCube
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots
 using Makie
 using Test
 using LinearAlgebra: normalize, norm, dot
@@ -302,7 +303,7 @@ const GUI = BeamletOpticsGUI
         beside = Tuple(Float64.(minimum(scene.viewport[]) .+ (20, 150)))
 
         # a click on the cube neither selects ...
-        pick_plot[] = render_plots(render_children(gui.controls.h)[1])[1]
+        pick_plot[] = render_plots(AbstractTrees.children(gui.controls.h)[1])[1]
         events(scene).mouseposition[] = _px(cube, (0, 0, 1))
         _click!()
         @test isnothing(gui.controls.selected[])

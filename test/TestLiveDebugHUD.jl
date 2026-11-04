@@ -1,6 +1,7 @@
 module TestLiveDebugHUD
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
+using BeamletOpticsGUI: AbstractTrees
 using Makie
 using Test
 
@@ -102,7 +103,7 @@ const GUI = BeamletOpticsGUI
         # nothing of the card in the scene of the 3D view, whose plots are picked, fitted and clipped
         in3d = Makie.collect_atomic_plots(gui.ax.scene)
         @test !any(p -> any(q -> q === p, in3d), plots)
-        pickable = [p for h in BMO.render_children(gui.pool) for p in GUI._pickable_plots(h)]
+        pickable = [p for h in AbstractTrees.children(gui.pool) for p in GUI._pickable_plots(h)]
         @test !isempty(pickable)
         @test !any(p -> any(q -> q === p, plots), pickable)
         # in front of the 3D view and below the component cards and the help card
@@ -260,7 +261,7 @@ const GUI = BeamletOpticsGUI
         @test _row(sections, :rays, "ends") == "–"
         @test !haskey(Dict(Dict(sections)[:rays]), "never hit")
         @test _row(sections, :scene, "objects") ==
-              "1 system · $(length(BMO.render_children(gui.pool))) objects · 1 source · 1 detector"
+              "1 system · $(length(AbstractTrees.children(gui.pool))) objects · 1 source · 1 detector"
         @test _row(sections, :scene, "cards") == "0 open · 0 pinned · undo 0"
         @test Dict(sections)[:events] == ["" => "none"]
 

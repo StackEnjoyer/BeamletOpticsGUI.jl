@@ -73,7 +73,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
     end
     # Declared widgets by name, the pose boxes by their index
     _w(c, name) = GUI._card_widget(c, name)
-    _pose(c, k) = _w(c, (:x, :y, :z, :rx, :ry, :rv)[k])
+    _pose(c, k) = _w(c, (:x, :y, :z, :rx, :ry, :rz)[k])
 
     @testset "widgets in the card" begin
         m, pd = _fixture()
@@ -101,9 +101,13 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test minimum(_rect(c.actions))[1] > maximum(_rect(c.head))[1]
         @test maximum(_rect(c.rows))[2] < minimum(_rect(c.head))[2]
         @test maximum(_rect(c.step))[2] < minimum(_rect(c.rows))[2]
-        # the pose of the object in the boxes, the boxes of both rows line up
-        @test _pose(c, 2).displayed_string[] == "100.0"
-        @test minimum(_rect(_pose(c, 1)))[1] ≈ minimum(_rect(_pose(c, 4)))[1]
+        # the pose of the object in the boxes; the boxes of a column and its unit button line up,
+        # the angles right of the lengths
+        @test _pose(c, 2).displayed_string[] == "100.000000"
+        left(b) = minimum(_rect(b))[1]
+        @test all(k -> left(_pose(c, k)) ≈ left(_w(c, :length_unit)), 1:3)
+        @test all(k -> left(_pose(c, k)) ≈ left(_w(c, :angle_unit)), 4:6)
+        @test left(_pose(c, 4)) > left(_pose(c, 1))
         # at the bounding box of the object (not at the gizmo), at one of its sides, see "placement"
         set_view(gui.ax, [0.3, -0.2, 0.3], [0.0, 0.1, 0.0], [0.0, 0, 1])
         _tick!(gui)
@@ -423,7 +427,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         translate3d!(m, [0.0, 0.0, 0.02])
         _tick!(gui)
         @test _rect(c1.background) != r0
-        @test _pose(c1, 3).displayed_string[] == "20.0"
+        @test _pose(c1, 3).displayed_string[] == "20.000000"
 
         # its widgets act on its object, not on the selection
         _select!(gui, pd)
@@ -596,7 +600,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         n = solves[]
         Makie.set_close_to!(lift, 3)
         @test BMO.position(t)[3] ≈ 3e-3
-        @test _w(c, :height).text[] == "3 mm" && _pose(c, 3).displayed_string[] == "3.0"
+        @test _w(c, :height).text[] == "3 mm" && _pose(c, 3).displayed_string[] == "3.000000"
         @test solves[] > n
 
         # the declared widgets take the clicks like the others: a click at the right end of the
@@ -613,13 +617,15 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         old = copy(c.blocks)
         _select!(gui, m)
         @test isnothing(_w(c, :lift)) && _w(c, :hide) isa BeamletOpticsGUI._IconToggle
-        @test all(b -> (b isa Makie.Block ? b : b.box).parent === nothing,
-            filter(b -> !any(x -> x === b, c.blocks), old))
+        _removed(b) = b isa Makie.Block ? b.parent === nothing :
+                      b isa GUI._PoseSwitch ? all(x -> x.parent === nothing, b.segmented.buttons) :
+                      b.box.parent === nothing
+        @test all(_removed, filter(b -> !any(x -> x === b, c.blocks), old))
         # an object with the same declarations (another mirror) keeps the widgets and shows its values
         kept = copy(c.blocks)
         _select!(gui, m2)
         @test length(c.blocks) == length(kept) && all(c.blocks .=== kept)
-        @test _pose(c, 2).displayed_string[] == "250.0"
+        @test _pose(c, 2).displayed_string[] == "250.000000"
         close(gui)
     end
 
@@ -677,7 +683,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
             @test _rgba(_pose(c, 1).boxcolor[]) == _rgba(t.field)
             @test _rgba(_pose(c, 1).textcolor[]) == _rgba(t.text)
             @test _rgba(_label(c, "x").color[]) == _rgba(t.text)
-            @test [_rgba(_label(c, k).color[]) for k in ("rx", "ry", "rv")] == _rgba.(collect(t.gizmo))
+            @test [_rgba(_label(c, k).color[]) for k in ("rx", "ry", "rz")] == _rgba.(collect(t.gizmo))
             # the progress window: panel and text from the theme, the bar orange
             panel, track, bar, text = gui.trace.progress.plots
             @test _rgba(panel.color[]) == _rgba(t.sidebar) && _rgba(text.color[]) == _rgba(t.text)
@@ -732,7 +738,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test c.view_size == GUI._CARD_VIEW_SIZE && v.ax.width[] == 280 && v.ax.height[] == 280
         # computed from the hits of the last solve and shown
         state = GUI._detector_state(gui, pd)
-        @test !state.stale && state.result.n == state.opts.n
+        @test !state.stale && state.result.n == state.opts.num_points
         @test v.result === state.result && GUI._kind_name(v.kind) == :intensity && v.name == "PD"
         # the view below the page bar, inside the card, at its left edge below the icon
         r, bg = Rect2f(v.full.layoutobservables.computedbbox[]), _rect(c.background)

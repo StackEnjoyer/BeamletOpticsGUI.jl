@@ -9,7 +9,7 @@ using Test
 
 const GUI = BeamletOpticsGUI
 
-const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)"
+const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))"
 const START = """
     @component L1 = $LENS pos = (0.0, 0.1, 0.0)
     @component D1 = Detector(0.02) pos = (0.0, 0.3, 0.0)

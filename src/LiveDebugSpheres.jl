@@ -100,9 +100,9 @@ _spheres_visible(gui::LiveView, layer::_DebugSpheres, @nospecialize(x)) = layer.
 # The sphere of a part, and the main sphere of an object in orange: overlays like the markers of
 # the sources, which are never clipped
 _sphere_draw(gui::LiveView, @nospecialize(part)) =
-    () -> render_bounding_sphere!(gui.ax, part; clip_planes = Plane3f[], inspectable = false)
+    () -> render!(gui.ax, BMO.bounding_sphere_of(part); clip_planes = Plane3f[], inspectable = false)
 _main_draw(gui::LiveView, @nospecialize(obj)) =
-    () -> render_bounding_sphere!(gui.ax, BMO.bounding_sphere_of(obj); color = :orange,
+    () -> render!(gui.ax, BMO.bounding_sphere_of(obj); color = :orange,
         clip_planes = Plane3f[], inspectable = false)
 
 # Stores the handle of the plots of `draw`, which follow the pose of `x`, unless `x` has one or

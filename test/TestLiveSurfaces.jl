@@ -92,8 +92,8 @@ const GUI = BeamletOpticsGUI
         @test GUI._catalog_code(entry, _defaults(entry)) == "SphericalLens(0.05, -0.05, 0.005, 0.0254, $bk7)"
         # ... also the thin lens of a thickness of zero
         thin = GUI._catalog_component(entry, ["50", "-50", "0", "25.4", "1.5"])
-        @test typeof(BMO.shape(thin.obj)) === typeof(BMO.shape(ThinLens(0.05, -0.05, 25.4e-3, 1.5)))
-        @test thin.origin.code == "SphericalLens(0.05, -0.05, 0.0, 0.0254, λ -> 1.5)"
+        @test typeof(BMO.shape(thin.obj)) === typeof(BMO.shape(ThinLens(0.05, -0.05, 25.4e-3, ConstantRefractiveIndex(1.5))))
+        @test thin.origin.code == "SphericalLens(0.05, -0.05, 0.0, 0.0254, ConstantRefractiveIndex(1.5))"
         # every combination of spherical and aspheric surfaces: the code builds the same lens
         asphere(r) = "$r; -0.8; 1e-6, -2e-9"
         for front in ("50", asphere(50)), back in ("-50", asphere(-50), "Inf")
@@ -111,7 +111,7 @@ const GUI = BeamletOpticsGUI
         end
         code = GUI._catalog_component(entry, ["50", asphere(-50), "6", "25.4", "1.5"]).origin.code
         @test code == "Lens(SphericalSurface(0.05, 0.0254), " *
-                      "EvenAsphericalSurface(-0.05, 0.0254, -0.8, [0.0, 1000.0, -2.0e6]), 0.006, λ -> 1.5)"
+                      "EvenAsphericalSurface(-0.05, 0.0254, -0.8, [0.0, 1000.0, -2.0e6]), 0.006, ConstantRefractiveIndex(1.5))"
         # an asphere without a conic constant and without coefficients is the sphere
         sphere = _focus(GUI._catalog_component(entry, ["50", "-50", "6", "25.4", "1.5"]).obj)
         for strings in (["50; 0; 0", "-50", "6", "25.4", "1.5"], ["50", "-50; 0; 0", "6", "25.4", "1.5"],
@@ -154,7 +154,7 @@ const GUI = BeamletOpticsGUI
         end
         values = Any[v isa String ? 1.5 : v for v in _defaults(doublet)]
         @test GUI._catalog_code(doublet, values) ==
-              "SphericalDoubletLens(0.0628, -0.0457, -0.1282, 0.004, 0.0025, 0.0254, λ -> 1.5, λ -> 1.5)"
+              "SphericalDoubletLens(0.0628, -0.0457, -0.1282, 0.004, 0.0025, 0.0254, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.5))"
         # an asphere at any surface, also at a cemented one, which both of its elements get: the
         # lens of BeamletOptics from surfaces, and the code builds the same lens
         for (entry, name, type) in ((doublet, "DoubletLens", DoubletLens), (triplet, "TripletLens", TripletLens))
@@ -185,7 +185,7 @@ const GUI = BeamletOpticsGUI
                      for (p, s) in zip(doublet.params, ["62.8", "-45.7; -1; 5e-9", "-128.2", "4", "2.5", "25.4", "1.5", "1.7"])]
         @test GUI._catalog_code(doublet, values) ==
               "DoubletLens(SphericalSurface(0.0628, 0.0254), EvenAsphericalSurface(-0.0457, 0.0254, -1.0, [0.0, 5.0]), " *
-              "SphericalSurface(-0.1282, 0.0254), 0.004, 0.0025, λ -> 1.5, λ -> 1.7)"
+              "SphericalSurface(-0.1282, 0.0254), 0.004, 0.0025, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.7))"
         # an element that BeamletOptics can not build: an aspheric meniscus without a cylindrical section
         err = try
             GUI._catalog_component(doublet, ["30; -1; 0", "25", "-128.2", "1", "2.5", "25.4", "1.5", "1.7"])

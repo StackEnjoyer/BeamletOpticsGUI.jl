@@ -118,7 +118,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a lens of several parts counts as a whole
-        doublet = SphericalDoubletLens(62.8e-3, -45.7e-3, -128.2e-3, 4e-3, 2.5e-3, 25.4e-3, 1.5, 1.6)
+        doublet = SphericalDoubletLens(62.8e-3, -45.7e-3, -128.2e-3, 4e-3, 2.5e-3, 25.4e-3, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.6))
         translate_to3d!(doublet, [0, 0.1, 0])
         gui = live_view(System([doublet]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf)
         lines = GUI._snap_lines(gui, doublet)
@@ -263,7 +263,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(lens, deg2rad(20))
         translate_to3d!(lens, [0.03, 0.1, 0])
         gui = live_view(System([lens]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
-            throttle = false, snap = :pose, constraints = Dict(lens => (; rotate = (:v,))))
+            throttle = false, snap = :pose, constraints = Dict(lens => (; rotate = (:z,))))
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         R0 = _pose(lens)[2]
         _drag!(gui, lens, _to(gui, lens, [0.003, 0.12, 0.0]))

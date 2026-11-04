@@ -8,7 +8,7 @@ using Test
 const GUI = BeamletOpticsGUI
 const const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
 
-const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)"
+const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))"
 const START = """
     @component L1 = $LENS pos = (0.0, 0.1, 0.0)
     @component M1 = RoundPlanoMirror(0.0254, 0.006) pos = (0.0, 0.2, 0.0)
@@ -207,7 +207,7 @@ end
     edit!(dir, "pos = (0.0, 0.1, 0.0)", "pos = (0.0, 0.15, 0.0)")
     @test sync!(a) === :conflict
     # a new lens of the window does not take L2
-    lens = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)
+    lens = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))
     add_component!(a, lens; system = only(GUI._systems(a)), select = false, code = LENS)
     translate3d!(a, lens, [0.0, 0.6, 0.0])
     @test autosave!(a) === :saved

@@ -294,8 +294,8 @@ In the expanded view, the mouse acts like on an `Axis` of Makie: the wheel zooms
 a drag with the left button selects the rectangle to zoom to (of the shape of the plot, i.e. a
 square in a square plot), a drag with the right button pans, and Ctrl + click, a double click or
 "fit" resets the view. In a spot view, this only changes the limits. In a PSF or intensity view, the
-field is recomputed for the visible window on the full grid `n` once the mouse rests for
-`idle_delay`, not per wheel step. The cost of one field is proportional to `n² ·` the number of
+field is recomputed for the visible window on the full grid `num_points` once the mouse rests for
+`idle_delay`, not per wheel step. The cost of one field is proportional to `num_points² ·` the number of
 hits. The computation uses all threads, start Julia with `julia -t auto`. Long
 computations run in the background with the progress window and its "Cancel", like long solves;
 computations slower than `trace_budget` show a coarse preview first.
@@ -318,7 +318,7 @@ right sidebar in the app layout, and sets their options; a listed detector that 
 the systems throws an `ArgumentError`:
 
 ```julia
-gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity, (; n = 200))])
+gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity, (; num_points = 200))])
 ```
 
 `kind` is `:auto` (default, the first kind of the hits), `:spot`, `:psf` or `:intensity`. The
@@ -326,11 +326,12 @@ gui = live_view(system, beam; detectors = [pd1, pd2 => :spot, pd3 => (:intensity
 `RegularGrid` of BeamletOptics, with which the view evaluates `intensity`;
 most useful is a fixed extent via `x_min`, `x_max`, `z_min` and `z_max` (in meters, like the rest
 of this package), which is the area that "fit" shows, instead of the automatic crop around the
-beam. The following options are not keywords of the `RegularGrid`:
+beam. The following options are not keywords of the `RegularGrid`, except `num_points`, which the
+view passes on to it:
 
 | Option                  | Effect                                                               |
 |:------------------------|:---------------------------------------------------------------------|
-| `n = 100`               | grid points per axis of a field                                      |
+| `num_points = 100`      | grid points per axis of a field                                      |
 | `colorscale = :linear`  | `:log` shows `log10` of the intensity, with a floor of 1e-4 times the maximum |
 | `colorrange = nothing`  | `(lo, hi)`: fixed color range of the intensity (in `log10` units for `:log`) |
 | `colorbar = true`       | `false` hides the colorbar below the plot of a field                  |
@@ -566,12 +567,18 @@ the menus, like in the object tree of the app layout:
   The pencil next to the label renames a component, a group, a source or a system: `Enter` takes
   the typed name, `Esc` keeps the old one. The name is used like an entry of `labels`, also in the
   exported code.
-- `x`, `y`, `z` [mm] show the position of the component. Typing a value and pressing `Enter`
-  moves the component to this absolute coordinate. The boxes `rx`, `ry` and `rv` [mrad] rotate it
-  by the typed angle about the red, green and blue axis of the controls, like the arrow keys in the
-  rotate mode, e.g. `rv = 1` equals one key step with a step of 1 mrad. Each input is a step of the
-  undo history, the constraints of the component apply. While a box is focused, the keys of the 3D
-  view are ignored.
+- The pose has two columns, see [`pose_card_rows`](@ref): the position `x`, `y`, `z` beside the
+  Euler angles `rx`, `ry`, `rz`, one row per axis, and below them the switches "global | local" (the frame of the controls, as the keys
+  `Ctrl+M`) and "xyz | zyx" (the order of the angles) with the button "zero". In "global", the boxes show
+  the position and the angles about the fixed global axes; typing a number and pressing `Enter`
+  sets that coordinate or angle and keeps the others. In "local", the labels start with "Δ" and the
+  boxes show the offsets from a reference pose, the pose when the card first showed the component
+  in "local"; "zero" makes the current pose the reference. A button above each column cycles the
+  unit of the lengths (mm, µm, nm, m) or of the angles (rad, mrad, µrad, °, arcmin, arcsec), which
+  changes the display only; typed numbers are in the unit shown. While a box is focused, `↑` and
+  `↓` change its value by the keyboard step of the controls, with `Shift` by ten steps. Each input
+  is a step of the undo history, the constraints of the component apply. While a box is focused,
+  the keys of the 3D view are ignored.
 - On the page "Pose", the card of the selected object has, below its rows, the `step` box of the keyboard step, see
   below, and the "Move"/"Rotate" control, which shows the mode of the controls and sets it, and
   follows the key `m` and vice versa. A pinned card has them while its object is selected.
@@ -600,7 +607,7 @@ the menus, like in the object tree of the app layout:
   | beamsplitters | `split`: R and T (power) of the coating |
   | polarizers | `axis`: the transmission axis about the optical axis, from the horizontal |
   | detectors | `signal`: the power or the number of rays of its detector view while a view of it is shown, otherwise the number of hits; the switch of the kinds and the toggle "log" are in the view (see [Detector view](@ref)) |
-  | ray sources | `λ` and the diameter (of a `UniformLineSource` the width) or NA; sources whose rays can be regenerated (`CollimatedSource`, `PointSource` and their uniform variants, see `set_num_rays!`) add the slider "rays" for their number of rays, which solves again; for a `UniformLineSource` and a `UniformFanSource` it offers odd numbers only (11, 21, 51, 101, ...), since an even number repeats the center ray |
+  | ray sources | `λ` and the diameter (of a `UniformLineSource` the width) or NA; sources whose rays can be regenerated (`CollimatedSource`, `PointSource` and their uniform variants, see `num_rays!`) add the slider "rays" for their number of rays, which solves again; for a `UniformLineSource` and a `UniformFanSource` it offers odd numbers only (11, 21, 51, 101, ...), since an even number repeats the center ray |
   | Gaussian beamlets | `λ`, the waist `w0` and the Rayleigh range `zR` |
   | beams, beam groups, sources, beamlets | `beam`: the toggle "on" switches the beam off and on; a beam that is off is neither solved nor drawn and its rays are removed from the detectors and measurements, only its source marker stays (with `auto_trace = false` the switch marks the beams as outdated). Gaussian beamlets and their groups add the toggle "beams", which draws the generating beams (chief, divergence, waist) like `render!` with `show_beams = true`. Polarized beams (rays of type `PolarizedRay`, astigmatic Gaussian beamlets) add the toggle "polarization", which draws the polarization along the beam, and the sliders `pol λ` and `pol amp` for the wavelength and the amplitude of that curve. Of a beam group, both are drawn for its central beam; they only change the display. The box `length` sets the length [mm] with which the final rays, i.e. those that hit nothing, are drawn (`flen`). See [`beam_card_rows`](@ref) |
 
@@ -660,7 +667,8 @@ steps and one `Backspace` (which resets all its objects to their initial poses) 
 and `on_change` is called once per object of a moved selection. `Ctrl+C` copies them if all
 their components are from the catalog, see [Changing, undoing and the whole script](@ref).
 Its card (compact layout) or the inspector (app layout) shows "N
-objects" with the subtitle "Selection", the row "pivot" (see below) and one row per object with its
+objects" with the subtitle "Selection", the rotation boxes `rx`, `ry`, `rz` (empty; an
+input turns the selection by that angle about the global axis), the row "pivot" (see below) and one row per object with its
 name, where a click selects that object alone. It has no pages and no pin, and two actions: hide (all objects, or show all if all are
 hidden) and remove (all removable objects as one undo step; the others stay selected and the status
 line says why). From code, `select!(gui, [lens, mirror])` selects several; `gui.controls.selected[]`

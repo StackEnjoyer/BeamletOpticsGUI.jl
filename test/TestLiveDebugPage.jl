@@ -75,7 +75,7 @@ GUI._debug_kind(::GUI.LiveView, ::DebugPageBroken) = Any[() -> error("broken row
 
     @testset "rows of a lens, a doublet, a group, a source, a beam group and a detector" begin
         m, pd, lens = _fixture()
-        doublet = SphericalDoubletLens(40e-3, -30e-3, -120e-3, 6e-3, 2.5e-3, 25e-3, _ -> 1.62, _ -> 1.72)
+        doublet = SphericalDoubletLens(40e-3, -30e-3, -120e-3, 6e-3, 2.5e-3, 25e-3, ConstantRefractiveIndex(1.62), ConstantRefractiveIndex(1.72))
         translate3d!(doublet, [0.0, 0.0, 0.1])
         l1 = SphericalLens(0.1, -0.1, 4e-3, 25.4e-3)
         l2 = SphericalLens(-0.1, 0.1, 2e-3, 25.4e-3)
@@ -130,7 +130,7 @@ GUI._debug_kind(::GUI.LiveView, ::DebugPageBroken) = Any[() -> error("broken row
         # a detector
         rows = GUI._debug_rows(gui, pd)
         @test _names(rows) ⊇ ["hit type", "hit count", "view", "position [m]"]
-        @test _value(rows, "hit count") == string(BMO.hit_count(pd))
+        @test _value(rows, "hit count") == string(length(pd))
         # outdated beams are shown as such
         translate3d!(m, [0.0, 0.0, 0.001])
         GUI._mark_stale!(gui, m)

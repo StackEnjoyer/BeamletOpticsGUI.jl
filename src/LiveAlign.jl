@@ -73,7 +73,7 @@ end
     _center_on_beam!(gui, obj) -> Bool
 
 Moves the component `obj` of the `gui` onto the nearest beam (see `_align_line`): to the point of
-the beam closest to its position, along the axes that its constraints allow. One gesture of the undo
+the beam closest to its position, along the local axes that its constraints allow. One gesture of the undo
 history. Returns whether it moved; otherwise the status line tells why not.
 """
 function _center_on_beam!(gui::LiveView, @nospecialize(obj))
@@ -81,14 +81,13 @@ function _center_on_beam!(gui::LiveView, @nospecialize(obj))
     line = _align_line(gui, obj)
     isnothing(line) && return false
     name = _label(gui, obj)
-    allowed = _allowed_axes(ctrl, obj, :move)
-    if isempty(allowed)
+    if isempty(_allowed_axes(ctrl, obj, :move))
         gui.status.text[] = "$name can not move, see the constraints"
         return false
     end
     P0, R0 = _pose(obj)
-    A = hcat(_axis_vectors(ctrl, obj, allowed)...)
-    Δ = A * (pinv(A) * (line.point .- Vector{Float64}(P0)))
+    # along the allowed local axes of `obj`, see `_project_constraints`
+    Δ = _project_constraints(ctrl, obj, line.point .- Vector{Float64}(P0))
     if norm(Δ) < 1e-12
         gui.status.text[] = "$name is on the beam already"
         return false

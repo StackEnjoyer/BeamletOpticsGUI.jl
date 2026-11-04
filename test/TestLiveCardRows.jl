@@ -53,19 +53,20 @@ const GUI = BeamletOpticsGUI
         @test isnothing(GUI._card_widget(gui.cards.selection, :panel_mode))
         # refreshed after the solve of a change: the mirror rotated by 1° about z
         _select!(gui, m)
-        GUI._card_widget(gui.cards.selection, :rv).stored_string[] = string(1e3 * deg2rad(1))
+        rz = GUI._euler_angles(Matrix(BMO.orientation(m)), :xyz)[3]
+        GUI._card_widget(gui.cards.selection, :rz).stored_string[] = string(rz + deg2rad(1))
         @test _text(gui, :beam) in ("1 ray, AOI 44.0°", "1 ray, AOI 46.0°")
         close(gui)
     end
 
     @testset "lens, beamsplitters, polarizer" begin
-        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         bs = RoundThinBeamsplitter(25e-3; reflectance = 0.3)
         translate3d!(bs, [0, 0.1, 0])
-        cube = CubeBeamsplitter(10e-3, λ -> 1.5)
+        cube = CubeBeamsplitter(10e-3, ConstantRefractiveIndex(1.5))
         translate3d!(cube, [0, 0.2, 0])
-        pol = RoundLinearPolarizer(25e-3, 1e-3, 1e-3, λ -> 1.5)
+        pol = RoundLinearPolarizer(25e-3, 1e-3, 1e-3, ConstantRefractiveIndex(1.5))
         translate3d!(pol, [0, 0.3, 0])
         gui = _live_view(System([lens, bs, cube, pol]), Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9))
         _select!(gui, lens)
@@ -343,7 +344,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "solve in the background" begin
-        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)
+        lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         m, pd = _fixture()
         gui = _live_view(System([lens, m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9))
@@ -377,7 +378,7 @@ const GUI = BeamletOpticsGUI
         @test _text(gui, :index) == GUI._TRACING_VALUE
         # a property of the lens, not a result
         @test _text(gui, :thickness) == "5 mm"
-        @test GUI._card_widget(gui.cards.selection, :y).displayed_string[] == "50.0"
+        @test GUI._card_widget(gui.cards.selection, :y).displayed_string[] == "50.000000"
         _select!(gui, pd)
         @test _text(gui, :signal) == GUI._TRACING_VALUE
         # shown again once the solve is done

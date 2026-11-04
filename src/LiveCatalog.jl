@@ -21,16 +21,16 @@ _catalog_default(p::CatalogGlass) = p.default == _GLASS_CONSTANT ? p.n : p.defau
 """
 The argument of the constructor for the value `v` of the parameter `p`: the number (an `Int` for a
 parameter with `integer`), the glass with the name `v` (see `_glass`) or, for a constant refractive
-index `v`, the function `λ -> v`.
+index `v`, a `ConstantRefractiveIndex`.
 """
 _catalog_arg(p::CatalogParam, v::Real) = p.integer ? Int(v) : Float64(v)
 _catalog_arg(::CatalogGlass, v::AbstractString) = _glass(v)
-_catalog_arg(::CatalogGlass, v::Real) = (n = Float64(v); λ -> n)
+_catalog_arg(::CatalogGlass, v::Real) = ConstantRefractiveIndex(Float64(v))
 
 """The argument of the constructor for the value `v` of the parameter `p` as Julia code, see `_catalog_arg`."""
 _catalog_arg_code(p::CatalogParam, v::Real) = repr(_catalog_arg(p, v))
 _catalog_arg_code(::CatalogGlass, v::AbstractString) = _glass_code(_glass(v))
-_catalog_arg_code(::CatalogGlass, v::Real) = "λ -> $(repr(Float64(v)))"
+_catalog_arg_code(p::CatalogGlass, v::Real) = _glass_code(_catalog_arg(p, v))
 
 """
     _catalog_args([f,] entry, values) -> (positional, keywords)

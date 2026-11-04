@@ -52,7 +52,7 @@ _shape_trait_text(@nospecialize(obj)) = "–"
 function _systems_rows(gui::LiveView, @nospecialize(obj))
     systems = _systems_of(gui, obj)
     names = isempty(systems) ? "none" : join((_label(gui, s) for s in systems), ", ")
-    return ["systems" => string(names, " · ", BMO.is_static(obj) ? "static" : "movable")]
+    return ["systems" => string(names, " · ", _is_static(obj) ? "static" : "movable")]
 end
 
 # The entries (functions without arguments that return rows) of every object
@@ -238,7 +238,7 @@ end
 function _detector_entries(gui::LiveView, pd::BMO.Detector)
     return Any[
         () -> ["hit type" => _running(gui) ? "solving …" : _hits_type(BMO.hits(pd))],
-        () -> ["hit count" => _running(gui) ? "solving …" : string(BMO.hit_count(pd))],
+        () -> ["hit count" => _running(gui) ? "solving …" : string(length(pd))],
         () -> _view_rows(gui, pd)]
 end
 

@@ -61,7 +61,7 @@ const GUI = BeamletOpticsGUI
                 flat = GUI._catalog_object(entry, constant)
                 @test nameof(typeof(flat)) === nameof(typeof(obj))
                 code = GUI._catalog_code(entry, constant)
-                @test occursin("λ -> 1.6", code) && !occursin("SellmeierEquation", code)
+                @test occursin("ConstantRefractiveIndex(1.6)", code) && !occursin("SellmeierEquation", code)
                 @test nameof(typeof(Core.eval(@__MODULE__, Meta.parse(code)))) === nameof(typeof(obj))
             end
         end
@@ -183,7 +183,7 @@ const GUI = BeamletOpticsGUI
         @test [p.name for p in lens.params] == ["R1", "R2", "diameter", "glass"]
         @test _defaults(lens) == [50e-3, -50e-3, 25.4e-3, "N-BK7"]
         @test GUI._catalog_code(lens, _defaults(lens)) == "ThinLens(0.05, -0.05, 0.0254, $bk7)"
-        @test GUI._catalog_code(lens, [50e-3, -50e-3, 25.4e-3, 1.7]) == "ThinLens(0.05, -0.05, 0.0254, λ -> 1.7)"
+        @test GUI._catalog_code(lens, [50e-3, -50e-3, 25.4e-3, 1.7]) == "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.7))"
         # the glass disperses, a constant refractive index does not
         index(obj, λ) = BMO.refractive_index(obj, λ)
         for constructor in (ThinLens, GUI._surface_lens, CubeBeamsplitter, RightAnglePrism)
@@ -209,7 +209,7 @@ const GUI = BeamletOpticsGUI
         cube = _entry(entries, CubeBeamsplitter)
         @test GUI._catalog_code(cube, _defaults(cube)) == "CubeBeamsplitter(0.0254, $bk7; reflectance = 0.5)"
         prism = _entry(entries, RightAnglePrism)
-        @test GUI._catalog_code(prism, [10e-3, 10e-3, 1.7]) == "RightAnglePrism(0.01, 0.01, λ -> 1.7)"
+        @test GUI._catalog_code(prism, [10e-3, 10e-3, 1.7]) == "RightAnglePrism(0.01, 0.01, ConstantRefractiveIndex(1.7))"
         detector = _entry(entries, Detector)
         @test GUI._catalog_code(detector, [5e-3]) == "Detector(0.005)"
         # an angle in degrees as a keyword

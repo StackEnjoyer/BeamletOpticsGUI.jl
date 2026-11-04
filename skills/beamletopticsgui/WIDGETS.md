@@ -37,7 +37,7 @@ control on its page "Pose" (the rows of `card_rows`), and every card, also a pin
    `:flen` for the drawn length of rays that hit nothing).
 2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
-3. `value(gui, obj)` returns what the widget shows, in display units (mm, mrad, %); it must be cheap,
+3. `value(gui, obj)` returns what the widget shows, in display units (e.g. mm, %); it must be cheap,
    it runs after every move, solve and input.
 4. `on(gui, obj, v)` applies the input `v` to `obj` in SI units. `solve = true` if the input changes
    the optics (a running solve is cancelled first, the systems are solved again afterwards).
@@ -300,7 +300,7 @@ of values next to the box, like the laser lines of the sources) and one
 `CatalogGlass(name = "glass"; default = "N-BK7", n = 1.5, keyword)` per refractive index. The default
 of a number is in the units of the constructor (SI), the box shows `value / scale` with the `unit`. A
 glass is chosen in a menu of the glasses of `catalog_glasses()` and "constant" (a box for the number,
-default `n`); the constructor gets the glass as stored there (a `SellmeierEquation`) or `λ -> n`. A
+default `n`); the constructor gets the glass as stored there (a `SellmeierEquation`) or `ConstantRefractiveIndex(n)`. A
 parameter with `keyword = :name` is passed as that keyword argument, the others positionally in order.
 The constructor should be a function or type that a script can call by name, since `export_changes`
 prints the call. An entry with `source = true` is a source: its constructor is called as

@@ -145,7 +145,7 @@ const GUI = BeamletOpticsGUI
         newer = only(sys.objects)
         @test newer !== new
         @test gui.components.origin[newer].strings[4] == "1.7"
-        @test occursin("λ -> 1.7", gui.components.origin[newer].code)
+        @test occursin("ConstantRefractiveIndex(1.7)", gui.components.origin[newer].code)
         close(gui)
     end
 

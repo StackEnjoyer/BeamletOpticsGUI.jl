@@ -1,7 +1,8 @@
 module TestLiveComponents
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, render_parent, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, render_parent, rendered
 using Makie
 using LinearAlgebra: norm, normalize
 using Test
@@ -55,7 +56,7 @@ const GUI = BeamletOpticsGUI
         @test add_component!(gui, m; label = "m1") === m
         @test sys.objects == [m] && sys.objects[1] === m
         @test _rendered(gui, m)
-        @test _in(m, rendered.(render_children(gui.system_handles[1])))
+        @test _in(m, rendered.(AbstractTrees.children(gui.system_handles[1])))
         @test _in(m, gui.controls.movable)
         @test gui.controls.init_poses[m] == GUI._pose(m)
         @test GUI._label(gui, m) == "m1"
@@ -141,7 +142,7 @@ const GUI = BeamletOpticsGUI
         @test remove_component!(gui, m) === m
         @test sys.objects == [m2] && sys.objects[1] === m2
         @test !_rendered(gui, m)
-        @test !_in(m, rendered.(render_children(gui.system_handles[1])))
+        @test !_in(m, rendered.(AbstractTrees.children(gui.system_handles[1])))
         @test !_in_scene(gui, plots)
         @test !_in(m, gui.controls.movable)
         @test !haskey(gui.controls.init_poses, m)
@@ -229,7 +230,7 @@ const GUI = BeamletOpticsGUI
         # an extra is an object without a system: it becomes a member of one and is taken out again
         add_component!(gui, housing; system = sys, select = false)
         @test sys.objects == [m, housing] && !GUI._is_extra(gui, housing)
-        @test count(oh -> rendered(oh) === housing, render_children(gui.controls.h)) == 1
+        @test count(oh -> rendered(oh) === housing, AbstractTrees.children(gui.controls.h)) == 1
         remove_component!(gui, housing; system = sys)
         @test sys.objects == [m] && GUI._is_extra(gui, housing) && _rendered(gui, housing)
         @test occursin("no system", gui.status.text[])
@@ -261,7 +262,7 @@ const GUI = BeamletOpticsGUI
         # an object of the view becomes a member of a second system and stays one object
         add_component!(gui, c; system = sys2)
         @test _in(c, sys1.objects) && _in(c, sys2.objects)
-        @test count(oh -> rendered(oh) === c, render_children(gui.controls.h)) == 1
+        @test count(oh -> rendered(oh) === c, AbstractTrees.children(gui.controls.h)) == 1
         @test_throws ArgumentError add_component!(gui, c; system = sys2)
         @test_throws ArgumentError add_component!(gui, c)
         remove_component!(gui, c; system = sys1)
@@ -287,7 +288,7 @@ const GUI = BeamletOpticsGUI
         add_component!(gui, pd; label = "PD")
         tick!()
         # traced, with the page "Results" like the detectors the view started with
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         @test GUI._card_pages(pd) == (:pose, :results, :properties)
         # its card, the card of the selection, shows its view, which is computed for its hits
         @test _card(gui).page == :results
@@ -296,7 +297,7 @@ const GUI = BeamletOpticsGUI
         @test !state.stale && !isnothing(state.result)
         # the solves empty it like the other detectors
         GUI._resolve!(gui, nothing)
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
 
         # pinned and removed: its cards are unpinned and the views forget it
         GUI._toggle_pin!(gui, pd)
@@ -307,14 +308,14 @@ const GUI = BeamletOpticsGUI
         @test !GUI._is_pinned(gui, pd)
         @test !haskey(gui.detectors.states, pd)
         @test !any(((p, _),) -> p === pd, GUI._shown_views(gui))
-        @test BMO.hit_count(pd) == 0
+        @test length(pd) == 0
         # it is no longer traced
         GUI._resolve!(gui, nothing)
-        @test BMO.hit_count(pd) == 0 && !haskey(gui.detectors.states, pd)
+        @test length(pd) == 0 && !haskey(gui.detectors.states, pd)
         # and can be added again
         add_component!(gui, pd)
         tick!()
-        @test BMO.hit_count(pd) == 1
+        @test length(pd) == 1
         @test !GUI._detector_state(gui, pd).stale
         close(gui)
     end
@@ -407,8 +408,8 @@ const GUI = BeamletOpticsGUI
         @test n == 0 && occursin("# no changes", code)
 
         # a lens of the catalog: constructed, placed, added, then moved
-        lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
-        origin = (; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)", pose0 = GUI._pose(lens))
+        lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
+        origin = (; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))", pose0 = GUI._pose(lens))
         rotate3d!(lens, normalize([1.0, 2, 3]), 0.3)
         translate_to3d!(lens, [0.01, 0.1, -0.02])
         add_component!(gui, lens; origin, label = "lens")
@@ -418,7 +419,7 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard.left)
         code, n = GUI._export_code(gui)
         @test n == 1
-        @test occursin("# lens ($(nameof(typeof(lens)))), added\nlens = ThinLens(0.05, -0.05, 0.0254, 1.5)\n" *
+        @test occursin("# lens ($(nameof(typeof(lens)))), added\nlens = ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))\n" *
             "push!(system, lens)\nrotate3d!(lens, [", code)
         @test count("translate_to3d!(lens, ", code) == 1
         @test !occursin("# no changes", code)
@@ -430,12 +431,12 @@ const GUI = BeamletOpticsGUI
         @test _same_pose(copy, lens)
 
         # in the pose as constructed: no pose lines
-        lens2 = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+        lens2 = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         add_component!(gui, lens2; label = "lens2", select = false,
-            origin = (; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)", pose0 = GUI._pose(lens2)))
+            origin = (; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))", pose0 = GUI._pose(lens2)))
         code, n = GUI._export_code(gui)
         @test n == 2
-        @test occursin("lens2 = ThinLens(0.05, -0.05, 0.0254, 1.5)\npush!(system, lens2)\n", code)
+        @test occursin("lens2 = ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))\npush!(system, lens2)\n", code)
         @test !occursin("(lens2, [", code)
         objs = _run(code)
         @test length(objs) == 2 && _same_pose(objs[2], lens2)
@@ -463,8 +464,8 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a group with an origin, moved as a whole before and after it is added
-        _pair() = ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)])
-        pair_code = "ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, 1.5)])"
+        _pair() = ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))])
+        pair_code = "ObjectGroup([RoundPlanoMirror(25e-3, 5e-3), SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))])"
         sys = System()
         gui = _live_view(sys => _beam(); fine_step = 1e-3, fine_angle = 1e-2)
         g = _pair()

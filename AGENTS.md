@@ -29,9 +29,9 @@ describe it as available in docs or the skill.
   (via `live_render!(draw, ax, x)`), measurements, the view cube, panels, icons.
 - **The GUI prefers declared BMO API**: exported names, the render handle protocol
   (`AbstractObjectRenderHandle`, `AbstractSystemRenderHandle`, `AbstractBeamRenderHandle`,
-  `rendered`, `render_plots`, `render_children`, `render_parent`, `render_settings`,
+  `rendered`, `render_plots`, `AbstractTrees.children`, `render_parent`, `render_settings`,
   `pickable_plots`, `look_colors`, `push!`/`delete!` of system handles) and the `public` developer
-  API (`is_static`, `hit_count`, `wavelength`, `min_num_rays`, `ProgressSink`, `PROGRESS_SINK`,
+  API (`wavelength`, `min_num_rays`, `ProgressSink`, `PROGRESS_SINK`,
   `progress_state`, `is_cancelled`, the sampling types). It also uses some internal BMO names
   without underscore (the abstract types, the kinematic and shape traits, getters such as
   `intersection`, `hits` or `objects`); these may change with any BMO release, which the compat
@@ -162,8 +162,13 @@ describe it as available in docs or the skill.
 - GLMakie is the backend of the tests; on headless Linux run under `xvfb-run -a`.
 - Single test module: `julia --project=test -e 'using Pkg; Pkg.instantiate()'` once, then
   `julia --project=test test/<file>.jl`.
-- Full suite: `julia --project=test test/runtests.jl`.
-- New test files are `module TestXyz ... end` and are included in `test/runtests.jl`.
+- Full suite: `julia --project=test test/runtests.jl`. It runs the files of `test/` in worker
+  processes (ParallelTestRunner), up to 8 by default (`--jobs=N`), each file on its own and in any
+  order, and prints the duration of each. A failure does not stop the others.
+- Several modules: names select the files that start with them, e.g.
+  `julia --project=test test/runtests.jl TestLiveCard TestLiveSnap`; `--help` lists the options.
+- New test files are `module TestXyz ... end` in `test/`, which `test/runtests.jl` finds by itself.
+  A file does not depend on another one, and sets no global state that others rely on.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
 
@@ -207,6 +212,16 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   prints the compile time of each step; `benchmark/jit_trace_summary.jl` lists the methods of a
   trace. The scene `other` holds types that no workload has seen. A step of a new action that
   compiles more than a few 10 ms in the scene `same` is not covered by the workload.
+- **The tests on CI run without the workloads**: every change of the package would compile them
+  again, which took half of a job. The step "Switch off the precompile workloads" sets the
+  preference `precompile_workload` of the package, which the workload of the extension reads as
+  well. It is not a file of the repository, since `benchmark/` runs in `--project=test` and would
+  measure a build without them. The test step puts `test/` on `JULIA_LOAD_PATH`, such that the
+  preference also holds in the environment in which Aqua precompiles the package. The docs build
+  with the workloads, and `test/TestPrecompileSession.jl` runs the sessions.
+- **A test does not depend on the speed of the machine.** The job without coverage compiles each
+  first call during the tests, and workers share 4 CPUs: an `idle_delay` or a `trace_budget` that a
+  test relies on is long against that, or the test sets the time itself (`trace.last_change`).
 - The workload of the extension is built with GLMakie loaded after the package. Code that Julia
   cached is checked against the methods of the session when it is loaded, and in a session that
   loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as

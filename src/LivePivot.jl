@@ -36,7 +36,7 @@ function _pivot_reason(gui::LiveView, @nospecialize(sel))
     isnothing(sel) && return "select a group or several objects to set their pivot"
     name = _label(gui, sel)
     _has_pivot(sel) || return "$name has no pivot of its own, only groups and selections of several have one"
-    BMO.is_static(sel) && return "$name is static, its pivot can not be changed"
+    _is_static(sel) && return "$name is static, its pivot can not be changed"
     _is_movable(gui.controls, sel) || return "$name can not be moved, its pivot can not be changed"
     return nothing
 end

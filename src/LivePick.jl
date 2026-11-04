@@ -164,7 +164,7 @@ function _member_under_cursor(gui::LiveView)
         leaf, t = _ray_pick(ctrl, scene)
         origin, dir = _cursor_ray(scene)
         objects = Any[]
-        for oh in render_children(ctrl.h)
+        for oh in AbstractTrees.children(ctrl.h)
             x = rendered(oh)
             # the objects of a group are hit, not the group, which has no geometry
             (x isa BMO.ObjectOrGroup && !_is_hidden(ctrl, x)) || continue

@@ -28,7 +28,7 @@
         end
 
         # Select the mirror, then drag it and use the keys in both modes
-        mirror_plot = first(render_plots(first(render_children(h))))
+        mirror_plot = first(render_plots(first(AbstractTrees.children(h))))
         ctrl = kinematic_controls!(ax, h; throttle = false, pick = _ -> (mirror_plot, 0))
         scene = ax.scene
         events(scene).mouseposition[] = (10.0, 10.0)
@@ -50,7 +50,7 @@
         translate3d!(pd, [0, 0.1, 0])
         gui = live_view(System([RoundPlanoMirror(25e-3, 5e-3), pd]),
             GaussianBeamlet([0.0, 0.05, 0], [0.0, 1, 0], 1e-6, 0.5e-3);
-            detectors = [pd => (:intensity, (; n = 16))], progress_delay = Inf)
+            detectors = [pd => (:intensity, (; num_points = 16))], progress_delay = Inf)
         close(gui)
 
         # The app layout: toolbar, object tree (selection, eye, expander), slider and dock

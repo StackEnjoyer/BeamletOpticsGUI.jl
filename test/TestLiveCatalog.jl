@@ -367,7 +367,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test filter(b -> b in w.boxes, gui.custom.boxes) == w.boxes
         @test length(gui.custom.boxes) == (layout == :app ? 7 : 4)
         w.boxes[4].displayed_string[] = "1.7"
-        @test code() == "ThinLens(0.05, -0.05, 0.012, λ -> 1.7)"
+        @test code() == "ThinLens(0.05, -0.05, 0.012, ConstantRefractiveIndex(1.7))"
         GUI._place_catalog!(gui, GUI._catalog_entry(widget), GUI._catalog_strings(widget))
         @test BMO.refractive_index(gui.components.placement.obj, 1e-6) == 1.7
         GUI._end_placement!(gui)
@@ -403,7 +403,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
             @test GUI._catalog_strings(w.widget) == ["1.38", "Own glass"]
             close(gui)
         finally
-            filter!(g -> g !== own, catalog_glasses())
+            # by name: the vector holds a pair of another type than `own`
+            filter!(g -> first(g) != first(own), catalog_glasses())
         end
     end
 

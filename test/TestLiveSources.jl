@@ -1,7 +1,8 @@
 module TestLiveSources
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using LinearAlgebra: norm, normalize, dot, cross
 using Test
@@ -248,7 +249,7 @@ const GUI = BeamletOpticsGUI
         first_beam = _beam()
         gui = _live_view(sys => first_beam; layout)
         nplots = length(gui.ax.scene.plots)
-        nchildren = length(render_children(gui.controls.h))
+        nchildren = length(AbstractTrees.children(gui.controls.h))
         @test _nhits(pd) == 1
 
         src = _beam()
@@ -256,9 +257,13 @@ const GUI = BeamletOpticsGUI
         @test _nhits(pd) == 2
         GUI._toggle_pin!(gui, src)
         @test GUI._is_pinned(gui, src)
+        # a reference of the frame "local" of the pose cards, which the removal forgets
+        GUI._posecard_reference!(gui, src)
+        @test haskey(gui.pose_display.references, src)
         @test remove_component!(gui, src) === src
+        @test !haskey(gui.pose_display.references, src)
         @test !_paired(gui, src) && length(gui.pairs) == length(gui.beam_handles) == 1
-        @test isnothing(_handle(gui, src)) && length(render_children(gui.controls.h)) == nchildren
+        @test isnothing(_handle(gui, src)) && length(AbstractTrees.children(gui.controls.h)) == nchildren
         @test !_in(src, gui.controls.movable) && !haskey(gui.controls.init_poses, src)
         # all of its plots are gone: the beam, the marker, the card
         @test length(gui.ax.scene.plots) == nplots
@@ -423,10 +428,13 @@ const GUI = BeamletOpticsGUI
             @test last(gui.pairs).first === sys
             @test isnothing(gui.trace.error)
             @test startswith(gui.components.origin[src].code, entry.code_name * "([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], ")
-            # it moves in all directions: the axes of the controls span the space, also for a beam
-            # group, whose local x-axis points along the rotation axis
-            y, x, v = GUI._control_axes(gui.controls, src)
-            @test abs(dot(cross(y, x), v)) ≈ 1 atol = 1e-9
+            # it moves in all directions: the axes of the controls span the space in both frames,
+            # also for a beam group, whose local x-axis points along z
+            for frame in (:local, :global)
+                GUI._set_frame!(gui.controls, frame)
+                y, x, z = GUI._control_axes(gui.controls, src)
+                @test abs(dot(cross(y, x), z)) ≈ 1 atol = 1e-9
+            end
         end
         code, n = GUI._export_code(gui)
         @test n == length(sources)

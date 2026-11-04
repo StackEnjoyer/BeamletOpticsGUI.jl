@@ -4,26 +4,110 @@ Declarations of the cards, see `card_rows` and `card_actions`
 
 # Labels of the pose rows, see `_POSE_FIELDS`, the units are given at the end of the rows, and the
 # names of their boxes
-const _CARD_POSE_LABELS = ("x", "y", "z", "rx", "ry", "rv")
-const _CARD_POSE_NAMES = (:x, :y, :z, :rx, :ry, :rv)
+const _CARD_POSE_LABELS = ("x", "y", "z", "rx", "ry", "rz")
+const _CARD_POSE_NAMES = (:x, :y, :z, :rx, :ry, :rz)
 
-# Label of the pose box `k`, of the same width in both rows, such that the boxes line up
+# Width of the labels of the pose boxes, e.g. "Δrx" in the frame "local", and of the pose boxes,
+# e.g. -6869.709000 mm of a telescope, longer values scroll while typing [px]
+const _POSE_LABEL_WIDTH = 24
+const _POSE_BOX_WIDTH = 90
+
+# Label of the pose box `k`, of the same width in all rows, such that the boxes line up
 # (the positions in the text color of the card, the rotations in the colors of the axes, see
-# `_AxisColor`)
-_pose_label(k::Int) = CardWidget(Label; text = _CARD_POSE_LABELS[k], width = 18, halign = :right,
-    _pose_label_color(k)...)
+# `_AxisColor`), e.g. of the pivot of a group
+_pose_label(k::Int) = CardWidget(Label; text = _CARD_POSE_LABELS[k], width = _POSE_LABEL_WIDTH,
+    halign = :right, _pose_label_color(k)...)
 _pose_label_color(k::Int) = k <= 3 ? (;) : (; color = _AxisColor(k - 3))
 
-# Pose box `k`: the position [mm] (wide enough for e.g. -6869.709 of a telescope, longer values
-# scroll while typing) or an empty rotation box, see `_apply_pose_input!`
-_pose_box(k::Int) = CardWidget(Textbox; name = _CARD_POSE_NAMES[k], placeholder = k <= 3 ? " " : "0",
-    width = 76, value = (gui, obj) -> k <= 3 ? string(round(1e3 * position(obj)[k], digits = 6)) : "",
-    on = (gui, obj, s) -> _apply_pose_input!(gui, obj, k, s))
+# The label of the pose box `k` on the pose card, with "Δ" in the frame "local", see `pose_card_rows`
+_posecard_label(k::Int) = CardWidget(Label; name = Symbol(:pose_label_, _CARD_POSE_NAMES[k]),
+    text = _CARD_POSE_LABELS[k], width = _POSE_LABEL_WIDTH, halign = :right, _pose_label_color(k)...,
+    value = (gui, _) -> (_posecard_local(gui) ? "Δ" : "") * _CARD_POSE_LABELS[k])
 
-function pose_card_rows(@nospecialize(obj))
-    cells(ks, unit) = (Iterators.flatten((_pose_label(k), _pose_box(k)) for k in ks)..., unit)
-    return (CardRow(cells(1:3, "mm")...), CardRow(cells(4:6, "mrad")...))
+# Pose box `k`: the value of the position or the Euler angle in the frame of the controls, see
+# `_posecard_text`, and its input, see `_apply_pose_input!`
+_pose_box(k::Int) = CardWidget(Textbox; name = _CARD_POSE_NAMES[k], placeholder = " ",
+    width = _POSE_BOX_WIDTH, value = function (gui, obj)
+        @nospecialize obj
+        return _posecard_text(gui, obj, k)
+    end, on = _PoseInput(k))
+
+# The button above the column of the lengths (`kind = :length`) or the angles (`:angle`) of the
+# pose card, as wide as their boxes: shows their unit, a click the next one, see `_next_pose_unit!`
+_pose_unit_button(kind::Symbol) = CardWidget(Button; name = Symbol(kind, :_unit), label = " ",
+    width = _POSE_BOX_WIDTH, value = (gui, _) -> _posecard_unit(gui, kind === :length ? 1 : 4).label,
+    on = (gui, _, _) -> _next_pose_unit!(gui, kind))
+
+# An empty cell as wide as the labels of the pose boxes, such that the unit buttons stand above the
+# boxes: the rows of a card are laid out each on its own, cells of fixed widths line up
+_pose_spacer() = CardWidget(Label; text = "", width = _POSE_LABEL_WIDTH)
+
+"""
+    _CardTheme()
+
+The color tokens of the theme of the live view in a declaration, e.g. the `theme` of a
+`_PoseSwitch`, which each host of the card resolves to its own, see `_card_value`.
+"""
+struct _CardTheme end
+_card_value(c::_AbstractCard, ::_CardTheme) = c.theme
+
+"""
+    _PoseSwitch(pos; options, theme, attributes...)
+
+A switch of the pose card at the grid position `pos` (see `pose_card_rows`), a widget of the card
+(see [`CardWidget`](@ref)): a segmented control of the `options` (`key => label`) in the color tokens
+`theme`, which shows the selected option like the page bar of the card, see `_Segmented`. A click on
+an option is its input, `card_input`; `card_show!` shows the option of a key.
+"""
+struct _PoseSwitch
+    segmented::_Segmented
+    # only this constructor, such that `_PoseSwitch(pos; ...)` is the one of a position
+    _PoseSwitch(s::_Segmented) = new(s)
 end
+_PoseSwitch(pos; options, theme::NamedTuple, attributes...) =
+    _PoseSwitch(_Segmented(pos, Pair{Symbol, String}[o for o in options]; theme, attributes...))
+
+card_input(s::_PoseSwitch) = s.segmented.selected
+card_show!(s::_PoseSwitch, v) = (_update!(s.segmented.selected, Symbol(v)); nothing)
+
+# Deleted with the widgets of its card, see `_clear_content!`
+function Base.delete!(s::_PoseSwitch)
+    foreach(delete!, s.segmented.buttons)
+    content = _GLB.gridcontent(s.segmented.grid)
+    isnothing(content) || _GLB.remove_from_gridlayout!(content)
+    return nothing
+end
+
+# A switch `name` of the pose card with the `options`, the selected one `value(gui)`, see `_PoseSwitch`
+_pose_switch(name::Symbol, options, value, on) = CardWidget(_PoseSwitch; name, options,
+    theme = _CardTheme(), tellwidth = true, value = (gui, _) -> value(gui), on = (gui, _, v) -> on(gui, v))
+
+# The row of the switches of the pose card: the frame of the controls, the order of the Euler
+# angles, and "zero", which makes the current pose the reference of the frame "local"
+_pose_switch_row() = CardRow(
+    _pose_switch(:frame, (:global => "global", :local => "local"), gui -> gui.controls.frame[],
+        (gui, v) -> _set_frame!(gui.controls, v)),
+    _pose_switch(:order, (:xyz => "xyz", :zyx => "zyx"), gui -> gui.pose_display.order, _set_pose_order!),
+    CardWidget(Button; name = :zero, label = "zero", on = function (gui, obj, _)
+        @nospecialize obj
+        return _zero_pose!(gui, obj)
+    end))
+
+# Two columns, the lengths and the angles under their unit buttons, one row per axis (x beside rx),
+# such that the card fits the sidebar of the app layout; then the switches
+function pose_card_rows(@nospecialize(obj))
+    head = CardRow(_pose_spacer(), _pose_unit_button(:length), _pose_spacer(), _pose_unit_button(:angle))
+    axis(i) = CardRow(_posecard_label(i), _pose_box(i), _posecard_label(i + 3), _pose_box(i + 3))
+    return (head, axis(1), axis(2), axis(3), _pose_switch_row())
+end
+
+# The rotation boxes of a selection of several objects: empty, an input turns the selection by the
+# typed angle about the global axis x, y or z, see `_set_pose_value!`: the unit button, then the
+# three boxes in one row, narrower than those of the pose card since they hold only a typed angle
+_turn_box(k::Int) = CardWidget(Textbox; name = _CARD_POSE_NAMES[k], placeholder = "0",
+    width = 56, value = (gui, _) -> "", on = _PoseInput(k))
+_turn_rows() = (CardRow(CardWidget(Label; text = "turn by", halign = :left), _pose_unit_button(:angle)),
+    CardRow(Iterators.flatten((_pose_label(k), _turn_box(k)) for k in 4:6)...))
 
 # A row of a label `label` (`width` pixels wide) and a text of the object, `text(gui, obj)`,
 # refreshed after moves and solves
@@ -61,9 +145,11 @@ card_rows(@nospecialize(src::Union{BMO.CollimatedSource, BMO.PointSource})) = (p
 card_rows(@nospecialize(g::BMO.GaussianBeamlet)) = (pose_card_rows(g)..., _text_row("λ", :gauss, _gauss_text),
     beam_card_rows(g)...)
 # Systems: see `LiveSystemCard.jl`
-# A selection of several objects (see `_MultiSelection`): a row per object with its name, a click
-# on which selects that object alone, see `_member_name_row`
-card_rows(s::_MultiSelection) = Tuple(_member_name_row(i, obj) for (i, obj) in enumerate(s.objects))
+# A selection of several objects (see `_MultiSelection`): the boxes that turn it about the global
+# axes (see `_turn_rows`), then a row per object with its name, a click on which selects that object
+# alone, see `_member_name_row`
+card_rows(s::_MultiSelection) =
+    (_turn_rows()..., Tuple(_member_name_row(i, obj) for (i, obj) in enumerate(s.objects))...)
 
 """
     _member_name_row(i, obj)
@@ -251,7 +337,7 @@ _signal_metric(m::NamedTuple, pd) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW"
                                     haskey(m, :n) ? "N = $(m.n)" : _hits_text(pd)
 _signal_metric(_, pd) = _hits_text(pd)
 
-_hits_text(pd) = (n = BMO.hit_count(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit" : "$n hits")
+_hits_text(pd) = (n = length(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit" : "$n hits")
 
 _source_text(gui::LiveView, src) = "$(_wavelength_string(BMO.wavelength(src))), $(_size_text(src))"
 # the size of a collimated source per sampling: the width of a line (`UniformLineSource`), else the diameter
@@ -344,7 +430,7 @@ end
 """
     _set_num_rays!(gui, src, n)
 
-Regenerates the rays of the source `src` of the `gui` with `n` rays (see `BeamletOptics.set_num_rays!`),
+Regenerates the rays of the source `src` of the `gui` with `n` rays (see `BeamletOptics.num_rays!`),
 a change of the source (a running solve is cancelled first, see `_change!`), and solves again or
 marks the beams as outdated like after a move, via the `on_change` of the controls. The slider
 snaps to its steps, hence `n` may be the current count.
@@ -352,7 +438,7 @@ snaps to its steps, hence `n` may be the current count.
 function _set_num_rays!(gui::LiveView, src, n)
     n = round(Int, n)
     length(src) == n && return nothing
-    _change!(() -> set_num_rays!(src, n), gui.controls, src)
+    _change!(() -> num_rays!(src, n), gui.controls, src)
     gui.controls.on_change(src)
     return nothing
 end

@@ -1,7 +1,8 @@
 module TestLiveLinks
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
-using BeamletOptics: render_children, render_plots, rendered
+using BeamletOpticsGUI: AbstractTrees
+using BeamletOptics: render_plots, rendered
 using Makie
 using Test
 
@@ -19,7 +20,7 @@ const GUI = BeamletOpticsGUI
 
     # A system at `x`: a beam along +y, a lens and a mirror, which reflects the beam along +x
     function _setup(x)
-        lens = ThinLens(100e-3, -100e-3, 25e-3, 1.5)
+        lens = ThinLens(100e-3, -100e-3, 25e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [x, 0.05, 0])
         mirror = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(mirror, deg2rad(45))
@@ -76,7 +77,9 @@ const GUI = BeamletOpticsGUI
         gui, a, b = _views(; layout, theme = :dark, snap = :pose, table = (; pitch = 0.05))
         GUI._set_beam_color!(gui, b.beam, :green)
         gui.labels[b.mirror] = "fold"
+        GUI._set_frame!(gui.controls, :local)
         new = open_system(gui, b.sys; display = false)
+        @test new.controls.frame[] == :local
         @test new isa typeof(gui)
         @test GUI._systems(new) == [b.sys] && only(GUI._systems(new)) === b.sys
         @test length(new.pairs) == 1 && _paired(new, b.sys, b.beam)

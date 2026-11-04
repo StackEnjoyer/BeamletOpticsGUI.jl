@@ -243,7 +243,7 @@ function _start_placement!(gui::LiveView, @nospecialize(obj::Union{BMO.ObjectOrG
         gui.status.text[] = "spectator mode, press v to place components"
         return nothing
     end
-    if BMO.is_static(obj)
+    if _is_static(obj)
         add_component!(gui, obj; system, origin, kwargs...)
         return nothing
     end

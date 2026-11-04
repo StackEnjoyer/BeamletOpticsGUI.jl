@@ -380,6 +380,25 @@ Base.@kwdef mutable struct _CardState
 end
 
 """
+    _PoseDisplay
+
+How the pose cards of a `LiveView` show the poses, one setting per view (see `pose_card_rows`):
+the `order` of the Euler angles (`:xyz` or `:zyx`, see `_euler_matrix`), the `units` of the
+lengths and the angles per frame of the controls (`:global` and `:local`, see `_set_frame!`), keys
+of `_LENGTH_UNITS` and `_ANGLE_UNITS`, and the `references` of the frame "local": the pose
+(position, orientation) of each object from which its card shows the offsets, made when the object
+is first shown in "local" and set by "zero", see `_posecard_reference!`. A removed object loses its
+reference, see `_drop!`.
+"""
+Base.@kwdef mutable struct _PoseDisplay
+    order::Symbol = :xyz
+    units::Dict{Symbol, Tuple{Symbol, Symbol}} =
+        Dict{Symbol, Tuple{Symbol, Symbol}}(:global => (:mm, :rad), :local => (:um, :mrad))
+    references::IdDict{Any, Tuple{Vector{Float64}, Matrix{Float64}}} =
+        IdDict{Any, Tuple{Vector{Float64}, Matrix{Float64}}}()
+end
+
+"""
     _ObjectState
 
 The objects of a `LiveView` as the selection shows them: the movable objects of the component
@@ -688,7 +707,7 @@ remove the controls and the view cube.
 
 The state of the shared logic is grouped by concern: `trace` (`_TraceState`), `clip`
 (`_ClipState`), `measure` (`_MeasureState`), `camera` (`_CameraState`), `cards` (`_CardState`),
-`objects` (`_ObjectState`), `beams` (`_BeamState`), `detectors` (`_DetectorStates`) and `components`
+`pose_display` (`_PoseDisplay`), `objects` (`_ObjectState`), `beams` (`_BeamState`), `detectors` (`_DetectorStates`) and `components`
 (`_ComponentState`); the widgets that the layout creates are in `widgets`
 (`_LayoutWidgets`). The export button prints the changed poses as Julia code, see
 [`export_changes`](@ref), and copies them to the clipboard if `export_clipboard` is `true`. Every
@@ -729,6 +748,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     measure::_MeasureState = _MeasureState()
     camera::_CameraState
     cards::_CardState
+    # how the pose cards show the poses: order, units, references, see `pose_card_rows`
+    pose_display::_PoseDisplay = _PoseDisplay()
     objects::_ObjectState
     beams::_BeamState = _BeamState()
     detectors::_DetectorStates = _DetectorStates()
@@ -1102,7 +1123,7 @@ plot), a drag with the right button pans, and Ctrl + click, a double click or "f
 view. A spot diagram only changes its limits. A field is computed again for the visible window on its full
 grid once the mouse rests for `idle_delay`, not per step of the wheel; "fit" returns to the
 automatic window around the beam, or to `x_min`, `x_max`, `z_min` and `z_max` if they are given.
-One field grows with `n²` times the number of hits; the computation uses all threads, start
+One field grows with `num_points²` times the number of hits; the computation uses all threads, start
 Julia with `julia -t auto`. Moving a detector empties it (BeamletOptics 0.14): with auto trace off,
 its view reads "no hits" until the next solve, with auto trace on the solve after the move updates it.
 
@@ -1114,10 +1135,10 @@ cards, a thumbnail on a grid of at most 48 points; a view that is shown later is
 the hits of the last solve. Pin the card of a detector to keep its view, or list the detector in
 `detectors` to start with its card pinned.
 
-The options of a view in the `kwargs` of `detectors`, which are not keywords of its sampling
-`BeamletOptics.RegularGrid`:
+The options of a view in the `kwargs` of `detectors`; all other entries are keywords of its
+sampling `BeamletOptics.RegularGrid`:
 
-- `n = 100`: number of points per axis of a field
+- `num_points = 100`: number of points per axis of a field, the `num_points` of its `RegularGrid`
 - `colorscale = :linear`: `:log` starts with "log" on
 - `colorrange = nothing`: fixed color range of a field, in `log10` units for `:log`
 - `colorbar = true`: `false` starts with "bar" off
@@ -1510,7 +1531,7 @@ takes the mode over. Only while it is on, the compile time of Julia is measured.
   the start (also for `[]`). A vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the
   cards of these detectors at the start and sets the options of their views: `kind` is `:auto`,
   `:spot`, `:psf` or `:intensity`; `kwargs` holds the options of the view, e.g.
-  `(; n = 200, colorscale = :log, expanded = false)`, all other entries are keywords of the sampling
+  `(; num_points = 200, colorscale = :log, expanded = false)`, all other entries are keywords of the sampling
   `BeamletOptics.RegularGrid` of the field, e.g. `(; x_min = -1e-3, x_max = 1e-3, ...)`, see "Detector view". A listed detector that is not
   part of the systems throws an `ArgumentError`.
 - `on_change = (gui, obj) -> nothing`: called after each full solve with the moved object, or
@@ -1690,7 +1711,7 @@ function live_view(
     marker_size = beam_state.marker_size[] = 0.08 * extent
     if movable_sources
         for src in unique(objectid, last.(ps))
-            BMO.is_static(src) || push!(markers,
+            _is_static(src) || push!(markers,
                 _live_render_source!(ax, src; size = marker_size, strokecolor = _marker_stroke(lay)))
         end
     end
@@ -1698,9 +1719,9 @@ function live_view(
     # hence one handle of the objects of all systems, the source markers and the extras; the clip
     # planes are added later
     # an object of several systems has one handle
-    members = unique(objectid, AbstractObjectRenderHandle[c for h in system_handles for c in render_children(h)])
+    members = unique(objectid, AbstractObjectRenderHandle[c for h in system_handles for c in AbstractTrees.children(h)])
     combined = LiveSystemHandle(rendered(pool), AbstractObjectRenderHandle[
-            members..., markers..., render_children(extras_handle)...],
+            members..., markers..., AbstractTrees.children(extras_handle)...],
         AbstractSystemRenderHandle[pool])
     # Colors of the render look that the theme of the layout replaces, e.g. of dark detectors
     _theme_render!(lay, combined)
@@ -1766,6 +1787,8 @@ function live_view(
     # The marker of the pivot of a group or a selection of several, before the cards, which cover it
     _connect_pivot!(gui)
     _connect_cards!(gui)
+    # The pose cards show the pose in the frame of the controls, see `pose_card_rows`
+    push!(controls.listeners, on(_ -> _update_inspector!(gui; force = true), controls.frame))
     # The selection card of groups, see `_browse!`
     _connect_browse!(gui)
     push!(controls.listeners, on(v -> v == gui.clip.beams || _set_clip_beams!(gui, v),

@@ -9,7 +9,7 @@ Throws an `ArgumentError` unless `obj` is an object of the live view `gui` that 
 not static (see `kinematic_trait_of`). Static objects can not be selected in the window either.
 """
 function _scriptable(gui::LiveView, @nospecialize(obj))
-    BMO.is_static(obj) && throw(ArgumentError("$(typeof(obj)) is static and can not be moved"))
+    _is_static(obj) && throw(ArgumentError("$(typeof(obj)) is static and can not be moved"))
     haskey(gui.controls.init_poses, obj) ||
         throw(ArgumentError("$(typeof(obj)) is not an object of the live view"))
     return nothing
@@ -47,7 +47,7 @@ undo history (`Ctrl+Z` in the window). Unlike `translate3d!(obj, offset)`, which
 object only, the window is not told about it.
 
 The `constraints` of `obj` apply as for the mouse: the offset is projected onto its allowed move
-axes. `obj` can be any object, group, source or extra of the view, selected or not. Throws an `ArgumentError` if `obj` is static, is not
+axes, its local axes. `obj` can be any object, group, source or extra of the view, selected or not. Throws an `ArgumentError` if `obj` is static, is not
 part of the view, or if all its move axes are locked.
 
 ```julia
@@ -59,13 +59,9 @@ wait_solve(gui)
 function translate3d!(gui::LiveView, @nospecialize(obj), offset::AbstractVector)
     _scriptable(gui, obj)
     ctrl = gui.controls
-    allowed = _allowed_axes(ctrl, obj, :move)
-    isempty(allowed) && throw(ArgumentError("all move axes of $(typeof(obj)) are locked"))
-    Δ = Vector{Float64}(offset)
-    if length(allowed) < length(_GIZMO_AXES)
-        A = hcat(_axis_vectors(ctrl, obj, allowed)...)
-        Δ = A * (pinv(A) * Δ)
-    end
+    isempty(_allowed_axes(ctrl, obj, :move)) &&
+        throw(ArgumentError("all move axes of $(typeof(obj)) are locked"))
+    Δ = _project_constraints(ctrl, obj, offset)
     _gesture!(() -> translate3d!(obj, Δ), gui, obj)
 end
 
@@ -81,9 +77,9 @@ Rotates the object `obj` of the [`live_view`](@ref) window `gui` about its posit
 gesture of the user, see [`translate3d!(::BeamletOpticsGUI.LiveView, ::Any, ::AbstractVector)`](@ref)
 for what follows and for the errors.
 
-The `constraints` of `obj` apply as for the mouse: if some rotation axes are locked, `axis` must be
-parallel to an allowed one (the local x or y axis of `obj` or the rotation axis of the controls),
-otherwise an `ArgumentError` is thrown. For `R`, this is its rotation axis.
+The `constraints` of `obj` apply as for the mouse: if some rotation axes are locked, `axis` must lie
+in the span of the allowed ones (the local axes `:x`, `:y`, `:z` of `obj`), otherwise an
+`ArgumentError` is thrown. For `R`, this is its rotation axis.
 """
 function rotate3d!(gui::LiveView, @nospecialize(obj), axis::AbstractVector, θ::Real)
     _scriptable_rotation(gui, obj, axis)
@@ -125,18 +121,15 @@ end
     _scriptable_rotation(gui, obj, axis)
 
 Throws an `ArgumentError` unless `obj` can be rotated about `axis` from code: see `_scriptable`,
-and with locked rotation axes, `axis` must be parallel to one that is allowed.
+and with locked rotation axes, `axis` must lie in the span of the allowed local axes of `obj`, see
+`_within_constraints`.
 """
 function _scriptable_rotation(gui::LiveView, @nospecialize(obj), axis::AbstractVector)
     _scriptable(gui, obj)
     ctrl = gui.controls
-    allowed = _allowed_axes(ctrl, obj, :rotate)
-    length(allowed) < length(_GIZMO_AXES) || return nothing
-    n = normalize(Vector{Float64}(axis))
-    free = _axis_vectors(ctrl, obj, allowed)
-    any(a -> norm(cross(a, n)) < 1e-6, free) ||
-        throw(ArgumentError("the rotation of $(typeof(obj)) is constrained to the axes " *
-                            "$(join(allowed, ", ")), not about $(axis)"))
+    _within_constraints(ctrl, obj, :rotate, normalize(Vector{Float64}(axis))) ||
+        throw(ArgumentError("the rotation of $(typeof(obj)) is constrained to the local axes " *
+                            "$(join(_allowed_axes(ctrl, obj, :rotate), ", ")), not about $(axis)"))
     return nothing
 end
 

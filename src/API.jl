@@ -40,7 +40,7 @@ only for their rendered beams (`preview = true`), the full group once the moveme
 Main keyword arguments: `detectors` (`:auto` or `[]`: every detector has its page "Results", no
 card is pinned at start; a vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the cards of
 these detectors at start, with `kind` one of `:auto`, `:spot`, `:psf` and `:intensity` and the
-options `n`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
+options `num_points`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects without a system that are
@@ -265,7 +265,7 @@ _card_cell(w::CardWidget) = w
 Rows of the card of `obj` in [`live_view`](@ref), a tuple of [`CardRow`](@ref)s, chosen by multiple
 dispatch. By default, the rows of the pose, see [`pose_card_rows`](@ref); beams, beam groups and
 sources add the rows of [`beam_card_rows`](@ref) (toggles and the drawn length of the final rays), a source whose rays can be regenerated (see
-`BeamletOptics.set_num_rays!`) a slider for the number of rays, a `Detector`
+`num_rays!`) a slider for the number of rays, a `Detector`
 its signal (the power or the number of rays of its detector view while a view is shown, else the
 number of hits), mechanics (`NonInteractableObject`, e.g. a
 `NonInteractableObject(loadpath)` of an STL file, and `IntersectableObject`) a slider for their opacity. A system (`AbstractSystem`)
@@ -293,9 +293,35 @@ function card_rows end
 """
     pose_card_rows(obj)
 
-The rows of the pose of `obj` on its card in [`live_view`](@ref), see [`card_rows`](@ref): the
-position `x`, `y`, `z` [mm], where `Enter` moves `obj` to the typed coordinate, and the rotations
-`rx`, `ry`, `rv` [mrad] about the red, green and blue axis of the controls.
+The rows of the pose of `obj` on its card in [`live_view`](@ref), see [`card_rows`](@ref),
+shown in the frame of the controls (`frame` of [`kinematic_controls!`](@ref), `:global` or
+`:local`), in two columns, the lengths and the angles:
+
+1. a button with the unit of the lengths above the first column, one with the unit of the angles
+   above the second;
+2. one row per axis: the position `x` beside the Euler angle `rx`, then `y` and `ry`, `z` and `rz`
+   (the labels of the angles in the colors of the red, green and blue gizmo axes);
+3. the switches "global | local" (the frame of the controls, like the keys `Ctrl+M`) and "xyz | zyx" (the
+   order of the angles), and the button "zero".
+
+In "global", the boxes show the position of `obj` and the angles of its orientation about the
+fixed global axes: in the order "xyz", `R = R_z(rz) · R_y(ry) · R_x(rx)`, in "zyx",
+`R = R_x(rx) · R_y(ry) · R_z(rz)`, with `rx` and `rz` in (−π, π] and `ry` in [−π/2, π/2]. In
+"local", the labels start with "Δ" and the boxes show the offsets from a reference pose of `obj`
+(`Pref`, `Rref`), in the frame of the reference: `Δp = Rrefᵀ (P − Pref)` and the angles of
+`Rrefᵀ R`. The reference is the pose of `obj` when it is first shown in "local"; "zero" makes the
+current pose the reference, such that all boxes show 0 ("zero" acts only in "local").
+
+A box takes a bare number in the unit shown above its column; `Enter` changes only that
+coordinate or angle, the others are kept, as one step of the undo history. An input that the
+`constraints` of the controls do not allow, or that is not a number, is rejected with a message in
+the status line. While a box has the focus, `↑` and `↓` change its value by the keyboard step of
+the controls (`fine_step` or `fine_angle`), with `Shift` by ten steps.
+
+The unit buttons cycle mm → µm → nm → m and rad → mrad → µrad → ° → arcmin → arcsec; the order
+switch and the units change only the display, the object does not move. Order and units are one
+setting of the window, the units one per frame: mm and rad in "global", µm and mrad in "local" at
+the start.
 """
 function pose_card_rows end
 
@@ -412,7 +438,7 @@ member of `sys2` as well, like "+" of that system in the window. It stays one ob
 pose, one card and one set of plots, and the beams of all its systems are traced through it, e.g.
 a mirror that the transmitter and the receiver of a lidar share.
 
-`code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, 1.5)"`,
+`code` is the constructor call of `obj` as Julia code, e.g. `"ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))"`,
 which constructs `obj` in the pose that it has when it is added. [`export_script`](@ref) then writes
 this call followed by the change of the pose of `obj` since it was added, like for a component of
 the catalog; without `code` the constructor is not known and the script marks where to construct
@@ -451,7 +477,7 @@ constructor call of the `source` in its current pose, as for a component.
 ```julia
 gui = live_view(System())
 add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); label = "laser")
-lens = ThinLens(50e-3, -50e-3, 25.4e-3, 1.5)
+lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens, [0, 0.1, 0])
 add_component!(gui, lens; label = "lens")
 ```
@@ -598,8 +624,7 @@ is chosen at first, or `"constant"`; a name that [`catalog_glasses`](@ref) does 
 `ArgumentError`. `name` and `keyword` as for [`CatalogParam`](@ref).
 
 The constructor gets the glass as it is stored in [`catalog_glasses`](@ref), e.g. a
-`SellmeierEquation`, and for "constant" a function `λ -> n`, which every constructor of
-BeamletOptics with a refractive index takes.
+`SellmeierEquation`, and for "constant" a `ConstantRefractiveIndex(n)`.
 """
 struct CatalogGlass
     name::String
@@ -686,15 +711,15 @@ end
     catalog_glasses() -> Vector{Pair{String, Any}}
 
 The glasses that the component catalog of [`live_view`](@ref) offers for the entries with a
-[`CatalogGlass`](@ref), as `name => n`, where `n(λ)` is the refractive index at the wavelength `λ`
-[m] as BeamletOptics takes it, e.g. a `SellmeierEquation`. The built-in glasses are common optical
+[`CatalogGlass`](@ref), as `name => n`, where `n` is a `BeamletOptics.AbstractRefractiveIndex`, e.g.
+a `SellmeierEquation`. The built-in glasses are common optical
 glasses and crystals with the dispersion formulas of the database refractiveindex.info: N-BK7,
 fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2, N-BAF10 and N-LAK22.
 
 A package adds its glasses to the returned vector; views opened afterwards show them.
-[`export_changes`](@ref) prints a `SellmeierEquation` and a `DiscreteRefractiveIndex` as their
-constructor call and any other glass via `repr`, hence an own glass should be one of the two or a
-named function.
+[`export_changes`](@ref) prints a `SellmeierEquation`, a `DiscreteRefractiveIndex` and a
+`ConstantRefractiveIndex` as their constructor call and any other glass via `repr`, hence an own
+glass should be one of the three or an own subtype whose `repr` is valid code.
 
 ```julia
 push!(catalog_glasses(), "My glass" => SellmeierEquation(1.04, 0.23, 1.01, 0.006, 0.02, 103.6))

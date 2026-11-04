@@ -51,6 +51,10 @@ const GUI = BeamletOpticsGUI
         @test [e.color for e in entries[2:4]] == ["green", "red", "blue"]
         @test entries[2].text == "along the green arrow"
         @test any(e -> e.text == "keyboard step, now 10 nm", entries)
+        # the key of the frame names the current one
+        @test entries[5].keys == ["Ctrl", "M"] && entries[5].combo && entries[5].text == "global axes, switch to local"
+        @test GUI._help_sections(:move, 10e-9, 10e-6; frame = :local)[2].second[5].text ==
+              "local axes, switch to global"
         # the axes of the keys in the rotate mode, like the gizmo
         rotate = GUI._help_sections(:rotate, 10e-9, 50e-6)
         @test rotate[2].first == "Rotate the selection"
@@ -104,7 +108,7 @@ const GUI = BeamletOpticsGUI
         # the card
         ctrl = GUI._ctrl_cap()
         @test Set(_caps(sections)) == Set(["Esc", "Enter", "G", "M", "↑", "↓", "←", "→", "PgUp", "PgDn", "+",
-            "−", "Shift", "Bksp", ctrl, "Z", "Y", "V", "1", "P", "Del", "C", "T", "Ins", "Tab", "S", "O", "R"])
+            "−", "Shift", "Bksp", ctrl, "Ctrl", "Z", "Y", "V", "1", "P", "Del", "C", "T", "Ins", "Tab", "S", "O", "R"])
         # no key is listed twice; Esc is the key of the groups, a trace is cancelled by a button
         keys = [(e.keys, e.combo) for (_, entries) in sections for e in entries if !(e.keys[1] isa Pair)]
         @test allunique(keys)
@@ -189,6 +193,15 @@ const GUI = BeamletOpticsGUI
         help.step_buttons[2].clicks[] += 1
         help.step_buttons[2].clicks[] += 1
         @test ctrl.fine_step ≈ 10e-9 && "keyboard step, now 10 nm" in _texts(help)
+        # the frame: the chip and the card follow Ctrl+M, the button acts like it
+        @test help.frame_button.label[] == "Global" && "global axes, switch to local" in _texts(help)
+        push!(ev(gui).keyboardstate, Keyboard.left_control)
+        _key!(gui, Keyboard.m)
+        delete!(ev(gui).keyboardstate, Keyboard.left_control)
+        @test ctrl.frame[] == :local && help.frame_button.label[] == "Local" && ctrl.mode[] == :move
+        @test "local axes, switch to global" in _texts(help)
+        help.frame_button.clicks[] += 1
+        @test ctrl.frame[] == :global && help.frame_button.label[] == "Global"
         # only the texts changed, the widgets of the card are kept
         @test help.blocks == blocks
 

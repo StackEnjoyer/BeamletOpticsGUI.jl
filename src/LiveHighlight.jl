@@ -253,7 +253,7 @@ function _update_system_highlight!(gui::LiveView)
             hl.opacity = opacity
         end
     end
-    for oh in render_children(gui.controls.h)
+    for oh in AbstractTrees.children(gui.controls.h)
         x = rendered(oh)
         _pick_candidate(x) || continue
         for p in _pickable_plots(oh)

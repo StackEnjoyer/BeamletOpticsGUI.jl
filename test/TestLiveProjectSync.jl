@@ -8,7 +8,7 @@ using Test
 const GUI = BeamletOpticsGUI
 const const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
 
-const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)"
+const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))"
 const START = """
     @component L1 = $LENS pos = (0.0, 0.1, 0.0)
     @component M1 = RoundPlanoMirror(0.0254, 0.006) pos = (0.0, 0.2, 0.0)
@@ -112,18 +112,18 @@ end
 
     @testset "own code" begin
         own = joinpath(dir, "src", "Bench.jl")
-        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, Inf, 0.004, 0.0254, 1.5)\nend\n")
+        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, Inf, 0.004, 0.0254, ConstantRefractiveIndex(1.5))\nend\n")
         edit!(text -> text * "@component Q1 = flat_lens(0.1) pos = (0.0, 0.5, 0.0)\n", dir)
         @test tick!(gui) === :applied
         q1 = obj(gui, :Q1)
         @test !isnothing(q1)
-        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, -r, 0.004, 0.0254, 1.5)\nend\n")
+        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, -r, 0.004, 0.0254, ConstantRefractiveIndex(1.5))\nend\n")
         @test tick!(gui) === :applied
         @test obj(gui, :Q1) !== q1 && BeamletOptics.position(obj(gui, :Q1)) == [0.0, 0.5, 0.0]
         # The merge reads the times of the own code itself, not those of the last look (which the
         # watcher reads in the background, possibly before the change)
         q1 = obj(gui, :Q1)
-        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, -2r, 0.004, 0.0254, 1.5)\nend\n")
+        write(own, "module Bench\nusing BeamletOptics\nexport flat_lens\nflat_lens(r) = SphericalLens(r, -2r, 0.004, 0.0254, ConstantRefractiveIndex(1.5))\nend\n")
         edit!(text -> text * "\n", dir)
         @test GUI._sync!(gui; animate = false) === :applied
         @test obj(gui, :Q1) !== q1
@@ -266,7 +266,7 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
     end
 
     @testset "a new object is written once, with one uid" begin
-        lens = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)
+        lens = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))
         add_component!(gui, lens; system = only(GUI._systems(gui)), select = false, code = LENS)
         translate3d!(gui, lens, [0.0, 0.6, 0.0])
         @test autosave!(gui) === :saved
@@ -383,7 +383,7 @@ end
         gui, dir = opened()
         GUI._autosave!(gui)
         s1 = only(GUI._systems(gui))
-        mine = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)
+        mine = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))
         add_component!(gui, mine; system = s1, select = false, code = LENS)
         translate3d!(gui, mine, [0.0, 0.45, 0.0])
         edit!(text -> line!(l -> replace(l, "D1]" => "D1, T1]"),
@@ -422,7 +422,7 @@ end
         s1, x1 = only(GUI._systems(gui)), obj(gui, :X1)
         # Not saved yet: X1 removed and a new lens in S1, while the files put X1 into S1 (merged)
         remove_component!(gui, x1)
-        mine = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)
+        mine = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))
         add_component!(gui, mine; system = s1, select = false, code = LENS)
         edit!(text -> line!(l -> replace(l, "D1]" => "D1, X1]"), text, "S1"), dir)
         @test tick!(gui) === :applied

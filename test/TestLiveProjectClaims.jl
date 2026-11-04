@@ -11,7 +11,7 @@ const TOML = GUI.TOML  # the TOML of the package, not a dependency of the tests
 const const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
 
 const START = """
-    @component L1 = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5) pos = (0.0, 0.1, 0.0)
+    @component L1 = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5)) pos = (0.0, 0.1, 0.0)
     @component M1 = RoundPlanoMirror(0.0254, 0.006) pos = (0.0, 0.2, 0.0)
     @component M2 = RoundPlanoMirror(0.0254, 0.006) pos = (0.05, 0.2, 0.0)
     @source B1 = Beam([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0e-6)

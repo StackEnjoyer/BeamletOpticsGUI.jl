@@ -180,7 +180,7 @@ function _attach!(gui::LiveView, src::_Source, sys::Union{Nothing, BMO.AbstractS
     end
     # The marker selects and moves the source, and removes it again: also in a view without
     # `movable_sources`
-    if !BMO.is_static(src)
+    if !_is_static(src)
         oh = _live_render_source!(gui.ax, src; size = gui.beams.marker_size[],
             strokecolor = _marker_stroke(gui.layout))
         push!(ctrl.h, oh)
@@ -309,6 +309,8 @@ function _detach!(gui::LiveView, src::_Source)
     delete!(gui.beams.kwargs, src)
     delete!(gui.beams.overlay_kwargs, src)
     delete!(gui.beams.pol_view, src)
+    # the reference of the frame "local" of the pose cards, see `_PoseDisplay`
+    delete!(gui.pose_display.references, src)
     # A source the view started with is listed by `export_changes` as removed, under its name
     added = _index(comp.added, src)
     _release!(gui, src, Base.IdSet{Any}((src,)); keep_name = isnothing(added))

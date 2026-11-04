@@ -20,7 +20,7 @@ const GUI = BeamletOpticsGUI
     # A lens, a group of the script of two mirrors (its pivot at the origin, as BeamletOptics starts
     # it) and a detector
     function _fixture(; layout = :compact, kwargs...)
-        lens = ThinLens(100e-3, -100e-3, 25e-3, 1.5)
+        lens = ThinLens(100e-3, -100e-3, 25e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         m1, m2 = _mirror([0, 0.1, 0]), _mirror([0.1, 0.1, 0])
         arm = ObjectGroup([m1, m2])
@@ -273,7 +273,7 @@ const GUI = BeamletOpticsGUI
         m2 = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m2, deg2rad(45))
         translate3d!(m2, [0.1, 0.1, 0])
-        lens = ThinLens(100e-3, -100e-3, 25e-3, 1.5)
+        lens = ThinLens(100e-3, -100e-3, 25e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.05, 0])
         pd = Detector(5e-3)
         translate3d!(pd, [0.1, 0.2, 0])

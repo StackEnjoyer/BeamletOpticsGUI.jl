@@ -57,7 +57,7 @@ const GUI = BeamletOpticsGUI
     _move!(gui, obj, v) = GUI._change!(() -> translate3d!(obj, v), gui.controls, obj)
     _turn!(gui, obj, axis, angle) = GUI._change!(() -> rotate3d!(obj, normalize(axis), angle), gui.controls, obj)
 
-    LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5)"
+    LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))"
     MIRROR = "RoundPlanoMirror(25e-3, 5e-3)"
 
     # An object from its `code`, with its origin (see `_ComponentState`), then moved

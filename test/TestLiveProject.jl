@@ -234,7 +234,7 @@ const GUI = BeamletOpticsGUI
         close(t.gui)
         # an agent changed the code, but not the inputs of the catalog: not editable
         e = p.entries[1]
-        code = :(ThinLens(0.1, -0.06, 0.003, 1.5))
+        code = :(ThinLens(0.1, -0.06, 0.003, ConstantRefractiveIndex(1.5)))
         p.entries[1] = BMOP.Entry(e.kind, e.name, code, e.object; e.pos, e.rot, e.pose0, e.meta)
         p2 = _reload(p)
         gui = GUI._open_from(p2)
@@ -570,7 +570,7 @@ const GUI = BeamletOpticsGUI
         srcs = filter(startswith("@source"), lines)
         systems = filter(startswith("@system"), lines)
         # an agent reorders the lines and adds a lens and a mirror without uid
-        agent = ["@component L5 = SphericalLens(0.05, -0.05, 0.005, 0.0254, 1.5) pos = (0.0, 0.3, 0.0) label = \"agent lens\"",
+        agent = ["@component L5 = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5)) pos = (0.0, 0.3, 0.0) label = \"agent lens\"",
                  "@component M9 = RoundPlanoMirror(0.0254, 0.005)"]
         order = [lines[1]; reverse(comps); agent; reverse(srcs); reverse(systems)]
         write(file, join(order, '\n') * '\n')
@@ -611,7 +611,7 @@ const GUI = BeamletOpticsGUI
         name = BMOP.project_name(dir)
         own = joinpath(dir, "src", name * ".jl")
         write(own, "module $name\nusing BeamletOptics\nexport extra_lens\n" *
-                   "extra_lens(f) = SphericalLens(f, -f, 0.004, 0.0254, 1.5)\nend\n")
+                   "extra_lens(f) = SphericalLens(f, -f, 0.004, 0.0254, ConstantRefractiveIndex(1.5))\nend\n")
         write(joinpath(dir, "system.jl"), read(joinpath(dir, "system.jl"), String) *
                                            "@component L9 = extra_lens(0.2) pos = (0.0, 0.3, 0.0)\n")
         gui = open_project(dir; display = false, const_kw...)

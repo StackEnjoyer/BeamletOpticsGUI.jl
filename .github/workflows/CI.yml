@@ -28,6 +28,10 @@ jobs:
           - ubuntu-latest
         arch:
           - x64
+        # Only of this repository: with `user`, Makie and GLMakie would compile again in each process
+        include:
+          - version: '1'
+            coverage: --code-coverage=@${{ github.workspace }}
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
@@ -48,12 +52,28 @@ jobs:
         run: |
           using Pkg
           Pkg.instantiate()
-      - name: Run tests with xvfb
+      # Tests do not need the first actions to be fast, and with coverage they drop that code anyway.
+      # Not a file of the repository: `benchmark/` runs in the same environment and measures them.
+      # The docs still build with the workloads, and test/TestPrecompileSession.jl runs the sessions
+      - name: Switch off the precompile workloads
+        run: printf '[BeamletOpticsGUI]\nprecompile_workload = false\n' > test/LocalPreferences.toml
+      # A step of its own, such that the log shows its time and the workers do not wait for it
+      - name: Precompile with xvfb
         run: |
           xvfb-run -a --server-args="-screen 0 1280x1024x24" \
-            julia --project=test --color=yes --code-coverage=user test/runtests.jl
+            julia --project=test --color=yes -e "using BeamletOptics, BeamletOpticsGUI, GLMakie"
+      # The test environment on the load path, such that the preference also holds in the environment
+      # in which Aqua precompiles the package (persistent tasks), which otherwise runs the workload
+      - name: Run tests with xvfb
+        env:
+          JULIA_LOAD_PATH: "@:${{ github.workspace }}/test:@stdlib"
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            julia --project=test --color=yes ${{ matrix.coverage }} test/runtests.jl --jobs=4
       - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.coverage
       - uses: codecov/codecov-action@v7
+        if: matrix.coverage
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
