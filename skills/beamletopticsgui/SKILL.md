@@ -123,11 +123,12 @@ When this Skill is active:
   of one change of the files glide together; a group moved as a whole glides as one. The table
   fits the setup again shortly after every change (a drag, a key step, undo, a removal, a change of the files). How to work on the files
   is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
-  People and agents run a project in the package environment of their person and machine,
-  `julia --project=.envs/<person>@<machine>` in its folder (`personal_environment!` of
-  BeamletOpticsProjects makes it), never with the folder itself as Julia's project. When the
-  packages of the project change (`[deps]`, `[compat]` or `[sources]` of its `Project.toml`), the
-  window says so; it keeps its loaded packages until it is started again.
+  A project is a folder with a `system.jl`, not a Julia environment: open it from any environment
+  that has BeamletOptics, BeamletOpticsProjects and the GUI (`open_project(path)`, or `Ctrl+O` in
+  any window, e.g. of `live_view(System())`). `Ctrl+N` or the tool "New project" makes an empty project in a new or
+  empty folder (the dialog of "Save as") and opens it in place of the window, after writing what
+  is pending of the old project; from code: `BeamletOpticsProjects.new_project(dir)`, then
+  `open_project(dir)`.
 - A group or a selection of several rotates about its pivot, a dot (dashed line to the gizmo) while
   it is selected: the mean of the objects for one made in the window or a selection, the pivot of the
   script for a group of the script (BeamletOptics starts it at the origin). The row "pivot" of the

@@ -3,8 +3,7 @@ The watcher of the files of a project of a shown window: it looks at the files i
 (see `_take_look!`), merges a change of them once they settled, or at the latest every
 `_MERGE_EVERY` seconds while they keep changing (`_check_files!`, `_sync!`), and calls the autosave
 and the presence; see `LiveProjectSync.jl`. Notifications of the file system (`_FileNotes`) start a
-look at once; the polling stays as a safety net. The looks also mark the `Project.toml`, whose
-changed packages the window notices, see `LiveProjectPackages.jl`
+look at once; the polling stays as a safety net.
 =#
 
 import FileWatching
@@ -55,11 +54,10 @@ _src_marks(marks) = filter(m -> m[1] != "system.jl", marks)
 
 """
     _files_look(dir; stamp = true, except = nothing, known = String[], presence = nothing,
-        cache = nothing) -> (; dir, marks, packages, stamp, presences, known, present, presence_written)
+        cache = nothing) -> (; dir, marks, stamp, presences, known, present, presence_written)
 
 What one look of the watcher reads of the project folder `dir`: the times and sizes of its files
-(`_file_marks`) and of its `Project.toml` (`_package_marks`), the stamp of their contents if
-`stamp` (else `nothing`), the presence files of the
+(`_file_marks`), the stamp of their contents if `stamp` (else `nothing`), the presence files of the
 others without the id `except` (`BeamletOpticsProjects.read_presences`, with the `cache` of the
 files read before) and of the ids `known` those whose presence file is still there (`present`),
 also if it does not parse. Writes the own presence file first if `presence` (see
@@ -71,12 +69,11 @@ function _files_look(dir::AbstractString; stamp::Bool = true, except = nothing, 
         presence = nothing, cache = nothing)
     presence_written = isnothing(presence) || _write_presence_file(dir, presence)
     marks = _file_marks(dir)
-    packages = _package_marks(dir)
     st = stamp ? BMOP.project_stamp(dir) : nothing
     presences = BMOP.read_presences(dir; except, cache)
     known = Set{String}(known)
     present = Set{String}(id for id in known if isfile(_presence_file(dir, id)))
-    return (; dir = String(dir), marks, packages, stamp = st, presences, known, present, presence_written)
+    return (; dir = String(dir), marks, stamp = st, presences, known, present, presence_written)
 end
 
 """
@@ -244,8 +241,6 @@ or of a script) is not watched and writes neither; the functions can be called i
 """
 function _start_watching!(gui::LiveView; notes::Bool = true, poll::Real = _POLL_WITH_MONITOR)
     s = gui.sync
-    # The packages of the project as the window starts with them, see `LiveProjectPackages.jl`
-    _package_state(gui)
     (isnothing(s.timer) && !s.closed && !isnothing(gui.project) && _shown(gui)) || return nothing
     _connect_session!(gui)
     # The presence file is written by the looks of the watcher, see `_presence_due!`
@@ -387,9 +382,6 @@ function _check_files!(gui::LiveView; now::Real = time(), look = nothing)
     dir = gui.project
     (isnothing(dir) || isnothing(s.base)) && return :none
     isnothing(look) && (look = _files_look(dir))
-    # A change of the packages of the project is noticed apart from the setup
-    packages = get(look, :packages, nothing)
-    isnothing(packages) || _check_packages!(gui, packages; now)
     marks = look.marks
     if marks != s.marks
         s.marks = marks

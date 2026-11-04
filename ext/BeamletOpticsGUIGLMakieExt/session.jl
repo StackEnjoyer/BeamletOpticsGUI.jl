@@ -1148,9 +1148,12 @@ Opens a new project in the empty folder `dir`, with a repository of its own, in 
 and works on it like a person with an agent: drags the lens, which the autosave writes to the
 files; changes the files like an agent, which the window merges and glides; `Ctrl+S` with the card
 of the version, closed by a typed message and `Enter`, by `Esc`, by the button "Cancel" and by the
-button "Save version"; another participant (a presence file) works on the mirror, shown with its
-name, and leaves; `Ctrl+G` groups the lens and the mirror, which the autosave writes as a line, and
-an agent ungroups them in the file. The steps call the autosave and the watcher themselves, with times that do
+button "Save version"; another participant (a presence file) with another version of BeamletOptics
+works on the mirror, shown with its name, and leaves; `Ctrl+G` groups the lens and the mirror, which
+the autosave writes as a line, and an agent ungroups them in the file; a gesture on an object that
+another participant claims; a conflict decided on its card; a project saved with newer versions,
+whose card of the versions is closed by "Cancel"; `Ctrl+N` in another window, which is not shown,
+makes a new project, whose window the step draws and closes. The steps call the autosave and the watcher themselves, with times that do
 not depend on how long a step takes: the watcher of the window never starts, and the step of the
 agent waits until the mirror has glided. Returns the live view and its screen, which the caller
 closes.
@@ -1248,8 +1251,13 @@ function _project_session(step; dir = mktempdir())
             selected = "$(gui.sync.ids[mirror][2])"
             selected_id = "$(gui.sync.ids[mirror][1])"
             written = ""
+
+            [versions]
+            BeamletOptics = "0.0.1"
             """)
         GUI._check_presence!(gui)
+        _check(startswith(gui.status.text[], "Anna: BeamletOptics 0.0.1, you: "),
+            "the other version of the other participant is not noted")
         frame!()
         _check(!isempty(gui.sync.presence), "the mirror of the other participant is not shown")
         rm(file)
@@ -1334,6 +1342,53 @@ function _project_session(step; dir = mktempdir())
         _click!(gui, _rect_center(GUI._card_widget(card, :conflict_mine_1)))
         frame!()
         _check(isempty(gui.sync.conflicts), "\"mine\" did not end the conflict")
+    end
+    step("project: open a project saved with newer versions, Cancel on the card") do
+        newer = mktempdir()
+        close(GUI.BMOP.LibGit2.init(newer))
+        GUI.BMOP.new_project(newer; name = "Newer")
+        marker = GUI.BMOP.project_marker(newer)
+        data = GUI.TOML.parsefile(marker)
+        data["versions"]["BeamletOptics"] = "99.0.0"
+        open(io -> GUI.TOML.print(io, data), marker, "w")
+        GUI._open_checked!(gui, newer)
+        frame!()
+        card = GUI._versions_card(gui)
+        _check(!isnothing(card), "the card of the versions is not shown")
+        _click!(gui, _rect_center(GUI._card_widget(card, :versions_cancel)))
+        frame!()
+        _check(isnothing(GUI._versions_card(gui)), "Cancel did not close the card of the versions")
+        _check(!gui.sync.closed, "Cancel opened the project")
+    end
+    step("project: Ctrl+N, a new project") do
+        parent = mktempdir()
+        # The versions go into a repository of their own, see the step "project: open"
+        close(GUI.BMOP.LibGit2.init(parent))
+        target = joinpath(parent, "New")
+        dialog = GUI._SAVE_DIALOG[]
+        GUI._SAVE_DIALOG[] = _ -> target
+        # A window that is not shown, whose new window is not shown either: a shown one would open a
+        # new window on the screen, here the invisible one shows it
+        old = live_view(BMO.System())
+        GUI._DIALOG_TASK[] = nothing
+        new = try
+            _key!(old, Keyboard.n, Keyboard.left_control)
+            task = GUI._DIALOG_TASK[]
+            isnothing(task) ? nothing : fetch(task)
+        finally
+            GUI._SAVE_DIALOG[] = dialog
+            old.sync.closed || close(old)
+        end
+        _check(new isa GUI.LiveView && new.project == target && old.sync.closed,
+            "Ctrl+N did not open the new project")
+        s = _screen()
+        try
+            display(s, new.fig)
+            _frame!(new, s)
+        finally
+            close(new)
+            close(s)
+        end
     end
     return gui, screen
 end

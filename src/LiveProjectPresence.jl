@@ -12,7 +12,8 @@ nothing; of a selection of several all of them in `selected_uids` and `selected_
 in `selected` and `selected_id`; the readable id counts when the uid is missing or unknown, an agent
 writes only that),
 of a window the keys of the lines that its person claims (`claimed`, see `LiveProjectClaims.jl`),
-optionally `doing` (a few words, shown under the name) and the stamp of the files after its last
+the versions of BeamletOptics, BeamletOpticsProjects and the GUI (`versions`, see
+`LiveProjectVersions.jl`), optionally `doing` (a few words, shown under the name) and the stamp of the files after its last
 write (`written`; of a window: its last save, never files it merged). A window writes its file when it saves, when its selection changes and every
 `_BEAT` seconds. It reads the files of the others at every look of the watcher: an other is there
 while its `beat` changed within its `ttl` seconds of the clock of this machine, so the clocks of
@@ -78,7 +79,7 @@ end
 
 Writes the presence file of the person of the `gui` (see `_person`, `_presence_file`) atomically:
 its name and host, `kind = "person"`, `ttl = _ALIVE`, the `beat` one higher than in the file, the
-selected object and `written`, the stamp of the files after the last save of the window (see
+selected object, the versions of this session (see `_own_versions`) and `written`, the stamp of the files after the last save of the window (see
 `_own_written`). Sets `gui.sync.beat_at` to `now`. Does nothing without a project. An error of
 writing is no error: the file is written again with the next look. The watcher writes it in the
 background instead, see `_presence_due!`.
@@ -105,7 +106,7 @@ function _presence_data(gui::LiveView)
     uid, id = isempty(ids) ? ("", "") : (first(uids), first(ids))
     data = Dict{String, Any}("name" => me.name, "host" => me.host, "kind" => "person", "ttl" => _ALIVE,
         "selected" => uid, "selected_id" => id, "selected_uids" => uids, "selected_ids" => ids,
-        "claimed" => _claimed_keys(gui))
+        "claimed" => _claimed_keys(gui), "versions" => _own_versions())
     own = get(_OWN_SAVE, gui, nothing)
     return (; id = me.id, data, own = !isnothing(own) && own == gui.sync.stamp ? own : nothing)
 end
@@ -204,7 +205,8 @@ updates `gui.sync.others`, people and agents alike. An other whose `beat` change
 one whose file is gone is dropped. One whose `beat` did not change for its `ttl` seconds stays in
 `others` but is not shown, so that the file of a window that crashed or of an agent that did not
 delete it does not come back. A merge whose status line says "agent" gets the name of the other
-that published its stamp meanwhile (see `_name_writer!`). The claims go one step on (see
+that published its stamp meanwhile (see `_name_writer!`). Another participant with other versions
+is noted once in the status line (see `_versions_notice!`). The claims go one step on (see
 `_claims_tick!`: the own ones are written and those of the others read in the background). Then
 the boxes and names of the
 selections of the others are drawn again if what they show changed (see `_draw_presence!`). Does
@@ -233,6 +235,7 @@ function _check_presence!(gui::LiveView; now::Real = time(), look = nothing)
         id in look.known && !(id in look.present) && delete!(s.others, id)
     end
     _name_writer!(gui, now)
+    _versions_notice!(gui, look, now)
     _claims_tick!(gui; now)
     _draw_presence!(gui, now)
     return nothing

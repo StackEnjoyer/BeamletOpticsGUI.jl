@@ -212,7 +212,7 @@ function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
     else
         (_busy(gui) || !isempty(s.gliding)) && return :paused
     end
-    # The name of the files that the view agrees with, not read from `Project.toml` at every look
+    # The name of the files that the view agrees with, not read from the `.bmo` file at every look
     parts = _project_parts(gui, dir; name = s.base.name)
     # The person's version of the objects that the files keep is lost otherwise
     force && s.closed && !isempty(_kept_back(gui, parts.project)) && _write_backup!(gui, parts.project)

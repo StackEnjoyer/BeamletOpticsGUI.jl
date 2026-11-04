@@ -15,6 +15,7 @@ const _VIEW_TOML = "view.toml"
 const _PROJECT_HELP = _HelpSection["Edit" => [
     _HelpEntry([_ctrl_cap(), "S"], "save a version"; combo = true),
     _HelpEntry([_ctrl_cap(), "Shift", "S"], "save as a new project with a name"; combo = true),
+    _HelpEntry([_ctrl_cap(), "N"], "new project with a name"; combo = true),
     _HelpEntry([_ctrl_cap(), "O"], "open a project (.bmo)"; combo = true),
     _HelpEntry([_ctrl_cap(), "R"], "reload the project from its files"; combo = true)]]
 
@@ -33,7 +34,11 @@ cancelled. The native dialog of NativeFileDialog, replaced by the tests.
 """
 const _OPEN_DIALOG = Ref{Any}(dir -> NativeFileDialog.pick_file(dir; filterlist = _BMO_FILTER))
 
-# The task of the last dialog of `Ctrl+S` or `Ctrl+O`, which runs after the key callback returned
+# The icon of the tool "New project": `create_new_folder` of Material Symbols, see `LiveIcons.jl`
+const _NEW_PROJECT_ICON = _svg_path("M560-320h80v-80h80v-80h-80v-80h-80v80h-80v80h80v80ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z")
+
+# The task of the last dialog of `Ctrl+S`, `Ctrl+N` or `Ctrl+O`, which runs after the key callback
+# returned
 const _DIALOG_TASK = Ref{Any}(nothing)
 
 #=
@@ -307,14 +312,11 @@ ignored.
 """
 _collect_project(gui::LiveView, dir::AbstractString) = _project_parts(gui, dir).project
 
-"""The packages whose versions a new project pins: BeamletOptics, the projects, the GUI, GLMakie."""
-function _project_packages()
-    mods = Module[BMO, BMOP, @__MODULE__]
-    glmakie = Base.PkgId(Base.UUID("e9467ef8-e4e7-5192-8a1a-b1aee30e663a"), "GLMakie")
-    m = get(Base.loaded_modules, glmakie, nothing)
-    isnothing(m) || push!(mods, m)
-    return mods
-end
+"""The packages whose versions a project records: BeamletOptics, the projects and the GUI."""
+_project_packages() = Module[BMO, BMOP, @__MODULE__]
+
+"""Whether the folder `dir` is a project: it has a `system.jl`, see `BeamletOpticsProjects`."""
+_is_project(dir::AbstractString) = isfile(joinpath(dir, "system.jl"))
 
 """
     _apply_project_names!(gui, project; skip = String[], window = nothing)
@@ -649,9 +651,14 @@ to them (an agent or the window of another person), notes the selection and the 
 of the person in `.bmo/session-<person>.md` and shows where the others work (see
 `LiveProjectPresence.jl`). `Ctrl+S` saves a version of the project (a git commit with a message), see
 [`save_project`](@ref). The components and sources from the catalog can be edited and copied.
-`Ctrl+O` or the tool "Open" of a window opens a project chosen in a dialog and closes the window.
+`Ctrl+O` or the tool "Open" of a window opens a project chosen in a dialog and closes the window;
+`Ctrl+N` or the tool "New project" makes an empty project and opens it the same way.
+Warns when the project was saved with newer or incompatible versions of the packages, or its own
+code needs a package that is not installed (see `BeamletOpticsProjects.check_versions`); the
+dialog of "Open" asks instead, see `_open_checked!`.
 """
 function open_project(path::AbstractString; display::Bool = true, kwargs...)
+    _warn_versions(path)
     project = BMOP.load_project(path)
     gui = _open_from(project; kwargs...)
     if display
@@ -687,8 +694,8 @@ _set_screen_title!(@nospecialize(screen), ::String) = nothing
 Saves the setup of the live view `gui` as the project in the folder `dir` and returns the path of
 its `system.jl`: each system with its members and sources, the objects and sources without a
 system, each with its constructor call and its pose, see `BeamletOpticsProjects`. A folder that is
-not a project yet becomes one, with the versions of BeamletOptics, BeamletOpticsProjects,
-BeamletOpticsGUI and GLMakie. How the view looks is written to `.bmo/view-<person>.toml` (per person; `view.toml` only as the default of new people). An object whose
+not a project yet (it has no `system.jl`) becomes one, with the versions of BeamletOptics,
+BeamletOpticsProjects and BeamletOpticsGUI. How the view looks is written to `.bmo/view-<person>.toml` (per person; `view.toml` only as the default of new people). An object whose
 constructor is not known, e.g. one that the script gave to `live_view`, is not saved: a warning and
 the status line name it. Each object, source and system keeps its readable id (e.g. `L1`) and its
 machine id (uid) across saves; a new one gets the next free id of its kind and a new uid, and its
@@ -720,7 +727,7 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     from = gui.project
     save_as = !isnothing(from) && dir != from
     # A new folder of "save as" gets the own code and the module of the project
-    name = save_as && !isfile(joinpath(dir, "Project.toml")) ? BMOP.project_name(from) :
+    name = save_as && !_is_project(dir) ? BMOP.project_name(from) :
            BMOP.project_name(dir)
     # The objects that glide to a pose of the files land first: the save writes that pose
     _finish_glides!(gui)
@@ -736,7 +743,7 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
         # Before checking whether the folder is a project: the copy must not miss its module
         BMOP.copy_code(from, dir)
     end
-    new = !isfile(joinpath(dir, "Project.toml"))
+    new = !_is_project(dir)
     # Refuses a line that another participant claimed (see `BeamletOpticsProjects.claim!`)
     path = _without_looks(gui) do
         save_project(project; packages = _project_packages(), force, by = _person().id)
@@ -906,25 +913,31 @@ function _ask_path(gui::LiveView, dialog::Ref)
 end
 
 """
-    _save_target(path) -> (; dir, message)
+    _save_target(path; new = false) -> (; dir, message)
 
 The folder that "Save as" saves to, from the `path` of its dialog, a folder and a typed name
 (`.bmo` or not): the folder of the project whose project file the user picked (the dialog asked
 whether to overwrite it), else a new or empty folder with the name next to it. A `dir` of `nothing`
 and the reason in `message` for any other path, e.g. a folder of that name that exists already.
+For "New project" (`new`, see `_new_key!`) only a new or empty folder: a picked project file is
+refused too.
 """
-function _save_target(path::AbstractString)
+function _save_target(path::AbstractString; new::Bool = false)
     path = abspath(path)
     file = basename(path)
     name = endswith(lowercase(file), BMOP.EXTENSION) ? file[1:(end - length(BMOP.EXTENSION))] : file
     parent = dirname(path)
-    isempty(strip(name)) && return (; dir = nothing, message = "project not saved: no name given")
-    isfile(joinpath(parent, name * BMOP.EXTENSION)) && isfile(joinpath(parent, "Project.toml")) &&
-        return (; dir = parent, message = "")
+    refused = new ? "project not created" : "project not saved"
+    isempty(strip(name)) && return (; dir = nothing, message = "$refused: no name given")
+    # The project file of a project, whose folder is the project; a new project does not overwrite it
+    if isfile(joinpath(parent, name * BMOP.EXTENSION))
+        new || return (; dir = parent, message = "")
+        return (; dir = nothing, message = "$refused: \"$parent\" is a project already")
+    end
     dir = joinpath(parent, name)
     (!ispath(dir) || (isdir(dir) && isempty(readdir(dir)))) && return (; dir, message = "")
-    return (; dir = nothing,
-        message = "project not saved: \"$dir\" exists already; to overwrite a project, pick its .bmo file")
+    hint = new ? "" : "; to overwrite a project, pick its .bmo file"
+    return (; dir = nothing, message = "$refused: \"$dir\" exists already$hint")
 end
 
 # The status line of a save while another participant writes the files, see `_save_to!`
@@ -949,6 +962,69 @@ function _save_as_key!(gui::LiveView)
             gui.status.text[] = _BUSY_TEXT
         end
         return nothing
+    end
+    return nothing
+end
+
+"""
+`Ctrl+N` and the tool "New project" of the `gui`: the dialog of "Save as" asks for a folder and a
+name, and an empty project is made in a new or empty folder of that name there (see `_save_target`
+with `new`, `BeamletOpticsProjects.new_project`, which saves its first version). What the autosave
+has not written yet of the project of the `gui` is written first, without waiting (see
+`_autosave!` with `force`); nothing is made while a conflict waits for a decision on its card, or
+when that write fails or another participant writes the files. Then the new project opens in a new
+window with the layout and the theme of the `gui` (if the `gui` is shown), and the `gui` and its
+window close, like `_open_key!`. A cancelled dialog does nothing; a folder that exists and is not
+empty, the project file of a project and an error keep the `gui`, the reason in the status line.
+The task of the dialog (`_DIALOG_TASK`) returns the view of the new project, else `nothing`.
+From code: `BeamletOpticsProjects.new_project(dir)`, then [`open_project`](@ref).
+"""
+function _new_key!(gui::LiveView)
+    _run_later() do
+        path = _ask_path(gui, _SAVE_DIALOG)
+        isnothing(path) && return nothing
+        target = _save_target(path; new = true)
+        dir = target.dir
+        if isnothing(dir)
+            gui.status.text[] = target.message
+            return nothing
+        end
+        # The changes of the person in the old project are not lost
+        if !isnothing(gui.project)
+            _conflict_open!(gui) && return nothing
+            r = _autosave!(gui; force = true)
+            if r === :busy
+                gui.status.text[] = "project not created: the files of the project are busy " *
+                                    "(another participant writes them, or the drive), try again"
+                return nothing
+            end
+            r === :failed && return nothing
+            # A merge of the write found a conflict: decided on its card first
+            _conflict_open!(gui) && return nothing
+        end
+        try
+            BMOP.new_project(dir; packages = _project_packages())
+            # The skills of BeamletOptics and BeamletOpticsProjects come with the scaffold, the
+            # one of the GUI here, as for a project of "Save as" (see `save_project`)
+            Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+                install_agent_skill(joinpath(dir, ".claude", "skills"))
+            end
+        catch e
+            e isa InterruptException && rethrow()
+            @error "new_project failed" exception = (e, catch_backtrace())
+            gui.status.text[] = "project not created: $(_message_line(e))"
+            return nothing
+        end
+        new = try
+            open_project(dir; display = _shown(gui), _window_kwargs(gui)...)
+        catch e
+            e isa InterruptException && rethrow()
+            @error "open_project failed" exception = (e, catch_backtrace())
+            gui.status.text[] = "project created in $dir, not opened: $(_message_line(e))"
+            return nothing
+        end
+        _close_window!(gui)
+        return new
     end
     return nothing
 end
@@ -1106,31 +1182,23 @@ end
 `Ctrl+O` and the tool "Open" of the `gui`: opens the project of the project file (`*.bmo`) that the
 dialog picks in a new window with the layout and the theme of the `gui`, then closes the `gui` and
 its window. A cancelled dialog does nothing, an error shows its message in the status line and
-keeps the `gui`.
+keeps the `gui`. The versions of the project are checked first, see `_open_checked!`.
 """
 function _open_key!(gui::LiveView)
     _run_later() do
         path = _ask_path(gui, _OPEN_DIALOG)
         isnothing(path) && return nothing
-        try
-            open_project(path; _window_kwargs(gui)...)
-        catch e
-            e isa InterruptException && rethrow()
-            @error "open_project failed" exception = (e, catch_backtrace())
-            gui.status.text[] = "project not opened: $(_message_line(e))"
-            return nothing
-        end
-        _close_window!(gui)
-        return nothing
+        return _open_checked!(gui, path)
     end
     return nothing
 end
 
 """
-Connects `Ctrl+S`, `Ctrl+Shift+S` and `Ctrl+O` (`Cmd` on macOS) of the `gui` and the tools "Save",
-"Save as" and "Open", see `_save_key!`, `_save_as_key!` and `_open_key!`, like `_connect_copy!`: by
-the letters of the keys in the keyboard layout, before the camera, which takes `s` and `o`; left to
-a focused text box, nothing in the spectator mode. `Esc` closes the card of a version.
+Connects `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+N`, `Ctrl+O` and `Ctrl+R` (`Cmd` on macOS) of the `gui`
+and the tools "Save", "Save as", "New project" and "Open", see `_save_key!`, `_save_as_key!`,
+`_new_key!`, `_open_key!` and `_reload_key!`, like `_connect_copy!`: by the letters of the keys in
+the keyboard layout, before the camera, which takes `s` and `o`; left to a focused text box,
+nothing in the spectator mode. `Esc` closes the card of a version.
 """
 function _connect_project!(gui::LiveView)
     scene = gui.ax.scene
@@ -1141,9 +1209,11 @@ function _connect_project!(gui::LiveView)
         key = _layout_key(event.key)
         ctrl.ignore_keys() && return Consume(false)
         ctrl.spectator[] && return Consume(true)
-        key in (Keyboard.s, Keyboard.o, Keyboard.r) || return Consume(false)
+        key in (Keyboard.s, Keyboard.o, Keyboard.r, Keyboard.n) || return Consume(false)
         if key == Keyboard.o
             _open_key!(gui)
+        elseif key == Keyboard.n
+            _new_key!(gui)
         elseif key == Keyboard.r
             _reload_key!(gui)
         else
@@ -1165,6 +1235,8 @@ function _connect_project!(gui::LiveView)
         tooltip = "Save a version ($(_ctrl_cap())+S)")
     add_tool!(_save_as_key!, gui, "Save as"; icon = :save_as,
         tooltip = "Save as a new project with a name ($(_ctrl_cap())+Shift+S)")
+    add_tool!(_new_key!, gui, "New project"; icon = _NEW_PROJECT_ICON,
+        tooltip = "New empty project with a name ($(_ctrl_cap())+N)")
     add_tool!(_open_key!, gui, "Open"; icon = :open,
         tooltip = "Open a project, its .bmo file ($(_ctrl_cap())+O)")
     return nothing
