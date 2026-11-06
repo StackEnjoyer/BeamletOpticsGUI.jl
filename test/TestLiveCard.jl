@@ -739,7 +739,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         # computed from the hits of the last solve and shown
         state = GUI._detector_state(gui, pd)
         @test !state.stale && state.result.n == state.opts.num_points
-        @test v.result === state.result && GUI._kind_name(v.kind) == :intensity && v.name == "PD"
+        @test v.result === state.result && v.view.name == :intensity && v.name == "PD"
         # the view below the page bar, inside the card, at its left edge below the icon
         r, bg = Rect2f(v.full.layoutobservables.computedbbox[]), _rect(c.background)
         @test maximum(r)[2] < minimum(_rect(c.bar_part))[2]
@@ -749,9 +749,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test _inside(gui)
         # its switch takes the clicks: the kind is an option of the detector
         _click!(gui, _center(_rect(v.switch.buttons[2])))
-        @test state.opts.kind == :spot && GUI._kind_name(v.kind) == :spot && ctrl.selected[] === pd
+        @test state.opts.kind == :spot && v.view.name == :spot && ctrl.selected[] === pd
         GUI._set_view!(gui, pd; kind = :auto)
-        @test GUI._kind_name(v.kind) == :intensity
+        @test v.view.name == :intensity
         v.log_toggle.active[] = true
         @test state.opts.colorscale == :log
         v.log_toggle.active[] = false
@@ -863,7 +863,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test c2 !== c && c2.page == :results && v2 isa GUI._DetectorView && v2 !== v && v2.expanded
         @test c2.view_size == GUI._CARD_VIEW_SIZE
         @test Set(GUI._shown_views(gui)) == Set([(pd, v), (pd2, v2)])
-        @test isnothing(v2.kind) && isnothing(GUI._detector_state(gui, pd2).result.kind)
+        @test isnothing(v2.view) && isnothing(GUI._detector_state(gui, pd2).result.view)
         @test !GUI._overlaps(_rect(c.background), _rect(c2.background))
         # a press on the view of a pinned card does not select its object
         _click!(gui, _axis_center(v))
@@ -900,9 +900,9 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         _select!(gui, pd)
         _tick!(gui)
         v = c.view
-        @test GUI._kind_name(v.kind) == :spot && v.switch.keys == [:spot, :psf]
+        @test v.view.name == :spot && v.switch.keys == [:spot, :psf]
         _click!(gui, _center(_rect(v.switch.buttons[2])))
-        @test GUI._kind_name(v.kind) == :psf && GUI._detector_state(gui, pd).opts.kind == :psf
+        @test v.view.name == :psf && GUI._detector_state(gui, pd).opts.kind == :psf
         close(gui)
     end
 

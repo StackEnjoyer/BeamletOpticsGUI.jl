@@ -120,10 +120,12 @@ When this Skill is active:
   BeamletOptics (`translate_to3d!`, `rotate3d!`) and call `retrace!`.
 - The window has two fixed layouts (`layout = :compact` or `:app`); there are no public widget blocks
   to assemble an own layout.
-- The detector view (page "Results" of a card) exists for `Detector` only; there is no public API for
-  views of own types. Own plots are added with `add_panel!`.
-- There are no detector panels beside the 3D view or in the dock and no `history` option: record
-  values in `on_change` and plot them in an `add_panel!` panel.
+- The views of the page "Results" are points, a field or a series (`CardView`); a view can not draw
+  into its axis itself. Other own plots are added with `add_panel!`. The window hands no results back:
+  a script calls the function of a view itself.
+- There are no detector panels beside the 3D view or in the dock and no `history` option: a value
+  over the solves is a `:series` view of `card_views`, or recorded in `on_change` and plotted in an
+  `add_panel!` panel.
 
 Do not describe these as available.
 

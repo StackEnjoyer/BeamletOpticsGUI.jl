@@ -19,6 +19,7 @@ puts these methods into a package extension (`[weakdeps] BeamletOpticsGUI`,
 | widgets for something in the scene: a component, group, source, system, own `AbstractObject` subtype | a card | `card_rows`, `card_actions` |
 | a parameter without a scene object (a setting of the whole setup) | a controls section | `add_controls!` |
 | an action (button, or toggle, optionally with a key) | a tool | `add_tool!` |
+| a result of an object (points, a field, a value over the solves) | a view on its card | `card_views` |
 | a plot or result updated after each solve | a panel | `add_panel!` (see `VISUALIZATION.md`) |
 
 A card needs a scene object: it gives the card its anchor (next to the bounding box, follows the
@@ -334,6 +335,38 @@ moves it to where it is placed.
   `return gui -> ...` when one is wanted.
 - A card keeps no state: do not capture `gui` or the object in the widget declarations.
 
+## Recipe: own results on the card (`card_views`)
+
+An object with views gets the page "Results" on its card (shown first, with a switch between its
+views). The GUI only draws: it hands no result back, a script gets the numbers by calling the same
+function. Define `BeamletOpticsGUI.card_views(x::MyType)` (in a package extension like the other card
+functions) and return a tuple of `CardView(f, form; name, label, unit, normalize, preview, text)`:
+
+| Form | `f` returns | Drawn as |
+|:--|:--|:--|
+| `:points` | `f(obj)`: points `(x, z)` [m], or `(points, colors)` | spot diagram, centroid cross, N / c / rms / max |
+| `:field` | `f(obj; num_points, window)`: `(x, z, I)` | image, colorbar in `unit`, log, profiles; zoom calls `f` again with the new `window` |
+| `:series` | `f(obj)`: a number | one value per full solve as a line, "clear" |
+
+- `f` runs in the background task of the solve: it reads the object and must not touch plots or
+  observables. An error of `f` is shown in the view. `preview = false` (default): not called for the
+  previews while an object is dragged. `text(obj, data)` adds a line below the view.
+- A series is recorded after every full solve for every object of the systems that has a series view,
+  also while no card shows it, but not while the object is dragged (the value comes when the movement
+  pauses). At most 10 000 values per object and view; "clear" empties them; removing the object drops
+  them; undo keeps them.
+- The method may look at the object (e.g. offer a view only with hits) and must be cheap.
+
+```julia
+# A screen that records its hits: the count over the solves and the hits as a spot diagram
+BeamletOpticsGUI.card_views(::MyScreen) = (
+    CardView(s -> length(s.hits), :series; name = :count, label = "Count", unit = "rays"),
+    CardView(s -> copy(s.hits), :points; name = :spot, label = "Hits"))   # hits: Vector of Point2
+```
+
+`results_view!(fig[1, 1], gui, obj; view = :spot)` shows the same view in a figure of your own, see
+`VISUALIZATION.md`.
+
 ## Checklist for a new component
 
 - `interact3d(system, object, beam, ray)`: required.
@@ -341,4 +374,5 @@ moves it to where it is placed.
   hits of an own detector). It discards them; the live view calls it before every solve.
 - `render!`: optional, how it is drawn.
 - `card_rows` (and `card_actions`): optional, its rows and buttons on the card.
+- `card_views`: optional, its views on the page "Results" of the card.
 - `BeamletOptics.properties`: optional, the properties on the page "Properties" of the card.

@@ -7,6 +7,27 @@ runs `f`: the workload swallows the error of a step, `test/TestPrecompileSession
 A patch that adds an action of the mouse or the keys to the GUI adds a step here, see `AGENTS.md`.
 =#
 
+# An own type for the views of a card: a beam block that counts the rays that it absorbs, with one
+# view per form (a series, a field and points)
+struct _Counter{T} <: BMO.AbstractObject{T}
+    shape::BMO.PlanoSurfaceSDF{T}
+    count::Threads.Atomic{Int}
+end
+_Counter(width, thickness) = _Counter(BMO.PlanoSurfaceSDF(thickness, width), Threads.Atomic{Int}(0))
+BMO.interact3d(::BMO.AbstractSystem, c::_Counter, ::BMO.AbstractBeam, ::BMO.Ray) =
+    (Threads.atomic_add!(c.count, 1); nothing)
+BMO.initialize!(c::_Counter) = (c.count[] = 0; nothing)
+function _counter_field(c::_Counter; num_points, window)
+    x0, x1, z0, z1 = something(window, (-1e-3, 1e-3, -1e-3, 1e-3))
+    x, z = range(x0, x1; length = num_points), range(z0, z1; length = num_points)
+    return (x, z, [c.count[] * exp(-(xi^2 + zi^2) / 1e-7) for xi in x, zi in z])
+end
+_counter_points(::_Counter) = ([Makie.Point2(1e-3 * i, 0.0) for i in 1:3], [:red, :green, :blue])
+GUI.card_views(::_Counter) = (
+    CardView(c -> c.count[], :series; name = :count, label = "Count", unit = "rays"),
+    CardView(_counter_field, :field; name = :map, label = "Map", unit = "rays/m²"),
+    CardView(_counter_points, :points; name = :marks, label = "Marks"))
+
 """
 The scene of `_session`: a `system` with a `mirror`, a `lens` and a `detector`, and its `beam`. The
 fields have no types, such that the session is not compiled again for the types of another scene.
@@ -1002,6 +1023,109 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         debug_toggle().active[] = false
         frame!()
         _check(!GUI._debug_on(gui), "the toggle did not switch the debug mode off")
+    end
+
+    # The views of a card (`card_views`): the spot colors of the detector, an own type with a view per
+    # form (switch, series over two solves, "clear"), and the views in a figure of their own
+    step("views: spot colors of the detector") do
+        GUI._select!(gui, fx.detector)
+        settle!()
+        GUI._set_view!(gui, fx.detector; kind = :spot, spot_colors = _ -> :red)
+        settle!()
+        state = GUI._detector_state(gui, fx.detector)
+        _check(!isnothing(state.opts.spot_colors) && state.opts.kind === :spot, "the spot colors were not set")
+        GUI._set_view!(gui, fx.detector; kind = :auto, spot_colors = nothing)
+        settle!()
+        _check(isnothing(state.opts.spot_colors), "the spot colors were not reset")
+        deselect!()
+    end
+    counter = Ref{Any}(nothing)
+    own_view() = (c = counter[];
+        cards = filter(k -> GUI._card_object(gui, k) === c, GUI._edit_cards(gui));
+        _check(!isempty(cards) && !isnothing(last(cards).view), "no card shows the page Results of the own object");
+        last(cards).view)
+    step("views: own object, switch through its views, series, clear") do
+        c = _Counter(20e-3, 2e-3)
+        translate3d!(c, [0.1, 0.2, 0])
+        counter[] = c
+        add_component!(gui, c; select = false)
+        settle!()
+        _check(GUI._has(fx.system.objects, c), "the own object was not added")
+        GUI._select!(gui, c)
+        settle!()
+        state = GUI._detector_state(gui, c)
+        for key in (:map, :marks, :count)
+            v = own_view()
+            _check(!isnothing(v.switch) && key in v.switch.keys, "the switch has no view :$key")
+            _click!(gui, _rect_center(v.switch.buttons[findfirst(==(key), v.switch.keys)]))
+            settle!()
+            _check(state.opts.kind === key, "the switch did not choose the view :$key")
+        end
+        n = length(state.series[:count])
+        retrace!(gui)
+        settle!()
+        retrace!(gui)
+        settle!()
+        _check(length(state.series[:count]) == n + 2, "two solves did not record two values")
+        _click!(gui, _rect_center(own_view().clear_button))
+        settle!()
+        _check(isempty(state.series[:count]), "the button clear did not empty the series")
+    end
+    step("views: results_view! in a figure with the live view, options, close") do
+        c = counter[]
+        fig = Figure(; size = (400, 400))
+        rv = results_view!(fig[1, 1], gui, c; view = :map)
+        w = getfield(rv, :widget)
+        s = _screen()
+        try
+            display(s, fig)
+            Makie.colorbuffer(s)
+            notify(w.switch.buttons[findfirst(==(:marks), w.switch.keys)].clicks)
+            settle!()
+            Makie.colorbuffer(s)
+            _check(GUI._detector_state(gui, c).opts.kind === :marks, "the switch of the figure did not choose :marks")
+            notify(w.collapse_button.clicks)
+            notify(w.expand_button.clicks)
+            refresh!(rv)
+            settle!()
+            Makie.colorbuffer(s)
+            close(rv)
+            _check(getfield(rv, :closed) && !any(r -> r[2] === w, gui.detectors.registered),
+                "close did not remove the view")
+        finally
+            close(s)
+        end
+    end
+    step("views: results_view! without a live view, options, collapse, expand, refresh") do
+        c = counter[]
+        fig = Figure(; size = (400, 400))
+        rv = results_view!(fig[1, 1], c; view = :map)
+        w = getfield(rv, :widget)
+        s = _screen()
+        try
+            display(s, fig)
+            Makie.colorbuffer(s)
+            w.log_toggle.active[] = true
+            w.profiles_toggle.active[] = true
+            notify(w.switch.buttons[findfirst(==(:marks), w.switch.keys)].clicks)
+            Makie.colorbuffer(s)
+            _check(getfield(rv, :opts).kind === :marks, "the switch did not choose :marks")
+            notify(w.collapse_button.clicks)
+            _check(!w.expanded, "the collapse button did not collapse the view")
+            notify(w.expand_button.clicks)
+            _check(w.expanded, "the expand button did not expand the view")
+            refresh!(rv)
+            Makie.colorbuffer(s)
+            close(rv)
+            _check(getfield(rv, :closed), "close did not close the view")
+        finally
+            close(s)
+        end
+    end
+    step("views: remove the own object") do
+        remove_component!(gui, counter[])
+        settle!()
+        _check(!GUI._has(fx.system.objects, counter[]), "the own object was not removed")
     end
 
     if layout == :app

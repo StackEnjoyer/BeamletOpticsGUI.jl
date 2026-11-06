@@ -62,7 +62,7 @@ _points(h) = only(render_plots(h))[1][]
     # What the view of the `k`-th detector shows: the result, its kind, the points of a spot
     # diagram [mm], the field `(x, z, I)` and whether it is a preview
     _result(gui, k = 1) = GUI._detector_state(gui, _detectors(gui)[k]).result
-    _kind(gui, k = 1) = GUI._kind_name(_result(gui, k).kind)
+    _kind(gui, k = 1) = _result(gui, k).view.name
     _xy(gui, k = 1) = [Point2f(1e3 * q[1], 1e3 * q[2]) for q in _result(gui, k).data]
     _field(gui, k = 1) = _result(gui, k).data
     _is_preview(gui, k = 1) = _result(gui, k).coarse || _result(gui, k).preview
@@ -76,7 +76,7 @@ _points(h) = only(render_plots(h))[1][]
         @test gui isa GUI.LiveView
         @test !hasfield(typeof(gui), :panels)
         @test _kind(gui) == :intensity
-        @test _result(gui).metrics.P ≈ optical_power(pd)
+        @test _result(gui).text == "P = $(GUI._fmt3(1e3 * optical_power(pd))) mW"
         # no card is pinned at the start
         @test !any(c -> c.pinned, gui.cards.all) && isempty(gui.detectors.start)
         @test sprint(show, gui) == "LiveView(1 systems, 1 sources, 1 detectors)"
@@ -179,7 +179,7 @@ _points(h) = only(render_plots(h))[1][]
         gui.controls.fine_step = 0.1
         @test_logs _key!(gui, Keyboard.page_up)
         @test isnothing(BMO.hits(pd))
-        @test isnothing(_result(gui).kind) && isempty(_result(gui).kinds)
+        @test isnothing(_result(gui).view) && isempty(_result(gui).views)
         @test isnothing(_result(gui).error)
 
         # close removes all listeners
@@ -642,7 +642,7 @@ _points(h) = only(render_plots(h))[1][]
         window = (; x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; num_points = 5, window...))])
         P = optical_power(pd, RegularGrid(; num_points = 5, window...))
-        @test _result(gui).metrics.P ≈ P
+        @test _result(gui).text == "P = $(GUI._fmt3(1e3 * P)) mW"
         @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)
     end
@@ -1655,7 +1655,7 @@ _points(h) = only(render_plots(h))[1][]
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _gauss())
         mt = _result(gui).metrics
-        @test isapprox(mt.P, optical_power(pd); rtol = 1e-3)
+        @test isapprox(parse(Float64, split(_result(gui).text)[3]), 1e3 * optical_power(pd); rtol = 1e-3)
         # waist 0.5 mm at the source, 200 mm to the detector
         zR = π * 0.5e-3^2 / 1e-6
         w = 0.5e-3 * sqrt(1 + (0.2 / zR)^2)

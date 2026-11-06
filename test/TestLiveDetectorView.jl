@@ -11,7 +11,7 @@ GLMakie.activate!(; visible = false)
 
 @testset "Detector view" begin
 
-    Spot, PSF, Intensity = GUI._SpotKind(), GUI._PSFKind(), GUI._IntensityKind()
+    Spot, PSF, Intensity = GUI._SPOT_VIEW, GUI._PSF_VIEW, GUI._INTENSITY_VIEW
     theme = GUI._APP_THEMES[:light]
 
     # 40 rays along +y on a detector
@@ -85,23 +85,30 @@ GLMakie.activate!(; visible = false)
     _overlap(a, b) = all(minimum(a) .< maximum(b)) && all(minimum(b) .< maximum(a))
     _any_overlap(boxes) = any(_overlap(boxes[i], boxes[j]) for i in eachindex(boxes) for j in 1:(i - 1))
 
-    @testset "kinds" begin
+    @testset "views of a detector" begin
         for T in (BMO.RayHit{Float64}, BMO.PolarizedRayHit{Float64})
-            @test GUI._view_kinds(T[]) == (Spot, PSF)
+            @test GUI._detector_views(T[]) === (Spot, PSF)
         end
         for T in (BMO.GaussianBeamletHit{Float64}, BMO.AstigmaticGaussianBeamletHit{Float64})
-            @test GUI._view_kinds(T[]) == (Intensity, Spot)
+            @test GUI._detector_views(T[]) === (Intensity, Spot)
         end
-        @test GUI._view_kinds(nothing) == ()
-        @test GUI._view_kinds(BMO.hits(_rays())) == (Spot, PSF)
-
-        @test GUI._view_kinds(BMO.hits(_gauss())) == (Intensity, Spot)
-        @test map(GUI._kind_name, (Spot, PSF, Intensity)) == (:spot, :psf, :intensity)
-        @test map(GUI._kind_label, (Spot, PSF, Intensity)) == ("Spot", "PSF", "Intensity")
+        @test GUI._detector_views(nothing) == ()
+        @test card_views(_rays()) === (Spot, PSF)
+        @test card_views(_gauss()) === (Intensity, Spot)
+        # a detector without hits has none, but keeps its page "Results"
+        @test card_views(Detector(1e-3)) == () && GUI._has_view(Detector(1e-3))
+        @test card_views(1.0) == () && !GUI._has_view(1.0)
+        @test map(cv -> cv.name, (Spot, PSF, Intensity)) == (:spot, :psf, :intensity)
+        @test map(cv -> cv.label, (Spot, PSF, Intensity)) == ("Spot", "PSF", "Intensity")
+        @test map(cv -> cv.form, (Spot, PSF, Intensity)) == (:points, :field, :field)
+        @test PSF.normalize && !Intensity.normalize && Intensity.unit == "W/m²"
+        @test all(cv -> cv.preview, (Spot, PSF, Intensity))
         @test GUI._THUMB_N == 48
-        @test GUI._resolve_kind((Spot, PSF), :psf) == PSF
-        @test GUI._resolve_kind((Spot, PSF), :auto) == Spot
-        @test GUI._resolve_kind((Intensity, Spot), :psf) == Intensity
+        @test GUI._resolve_view((Spot, PSF), :psf) === PSF
+        @test GUI._resolve_view((Spot, PSF), :auto) === Spot
+        @test GUI._resolve_view((Intensity, Spot), :psf) === Intensity
+        @test_throws ArgumentError CardView(identity, :image; name = :x)
+        @test sprint(show, Spot) == "CardView(:spot, :points)"
 
         # dispatch instead of `isa` chains, images instead of heatmaps, only the declared BMO functions
         source = read(joinpath(pkgdir(GUI), "src", "LiveDetectorView.jl"), String)
@@ -109,12 +116,17 @@ GLMakie.activate!(; visible = false)
         @test !occursin("heatmap", source)
         @test !occursin("BMO._", source)
         called = Set(m.captures[1] for m in eachmatch(r"BMO\.(\w+)\(", source))
-        @test called ⊆ Set(["spot_diagram", "intensity", "hits", "is_cancelled", "RegularGrid",
-            "RectilinearGrid", "sample_points"])
+        @test called ⊆ Set(["hits", "is_cancelled"])
+        # the power is integrated by BeamletOptics: no weighted sum of an intensity in the GUI
+        views = read(joinpath(pkgdir(GUI), "src", "LiveCardViews.jl"), String)
+        @test !occursin(".weights", source * views)
+        called = Set(m.captures[1] for m in eachmatch(r"BMO\.(\w+)\(", views))
+        @test called ⊆ Set(["spot_diagram", "intensity", "optical_power", "sample_points", "hits",
+            "RegularGrid", "RectilinearGrid"])
     end
 
     @testset "scale of the colorbar" begin
-        I, psf = GUI._IntensityKind(), GUI._PSFKind()
+        I, psf = Intensity, PSF
         # linear: the color range in a unit in which the largest tick has two to four digits
         s = GUI._bar_scale(I, (0, 1350), :linear)
         @test s.limits == (0.0, 1350.0) && s.unit == "W/m²" && s.ticks === GUI._VIEW_BAR_TICKS
@@ -157,15 +169,15 @@ GLMakie.activate!(; visible = false)
     @testset "results" begin
         pd = _rays()
         r = GUI._view_result(pd, GUI._ViewOptions())
-        @test r.kinds == (Spot, PSF) && r.kind == Spot
-        @test r.data == BMO.spot_diagram(pd) && r.metrics.n == 40
+        @test r.views === (Spot, PSF) && r.view === Spot
+        @test r.data == BMO.spot_diagram(pd) && r.metrics.n == 40 && isnothing(r.colors)
         @test isnothing(r.error) && !r.coarse && !r.preview && r.n == 100
 
         # the PSF: the intensity of the rays, normalized to its peak, without a power
         o = GUI._ViewOptions(; kind = :psf, num_points = 20)
         r = GUI._view_result(pd, o)
         x, z, I = BMO.intensity(pd, RegularGrid(; num_points = 20))
-        @test r.kind == PSF && r.n == 20
+        @test r.view === PSF && r.n == 20 && isnothing(r.text)
         @test r.data[1] == x && r.data[2] == z && r.data[3] ≈ I ./ maximum(I)
         @test maximum(r.data[3]) ≈ 1
         @test !haskey(r.metrics, :P) && isfinite(r.metrics.wx)
@@ -184,34 +196,36 @@ GLMakie.activate!(; visible = false)
         # Gaussian beamlet: the intensity, a choice that the hits do not offer falls back
         pd = _gauss()
         r = GUI._view_result(pd, GUI._ViewOptions(; num_points = 40))
-        @test r.kinds == (Intensity, Spot) && r.kind == Intensity
+        @test r.views === (Intensity, Spot) && r.view === Intensity
         @test r.data[3] == BMO.intensity(pd, RegularGrid(; num_points = 40))[3]
-        @test isapprox(r.metrics.P, optical_power(pd, RegularGrid(; num_points = 40)); rtol = 1e-9)
+        # the power of BeamletOptics on the grid of the view, from the intensity that was computed
+        x, z, I = r.data
+        P = BMO.optical_power(BMO.sample_points(pd, RectilinearGrid(x, z)), I)
+        @test abs(P - optical_power(pd, RegularGrid(; num_points = 40))) / P < 1e-12
+        @test r.text == "P = $(GUI._fmt3(1e3 * P)) mW"
         # zoomed: the power in the window, that of `optical_power` with the same sampling
         w = (-0.2e-3, 0.3e-3, -0.25e-3, 0.25e-3)
         r = GUI._view_result(pd, GUI._ViewOptions(; num_points = 40, window = w))
         zoomed = RegularGrid(; num_points = 40, x_min = w[1], x_max = w[2], z_min = w[3], z_max = w[4])
         @test r.data[3] == BMO.intensity(pd, zoomed)[3]
-        @test isapprox(r.metrics.P, optical_power(pd, zoomed); rtol = 1e-12)
-        @test r.metrics.P < optical_power(pd, RegularGrid(; num_points = 40))
-        @test GUI._view_result(pd, GUI._ViewOptions(; kind = :psf, num_points = 20)).kind == Intensity
+        @test r.text == "P = $(GUI._fmt3(1e3 * optical_power(pd, zoomed))) mW"
+        @test optical_power(pd, zoomed) < optical_power(pd, RegularGrid(; num_points = 40))
+        @test GUI._view_result(pd, GUI._ViewOptions(; kind = :psf, num_points = 20)).view === Intensity
         r = GUI._view_result(pd, GUI._ViewOptions(; kind = :spot))
-        @test r.kind == Spot && haskey(r.metrics, :rms)
+        @test r.view === Spot && haskey(r.metrics, :rms)
 
         # no hits, an error, a background task
         r = GUI._view_result(Detector(1e-3), GUI._ViewOptions())
-        @test r.kinds == () && isnothing(r.kind) && isnothing(r.data) && isnothing(r.metrics) && isnothing(r.error)
-        r = GUI._view_result(pd, GUI._ViewOptions(; kwargs = (; crop_factor = "wide")))
-        @test r.error isa Exception && r.kinds == (Intensity, Spot) && r.kind == Intensity && isnothing(r.data)
-        @test fetch(Threads.@spawn GUI._view_result(pd, GUI._ViewOptions(; num_points = 20))).kind == Intensity
-        # hits whose field can not be evaluated: the spot diagram, with the kind :auto only
-        astigmatic = BMO.AstigmaticGaussianBeamletHit{Float64}[]
-        # an invalid sampling keyword makes the field fail
+        @test r.views == () && isnothing(r.view) && isnothing(r.data) && isnothing(r.metrics) && isnothing(r.error)
+        # an invalid sampling keyword makes the field fail: an error for the chosen view
         failing = (; num_points = 20, kwargs = (; crop_factor = "wide"))
-        @test GUI._shown_data(Intensity, pd, astigmatic, GUI._ViewOptions(; failing...), 20, false)[1] == Spot
-        @test_throws TypeError GUI._shown_data(Intensity, pd, astigmatic,
-            GUI._ViewOptions(; kind = :intensity, failing...), 20, false)
-        @test GUI._shown_data(Intensity, pd, astigmatic, GUI._ViewOptions(; num_points = 20), 20, false)[1] == Intensity
+        r = GUI._view_result(pd, GUI._ViewOptions(; kind = :intensity, failing...))
+        @test r.error isa TypeError && r.views === (Intensity, Spot) && r.view === Intensity && isnothing(r.data)
+        @test fetch(Threads.@spawn GUI._view_result(pd, GUI._ViewOptions(; num_points = 20))).view === Intensity
+        # with the kind :auto, the next view if the first one fails, e.g. hits whose field can not
+        # be evaluated
+        r = GUI._view_result(pd, GUI._ViewOptions(; failing...))
+        @test r.view === Spot && isnothing(r.error) && r.metrics.n > 0
     end
 
     @testset "metrics" begin
@@ -223,8 +237,9 @@ GLMakie.activate!(; visible = false)
         @test abs(mt.cx - c[1]) < 1e-9 && abs(mt.cz - c[2]) < 1e-9
         @test abs(mt.rms - sqrt(2.5) * 1e-3) < 1e-9
         @test abs(mt.rmax - 2e-3) < 1e-9
-        @test startswith(GUI._metrics_string(mt), "N = 4, c = (")
-        @test occursin("rms ", GUI._metrics_string(mt))
+        text = GUI._metrics_text(GUI._PointsForm(), Spot, mt, nothing)
+        @test startswith(text, "N = 4, c = (") && occursin("\nrms ", text)
+        @test GUI._spot_metrics(Point2[]).n == 0 && isnan(GUI._spot_metrics(Point2[]).cx)
 
         # ray hits
         pd = _rays()
@@ -238,8 +253,7 @@ GLMakie.activate!(; visible = false)
         # Gaussian beamlet: power and 1/e² radius
         pd = _gauss()
         m = GUI._view_result(pd, GUI._ViewOptions()).metrics
-        @test m == GUI._intensity_metrics(pd, BMO.intensity(pd)...)
-        @test isapprox(m.P, optical_power(pd); rtol = 1e-3)
+        @test m == GUI._field_metrics(BMO.intensity(pd)...) && !haskey(m, :P)
         # waist 0.5 mm at the source, 200 mm to the detector
         zR = π * 0.5e-3^2 / 1e-6
         w = 0.5e-3 * sqrt(1 + (0.2 / zR)^2)
@@ -247,9 +261,13 @@ GLMakie.activate!(; visible = false)
         @test isapprox(m.wz, w; rtol = 0.02)
         @test abs(m.cx) < 1e-6 && abs(m.cz) < 1e-6
         @test m.peak ≈ maximum(BMO.intensity(pd)[3])
-        @test startswith(GUI._metrics_string(m), "P = ")
-        @test GUI._metrics_string((; P = 1e-3, cx = NaN, cz = NaN, wx = NaN, wz = NaN, peak = 0.0)) ==
+        r = GUI._view_result(pd, GUI._ViewOptions())
+        @test startswith(GUI._metrics_text(GUI._FieldForm(), Intensity, m, r.text), "P = ")
+        @test isapprox(parse(Float64, split(r.text)[3]), 1e3 * optical_power(pd); rtol = 1e-3)
+        empty = (; cx = NaN, cz = NaN, wx = NaN, wz = NaN, peak = 0.0)
+        @test GUI._metrics_text(GUI._FieldForm(), Intensity, empty, "P = 1.000 mW") ==
               "P = 1.000 mW, peak 0 W/m²\nno intensity"
+        @test GUI._metrics_text(GUI._FieldForm(), PSF, empty, nothing) == "PSF, normalized to its peak\nno intensity"
 
         # logarithmic color scale with a floor
         _, _, I = BMO.intensity(pd, RegularGrid(; num_points = 20, x_min = -2.5e-3, x_max = 2.5e-3, z_min = -2.5e-3, z_max = 2.5e-3))
@@ -343,7 +361,7 @@ GLMakie.activate!(; visible = false)
         @test abs(minimum(bar)[1] - minimum(frame)[1]) < 1 && maximum(bar)[1] < minimum(unit)[1]
         @test abs(maximum(unit)[1] - maximum(frame)[1]) < 1
         # its limits are the color range of the image in its unit, the colormap spans them
-        s = GUI._bar_scale(GUI._IntensityKind(), v.images[2].colorrange[], :linear)
+        s = GUI._bar_scale(Intensity, v.images[2].colorrange[], :linear)
         @test endswith(s.unit, "W/m²") && v.bar_unit.text[] == s.unit
         @test collect(_limits(v.bar_ax)) ≈ [s.limits..., 0, 1] && collect(v.bar_image[1][]) ≈ collect(s.limits)
         @test v.bar_image.transformation.translation[][3] > 0
@@ -509,7 +527,7 @@ GLMakie.activate!(; visible = false)
         # no hits: no plots, no switch
         _show!(v, Detector(1e-3))
         @test v.kind_label.text[] == "no hits" && v.metrics_label.text[] == "no hits"
-        @test isnothing(v.switch) && isnothing(v.kind)
+        @test isnothing(v.switch) && isnothing(v.view)
         @test !v.spots[2].visible[] && !v.images[2].visible[] && isempty(v.crosses[2][1][])
         @test isempty(v.xlabels.text[]) && !v.xname.visible[] && v.status.text[] == ["no hits"]
         @test !first(v.switches[(:spot, :psf)].buttons).blockscene.visible[]
@@ -522,7 +540,7 @@ GLMakie.activate!(; visible = false)
         @test v.metrics_label.text[] == "no result"
 
         # an error: shown and logged once, the switch stays for another choice
-        bad = GUI._ViewOptions(; kwargs = (; crop_factor = "wide"))
+        bad = GUI._ViewOptions(; kind = :intensity, kwargs = (; crop_factor = "wide"))
         @test_logs (:error,) match_mode = :any _show!(v, gauss, bad)
         @test v.metrics_label.text[] == "error" && v.kind_label.text[] == "error"
         @test v.switch.keys == [:intensity, :spot] && !v.images[2].visible[]

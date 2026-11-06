@@ -1,16 +1,17 @@
 #=
-Detectors of the live view: the state of the view of each detector, its computation after a
-solve and the `detectors` kwarg of `live_view`
+The views of the pages "Results" of the live view (see `card_views`): the state of the view of
+each object, its computation after a solve, the series, and the `detectors` kwarg of `live_view`
 =#
 
 """
     _has_view(obj) -> Bool
 
-Whether the card of `obj` has the page "Results" with a view of what `obj` measures (see
-`_DetectorView`): a `Detector`. Add a method for a type to give its card this page.
+Whether the card of `obj` has the page "Results" with its views (see `card_views` and
+`_DetectorView`): an object with views, and a `Detector` also without hits, whose page then reads
+"no hits".
 """
-_has_view(_) = false
-_has_view(::BMO.Detector) = true
+_has_view(@nospecialize(obj)) = !isempty(card_views(obj))
+_has_view(@nospecialize(_::BMO.Detector)) = true
 
 """Returns all `Detector`s of the `systems`, deduplicated by identity, in the order of discovery."""
 function _find_detectors(systems)
@@ -26,13 +27,53 @@ function _find_detectors(systems)
 end
 
 """
-    _detector_state(gui, pd) -> _DetectorState
+    _detector_state(gui, obj) -> _DetectorState
 
-The state of the view of the detector `pd` in the `gui`, created with the default options (see
-`_ViewOptions`) when it is first asked for.
+The state of the view of `obj` (an object with views, e.g. a detector) in the `gui`, created with
+the default options (see `_ViewOptions`) when it is first asked for.
 """
-_detector_state(gui::LiveView, pd::BMO.Detector) =
-    get!(() -> _DetectorState(pd, _ViewOptions(), nothing, true, 0.0), gui.detectors.states, pd)
+function _detector_state(gui::LiveView, @nospecialize(obj))
+    states = gui.detectors.states
+    haskey(states, obj) && return states[obj]
+    return states[obj] = _DetectorState(obj, _ViewOptions())
+end
+
+"""
+    _view_objects(systems) -> Vector{Any}
+
+The objects of the `systems` (their leaves, deduplicated by identity, in the order of discovery)
+that have views, see `card_views`, e.g. the detectors and own types; their series are recorded
+after each solve, see `_view_requests`.
+"""
+function _view_objects(systems)
+    seen = Base.IdSet{Any}()
+    objs = Any[]
+    for sys in systems, obj in _leaves(sys)
+        (obj in seen || isempty(card_views(obj))) && continue
+        push!(seen, obj)
+        push!(objs, obj)
+    end
+    return objs
+end
+
+"""The states of the objects of the `systems` in the `gui`, e.g. to mark them stale, see `_view_objects`."""
+function _view_states(gui::LiveView, systems)
+    states = gui.detectors.states
+    out = _DetectorState[]
+    seen = Base.IdSet{Any}()
+    for sys in systems, obj in _leaves(sys)
+        (obj in seen || !haskey(states, obj)) && continue
+        push!(seen, obj)
+        push!(out, states[obj])
+    end
+    return out
+end
+
+# The `CardView` that the options `opts` of `obj` show, `nothing` without views
+function _shown_card_view(@nospecialize(obj), opts)
+    views = Tuple(card_views(obj))
+    return isempty(views) ? nothing : _resolve_view(views, opts.kind)
+end
 
 #=
 Views that are shown: on the floating cards (see `_card_view`) and in the layout (see
@@ -76,13 +117,13 @@ function _shown_views(gui::LiveView)
 end
 
 """
-    _register_view!(gui, pd, view)
+    _register_view!(gui, obj, view)
 
-Registers the `view` (a `_DetectorView`) of the detector `pd` that a host outside the cards and the
+Registers the `view` (a `_DetectorView`) of the object `obj` that a host outside the cards and the
 layout of the `gui` shows, e.g. in a figure of its own: it is computed and shown like the views of
 the cards while it is registered, see `_shown_views`.
 """
-function _register_view!(gui::LiveView, pd::BMO.Detector, view)
+function _register_view!(gui::LiveView, @nospecialize(pd), view)
     push!(gui.detectors.registered, (pd, view))
     _view_needed!(gui, pd)
     return view
@@ -96,39 +137,63 @@ Computation: a request per detector with a shown view, computed with the fields 
 """
     _ViewRequest
 
-The computation of the view of the detector `pd` with the options `opts` (those of its `state` when
+The computation of the view of the object `pd` with the options `opts` (those of its `state` when
 the request was made) on a grid of `n` points per axis, see `_view_requests`. It is computed in a
-background task, see `_view_field`, and shown by `_apply_view!`.
+background task, see `_view_field`, and shown by `_apply_view!`. A request that is not `shown`
+only records the value of a series view, the `kind` of its `opts`, that is not shown.
 """
 struct _ViewRequest
-    pd::BMO.Detector
+    pd::Any
     state::_DetectorState
     opts::Any
     n::Int
+    shown::Bool
 end
+
+_ViewRequest(@nospecialize(pd), state, opts, n) = _ViewRequest(pd, state, opts, n, true)
 
 """
     _view_requests(gui; stale_only = false) -> Vector{Any}
 
-A request per detector of which the `gui` shows a view (see `_shown_views`), on the grid of its
-options if one of its views is expanded, on the grid of a thumbnail (`_THUMB_N`) otherwise. With
-`stale_only`, only for the views that need a computation, see `_needs_result`.
+A request per object of which the `gui` shows a view (see `_shown_views`), on the grid of its
+options if one of its views is expanded, on the grid of a thumbnail (`_THUMB_N`) otherwise, and
+one per series view of the objects of the systems that is not shown (see `_view_objects`), which
+records its value once per solve, see `_record_series`. With `stale_only`, only for the views that
+need a computation (see `_needs_result`) and the series that miss the value of the last solve;
+neither for views that wait for a full result while objects move, see `_waits`.
 """
 function _view_requests(gui::LiveView; stale_only::Bool = false)
     requests = Any[]
     seen = Base.IdSet{Any}()
     views = _shown_views(gui)
+    shown = Dict{Any, Symbol}()
     for (pd, _) in views
         pd in seen && continue
         push!(seen, pd)
         state = _detector_state(gui, pd)
         expanded = any(((p, v),) -> p === pd && v.expanded, views)
         n = expanded ? state.opts.num_points : min(state.opts.num_points, _THUMB_N)
-        (stale_only && !_needs_result(gui, state, n)) && continue
+        cv = _shown_card_view(pd, state.opts)
+        isnothing(cv) || (shown[pd] = cv.name)
+        stale_only && (!_needs_result(gui, state, n) || _waits(gui, cv)) && continue
         push!(requests, _ViewRequest(pd, state, state.opts, n))
+    end
+    for obj in _view_objects(_systems(gui)), cv in card_views(obj)
+        (cv.form === :series && get(shown, obj, nothing) !== cv.name) || continue
+        state = _detector_state(gui, obj)
+        stale_only && (_waits(gui, cv) || get(state.recorded, cv.name, -1) == gui.detectors.solve) && continue
+        push!(requests, _ViewRequest(obj, state, _ViewOptions(state.opts; kind = cv.name), state.opts.num_points, false))
     end
     return requests
 end
+
+"""
+Whether the view `cv` waits for a full result: a view without `preview` (see `CardView`) is not
+computed from the hits of a preview solve or while objects move (a coarse result), but once the
+movement pauses, see `_on_idle!`.
+"""
+_waits(gui::LiveView, cv::CardView) = !cv.preview && (gui.trace.coarse || gui.trace.preview)
+_waits(::LiveView, ::Nothing) = false
 
 """
 Whether the view of the `state` must be computed on a grid of `n` points: it is stale (and no zoom
@@ -146,26 +211,84 @@ _window_pending(gui::LiveView, state::_DetectorState) =
     state.window_changed > 0 && time() - state.window_changed < gui.trace.idle_delay
 
 """
-    _view_field(r::_ViewRequest, coarse::Bool, preview::Bool) -> _ViewResult
+    _view_field(r::_ViewRequest, coarse::Bool, preview::Bool) -> Union{Nothing, _ViewResult}
 
-Computes the view of the request `r` from the hits of its detector, without changing any plot, such
-that it can run in a background task, see `_compute` and `_view_result`.
+Computes the view of the request `r` from the current state of its object, e.g. the hits of a
+detector, without changing any plot, such that it can run in a background task, see `_compute` and
+`_view_result`. `nothing` for a view without `preview` (see `CardView`) after a preview solve or
+while objects move (`coarse`): it is computed once the movement pauses.
 """
-_view_field(r::_ViewRequest, coarse::Bool, preview::Bool) =
-    _view_result(r.pd, r.opts; n = r.n, coarse, preview)
+function _view_field(r::_ViewRequest, coarse::Bool, preview::Bool)
+    if coarse || preview
+        cv = _shown_card_view(r.pd, r.opts)
+        (isnothing(cv) || cv.preview) || return nothing
+    end
+    return _view_result(r.pd, r.opts; n = r.n, coarse, preview)
+end
 
 """
     _apply_view!(gui, r::_ViewRequest, result)
 
-Stores the `result` of the request `r` in the state of its detector and shows it in all views of
-the detector, see `_redraw_views!`. The state stays stale if its options changed while the result
-was computed.
+Stores the `result` of the request `r` in the state of its object and shows it in all views of
+the object, see `_redraw_views!`; the value of a series is recorded first, see `_record_series`.
+The state stays stale if its options changed while the result was computed, and for a result that
+was not computed (`nothing`, see `_view_field`). A request that is not shown only records.
 """
 function _apply_view!(gui::LiveView, r::_ViewRequest, result)
+    isnothing(result) && return nothing
     state = r.state
+    result = _record_series(gui, state, result)
+    r.shown || return nothing
     state.result = result
     state.stale = state.opts !== r.opts
     _redraw_views!(gui, r.pd)
+    return nothing
+end
+
+# The most values of a series that are kept, the oldest are dropped
+const _SERIES_MAX = 10_000
+
+"""
+    _record_series(gui, state, result) -> _ViewResult
+
+The `result` of a series view with the values that the `state` recorded: the value of `result` is
+appended once per solve of the `gui` (see `_DetectorStates`), not from a preview or a coarse
+result, at most `_SERIES_MAX` values. Other results are returned as they are.
+"""
+function _record_series(gui::LiveView, state::_DetectorState, r::_ViewResult)
+    cv = r.view
+    (isnothing(cv) || cv.form !== :series) && return r
+    values = get!(() -> Float64[], state.series, cv.name)
+    if isnothing(r.error) && !r.preview && !r.coarse && get(state.recorded, cv.name, -1) != gui.detectors.solve
+        push!(values, Float64(r.data))
+        length(values) > _SERIES_MAX && deleteat!(values, 1:(length(values) - _SERIES_MAX))
+        state.recorded[cv.name] = gui.detectors.solve
+    end
+    return _series_result(r, values)
+end
+
+# The result `r` of a series with its recorded `values`
+_series_result(r::_ViewResult, values::Vector{Float64}) =
+    _ViewResult(r.views, r.view, r.n, r.coarse, r.preview; data = copy(values), text = r.text, error = r.error,
+        metrics = _form_metrics(_SeriesForm(), r.view, values))
+
+# Whether the result `r` is that of a series view
+_shows_series(r::_ViewResult) = !isnothing(r.view) && r.view.form === :series
+_shows_series(_) = false
+
+"""
+    _clear_series!(gui, obj)
+
+Empties the series that the view of `obj` shows (the button "clear" of its view) and shows it again.
+"""
+function _clear_series!(gui::LiveView, @nospecialize(obj))
+    state = _detector_state(gui, obj)
+    r = state.result
+    _shows_series(r) || return nothing
+    values = get!(() -> Float64[], state.series, r.view.name)
+    empty!(values)
+    state.result = _series_result(r, values)
+    _redraw_views!(gui, obj)
     return nothing
 end
 
@@ -185,11 +308,13 @@ function _redraw_views!(gui::LiveView, pd)
 end
 
 """
-Marks the views of all detectors of the `gui` stale before a solve empties the detectors; until its
-result is shown, the hits are incomplete, see `_views_applied!`.
+Marks the views of all objects of the `gui` stale before a solve empties the detectors; until its
+result is shown, the hits are incomplete, see `_views_applied!`. Counts the solve, see
+`_record_series`.
 """
 function _views_solve_started!(gui::LiveView)
     gui.detectors.hits_valid = false
+    gui.detectors.solve += 1
     for state in values(gui.detectors.states)
         state.stale = true
     end
@@ -221,7 +346,7 @@ function _detectors_moved!(gui::LiveView, @nospecialize(obj))
     isnothing(obj) && return nothing
     moved = false
     for leaf in _leaves(obj)
-        state = leaf isa BMO.Detector ? get(gui.detectors.states, leaf, nothing) : nothing
+        state = get(gui.detectors.states, leaf, nothing)
         isnothing(state) && continue
         state.stale = moved = true
     end
@@ -280,19 +405,26 @@ function _views_idle!(gui::LiveView)
 end
 
 """
-    _set_view!(gui, pd; kind, colorscale, colorbar, profiles, window)
+    _set_view!(gui, obj; kind, colorscale, colorbar, profiles, window, spot_colors, clear)
 
-Sets options of the view of the detector `pd` from its widgets, only those given: the `kind`
-(`:auto` or the name of a kind, see `_view_kinds`) and the `window` of a field view (the visible
-rectangle `(x_min, x_max, z_min, z_max)` [m] after zoom or pan, `nothing` for the automatic one)
-need a new result, the `colorscale`, the `colorbar` and the `profiles` only show the result again. A new window is
-computed once the mouse rests for `idle_delay`, see `_views_idle!`, not per step of the wheel.
+Sets options of the view of `obj` from its widgets, only those given: the `kind` (`:auto` or the
+`name` of a `CardView`, see `card_views`), the `window` of a field view (the visible rectangle
+`(x_min, x_max, z_min, z_max)` [m] after zoom or pan, `nothing` for the automatic one) and the
+`spot_colors` need a new result, the `colorscale`, the `colorbar` and the `profiles` only show the
+result again. A new window is computed once the mouse rests for `idle_delay`, see `_views_idle!`,
+not per step of the wheel. `clear = true` (the button "clear" of a series) empties the series that
+is shown, see `_clear_series!`.
 """
-function _set_view!(gui::LiveView, pd; changes...)
+function _set_view!(gui::LiveView, @nospecialize(pd); changes...)
+    if haskey(changes, :clear)
+        changes[:clear] && _clear_series!(gui, pd)
+        changes = Base.structdiff(NamedTuple(changes), NamedTuple{(:clear,)})
+    end
     state = _detector_state(gui, pd)
     changes = (; (k => v for (k, v) in pairs(changes) if getfield(state.opts, k) != v)...)
     isempty(changes) && return nothing
     state.opts = _ViewOptions(state.opts; changes...)
+    haskey(changes, :spot_colors) && (state.stale = true; _refresh_views!(gui))
     if haskey(changes, :window)
         state.stale = true
         state.window_changed = time()
@@ -314,7 +446,7 @@ The `detectors` kwarg of `live_view`
 const _DETECTOR_KINDS = (:auto, :spot, :psf, :intensity)
 
 # Options of a view in the kwargs of a detector; `num_points` is passed on to its `RegularGrid`, the others are not keywords of it
-const _VIEW_OPTION_KEYS = (:num_points, :colorscale, :colorrange, :colorbar, :profiles, :expanded)
+const _VIEW_OPTION_KEYS = (:num_points, :colorscale, :colorrange, :colorbar, :profiles, :expanded, :spot_colors)
 
 const _DETECTOR_SPEC_HINT = "use `pd`, `pd => kind` or `pd => (kind, kwargs)`"
 
@@ -332,7 +464,7 @@ The detectors of the `detectors` kwarg of [`live_view`](@ref) whose cards start 
 `(; pd, opts, expanded)` with the options of its view (a `_ViewOptions`) and whether the view
 starts expanded: none for `:auto`, otherwise an entry per `pd`, `pd => kind` or
 `pd => (kind, kwargs)`. The `kwargs` hold the options `num_points`, `colorscale`, `colorrange`, `colorbar`,
-`profiles` and `expanded`; all others are keywords of the sampling `BeamletOptics.RegularGrid`.
+`profiles`, `expanded` and `spot_colors`; all others are keywords of the sampling `BeamletOptics.RegularGrid`.
 """
 function _detector_specs(detectors)
     if detectors isa Symbol
@@ -370,7 +502,7 @@ function _view_spec(pd, kind::Symbol, kwargs::NamedTuple)
     rest = NamedTuple(k => v for (k, v) in pairs(kwargs) if !(k in _VIEW_OPTION_KEYS))
     opts = _ViewOptions(; kind, num_points = Int(get(kwargs, :num_points, 100)), kwargs = rest, colorscale,
         colorrange = get(kwargs, :colorrange, nothing), colorbar = Bool(get(kwargs, :colorbar, true)),
-        profiles = Bool(get(kwargs, :profiles, false)))
+        profiles = Bool(get(kwargs, :profiles, false)), spot_colors = get(kwargs, :spot_colors, nothing))
     return (; pd, opts, expanded = Bool(get(kwargs, :expanded, true)))
 end
 

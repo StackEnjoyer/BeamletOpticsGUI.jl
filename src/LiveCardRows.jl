@@ -331,10 +331,15 @@ function _signal_text(gui::LiveView, pd)
     _tracing(gui) && return _TRACING_VALUE
     state = get(gui.detectors.states, pd, nothing)
     (isnothing(state) || state.stale || isnothing(state.result)) && return _hits_text(pd)
-    return _signal_metric(state.result.metrics, pd)
+    return _signal_metric(state.result, pd)
 end
-_signal_metric(m::NamedTuple, pd) = haskey(m, :P) ? "P = $(_fmt3(1e3 * m.P)) mW" :
-                                    haskey(m, :n) ? "N = $(m.n)" : _hits_text(pd)
+# The line of the shown view (e.g. the power of the intensity), the number of spots, or the hits
+function _signal_metric(r::_ViewResult, pd)
+    isnothing(r.error) || return _hits_text(pd)
+    isnothing(r.text) || return r.text
+    (!isnothing(r.view) && r.view.form === :points) && return "N = $(r.metrics.n)"
+    return _hits_text(pd)
+end
 _signal_metric(_, pd) = _hits_text(pd)
 
 _hits_text(pd) = (n = length(pd); iszero(n) ? "no hits" : n == 1 ? "1 hit" : "$n hits")
