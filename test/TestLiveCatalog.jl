@@ -408,6 +408,39 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         end
     end
 
+    @testset "switch ($layout)" for layout in (:compact, :app)
+        gui, sys, m = _fixture(; layout)
+        w = _choose!(gui, "Detector")
+        widget = w.widget
+        # the box of the edge length and the toggle of "stop beams", on by default
+        toggle = widget.inputs[2]
+        @test toggle isa Toggle && toggle.active[]
+        @test "stop beams" in w.labels && _texts(w.boxes) == ["10"]
+        @test GUI._catalog_strings(widget) == ["10", "true"]
+        function placed()
+            obj = GUI._place_catalog!(gui, GUI._catalog_entry(widget), GUI._catalog_strings(widget))
+            code = gui.components.placement.origin.code
+            GUI._end_placement!(gui)
+            return obj, code
+        end
+        obj, code = placed()
+        @test BMO.stop(obj) && code == "Detector(0.01, true)"
+        # off: the detector lets the beams pass
+        toggle.active[] = false
+        @test GUI._catalog_strings(widget) == ["10", "false"]
+        obj, code = placed()
+        @test !BMO.stop(obj) && code == "Detector(0.01, false)"
+        # the state is kept when the catalog widget is built again with the texts of its form
+        GUI._build_catalog_form!(gui, widget, GUI._catalog_strings(widget))
+        @test !widget.inputs[2].active[]
+        # another entry and back: the default again
+        _choose!(gui, "Thin lens")
+        _choose!(gui, "Detector")
+        @test GUI._catalog_strings(widget) == ["10", "true"]
+        @test sys.objects == [m]
+        close(gui)
+    end
+
     @testset "presets ($layout)" for layout in (:compact, :app)
         sizes = ["half inch" => 12.7e-3, "inch" => 25.4e-3]
         width = CatalogParam("width", 10e-3; unit = "mm", scale = 1e-3, presets = sizes)

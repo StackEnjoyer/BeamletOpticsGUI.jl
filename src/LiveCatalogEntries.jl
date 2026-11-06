@@ -76,8 +76,9 @@ _entry_code(::Union{typeof(_line_source), typeof(_fan_source)}, entry::CatalogEn
 
 The entries of [`component_catalog`](@ref): the sources of BeamletOptics and all its components
 with a constructor of numbers and glasses, with the defaults of one inch optics. Only these
-arguments are parameters, the others keep the defaults of the constructor, e.g. the `stop` of a
-`Detector` and the `thickness` and the `hole_diameter` of the curved mirrors. The radii of curvature
+arguments are parameters, the others keep the defaults of the constructor, e.g. the `thickness` and
+the `hole_diameter` of the curved mirrors. The `stop` of a `Detector` is a switch (`CatalogToggle`)
+"stop beams", on by default: off, the beams pass the detector unchanged. The radii of curvature
 follow BeamletOptics: positive if the center of the surface lies behind it (towards +y), i.e.
 `R1 > 0` and `R2 < 0` for a biconvex lens, `Inf` for a plane surface of a `SphericalLens`.
 
@@ -203,7 +204,8 @@ function _builtin_catalog()
         ("Round filter", :polarizer, RoundPolarizationFilter, diameter),
         ("Linear polarizer", :linear_polarizer, RoundLinearPolarizer,
             diameter, len("front thickness", 1e-3), len("back thickness", 1e-3), CatalogGlass()))
+    # off: the beams pass the detector unchanged, see `Detector`
     group!("Detectors",
-        ("Detector", :detector, Detector, len("edge length", 10e-3)))
+        ("Detector", :detector, Detector, len("edge length", 10e-3), CatalogToggle("stop beams", true)))
     return entries
 end

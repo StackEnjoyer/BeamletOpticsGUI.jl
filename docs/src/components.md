@@ -103,7 +103,7 @@ takes numbers and glasses:
 | Beamsplitters | Thin beamsplitter, Round thin beamsplitter, Plate beamsplitter, Round plate beamsplitter, Cube beamsplitter, Compensator plate |
 | Prisms | Right-angle prism |
 | Polarizers | Polarization filter, Round filter, Linear polarizer |
-| Detectors | Detector |
+| Detectors | Detector, with the switch "stop beams": off, the beams pass it unchanged (`Detector(edge_length, false)`) and reach the components behind it |
 
 The icons at the top of the catalog select the group, the tiles below the entry. The boxes of the
 form take its numbers; the other arguments of the constructor keep their defaults, e.g. the

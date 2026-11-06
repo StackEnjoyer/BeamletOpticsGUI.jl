@@ -197,6 +197,47 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "a detector that lets the beams pass, $layout" for layout in (:compact, :app)
+        # the detector of the catalog in front of a second one, which only gets the beam if the
+        # first one lets it pass
+        back = Detector(10e-3)
+        translate3d!(back, [0, 0.2, 0])
+        sys = System([back])
+        beam = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
+        gui = _live_view(sys => beam; layout)
+        c = _built("Detector")
+        translate3d!(c.obj, [0, 0.1, 0])
+        add_component!(gui, c.obj; origin = c.origin, label = "PD")
+        targets() = [BMO.object(BMO.intersection(r)) for r in BMO.rays(beam) if !isnothing(BMO.intersection(r))]
+        @test BMO.stop(c.obj) && _in(c.obj, targets()) && !_in(back, targets())
+        @test c.origin.code == "Detector(0.01, true)"
+
+        # the page: the box of the edge length and the toggle of "stop beams"
+        card = _show!(gui, c.obj, :edit)
+        toggle = GUI._card_widget(card, GUI._edit_toggle(2))
+        @test toggle isa Toggle && toggle.active[]
+        # switched off, with a length typed without Enter, which the switch keeps
+        _type!(card, 1, "20")
+        toggle.active[] = false
+        @test GUI._edit_strings(gui, c.obj) == ["20", "false"]
+        @test _in(c.obj, sys.objects)
+        notify(GUI._card_widget(_card(gui), :edit_apply).clicks)
+        new = only(o for o in sys.objects if o !== back)
+        @test new !== c.obj && !BMO.stop(new) && GUI._label(gui, new) == "PD"
+        @test gui.components.origin[new].code == "Detector(0.02, false)"
+        @test occursin("PD = Detector(0.02, false)", GUI._export_code(gui)[1])
+        # the beam passes it onto the second detector, and both record it
+        @test isnothing(gui.trace.error) && !gui.trace.stale
+        @test _in(new, targets()) && _in(back, targets())
+        @test !isnothing(BMO.hits(new)) && !isnothing(BMO.hits(back))
+        @test !GUI._card_widget(_card(gui), GUI._edit_toggle(2)).active[]
+
+        # undo brings the detector back that stops the beam
+        @test GUI._undo!(gui.controls)
+        @test _in(c.obj, sys.objects) && !_in(back, targets())
+        close(gui)
+    end
+
     @testset "text typed without Enter" begin
         sys = System()
         gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9))

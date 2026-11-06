@@ -36,6 +36,8 @@ end
 # The names of the widgets of the parameter `i`: its box and, of a glass, its menu
 _edit_box(i::Int) = Symbol(:edit_, i)
 _edit_menu(i::Int) = Symbol(:edit_glass_, i)
+# ... of a switch, its toggle
+_edit_toggle(i::Int) = Symbol(:edit_toggle_, i)
 # Of a surface: its menu, and the box of its field `k`, see `_edit_surface`: the radius in the box
 # of the parameter, then the conic constant and the coefficients
 _edit_surface_menu(i::Int) = Symbol(:edit_surface_, i)
@@ -266,6 +268,15 @@ function _choose_edit_glass!(gui::LiveView, @nospecialize(obj), p::CatalogGlass,
     return nothing
 end
 
+# The toggle of the switch `i` changed to `v`
+function _toggle_edit!(gui::LiveView, @nospecialize(obj), i::Int, v)
+    v isa Bool || return nothing
+    # The card shows its values again after an input: keep what was typed into its boxes
+    _read_edit_inputs!(gui, obj)
+    _set_edit_string!(gui, obj, i, string(v))
+    return nothing
+end
+
 # Enter in the box of the parameter `i`: its input, then "Apply"
 function _enter_edit!(gui::LiveView, @nospecialize(obj), i::Int, s)
     # the other boxes as they are shown, then the entered one
@@ -357,7 +368,8 @@ The rows of the parameter `p`, the input `i`, on the page "Edit" of `obj`: a box
 menu and the box of a constant refractive index for a glass, and for a surface its menu
 ("spherical", "aspheric"), the box of its radius and, only while "aspheric" is chosen, the boxes of
 the conic constant `k` and of the coefficients A4, A6, ... [mm^(1 - order)], two in a row. The rows
-of a surface thus depend on its input, see `_rebuild_edit_rows!`.
+of a surface thus depend on its input, see `_rebuild_edit_rows!`. A switch (`CatalogToggle`) has a
+`Toggle`.
 """
 _edit_param_rows(::LiveView, _, p::CatalogParam, i::Int) = (CardRow(_edit_label(p.name),
     CardWidget(Textbox; name = _edit_box(i), placeholder = " ", width = 76,
@@ -381,6 +393,12 @@ function _edit_param_rows(gui::LiveView, @nospecialize(obj), p::CatalogSurface, 
     end
     return Tuple(rows)
 end
+
+# The toggle of a switch: its state is the input, which "Apply" builds, like the menu of a glass
+_edit_param_rows(::LiveView, _, p::CatalogToggle, i::Int) = (CardRow(_edit_label(p.name),
+    CardWidget(Toggle; name = _edit_toggle(i),
+        value = (gui, o) -> _catalog_value(p, _edit_strings(gui, o)[i]),
+        on = (gui, o, v) -> _toggle_edit!(gui, o, i, v))),)
 
 _edit_param_rows(::LiveView, _, p::CatalogGlass, i::Int) = (
     CardRow(_edit_label(p.name), CardWidget(Menu; name = _edit_menu(i),
