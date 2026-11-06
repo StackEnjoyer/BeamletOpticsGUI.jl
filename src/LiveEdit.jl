@@ -36,6 +36,8 @@ end
 # The names of the widgets of the parameter `i`: its box and, of a glass, its menu
 _edit_box(i::Int) = Symbol(:edit_, i)
 _edit_menu(i::Int) = Symbol(:edit_glass_, i)
+# ... of a switch, its toggle
+_edit_toggle(i::Int) = Symbol(:edit_toggle_, i)
 # Of a surface: its menu, and the box of its field `k`, see `_edit_surface`: the radius in the box
 # of the parameter, then the conic constant and the coefficients
 _edit_surface_menu(i::Int) = Symbol(:edit_surface_, i)
@@ -178,8 +180,9 @@ _selection_objects(r::_Replacement) = Any[r.new, r.old]
 Puts the component or source `new` with its `origin` in the place of `old` in the `gui`: `new` gets
 the pose of `old`, i.e. it is moved and rotated from its pose as constructed like `old` was from
 its own, then `old` is removed and `new` is added to the same system with the label of `old` and
-selected, and the card of the selection shows its page "Edit" again. The replacement is one action
-of the undo history (see `_Replacement`): undo brings `old` back, redo `new`; both are refused while
+selected, and the card of the selection shows its page "Edit" again. The cards pinned to `old`,
+floating or docked, are pinned to `new`, see `_take_pins!`. The replacement is one action of the
+undo history (see `_Replacement`): undo brings `old` back, redo `new`; both are refused while
 another participant of the project claims the entry.
 """
 function _replace!(gui::LiveView, old, new, origin)
@@ -199,12 +202,15 @@ function _replace!(gui::LiveView, old, new, origin)
     new_snap = Ref{Any}(_replacement_snapshot(gui, old, new, origin, old_snap))
     old_state = Ref{Any}(old_snap)
     swap!(out, out_state, in, in_state) = begin
+        # the cards pinned to `out` stay, pinned to `in`
+        pins = _take_pins!(gui, out)
         out_state[] = _remove_unrecorded!(gui, out)
         delete!(comp.edits, out)
         # the same entry of the project, also of the view of a window of `open_system`, see
         # `_move_id!` and `_project_view`
         _move_id!(something(_project_view(gui), gui), out, in)
         _restore!(gui, in, in_state[])
+        _give_pins!(gui, pins, in)
         _show_edit_page!(gui, in)
         return nothing
     end
@@ -215,12 +221,16 @@ function _replace!(gui::LiveView, old, new, origin)
     return new
 end
 
-"""Shows the page "Edit" of the cards of `obj` again, e.g. after it replaced the object of the page."""
+"""
+Shows the page "Edit" of the cards of `obj` again, e.g. after it replaced the object of the page.
+A pinned card keeps its page, see `_give_pins!`.
+"""
 function _show_edit_page!(gui::LiveView, @nospecialize(obj))
     _update_cards!(gui)
     _update_inspector!(gui)
     for c in _edit_cards(gui)
-        (_card_object(gui, c) === obj && :edit in _card_pages(gui, obj)) && _set_page!(gui, c, :edit)
+        (!c.pinned && _card_object(gui, c) === obj && :edit in _card_pages(gui, obj)) &&
+            _set_page!(gui, c, :edit)
     end
     return nothing
 end
@@ -293,6 +303,15 @@ function _choose_edit_glass!(gui::LiveView, @nospecialize(obj), p::CatalogGlass,
     else
         _set_edit_string!(gui, obj, i, name)
     end
+    return nothing
+end
+
+# The toggle of the switch `i` changed to `v`
+function _toggle_edit!(gui::LiveView, @nospecialize(obj), i::Int, v)
+    v isa Bool || return nothing
+    # The card shows its values again after an input: keep what was typed into its boxes
+    _read_edit_inputs!(gui, obj)
+    _set_edit_string!(gui, obj, i, string(v))
     return nothing
 end
 
@@ -387,7 +406,8 @@ The rows of the parameter `p`, the input `i`, on the page "Edit" of `obj`: a box
 menu and the box of a constant refractive index for a glass, and for a surface its menu
 ("spherical", "aspheric"), the box of its radius and, only while "aspheric" is chosen, the boxes of
 the conic constant `k` and of the coefficients A4, A6, ... [mm^(1 - order)], two in a row. The rows
-of a surface thus depend on its input, see `_rebuild_edit_rows!`.
+of a surface thus depend on its input, see `_rebuild_edit_rows!`. A switch (`CatalogToggle`) has a
+`Toggle`.
 """
 _edit_param_rows(::LiveView, _, p::CatalogParam, i::Int) = (CardRow(_edit_label(p.name),
     CardWidget(Textbox; name = _edit_box(i), placeholder = " ", width = 76,
@@ -411,6 +431,12 @@ function _edit_param_rows(gui::LiveView, @nospecialize(obj), p::CatalogSurface, 
     end
     return Tuple(rows)
 end
+
+# The toggle of a switch: its state is the input, which "Apply" builds, like the menu of a glass
+_edit_param_rows(::LiveView, _, p::CatalogToggle, i::Int) = (CardRow(_edit_label(p.name),
+    CardWidget(Toggle; name = _edit_toggle(i),
+        value = (gui, o) -> _catalog_value(p, _edit_strings(gui, o)[i]),
+        on = (gui, o, v) -> _toggle_edit!(gui, o, i, v))),)
 
 _edit_param_rows(::LiveView, _, p::CatalogGlass, i::Int) = (
     CardRow(_edit_label(p.name), CardWidget(Menu; name = _edit_menu(i),

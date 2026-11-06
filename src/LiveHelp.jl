@@ -343,7 +343,7 @@ _over_help(help::_HelpUI, p::Point2f) =
 Connects the help of the live view `gui` (see `_HelpUI`) to its controls: the pill and the close
 button of the card open and close the card like the key `h`, the chips switch the mode and the
 frame, change the keyboard step, switch the snapping onto beams and leave the spectator mode like
-the keys `m`, `l`, `+`, `-`, `Tab` and `v`. The help replaces
+the keys `m`, `Ctrl+M`, `+`, `-`, `Tab` and `v`. The help replaces
 the text of the controls overlay (`help_view`) and follows the 3D view. The presses and the
 scrolling on the help card are consumed before all other listeners (`_HELP_PRIORITY`).
 """

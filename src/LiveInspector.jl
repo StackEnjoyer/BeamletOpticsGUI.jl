@@ -681,6 +681,36 @@ function _unpin!(gui::AppView, @nospecialize(obj))
     return nothing
 end
 
+# The docked cards are built again for `new`, in their places, on their pages, collapsed if they
+# were, see `_take_pins!`
+function _take_pins!(gui::AppView, @nospecialize(old))
+    pinned = gui.layout.inspector.pinned
+    docked = [(; index = _index(pinned, c), c.page, c.collapsed, c.view_expanded)
+              for c in _docked_cards(gui, old)]
+    foreach(c -> _remove_pinned!(gui, c), _docked_cards(gui, old))
+    return (; invoke(_take_pins!, Tuple{LiveView, Any}, gui, old).floating, docked)
+end
+
+function _give_pins!(gui::AppView, pins, @nospecialize(new))
+    invoke(_give_pins!, Tuple{LiveView, Any, Any}, gui, pins, new)
+    isempty(pins.docked) && return nothing
+    insp = gui.layout.inspector
+    for d in pins.docked
+        c = _dock_pinned!(gui, new)
+        d.page in _card_pages(gui, new) && (c.page = d.page)
+        c.view_expanded = d.view_expanded
+        _set_collapsed!(c, d.collapsed)
+        # back to its place among the docked cards
+        insert!(insp.pinned, min(d.index, length(insp.pinned)), pop!(insp.pinned))
+    end
+    for (k, c) in enumerate(insp.pinned)
+        insp.pinned_grid[k, 1] = c.parent
+    end
+    _refresh_inspector!(gui; force = true)
+    _on_pinned!(gui)
+    return nothing
+end
+
 """Returns the pinned cards of the app layout of the `gui` that are docked for `obj`."""
 _docked_cards(gui::AppView, @nospecialize(obj)) = filter(c -> c.obj === obj, gui.layout.inspector.pinned)
 _is_docked(gui::AppView, @nospecialize(obj)) = any(c -> c.obj === obj, gui.layout.inspector.pinned)

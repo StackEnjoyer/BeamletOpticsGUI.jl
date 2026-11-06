@@ -806,6 +806,25 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
     # the form of a lens with surfaces: the last one as an asphere, whose fields come with the next
     # frame; the lens is placed with the button of the window, which closes when it is dropped
     aspheric = Ref{Any}(nothing)
+    # the form of an entry with a switch, e.g. the detector: a click switches it
+    step("catalog: switch") do
+        widget = GUI._catalog_widget(GUI._catalog_window(gui))
+        i = findfirst(e -> any(p -> p isa GUI.CatalogToggle, e.params), widget.entries)
+        isnothing(i) && return nothing
+        k = findfirst(==(widget.entries[i].group), widget.groups)
+        _click!(gui, _rect_center(widget.group_buttons[k].box))
+        frame!()
+        j = findfirst(tile -> first(tile) == i, widget.tile_buttons)
+        _check(!isnothing(j), "the click did not choose the group of the entry with a switch")
+        _click!(gui, _rect_center(last(widget.tile_buttons[j]).box))
+        frame!()
+        _check(widget.entry == i, "the click did not choose the entry with a switch")
+        s = findfirst(p -> p isa GUI.CatalogToggle, widget.entries[i].params)
+        before = GUI._catalog_strings(widget)[s]
+        _click!(gui, _rect_center(widget.inputs[s]))
+        frame!()
+        _check(GUI._catalog_strings(widget)[s] != before, "the click did not switch the toggle")
+    end
     step("catalog: aspheric surface") do
         widget = GUI._catalog_widget(GUI._catalog_window(gui))
         i = findfirst(e -> any(p -> p isa GUI.CatalogSurface, e.params), widget.entries)
@@ -1119,6 +1138,24 @@ function _catalog_session(step, entries = component_catalog())
                 b = _px(gui, _pos(lens))
                 _drag!(gui, b, b .+ (6, 2))
                 settle!()
+            end
+        end
+        # a switch on the page "Edit", e.g. the detector that lets the beams pass, then "Apply"
+        s = findfirst(p -> p isa GUI.CatalogToggle, entry.params)
+        if !isnothing(s)
+            step("catalog, $(entry.name): edit switch + apply") do
+                gui.controls.selected[] === obj || select!(gui, obj)
+                frame!()
+                card = last(filter(c -> GUI._card_object(gui, c) === obj, GUI._edit_cards(gui)))
+                GUI._set_page!(gui, card, :edit)
+                frame!()
+                _click!(gui, _rect_center(GUI._card_widget(card, GUI._edit_toggle(s))))
+                frame!()
+                notify(GUI._card_widget(card, :edit_apply).clicks)
+                settle!()
+                # the new object takes the place of the old one and is selected
+                _check(gui.controls.selected[] !== obj, "the $(entry.name) was not built again")
+                obj = gui.controls.selected[]
             end
         end
         step("catalog, $(entry.name): delete") do

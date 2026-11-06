@@ -49,6 +49,19 @@ const SKILL_DIR = joinpath(@__DIR__, "..", "skills", "beamletopticsgui")
             @test uperm(skill_md) & 0x02 != 0   # writable again
         end
     end
+
+    @testset "the copy of a read-only folder is writable" begin
+        # as Pkg installs a package; no chmod of the copy, which a network drive refuses
+        mktempdir() do dir
+            src, dst = joinpath(dir, "src"), joinpath(dir, "dst")
+            mkpath(joinpath(src, "sub"))
+            write(joinpath(src, "sub", "a.md"), "a")
+            chmod(joinpath(src, "sub", "a.md"), 0o444)
+            BeamletOpticsGUI._copy_contents(src, dst)
+            @test read(joinpath(dst, "sub", "a.md"), String) == "a"
+            @test uperm(joinpath(dst, "sub", "a.md")) & 0x02 != 0
+        end
+    end
 end
 
 end
