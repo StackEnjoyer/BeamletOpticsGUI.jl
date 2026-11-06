@@ -1197,6 +1197,29 @@ _floating_cards(gui::LiveView, @nospecialize(obj)) = filter(c -> c.pinned && c.o
 _is_floating(gui::LiveView, @nospecialize(obj)) = any(c -> c.pinned && c.obj === obj, gui.cards.all)
 
 """
+    _take_pins!(gui, old) -> pins
+    _give_pins!(gui, pins, new)
+
+Hand the cards pinned to `old` over to `new`, which takes its place, see `_replace!`:
+`_take_pins!` detaches them from `old` before it is removed, which would unpin them, and
+`_give_pins!` pins them to `new` once it is in the view. A floating card keeps its spot, its page,
+if `new` has it, and whether it is collapsed; until then it is pinned to no object and hidden. A
+layout that docks pinned cards hands those over as well, see `_take_pins!(::AppView, old)`.
+"""
+function _take_pins!(gui::LiveView, @nospecialize(old))
+    floating = _floating_cards(gui, old)
+    foreach(c -> c.obj = nothing, floating)
+    return (; floating, docked = ())
+end
+
+function _give_pins!(gui::LiveView, pins, @nospecialize(new))
+    # the card builds its rows for `new`, see `_update_card!`
+    foreach(c -> (c.obj, c.key, c.pose) = (new, nothing, nothing), pins.floating)
+    isempty(pins.floating) || _update_cards!(gui)
+    return nothing
+end
+
+"""
     _float!(gui, obj)
     _dock!(gui, obj)
 

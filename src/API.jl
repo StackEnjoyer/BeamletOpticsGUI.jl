@@ -656,6 +656,22 @@ struct CatalogSurface
 end
 
 """
+    CatalogToggle(name, default::Bool; keyword = nothing)
+
+A switch of an entry of the built-in catalog (internal): the catalog and the page "Edit" show a
+`Toggle`, and the constructor gets its state as a `Bool`, e.g. the `stop` of a `Detector`. Its text
+(see `_catalog_value`) is `"true"` or `"false"`. `name` and `keyword` as for [`CatalogParam`](@ref).
+"""
+struct CatalogToggle
+    name::String
+    default::Bool
+    keyword::Union{Nothing, Symbol}
+end
+
+CatalogToggle(name::AbstractString, default::Bool; keyword::Union{Nothing, Symbol} = nothing) =
+    CatalogToggle(String(name), default, keyword)
+
+"""
     CatalogEntry(name, constructor; group = "Components", params = [], code_name = string(nameof(constructor)), icon = nothing, source = false)
 
 An entry of the component catalog of [`live_view`](@ref), see [`component_catalog`](@ref): a
@@ -692,7 +708,7 @@ struct CatalogEntry
     name::String
     group::String
     constructor::Any
-    params::Vector{Union{CatalogParam, CatalogGlass, CatalogSurface}}
+    params::Vector{Union{CatalogParam, CatalogGlass, CatalogSurface, CatalogToggle}}
     code_name::String
     icon::Union{Nothing, Symbol, Makie.BezierPath}
     source::Bool
@@ -704,7 +720,7 @@ function CatalogEntry(name::AbstractString, constructor; group::AbstractString =
     # an unknown name throws
     icon isa Symbol && _icon(icon)
     return CatalogEntry(String(name), String(group), constructor,
-        Union{CatalogParam, CatalogGlass, CatalogSurface}[params...], String(code_name), icon, source)
+        Union{CatalogParam, CatalogGlass, CatalogSurface, CatalogToggle}[params...], String(code_name), icon, source)
 end
 
 """

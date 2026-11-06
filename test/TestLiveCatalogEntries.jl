@@ -211,7 +211,19 @@ const GUI = BeamletOpticsGUI
         prism = _entry(entries, RightAnglePrism)
         @test GUI._catalog_code(prism, [10e-3, 10e-3, 1.7]) == "RightAnglePrism(0.01, 0.01, ConstantRefractiveIndex(1.7))"
         detector = _entry(entries, Detector)
-        @test GUI._catalog_code(detector, [5e-3]) == "Detector(0.005)"
+        # the switch "stop beams": on by default, off lets the beams pass
+        @test _defaults(detector) == Any[10e-3, true]
+        @test GUI._catalog_code(detector, Any[5e-3, true]) == "Detector(0.005, true)"
+        @test GUI._catalog_code(detector, Any[5e-3, false]) == "Detector(0.005, false)"
+        @test BMO.stop(GUI._catalog_object(detector, Any[5e-3, true]))
+        @test !BMO.stop(GUI._catalog_object(detector, Any[5e-3, false]))
+        p = detector.params[2]
+        @test p isa GUI.CatalogToggle && GUI._catalog_string(p) == "true"
+        @test GUI._catalog_value(p, "false") === false && GUI._catalog_value(p, " true ") === true
+        @test GUI._catalog_value(p, "") === true
+        @test_throws ArgumentError GUI._catalog_value(p, "maybe")
+        c = GUI._catalog_component(detector, ["5", "false"])
+        @test !BMO.stop(c.obj) && c.origin.code == "Detector(0.005, false)"
         # an angle in degrees as a keyword
         oap = _entry(entries, OffAxisParabolicMirror)
         @test GUI._catalog_code(oap, _defaults(oap)) == "OffAxisParabolicMirror(0.05, 0.0254; angle = 90.0)"

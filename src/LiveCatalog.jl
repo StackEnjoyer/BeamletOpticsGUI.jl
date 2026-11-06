@@ -17,6 +17,7 @@ The default of the parameter `p` as a value, see `_catalog_args`: the number of 
 """
 _catalog_default(p::CatalogParam) = p.default
 _catalog_default(p::CatalogGlass) = p.default == _GLASS_CONSTANT ? p.n : p.default
+_catalog_default(p::CatalogToggle) = p.default
 
 """
 The argument of the constructor for the value `v` of the parameter `p`: the number (an `Int` for a
@@ -26,11 +27,13 @@ index `v`, a `ConstantRefractiveIndex`.
 _catalog_arg(p::CatalogParam, v::Real) = p.integer ? Int(v) : Float64(v)
 _catalog_arg(::CatalogGlass, v::AbstractString) = _glass(v)
 _catalog_arg(::CatalogGlass, v::Real) = ConstantRefractiveIndex(Float64(v))
+_catalog_arg(::CatalogToggle, v::Bool) = v
 
 """The argument of the constructor for the value `v` of the parameter `p` as Julia code, see `_catalog_arg`."""
 _catalog_arg_code(p::CatalogParam, v::Real) = repr(_catalog_arg(p, v))
 _catalog_arg_code(::CatalogGlass, v::AbstractString) = _glass_code(_glass(v))
 _catalog_arg_code(p::CatalogGlass, v::Real) = _glass_code(_catalog_arg(p, v))
+_catalog_arg_code(::CatalogToggle, v::Bool) = repr(v)
 
 """
     _catalog_args([f,] entry, values) -> (positional, keywords)
@@ -56,7 +59,7 @@ end
 _catalog_args(entry::CatalogEntry, values) = _catalog_args(_catalog_arg, entry, values)
 
 # The keyword as which the parameter `p` is passed, `nothing` for a positional argument
-_catalog_keyword(p::Union{CatalogParam, CatalogGlass}) = p.keyword
+_catalog_keyword(p::Union{CatalogParam, CatalogGlass, CatalogToggle}) = p.keyword
 
 """
     _catalog_object(entry, values) -> Union{ObjectOrGroup, AbstractBeam, AbstractBeamGroup}
@@ -125,6 +128,7 @@ glass or its constant refractive index.
 """
 _catalog_string(p::CatalogParam) = _catalog_number_string(p.default / p.scale)
 _catalog_string(p::CatalogGlass) = p.default == _GLASS_CONSTANT ? _catalog_number_string(p.n) : p.default
+_catalog_string(p::CatalogToggle) = string(p.default)
 
 """
     _catalog_value(p, s) -> Union{Float64, String}
@@ -138,6 +142,9 @@ whole number.
 
 A [`CatalogGlass`](@ref) gives the name of the glass if `s` is one of [`catalog_glasses`](@ref),
 otherwise the constant refractive index that `s` holds, `p.n` for an empty box.
+
+A `CatalogToggle` gives `true` for `"true"` and `false` for `"false"`, its default for an empty
+text.
 
 Throws an `ArgumentError` for a text that is neither.
 """
@@ -163,6 +170,14 @@ function _catalog_value(p::CatalogGlass, s::AbstractString)
     (isnothing(x) || !isfinite(x) || x <= 0) &&
         throw(ArgumentError("invalid input \"$text\" for $(p.name), enter a refractive index"))
     return x
+end
+
+function _catalog_value(p::CatalogToggle, s::AbstractString)
+    text = strip(s)
+    isempty(text) && return p.default
+    v = tryparse(Bool, text)
+    isnothing(v) && throw(ArgumentError("invalid input \"$text\" for $(p.name), enter true or false"))
+    return v
 end
 
 """
@@ -286,7 +301,8 @@ theme tokens `theme`, from top to bottom:
   `Textbox` per number, per glass its menu and, for "constant", the box of the refractive
   index, as `(; menu, box)`, and per surface its menu, the box of its radius and, for "aspheric",
   the boxes of its conic constant and of its coefficients, as
-  `(; menu, radius, conic, coefficients)`, see `_fill_catalog_surfaces!`. `boxes` and `menus` hold
+  `(; menu, radius, conic, coefficients)`, see `_fill_catalog_surfaces!`, and a `Toggle` per
+  switch (`CatalogToggle`). `boxes` and `menus` hold
   all of them; the `menus` also hold the menus of the presets of the numbers, which set their
   boxes, see `_catalog_preset_menu!`.
 - `place`: the button "Place"
@@ -332,6 +348,7 @@ function _catalog_input_string(p::CatalogGlass, input::NamedTuple)
     # "constant" was chosen and its box is not built yet, see `_flush_catalog_form!`
     return isnothing(input.box) ? _catalog_number_string(p.n) : String(input.box.displayed_string[])
 end
+_catalog_input_string(::CatalogToggle, input::Toggle) = string(input.active[])
 
 # The text of a surface from its menu and its boxes, see `_surface_string`
 function _catalog_input_string(::CatalogSurface, input::NamedTuple)
@@ -851,8 +868,9 @@ its inputs (see `_catalog_strings`): first the surfaces (see `_fill_catalog_surf
 numbers, each with its name, a `Textbox` and its unit, in two columns from the number of its style on (see `_catalog_style`), then the glasses, each
 with its name and the menu of the glasses and "constant", for which a box takes the refractive
 index, right of the menu or below it. A number with presets has their menu right of its unit, or
-below its box where the box of "constant" is below its menu, see `_catalog_preset_menu!`. The boxes
-and the menus take the keyboard like those of the controls, see `_register_widget!`.
+below its box where the box of "constant" is below its menu, see `_catalog_preset_menu!`. Last the
+switches (`CatalogToggle`), each with its name and a `Toggle`. The boxes and the menus take the
+keyboard like those of the controls, see `_register_widget!`.
 """
 function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
     params = _catalog_entry(w).params
@@ -931,6 +949,15 @@ function _fill_catalog_form!(gui::LiveView, w::_CatalogWidget, strings)
                 (s == _GLASS_CONSTANT) == constant || (w.dirty = true)
                 return nothing
             end)
+        end
+    end
+    toggles = findall(p -> p isa CatalogToggle, params)
+    if !isempty(toggles)
+        grid = _catalog_form_grid(w.form[part += 1, 1])
+        for (row, i) in enumerate(toggles)
+            Label(grid[row, 1], params[i].name; label...)
+            w.inputs[i] = Toggle(grid[row, 2]; active = _catalog_value(params[i], strings[i]),
+                _card_style(t, Toggle)..., halign = :left)
         end
     end
     foreach(b -> _register_widget!(gui, b), w.boxes)

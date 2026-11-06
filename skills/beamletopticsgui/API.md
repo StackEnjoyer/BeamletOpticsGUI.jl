@@ -139,7 +139,9 @@ a radius [mm, sign of BeamletOptics, `Inf` for a plane], and for an even asphere
 constant `k` and the coefficients A4 to A16 in mm^(1 - order) as on a data sheet (A2 is zero). A
 lens with an asphere is built and exported as the `Lens`, `DoubletLens` or `TripletLens` of its
 surfaces, e.g. `Lens(SphericalSurface(r, d), EvenAsphericalSurface(r, d, k, [0.0, A4, ...]),
-thickness, n)`; a cemented surface belongs to both elements that it joins. "Place"
+thickness, n)`; a cemented surface belongs to both elements that it joins. The detector has a
+switch "stop beams" (on by default); off, the beams pass it unchanged (`Detector(edge_length,
+false)`) and reach the components behind it. "Place"
 attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
 selected component or source. It moves in the plane of the table (perpendicular to `rotation_axis`,
 at the height of the source of its system) and snaps onto beams while `snap` is on; the first component or source of
