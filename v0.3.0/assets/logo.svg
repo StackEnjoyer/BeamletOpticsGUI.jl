@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="404" height="304" viewBox="0 0 404 304" role="img" aria-labelledby="title desc">
+  <title id="title">BeamletOpticsGUI.jl</title>
+  <desc id="desc">The BeamletOptics beamlet in an application window whose buttons are the Julia dots.</desc>
+  <!-- Julia colors: red #CB3C33, green #389826, purple #9558B2, blue #4063D8.
+       No black or white, so one file serves both light and dark themes. -->
+  <!-- window with title bar; the buttons are the Julia dots in their usual order -->
+  <g fill="none" stroke="#4063D8" stroke-width="8">
+    <rect x="24" y="24" width="356" height="256" rx="18"/>
+    <line x1="24" y1="66" x2="380" y2="66"/>
+  </g>
+  <circle cx="54" cy="45" r="8" fill="#CB3C33"/>
+  <circle cx="78" cy="45" r="8" fill="#389826"/>
+  <circle cx="102" cy="45" r="8" fill="#9558B2"/>
+  <!-- rays of the BeamletOptics logo (docs/src/assets/logo.svg of BeamletOptics.jl), unchanged
+       and scaled uniformly by 6 about its waist (130, 88): waist envelope (red), waist rays
+       (green), chief ray (blue), divergence rays (purple) -->
+  <g fill="none" stroke-width="0.705556" transform="translate(202 173) scale(6) translate(-130 -88)">
+    <path d="M 105 75 C 105 75 123.73704 84 130 84 C 136.26296 84 155 75 155 75" stroke="#CB3C33"/>
+    <path d="M 105 101 C 105 101 123.73704 92 130 92 C 136.26296 92 155 101 155 101" stroke="#CB3C33"/>
+    <path d="M 105 84.706114 H 155" stroke="#389826"/>
+    <path d="M 105 91.297564 H 155" stroke="#389826"/>
+    <path d="M 105 87.999998 H 155" stroke="#4063D8"/>
+    <path d="M 104.69325 75.636408 L 155.30253 100.37212" stroke="#9558B2"/>
+    <path d="M 104.69325 100.37036 L 155.31221 75.635438" stroke="#9558B2"/>
+  </g>
+</svg>
