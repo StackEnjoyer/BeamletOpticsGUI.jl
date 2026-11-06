@@ -30,7 +30,9 @@ const GUI = BeamletOpticsGUI
             # the card of a system: its own window, renaming and removing
             :window, :pencil, :trash,
             # the tool that adds a system
-            :add_system)
+            :add_system,
+            # the tools that save and open a project
+            :save, :save_as, :open)
         @test Set(keys(GUI._ICONS)) == Set(names)
         for name in names
             icon = GUI._icon(name)

@@ -4,7 +4,7 @@ Recipes for `gui = live_view(...)` of BeamletOpticsGUI (`using BeamletOptics, Be
 needs a window, not for headless scripts). Use them when adding a component type whose parameters
 should be editable in the window, or a GUI extension. Everything works identically in
 `layout = :compact` and `layout = :app`. Look up any signature before use with
-`julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc BeamletOpticsGUI.CardRow)'`.
+`julia --project=<env> -e 'using REPL, BeamletOpticsGUI; display(@doc BeamletOpticsGUI.CardRow)'`.
 
 All card functions (`card_rows`, `card_actions`, `card_input`, `card_show!`) belong to
 BeamletOpticsGUI: extend them as `BeamletOpticsGUI.card_rows(x::MyType)`, never as

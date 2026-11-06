@@ -600,7 +600,9 @@ end
 Called after each change of `obj` (or a slider, then `obj` is `nothing`). Solves the systems, with
 a preview of beam groups (see `_resolve!`) and a coarse preview of slow detector views, or marks
 them as outdated. If solving (the preview solve, if any) is slower than the `trace_budget`, the
-solve is deferred until the movement pauses, see `_on_idle!`.
+solve is deferred until the movement pauses, see `_on_idle!`. While a merge of the files of the
+project is applied, only marks the beams as outdated; the merge solves once at its end, see
+`_adopting`.
 """
 function _on_change!(gui::LiveView, @nospecialize(obj); systems = nothing)
     trace = gui.trace
@@ -609,6 +611,8 @@ function _on_change!(gui::LiveView, @nospecialize(obj); systems = nothing)
     affected = isnothing(systems) ? _affected_systems(gui, obj) : systems
     (!isnothing(affected) && isempty(affected)) && return nothing
     trace.last_change = time()
+    # A merge of the files of the project solves once, after it, see `_adopting`
+    gui.sync.adopting && return _note_adopted!(gui, obj, affected)
     preview = _has_preview(gui)
     auto, manual = _split_auto(gui, affected)
     if isempty(auto)
@@ -631,9 +635,12 @@ end
 
 """
 Solves deferred changes, completes a preview solve with a full solve and refines the preview of
-the detector views once the movement pauses and no solve runs in the background.
+the detector views once the movement pauses and no solve runs in the background. While a merge of
+the files of the project is applied, only waits for its end, see `_finish_adopt!`.
 """
 function _on_idle!(gui::LiveView)
+    # A merge of the files solves once its glides landed, see `_finish_adopt!`
+    gui.sync.adopting && return (_finish_adopt!(gui); nothing)
     time() - gui.trace.last_change > gui.trace.idle_delay || return nothing
     _running(gui) && return nothing
     if gui.trace.pending && gui.trace.auto[]
@@ -647,6 +654,139 @@ function _on_idle!(gui::LiveView)
         _run!(gui, job, _VIEW_COMPUTING)
     end
     return nothing
+end
+
+#=
+One solve per merge of the files of a project: while a merge is applied (`_adopt!` in
+`LiveProjectSync.jl`) and its objects glide (`LiveProjectGlide.jl`), a change only marks the beams of
+its systems as outdated; the systems of all changes are solved once at the end
+=#
+
+# How long the glides of a merge may stand still before they are landed at once [s], e.g. after
+# the task that glides them failed; see `_finish_adopt!`
+const _GLIDES_STUCK = 2.0
+
+"""
+    _Adoption
+
+A merge of the files of a project that is being applied to a view, see `_adopting`: `open` how many
+callers are still applying it, `systems` the systems that its changes affected (`all`: all of
+them), `changed` whether anything changed, `gliding` the number of the objects that glided at
+`at`, the time the glides last made progress.
+"""
+Base.@kwdef mutable struct _Adoption
+    open::Int = 0
+    systems::Vector{Any} = Any[]
+    all::Bool = false
+    changed::Bool = false
+    gliding::Int = 0
+    at::Float64 = 0.0
+end
+
+# The merges being applied, per view; the flag `adopting` of its `_ProjectSync` tells
+const _ADOPTIONS = WeakKeyDict{LiveView, _Adoption}()
+
+"""
+    _adopting(f, gui)
+
+Calls `f()`, which applies a merge of the files of the project to the `gui` (see `_sync!`), such
+that the merge solves once: until `f` returned and the objects that it moved landed (see
+`_glide!`), a change of the objects only marks the beams of its systems as outdated (see
+`_on_change!`); then the systems of all changes are solved once, see `_finish_adopt!`. Calls may
+nest; the outermost ends the merge. Returns what `f` returns.
+"""
+function _adopting(f, gui::LiveView)
+    _begin_adopt!(gui)
+    try
+        return f()
+    finally
+        _end_adopt!(gui)
+    end
+end
+
+"""
+Starts to apply a merge of the files of the project to the `gui`, see `_adopting`, which calls it
+and `_end_adopt!`. A merge that still waits for its glides goes on with this one.
+"""
+function _begin_adopt!(gui::LiveView)
+    a = get!(_Adoption, _ADOPTIONS, gui)
+    a.open += 1
+    gui.sync.adopting = true
+    return nothing
+end
+
+"""
+Ends what `_begin_adopt!` started; solves once the moved objects landed, see `_finish_adopt!`.
+"""
+function _end_adopt!(gui::LiveView)
+    a = get(_ADOPTIONS, gui, nothing)
+    isnothing(a) || (a.open = max(a.open - 1, 0))
+    _finish_adopt!(gui)
+    return nothing
+end
+
+"""
+Records a change of `obj` (the `affected` systems, `nothing` for all) while a merge is applied to the
+`gui`, see `_adopting`: its beams are outdated until the solve after the merge, without a word in
+the status line, which tells what the merge did.
+"""
+function _note_adopted!(gui::LiveView, @nospecialize(obj), affected)
+    a = get!(_Adoption, _ADOPTIONS, gui)
+    a.changed = true
+    if isnothing(affected)
+        a.all = true
+    else
+        foreach(sys -> _has(a.systems, sys) || push!(a.systems, sys), affected)
+    end
+    trace = gui.trace
+    trace.stale = true
+    isnothing(affected) ? _note_stale!(gui, obj) : _note_stale_systems!(gui, affected)
+    _dim_beams!(gui)
+    _sync_links!(gui, obj; stale = true)
+    # As `_on_change!` does when no solve follows at once
+    auto, _ = _split_auto(gui, affected)
+    (isempty(auto) || (_has_preview(gui) ? trace.preview_time : trace.solve_time) > trace.budget) &&
+        _detectors_moved!(gui, obj)
+    return nothing
+end
+
+"""
+    _finish_adopt!(gui; now = time()) -> Bool
+
+Ends the merge of the files that is applied to the `gui` (see `_adopting`) once no caller applies it
+anymore and its objects landed: solves the systems of its changes once (all of them if a change
+affected all), like a change of them, see `_on_systems_change!`. Glides that made no progress for
+`_GLIDES_STUCK` seconds are landed at once. Called by `_end_adopt!` and, while the objects glide,
+by `_on_idle!`. Returns whether the merge ended (also if there was none).
+"""
+function _finish_adopt!(gui::LiveView; now::Real = time())
+    s = gui.sync
+    a = get(_ADOPTIONS, gui, nothing)
+    if isnothing(a)
+        s.adopting = false
+        return true
+    end
+    a.open > 0 && return false
+    if !isempty(s.gliding)
+        n = length(s.gliding)
+        if n != a.gliding
+            a.gliding = n
+            a.at = Float64(now)
+        end
+        now - a.at < _GLIDES_STUCK && return false
+        # The changes of the landing are still part of the merge
+        _finish_glides!(gui)
+    end
+    delete!(_ADOPTIONS, gui)
+    s.adopting = false
+    a.changed || return true
+    if a.all
+        _on_change!(gui, nothing)
+    else
+        systems = BMO.AbstractSystem[sys for sys in _systems(gui) if _has(a.systems, sys)]
+        isempty(systems) || _on_systems_change!(gui, systems)
+    end
+    return true
 end
 
 """

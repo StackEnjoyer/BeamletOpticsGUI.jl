@@ -107,9 +107,11 @@ const GUI = BeamletOpticsGUI
             @test gui.status.text[] == "view unlocked"
             c = cam(gui).controls
             @test c.rotation_button[] == Mouse.left
-            @test c.pan_left_key[] == Keyboard.j && c.pan_right_key[] == Keyboard.l
-            @test c.tilt_up_key[] == Keyboard.i && c.tilt_down_key[] == Keyboard.k
-            @test c.roll_clockwise_key[] == Keyboard.e && c.roll_counterclockwise_key[] == Keyboard.q
+            # the keys act without Ctrl or Cmd only, see `_without_ctrl!`
+            key(k) = k & !reduce(|, GUI._CTRL_OR_CMD_KEYS)
+            @test c.pan_left_key[] == key(Keyboard.j) && c.pan_right_key[] == key(Keyboard.l)
+            @test c.tilt_up_key[] == key(Keyboard.i) && c.tilt_down_key[] == key(Keyboard.k)
+            @test c.roll_clockwise_key[] == key(Keyboard.e) && c.roll_counterclockwise_key[] == key(Keyboard.q)
             @test !any(==(false), rotations(gui))
             drag!(gui, free(gui), free(gui) .+ (60.0, 40.0))
             @test norm(dir(gui) - d0) > 1e-3
