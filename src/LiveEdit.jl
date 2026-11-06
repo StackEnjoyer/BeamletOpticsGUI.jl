@@ -155,7 +155,8 @@ end
 Puts the component or source `new` with its `origin` in the place of `old` in the `gui`: `new` gets
 the pose of `old`, i.e. it is moved and rotated from its pose as constructed like `old` was from
 its own, then `old` is removed and `new` is added to the same system with the label of `old` and
-selected, and the card of the selection shows its page "Edit" again. The replacement is one action
+selected, and the card of the selection shows its page "Edit" again. The cards pinned to `old`,
+floating or docked, are pinned to `new`, see `_take_pins!`. The replacement is one action
 of the undo history: undo brings `old` back, redo `new`.
 """
 function _replace!(gui::LiveView, old, new, origin)
@@ -175,9 +176,12 @@ function _replace!(gui::LiveView, old, new, origin)
     new_snap = Ref{Any}(_replacement_snapshot(gui, old, new, origin, old_snap))
     old_state = Ref{Any}(old_snap)
     swap!(out, out_state, in, in_state) = begin
+        # the cards pinned to `out` stay, pinned to `in`
+        pins = _take_pins!(gui, out)
         out_state[] = _remove_unrecorded!(gui, out)
         delete!(comp.edits, out)
         _restore!(gui, in, in_state[])
+        _give_pins!(gui, pins, in)
         _show_edit_page!(gui, in)
         return nothing
     end
@@ -187,12 +191,16 @@ function _replace!(gui::LiveView, old, new, origin)
     return new
 end
 
-"""Shows the page "Edit" of the cards of `obj` again, e.g. after it replaced the object of the page."""
+"""
+Shows the page "Edit" of the cards of `obj` again, e.g. after it replaced the object of the page.
+A pinned card keeps its page, see `_give_pins!`.
+"""
 function _show_edit_page!(gui::LiveView, @nospecialize(obj))
     _update_cards!(gui)
     _update_inspector!(gui)
     for c in _edit_cards(gui)
-        (_card_object(gui, c) === obj && :edit in _card_pages(gui, obj)) && _set_page!(gui, c, :edit)
+        (!c.pinned && _card_object(gui, c) === obj && :edit in _card_pages(gui, obj)) &&
+            _set_page!(gui, c, :edit)
     end
     return nothing
 end

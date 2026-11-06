@@ -238,6 +238,48 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
+    @testset "pinned cards stay, $layout ($where)" for (layout, where) in
+            ((:compact, :floating), (:app, :floating), (:app, :docked))
+        back = Detector(10e-3)
+        translate3d!(back, [0, 0.2, 0])
+        sys = System([back])
+        gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
+        c = _built("Detector")
+        translate3d!(c.obj, [0, 0.1, 0])
+        add_component!(gui, c.obj; origin = c.origin, label = "PD")
+        # its card pinned, in the app layout docked or floating in the 3D view, on the page "Edit"
+        GUI._toggle_pin!(gui, c.obj)
+        where === :floating && layout === :app && GUI._float!(gui, c.obj)
+        pinned(obj) = where === :floating ? GUI._floating_cards(gui, obj) : GUI._docked_cards(gui, obj)
+        card = only(pinned(c.obj))
+        GUI._update_cards!(gui)
+        GUI._set_page!(gui, card, :edit)
+        # the selection is elsewhere: "Apply" on the pinned card
+        gui.controls.selected[] = nothing
+        GUI._update_cards!(gui)
+        GUI._card_widget(card, GUI._edit_toggle(2)).active[] = false
+        notify(GUI._card_widget(card, :edit_apply).clicks)
+        new = only(o for o in sys.objects if o !== back)
+        @test new !== c.obj && !BMO.stop(new)
+        # the card is pinned to the new detector, still on the page "Edit", with its switch off
+        @test isempty(pinned(c.obj))
+        card = only(pinned(new))
+        @test GUI._is_pinned(gui, new) && card.page === :edit
+        GUI._update_cards!(gui)
+        @test !GUI._card_widget(card, GUI._edit_toggle(2)).active[]
+        layout === :app && @test length(gui.layout.inspector.pinned) == (where === :docked)
+        # a pinned card keeps another page, e.g. "Results"
+        GUI._set_page!(gui, card, :results)
+        _type!(_show!(gui, new, :edit), 1, "20")
+        notify(GUI._card_widget(_card(gui), :edit_apply).clicks)
+        newer = only(o for o in sys.objects if o !== back)
+        @test newer !== new && only(pinned(newer)).page === :results
+        # undo hands the card back
+        @test GUI._undo!(gui.controls)
+        @test only(pinned(new)).page === :results && isempty(pinned(newer))
+        close(gui)
+    end
+
     @testset "text typed without Enter" begin
         sys = System()
         gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9))
