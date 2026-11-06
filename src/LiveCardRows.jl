@@ -175,7 +175,7 @@ _shown_hidden(gui::LiveView, @nospecialize(obj)) = !isempty(_leaves(obj)) && _al
 
 # The button "remove" of a component or a source, in the last row of its card (see `_card_rows`):
 # removes a top-level object of a `System` or a source from the view (see `remove_component!`) and
-# names the reason in the status line for any other object, e.g. an object of a group or an extra
+# names the reason in the status line for any other object, e.g. an object of a group
 _remove_button() = CardWidget(Button; name = :remove, label = "remove",
     on = (gui, o, _) -> _remove_selected!(gui, o))
 

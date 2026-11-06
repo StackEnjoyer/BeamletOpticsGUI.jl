@@ -363,6 +363,7 @@ function _view_spec(pd, kind::Symbol, kwargs::NamedTuple)
         throw(ArgumentError("the kind of a detector view must be one of $_DETECTOR_KINDS, got :$kind"))
     haskey(kwargs, :history) && throw(ArgumentError("detector views have no `history`: record the " *
         "values in `on_change` and plot them in a panel of `add_panel!`"))
+    haskey(kwargs, :n) && throw(ArgumentError("the option `n` of a detector view is now `num_points`"))
     colorscale = get(kwargs, :colorscale, :linear)
     colorscale in (:linear, :log) ||
         throw(ArgumentError("colorscale of a detector view must be :linear or :log, got $(repr(colorscale))"))

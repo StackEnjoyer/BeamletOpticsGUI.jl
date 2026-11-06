@@ -83,6 +83,13 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
             e
         end
         @test err isa ArgumentError && occursin("add_panel!", err.msg)
+        # the option `n` of 0.2 names its successor instead of reaching `RegularGrid`
+        err = try
+            GUI._detector_specs([pd => (:intensity, (; n = 200))])
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("num_points", err.msg)
     end
 
     @testset "state and options" begin

@@ -342,7 +342,8 @@ view passes on to it:
 gui = live_view(system, beam; detectors = [pd => (:intensity, (; colorscale = :log, profiles = true))])
 ```
 
-The option `history` is no longer available and throws an `ArgumentError`: record the values in
+The option `n` is now `num_points` and throws an `ArgumentError`. The option `history` is no longer
+available and throws an `ArgumentError` as well: record the values in
 `on_change` and plot them in a panel of [`add_panel!`](@ref), see [Own panels, controls and tools](@ref)
 and the [Interactive Michelson interferometer](@ref) example.
 
