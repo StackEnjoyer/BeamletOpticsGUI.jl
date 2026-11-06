@@ -818,11 +818,15 @@ end
     @testset "a write that the file system refuses is busy and tried again" begin
         file = system(dir)
         translate3d!(gui, obj(gui, :M1), [0.0, 0.0, 0.01])
-        # read-only: neither the replace nor the overwrite in place works
+        # read-only: neither the replace nor the overwrite in place works. Windows refuses to
+        # replace a read-only file; elsewhere a rename depends on the folder only, so the folder
+        # is made read-only too (not for root, which the CI runners are not)
         chmod(file, 0o444)
+        Sys.iswindows() || chmod(dir, 0o555)
         try
             @test GUI._save_to!(gui, dir) === :busy
         finally
+            Sys.iswindows() || chmod(dir, 0o755)
             chmod(file, 0o644)
         end
         @test GUI._save_to!(gui, dir) === :saved

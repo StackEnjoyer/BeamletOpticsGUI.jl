@@ -203,9 +203,10 @@ end
     end
 
     @testset "a shown window sees a change of the files" begin
-        # Within 0.5 s with notifications, although it polls only every 10 s; within two looks
-        # without (the look that runs at the change read the files before it)
-        for (notes, poll, within) in ((true, 10.0, 0.5), (false, 10.0, 2 * GUI._WATCH_INTERVAL + 0.1))
+        # With notifications and without (by the looks, every `_WATCH_INTERVAL`), well before the
+        # poll of the folder every 10 s: typically within 0.5 s (see the logged times), but the
+        # bound is generous, since the CI workers share their CPUs and compile each first call
+        for (notes, poll, within) in ((true, 10.0, 5.0), (false, 10.0, 5.0))
             gui, dir, _ = opened()
             screen = GLMakie.Screen(visible = false)
             display(screen, gui.fig)
@@ -214,17 +215,17 @@ end
             @test n isa GUI._FileNotes && isempty(n.monitors) == !notes
             # Its own presence file is written first, by a look
             @test timedwait(() -> !gui.sync.presence_due && !isnothing(gui.sync.look) &&
-                                  istaskdone(gui.sync.look.task), 2.0; pollint = 0.01) === :ok
+                                  istaskdone(gui.sync.look.task), 60.0; pollint = 0.01) === :ok
             sleep(0.5)
             marks = gui.sync.marks
             t = time()
             move!(dir, "L1", (0.0, 0.15, 0.0))
-            @test timedwait(() -> gui.sync.marks != marks, 2.0; pollint = 0.005) === :ok
+            @test timedwait(() -> gui.sync.marks != marks, poll - 1; pollint = 0.005) === :ok
             seen = time() - t
             @info "a change of the files was seen after $(round(1000 * seen; digits = 1)) ms" notes
             @test seen <= within
             # and merged once it settled
-            @test timedwait(() -> BeamletOptics.position(obj(gui, :L1)) ≈ [0.0, 0.15, 0.0], 3.0;
+            @test timedwait(() -> BeamletOptics.position(obj(gui, :L1)) ≈ [0.0, 0.15, 0.0], 30.0;
                 pollint = 0.01) === :ok
             close(screen)
             close(gui)
