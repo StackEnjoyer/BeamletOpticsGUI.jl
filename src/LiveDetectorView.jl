@@ -8,59 +8,41 @@ using Makie: Axis, Label, Button, Toggle, GridLayout, Observable, Point2f, Vec2f
              Mouse, Outside, Auto, colsize!, colgap!, translate!
 
 #=
-Kinds of views, by the type of the hits of the detector
+Forms of the views, see `CardView`
 =#
 
 """
-    _ViewKind
+    _ViewForm
 
-Kind of the view of the hits of a detector: `_SpotKind` (the spot diagram), `_PSFKind` (the
-intensity of ray hits, normalized to its peak) and `_IntensityKind` (the intensity of beamlet
-hits); the latter two are fields on a grid, i.e. `_FieldKind`s. The kinds that hits offer are
-`_view_kinds(hits)`. Per kind: `_kind_name`, `_kind_label`, the data (`_kind_data`), the metrics
-(`_kind_metrics`) and how the widget draws it (`_draw_kind!`).
+How the view widget draws a `CardView`: `_PointsForm` (a spot diagram), `_FieldForm` (an image on
+a grid) and `_SeriesForm` (a value over the solves), see `_form`. Per form: the data (`_form_data`),
+the display helpers (`_form_metrics`) and the drawing (`_draw_form!`).
 """
-abstract type _ViewKind end
-abstract type _FieldKind <: _ViewKind end
-struct _SpotKind <: _ViewKind end
-struct _PSFKind <: _FieldKind end
-struct _IntensityKind <: _FieldKind end
+abstract type _ViewForm end
+struct _PointsForm <: _ViewForm end
+struct _FieldForm <: _ViewForm end
+struct _SeriesForm <: _ViewForm end
 
-"""Name of the `kind` in the options of a view, see `_ViewOptions`."""
-_kind_name(::_SpotKind) = :spot
-_kind_name(::_PSFKind) = :psf
-_kind_name(::_IntensityKind) = :intensity
-
-"""Label of the `kind` in the switch of a view."""
-_kind_label(::_SpotKind) = "Spot"
-_kind_label(::_PSFKind) = "PSF"
-_kind_label(::_IntensityKind) = "Intensity"
-
-"""
-    _view_kinds(hits) -> Tuple{Vararg{_ViewKind}}
-
-The kinds of views that the `hits` of a detector offer, the first one is the default: the spot
-diagram and the PSF for ray hits, the intensity and the spot diagram for beamlet hits, none
-without hits.
-"""
-_view_kinds(_) = ()
-_view_kinds(::AbstractVector{<:BMO.AbstractRayHit}) = (_SpotKind(), _PSFKind())
-_view_kinds(::AbstractVector{<:BMO.AbstractBeamletHit}) = (_IntensityKind(), _SpotKind())
+"""The form of the `CardView` `cv`, see `_ViewForm`."""
+_form(cv::CardView) = cv.form === :points ? _PointsForm() : cv.form === :field ? _FieldForm() : _SeriesForm()
+_form(::Nothing) = nothing
 
 # Grid of a field that is shown only as a thumbnail
 const _THUMB_N = 48
 
 """
     _ViewOptions(; kind = :auto, num_points = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
-        colorbar = true, profiles = false, window = nothing)
+        colorbar = true, profiles = false, window = nothing, spot_colors = nothing)
     _ViewOptions(opts; changed...)
 
-Options of the view of a detector: the `kind` (`:auto` or a name, see `_kind_name`; a kind that the
-hits do not offer falls back to their default), the grid `num_points` of a field and further `kwargs` of
-`BeamletOptics.intensity`, the `colorscale` (`:linear` or `:log`) and the fixed `colorrange` of a
-field (or `nothing`), whether the `colorbar` and the `profiles` of a field are shown, and the
-`window` `(x_min, x_max, z_min, z_max)` [m] of a field, `nothing` for the automatic limits of
-BeamletOptics. The second form copies `opts` with changed fields.
+Options of the view of an object: the `kind`, i.e. the `name` of the `CardView` that is shown
+(`:auto` or a name that the object does not offer: its first one), the grid `num_points` of a field
+and further `kwargs` of its function (for a `Detector` those of `BeamletOptics.RegularGrid`), the
+`colorscale` (`:linear` or `:log`) and the fixed `colorrange` of a field (or `nothing`), whether the
+`colorbar` and the `profiles` of a field are shown, the `window` `(x_min, x_max, z_min, z_max)` [m]
+of a field, `nothing` for its own limits, and the `spot_colors` of the spot diagram of a
+`Detector` (`hit -> color`, or `nothing`), see `_hit_colors`. The second form copies `opts` with
+changed fields.
 """
 struct _ViewOptions
     kind::Symbol
@@ -71,15 +53,19 @@ struct _ViewOptions
     colorbar::Bool
     profiles::Bool
     window::Union{Nothing, NTuple{4, Float64}}
+    spot_colors::Any
 end
 
 _ViewOptions(; kind = :auto, num_points = 100, kwargs = (;), colorscale = :linear, colorrange = nothing,
-    colorbar = true, profiles = false, window = nothing) =
-    _ViewOptions(kind, num_points, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
+    colorbar = true, profiles = false, window = nothing, spot_colors = nothing) =
+    _ViewOptions(kind, num_points, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window),
+        spot_colors)
 
 _ViewOptions(o::_ViewOptions; kind = o.kind, num_points = o.num_points, kwargs = o.kwargs, colorscale = o.colorscale,
-    colorrange = o.colorrange, colorbar = o.colorbar, profiles = o.profiles, window = o.window) =
-    _ViewOptions(kind, num_points, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window))
+    colorrange = o.colorrange, colorbar = o.colorbar, profiles = o.profiles, window = o.window,
+    spot_colors = o.spot_colors) =
+    _ViewOptions(kind, num_points, kwargs, colorscale, colorrange, colorbar, profiles, _view_window(window),
+        spot_colors)
 
 _view_window(::Nothing) = nothing
 _view_window(w) = NTuple{4, Float64}(Float64.(Tuple(w)))
@@ -92,28 +78,36 @@ Base.hash(o::_ViewOptions, h::UInt) =
 """
     _ViewResult
 
-What the view of a detector shows after a solve, computed by `_view_result`: the `kinds` that the
-hits offer, the `kind` that is shown (`nothing` without hits), its `data` (the points [m] of a
-spot diagram, or `(x, z, I)` of a field), its `metrics` (see `_kind_metrics`) and the exception
-`error` of a failed computation (then without data and metrics). `n` is the grid of the field as
-computed (after the reduction of a `coarse` result; as requested for a spot diagram), `coarse` and
-`preview` mark a result on a coarse grid and after a preview solve.
+What the view of an object shows, computed by `_view_result`: the `views` (`CardView`s) that the
+object offers, the `view` that is shown (`nothing` without views), its `data` (the points [m] of a
+spot diagram, `(x, z, I)` of a field, the values of a series), the `colors` of the points (or
+`nothing`), its `metrics` (the display helpers of the form, see `_form_metrics`), the line `text`
+of the view (or `nothing`) and the exception `error` of a failed computation (then without data
+and metrics). `n` is the grid of a field as computed (after the reduction of a `coarse` result; as
+requested for the other forms), `coarse` and `preview` mark a result on a coarse grid and after a
+preview solve.
 """
 struct _ViewResult
-    kinds::Tuple{Vararg{_ViewKind}}
-    kind::Union{Nothing, _ViewKind}
+    views::Tuple{Vararg{CardView}}
+    view::Union{Nothing, CardView}
     data::Any
+    colors::Any
     metrics::Any
+    text::Union{Nothing, String}
     n::Int
     coarse::Bool
     preview::Bool
     error::Any
 end
 
-"""Returns the kind of the `kinds` with the `name`, their first one for `:auto` or another name."""
-function _resolve_kind(kinds::Tuple, name::Symbol)
-    i = findfirst(k -> _kind_name(k) == name, kinds)
-    return isnothing(i) ? first(kinds) : kinds[i]
+_ViewResult(views, view, n, coarse, preview; data = nothing, colors = nothing, metrics = nothing,
+    text = nothing, error = nothing) =
+    _ViewResult(views, view, data, colors, metrics, text, Int(n), coarse, preview, error)
+
+"""The view of the `views` with the `name`, their first one for `:auto` or another name."""
+function _resolve_view(views::Tuple, name::Symbol)
+    i = findfirst(cv -> cv.name === name, views)
+    return isnothing(i) ? first(views) : views[i]
 end
 
 """Grid of a field with `n` samples, reduced for a `coarse` result while objects move."""
@@ -123,76 +117,111 @@ _window_kwargs(::Nothing) = (;)
 _window_kwargs(w::NTuple{4, Float64}) = (; x_min = w[1], x_max = w[2], z_min = w[3], z_max = w[4])
 
 """
-    _kind_data(kind, pd, hits, opts, n, coarse)
+    _form_data(form, cv, obj, opts, n, coarse) -> (data, colors)
 
-Computes the data of the `kind` of view for the detector `pd` with the `hits`: the points [m] of
-the spot diagram, or the field `(x, z, I)` on the grid `_view_grid(n, coarse)` in the window of
-the `opts` (see `_ViewOptions`), for the PSF divided by its maximum. The grid is a
-`BeamletOptics.RegularGrid` with the kwargs of the `opts`, e.g. `x_min` or `crop_factor`.
+Calls the function of the `CardView` `cv` for `obj`: the points [m] of a spot diagram and their
+colors (from the function, or the `spot_colors` of the `opts`, see `_hit_colors`, or `nothing`),
+the field `(x, z, I)` on the grid `_view_grid(n, coarse)` in the window of the `opts` (see
+`_ViewOptions`), divided by its peak for `normalize`, or the value of a series.
 """
-_kind_data(::_SpotKind, pd, _, _, _, _) = BMO.spot_diagram(pd)
-function _kind_data(::_IntensityKind, pd, _, opts::_ViewOptions, n, coarse)
-    kwargs = merge(opts.kwargs, (; num_points = _view_grid(n, coarse)), _window_kwargs(opts.window))
-    x, z, I = BMO.intensity(pd, BMO.RegularGrid(; kwargs...))
-    return (x, z, I)
+function _form_data(::_PointsForm, cv::CardView, @nospecialize(obj), opts::_ViewOptions, _, _)
+    pts, colors = _split_points(cv.f(obj))
+    isnothing(opts.spot_colors) || (colors = _hit_colors(obj, opts.spot_colors, length(pts)))
+    return pts, colors
 end
-function _kind_data(::_PSFKind, pd, hits, opts::_ViewOptions, n, coarse)
-    x, z, I = _kind_data(_IntensityKind(), pd, hits, opts, n, coarse)
+function _form_data(::_FieldForm, cv::CardView, @nospecialize(obj), opts::_ViewOptions, n, coarse)
+    x, z, I = cv.f(obj; num_points = _view_grid(n, coarse), window = opts.window, opts.kwargs...)
+    cv.normalize || return (x, z, I), nothing
     peak = maximum(I)
-    return (x, z, peak > 0 ? I ./ peak : I)
+    return (x, z, peak > 0 ? I ./ peak : I), nothing
 end
+_form_data(::_SeriesForm, cv::CardView, @nospecialize(obj), _, _, _) = Float64(cv.f(obj)), nothing
 
-# The data of the `kind`, with the kind that is shown
-_shown_data(kind::_ViewKind, pd, hits, opts, n, coarse) =
-    (kind, _kind_data(kind, pd, hits, opts, n, coarse))
-
-# With the kind `:auto`, the spot diagram is shown if the field of the hits can not be evaluated
-function _shown_data(kind::_IntensityKind, pd, hits::AbstractVector{<:BMO.AstigmaticGaussianBeamletHit},
-        opts, n, coarse)
-    try
-        return (kind, _kind_data(kind, pd, hits, opts, n, coarse))
-    catch e
-        (BMO.is_cancelled(e) || opts.kind != :auto) && rethrow()
-        return (_SpotKind(), _kind_data(_SpotKind(), pd, hits, opts, n, coarse))
-    end
-end
-
-"""Metrics of the `data` of the `kind`, see `_spot_metrics` and `_intensity_metrics`; the PSF without the power."""
-_kind_metrics(::_SpotKind, _, pts) = _spot_metrics(pts)
-_kind_metrics(::_IntensityKind, pd, (x, z, I)) = _intensity_metrics(pd, x, z, I)
-function _kind_metrics(::_PSFKind, pd, (x, z, I))
-    m = _intensity_metrics(pd, x, z, I)
-    return (; m.cx, m.cz, m.wx, m.wz, m.peak)
-end
-
-_result_n(::_FieldKind, n, coarse) = _view_grid(n, coarse)
-_result_n(::_ViewKind, n, _) = Int(n)
+# The points of a spot diagram and the colors that its function returned, if any
+_split_points(t::Tuple{Any, Any}) = (t[1], t[2])
+_split_points(pts) = (pts, nothing)
 
 """
-    _view_result(pd, opts::_ViewOptions; n = opts.num_points, coarse = false, preview = false) -> _ViewResult
+    _hit_colors(obj, f, n) -> Vector{RGBAf}
 
-Computes what the view of the detector `pd` shows with the options `opts`: the kinds of its hits,
-the kind of the options or their default, its data (`BeamletOptics.spot_diagram`, or
-`BeamletOptics.intensity` on a grid of `n`, for `coarse` a quarter of it, at least 16) and its
-metrics. Creates no plot and touches no observable, such that it can run in a background task.
-An error is returned in the result, a cancelled solve is rethrown, see `BMO.is_cancelled`.
+The colors of the `n` points of the spot diagram of `obj` from the `spot_colors` `f` of its view
+(`hit -> color`): for a `Detector`, `f` is called for each of its hits, in the order of the points,
+which give one point per ray hit and the contour of `n ÷ length(hits)` points per beamlet hit.
+`nothing` for other objects, whose functions return their own colors.
 """
-function _view_result(pd, opts::_ViewOptions; n::Integer = opts.num_points, coarse::Bool = false,
-        preview::Bool = false)
-    kinds, kind = (), nothing
+_hit_colors(@nospecialize(_), _, _) = nothing
+function _hit_colors(@nospecialize(pd::BMO.Detector), f, n::Int)
+    hits = BMO.hits(pd)
+    (isnothing(hits) || isempty(hits)) && return nothing
+    k = n ÷ length(hits)
+    k * length(hits) == n || return nothing
+    return RGBAf[RGBAf(Makie.to_color(c)) for hit in hits for c in Iterators.repeated(f(hit), k)]
+end
+
+"""
+    _form_metrics(form, cv, data)
+
+The display helpers of the `data` of a view of the `form`, which the widget draws: of a spot
+diagram the number of points, the centroid, the RMS radius and the largest distance from the
+centroid (`_spot_metrics`), of a field its centroid, its 1/e² radii and its peak
+(`_field_metrics`), of a series its last value. Computed by the window only to draw the view.
+"""
+_form_metrics(::_PointsForm, _, pts) = _spot_metrics(pts)
+_form_metrics(::_FieldForm, _, (x, z, I)) = _field_metrics(x, z, I)
+_form_metrics(::_SeriesForm, _, values) = (; n = length(values), last = isempty(values) ? NaN : last(values))
+
+"""
+    _view_text(cv, obj, data) -> Union{Nothing, String}
+
+The line of the `CardView` `cv` with the `data` of `obj`, see the keyword `text` of `CardView`.
+"""
+_view_text(cv::CardView, @nospecialize(obj), data) = isnothing(cv.text) ? nothing : string(cv.text(obj, data))
+
+"""
+    _view_result(obj, opts::_ViewOptions; n = opts.num_points, coarse = false, preview = false) -> _ViewResult
+
+Computes what the view of `obj` shows with the options `opts`: its views (see `card_views`), the
+view of the options or its first one, and the data, the display helpers and the line of that view
+(for a field on a grid of `n`, for `coarse` a quarter of it, at least 16). With the kind `:auto`, a
+view whose function throws gives way to the next one, e.g. the spot diagram of astigmatic beamlets
+whose field can not be evaluated. Creates no plot and touches no observable, such that it can run
+in a background task. An error is returned in the result, a cancelled solve is rethrown, see
+`BMO.is_cancelled`.
+"""
+function _view_result(@nospecialize(obj), opts::_ViewOptions; n::Integer = opts.num_points,
+        coarse::Bool = false, preview::Bool = false)
+    views, cv = (), nothing
     try
-        hits = BMO.hits(pd)
-        kinds = _view_kinds(hits)
-        isempty(kinds) && return _ViewResult(kinds, nothing, nothing, nothing, Int(n), coarse, preview, nothing)
-        kind = _resolve_kind(kinds, opts.kind)
-        kind, data = _shown_data(kind, pd, hits, opts, n, coarse)
-        return _ViewResult(kinds, kind, data, _kind_metrics(kind, pd, data), _result_n(kind, n, coarse),
-            coarse, preview, nothing)
+        views = Tuple(card_views(obj))
+        isempty(views) && return _ViewResult(views, nothing, n, coarse, preview)
+        cv = _resolve_view(views, opts.kind)
+        return _computed_result(views, cv, obj, opts, n, coarse, preview)
     catch e
         BMO.is_cancelled(e) && rethrow()
-        return _ViewResult(kinds, kind, nothing, nothing, Int(n), coarse, preview, e)
+        if opts.kind === :auto && !isnothing(cv)
+            # The next view, if the first one fails
+            i = findfirst(v -> v === cv, views)
+            for other in views[(i + 1):end]
+                try
+                    return _computed_result(views, other, obj, opts, n, coarse, preview)
+                catch e2
+                    BMO.is_cancelled(e2) && rethrow()
+                end
+            end
+        end
+        return _ViewResult(views, cv, n, coarse, preview; error = e)
     end
 end
+
+function _computed_result(views, cv::CardView, @nospecialize(obj), opts, n, coarse, preview)
+    form = _form(cv)
+    data, colors = _form_data(form, cv, obj, opts, n, coarse)
+    return _ViewResult(views, cv, _result_n(form, n, coarse), coarse, preview; data, colors,
+        metrics = _form_metrics(form, cv, data), text = _view_text(cv, obj, data))
+end
+
+_result_n(::_FieldForm, n, coarse) = _view_grid(n, coarse)
+_result_n(::_ViewForm, n, _) = Int(n)
 
 #=
 Metrics and their texts
@@ -213,12 +242,14 @@ end
 """
     _spot_metrics(pts)
 
-Returns the metrics `(; n, cx, cz, rms, rmax)` of the spot diagram `pts` (local x/z [m]): the
-number of hits, the centroid, the RMS radius `sqrt(mean(|p - c|²))` and the geometric radius, i.e.
-the largest distance from the centroid [m].
+Returns the display helpers `(; n, cx, cz, rms, rmax)` of the spot diagram `pts` (local x/z [m]):
+the number of points, the centroid, the RMS radius `sqrt(mean(|p - c|²))` and the geometric
+radius, i.e. the largest distance from the centroid [m]. They place the centroid and are shown
+below the view; the window computes them only to draw it.
 """
 function _spot_metrics(pts)
     n = length(pts)
+    n == 0 && return (; n, cx = NaN, cz = NaN, rms = NaN, rmax = NaN)
     cx = sum(q -> Float64(q[1]), pts) / n
     cz = sum(q -> Float64(q[2]), pts) / n
     r2 = [(Float64(q[1]) - cx)^2 + (Float64(q[2]) - cz)^2 for q in pts]
@@ -226,44 +257,31 @@ function _spot_metrics(pts)
 end
 
 """
-    _intensity_metrics(pd, x, z, I)
+    _field_metrics(x, z, I)
 
-Returns the metrics `(; P, cx, cz, wx, wz, peak)` of the intensity `I[i, j]` at `x[i]`, `z[j]`
-[m] on the detector `pd`: the power (integrated like `optical_power`, with the weights of the
-sampling of the grid, see `BeamletOptics.sample_points`), the centroid, the 1/e² radii `2σ` from
-the second moments along x and z and the peak intensity. The centroid and the radii are `NaN`
-without intensity.
+Returns the display helpers `(; cx, cz, wx, wz, peak)` of the field `I[i, j]` at `x[i]`, `z[j]`
+[m]: the centroid, the 1/e² radii `2σ` from the second moments along x and z and the peak. The
+centroid and the radii are `NaN` for a field without values above zero. They place the centroid
+and the cuts of the profiles and are shown below the view; the window computes them only to draw
+it. The power of an intensity is not one of them: it is the `text` of the view of a `Detector`,
+computed by `BeamletOptics.optical_power`, see `card_views`.
 """
-function _intensity_metrics(pd, x, z, I)
-    w = BMO.sample_points(pd, BMO.RectilinearGrid(x, z)).weights
-    P = sum(Broadcast.instantiate(Broadcast.broadcasted(*, w, I)))
+function _field_metrics(x, z, I)
     peak = maximum(I)
     S = sum(I)
-    S > 0 || return (; P, cx = NaN, cz = NaN, wx = NaN, wz = NaN, peak)
+    S > 0 || return (; cx = NaN, cz = NaN, wx = NaN, wz = NaN, peak)
     # Marginal distributions along x and z, the uniform cell area cancels
     Ix, Iz = vec(sum(I; dims = 2)), vec(sum(I; dims = 1))
     cx, cz = dot(Ix, x) / S, dot(Iz, z) / S
     σx2 = sum(Ix .* (x .- cx) .^ 2) / S
     σz2 = sum(Iz .* (z .- cz) .^ 2) / S
-    return (; P, cx, cz, wx = 2 * sqrt(σx2), wz = 2 * sqrt(σz2), peak)
+    return (; cx, cz, wx = 2 * sqrt(σx2), wz = 2 * sqrt(σz2), peak)
 end
 
 """Formats the length `x` like `_length_string` with its sign, below 1 pm as `0 nm`."""
 function _signed_length_string(x)
     abs(x) < 1e-12 && return "0 nm"
     return x < 0 ? "-" * _length_string(-x) : _length_string(x)
-end
-
-"""Formats the metrics `m` of a view, see `_spot_metrics` and `_intensity_metrics`, in two lines."""
-function _metrics_string(m)
-    if haskey(m, :rms)
-        return "N = $(m.n), c = ($(_signed_length_string(m.cx)), $(_signed_length_string(m.cz)))\n" *
-               "rms $(_length_string(m.rms)), max $(_length_string(m.rmax))"
-    end
-    s = "P = $(_fmt3(1e3 * m.P)) mW, peak $(_fmt_sigdigits(m.peak)) W/m²"
-    isfinite(m.cx) || return s * "\nno intensity"
-    return s * "\nc = ($(_signed_length_string(m.cx)), $(_signed_length_string(m.cz))), " *
-           "w = ($(_length_string(m.wx)), $(_length_string(m.wz)))"
 end
 
 """
@@ -292,7 +310,7 @@ end
 """
     _display_intensity(I, colorscale) -> (values, colorrange)
 
-Returns the values of the image of the intensity `I` and their color range: `I` for the linear
+Returns the values of the image of the field `I` and their color range: `I` for the linear
 scale, `log10(I)` with a floor of `_LOG_FLOOR` times the maximum for the logarithmic scale.
 """
 function _display_intensity(I, colorscale::Symbol)
@@ -302,28 +320,58 @@ function _display_intensity(I, colorscale::Symbol)
     return log10.(max.(I, floor)), (log10(floor), log10(floor / _LOG_FLOOR))
 end
 
-# The two lines of the metrics below the expanded view
-_metrics_text(::_ViewKind, m) = _metrics_string(m)
-function _metrics_text(::_PSFKind, m)
-    s = "PSF, normalized to its peak"
-    isfinite(m.cx) || return s * "\nno intensity"
-    return s * "\n" * _centroid_text(m) * ", " * _radii_text(_PSFKind(), m)
-end
+# A value with its unit, e.g. the peak of a field or the last value of a series
+_value_text(x::Real, unit::String) = isempty(unit) ? _fmt_sigdigits(x) : "$(_fmt_sigdigits(x)) $unit"
 
 _centroid_text(m) = "c = ($(_signed_length_string(m.cx)), $(_signed_length_string(m.cz)))"
-_radii_text(::_SpotKind, m) = "rms $(_length_string(m.rms)), max $(_length_string(m.rmax))"
-_radii_text(::_FieldKind, m) = "w = ($(_length_string(m.wx)), $(_length_string(m.wz)))"
+_radii_text(::_PointsForm, m) = "rms $(_length_string(m.rms)), max $(_length_string(m.rmax))"
+_radii_text(::_FieldForm, m) = "w = ($(_length_string(m.wx)), $(_length_string(m.wz)))"
 
-# The key value of the metrics beside the thumbnail
-_key_text(::_SpotKind, m) = "N = $(m.n)"
-_key_text(::_IntensityKind, m) = "P = $(_fmt3(1e3 * m.P)) mW"
-_key_text(::_PSFKind, _) = "normalized"
+# The peak of a field: normalized, or with its unit
+_peak_text(cv::CardView, m) = cv.normalize ? "$(cv.label), normalized to its peak" : "peak " * _value_text(m.peak, cv.unit)
+
+_with_text(s::String, ::Nothing) = s
+_with_text(s::String, text::String) = text * ", " * s
+
+"""
+    _metrics_text(form, cv, m, text) -> String
+
+The two lines below the expanded view of the `CardView` `cv` with the display helpers `m` and the
+line `text` of the view (or `nothing`): of a spot diagram the number of points and the centroid, the
+RMS and the largest radius; of a field the line and the peak, the centroid and the radii; of a
+series its last value and the number of values.
+"""
+function _metrics_text(::_PointsForm, _, m, text)
+    m.n == 0 && return _with_text("N = 0", text) * "\nno points"
+    return _with_text("N = $(m.n), " * _centroid_text(m), text) * "\n" * _radii_text(_PointsForm(), m)
+end
+function _metrics_text(::_FieldForm, cv::CardView, m, text)
+    s = _with_text(_peak_text(cv, m), text)
+    isfinite(m.cx) || return s * "\nno intensity"
+    return s * "\n" * _centroid_text(m) * ", " * _radii_text(_FieldForm(), m)
+end
+function _metrics_text(::_SeriesForm, cv::CardView, m, text)
+    m.n == 0 && return _with_text("no values", text) * "\n"
+    s = _with_text("last " * _value_text(m.last, cv.unit), text)
+    return s * "\n" * (m.n == 1 ? "1 solve" : "$(m.n) solves")
+end
+
+# The key value of a view beside the thumbnail: the line of the view, or one of its form
+_key_text(::_PointsForm, _, m, _) = "N = $(m.n)"
+_key_text(::_FieldForm, cv::CardView, m, text) = something(text, cv.normalize ? "normalized" : "peak " * _value_text(m.peak, cv.unit))
+_key_text(::_SeriesForm, cv::CardView, m, _) = m.n == 0 ? "no values" : "last " * _value_text(m.last, cv.unit)
+
+_no_data_text(::_FieldForm) = "no intensity"
+_no_data_text(::_ViewForm) = "no points"
 
 # The key value, the centroid and the radii beside the thumbnail, one per line
-function _thumb_text(kind::_ViewKind, m)
-    isfinite(m.cx) || return _key_text(kind, m) * "\nno intensity"
-    return join((_key_text(kind, m), _centroid_text(m), _radii_text(kind, m)), "\n")
+function _thumb_text(form::_ViewForm, cv::CardView, m, text)
+    key = _key_text(form, cv, m, text)
+    isfinite(m.cx) || return key * "\n" * _no_data_text(form)
+    return join((key, _centroid_text(m), _radii_text(form, m)), "\n")
 end
+_thumb_text(::_SeriesForm, cv::CardView, m, text) =
+    _key_text(_SeriesForm(), cv, m, text) * "\n" * (m.n == 1 ? "1 solve" : "$(m.n) solves")
 
 #=
 The view widget
@@ -412,6 +460,9 @@ mutable struct _DetectorView
     const profiles_toggle::Toggle
     const bar_toggle::Toggle
     const fit_button::Button
+    # the button "clear" of a series
+    const series_controls::GridLayout
+    const clear_button::Button
     const collapse_button::_IconButton
     const plots::GridLayout
     const ax::Axis
@@ -430,6 +481,8 @@ mutable struct _DetectorView
     const images::Vector{AbstractPlot}
     const spots::Vector{AbstractPlot}
     const crosses::Vector{AbstractPlot}
+    # the line of a series
+    const lines::Vector{AbstractPlot}
     const profile_x::AbstractPlot
     const profile_z::AbstractPlot
     # the lines of the cuts of the profiles in the axis and the point [mm] they cross in
@@ -453,12 +506,15 @@ mutable struct _DetectorView
     name::String
     result::Union{Nothing, _ViewResult}
     opts::_ViewOptions
-    kind::Union{Nothing, _ViewKind}
+    view::Union{Nothing, CardView}
+    # the names of the axes inside the frame, see `_view_names`
+    names::Tuple{String, String}
     scale::Any
     xy::Vector{Point2f}
     extent::NTuple{4, Float64}
     status_text::String
     fields_shown::Bool
+    series_shown::Bool
     bar_shown::Bool
     profiles_shown::Bool
     # the limits of a spot diagram were changed by the mouse, they stay over new results
@@ -506,13 +562,15 @@ function _view_plots!(ax::Axis, t::NamedTuple, margin::Float32)
     end
     image = image!(ax, (0.0, 1.0), (0.0, 1.0), zeros(Float32, 2, 2); colormap = :viridis,
         colorrange = (0.0f0, 1.0f0), interpolate = true, visible = false, inspectable = false)
-    spots = scatter!(ax, Point2f[]; markersize = 3, color = t.text, visible = false, inspectable = false)
+    # A color per spot, see `_spot_colors`
+    spots = scatter!(ax, Point2f[]; markersize = 3, color = RGBAf[], visible = false, inspectable = false)
     cross = scatter!(ax, Point2f[]; marker = :cross, markersize = 11, color = :red, inspectable = false)
-    foreach(((k, p),) -> translate!(p, 0, 0, k), enumerate((frame, image, spots, cross)))
+    line = lines!(ax, Point2f[]; color = t.accent, linewidth = 1.5, visible = false, inspectable = false)
+    foreach(((k, p),) -> translate!(p, 0, 0, k), enumerate((frame, image, spots, cross, line)))
     # An image sets the margins of the automatic limits to zero, the spots need them
     ax.xautolimitmargin[] = (margin, margin)
     ax.yautolimitmargin[] = (margin, margin)
-    return (; frame, image, spots, cross)
+    return (; frame, image, spots, cross, line)
 end
 
 function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = true, width::Real = 280,
@@ -553,6 +611,9 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     fit_button = Button(controls[1, 3]; label = "fit", _card_style(t, Button)..., fontsize = 11,
         height = 20, padding = (6, 6, 2, 2))
     colsize!(controls, 2, Auto())
+    series_controls = GridLayout(controls[1, 1]; default_colgap = 4)
+    clear_button = Button(series_controls[1, 1]; label = "clear", _card_style(t, Button)..., fontsize = 11,
+        height = 20, padding = (6, 6, 2, 2))
     plots = GridLayout(full[3, 1]; halign = :left, valign = :top, default_rowgap = 5)
     ax = _view_axis(plots[1, 1], t; width, height, yaxisposition = :right, xtickalign = 1,
         ytickalign = 1, xticksize = 4, yticksize = 4, xticks = _VIEW_TICKS, yticks = _VIEW_TICKS)
@@ -613,13 +674,14 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
 
     v = _DetectorView(grid, t, true, thumb, thumb_ax, expand_button, kind_label, info_label, full,
         header, controls, field_controls, log_toggle, profiles_toggle, bar_toggle, fit_button,
-        collapse_button, plots, ax, bar, bar_ax, bar_unit, bar_image, profiles_ax, metrics_label,
+        series_controls, clear_button, collapse_button, plots, ax, bar, bar_ax, bar_unit, bar_image, profiles_ax, metrics_label,
         Dict{Any, _Segmented}(), nothing, (),
         AbstractPlot[a.frame, b.frame], AbstractPlot[a.image, b.image], AbstractPlot[a.spots, b.spots], AbstractPlot[a.cross, b.cross],
+        AbstractPlot[a.line, b.line],
         profile_x, profile_z, cut_x, cut_z, nothing, select_fill, select_line, xlabels, zlabels, xname,
         zname, status, Rect2f[],
         _tree_font(ax.blockscene, :regular), Dict{String, Vec2f}(), false, "", nothing,
-        _ViewOptions(), nothing, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, true, false,
+        _ViewOptions(), nothing, _POSITION_NAMES, nothing, Point2f[], (0.0, 1.0, 0.0, 1.0), "", true, true, true, true, false,
         false, nothing, nothing, nothing, false, false, 0.0, Point2f(0), _no_options, _no_expanded, Any[])
 
     on(_ -> _update_decorations!(v), ax.finallimits)
@@ -628,6 +690,7 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     on(_ -> v.on_expanded(true), expand_button.clicks)
     on(_ -> v.on_expanded(false), collapse_button.clicks)
     on(_ -> _fit!(v), fit_button.clicks)
+    on(_ -> v.on_options(; clear = true), clear_button.clicks)
     on(a -> v.refreshing || v.on_options(; colorscale = a ? :log : :linear), log_toggle.active)
     on(a -> v.refreshing || v.on_options(; profiles = a), profiles_toggle.active)
     on(a -> v.refreshing || v.on_options(; colorbar = a), bar_toggle.active)
@@ -636,6 +699,7 @@ function _DetectorView(grid::GridLayout, theme::NamedTuple; expanded::Bool = tru
     _show_profiles!(v, false)
     _show_bar!(v, false)
     _show_field_controls!(v, false)
+    _show_series_controls!(v, false)
     _view_detach!(expanded ? thumb : full)
     v.expanded = expanded
     _draw_empty!(v, "no result")
@@ -691,7 +755,7 @@ _refresh_switch!(::_DetectorView, ::Nothing) = nothing
 function _refresh_switch!(v::_DetectorView, r::_ViewResult)
     v.refreshing = true
     try
-        _show_switch!(v, r.kinds, r.kind)
+        _show_switch!(v, r.views, r.view)
     finally
         v.refreshing = false
     end
@@ -723,6 +787,13 @@ function _show_field_controls!(v::_DetectorView, shown::Bool)
     return nothing
 end
 
+function _show_series_controls!(v::_DetectorView, shown::Bool)
+    v.series_shown == shown && return nothing
+    v.series_shown = shown
+    shown ? _view_attach!(v.controls, 1, 1, v.series_controls, v.expanded) : _view_detach!(v.series_controls)
+    return nothing
+end
+
 function _show_profiles!(v::_DetectorView, shown::Bool)
     v.profiles_shown == shown && return nothing
     v.profiles_shown = shown
@@ -748,27 +819,27 @@ function _arrange_plots!(v::_DetectorView)
     return nothing
 end
 
-# The switch of the `kinds`, of which `kind` is selected; none without kinds
-function _show_switch!(v::_DetectorView, kinds::Tuple, kind)
-    key = map(_kind_name, kinds)
+# The switch of the `views` (`CardView`s), of which `view` is selected; none without views
+function _show_switch!(v::_DetectorView, views::Tuple, view)
+    key = map(cv -> cv.name, views)
     if key != v.switch_key
         # A new switch is built into the header, i.e. only while the expanded state is laid out;
         # a collapsed view gets it when it is expanded, see `_set_expanded!`
         (v.expanded || isempty(key) || haskey(v.switches, key)) || return nothing
         isnothing(v.switch) || _view_detach!(v.switch.grid)
-        v.switch = isempty(key) ? nothing : get!(() -> _view_switch(v, kinds), v.switches, key)
+        v.switch = isempty(key) ? nothing : get!(() -> _view_switch(v, views), v.switches, key)
         v.switch_key = key
         isnothing(v.switch) || _view_attach!(v.header, 1, 1, v.switch.grid, v.expanded)
     end
-    _select_kind!(v.switch, kind)
+    _select_view!(v.switch, view)
     return nothing
 end
 
-_select_kind!(_, _) = nothing
-_select_kind!(s::_Segmented, kind::_ViewKind) = _update!(s.selected, _kind_name(kind))
+_select_view!(_, _) = nothing
+_select_view!(s::_Segmented, cv::CardView) = _update!(s.selected, cv.name)
 
-function _view_switch(v::_DetectorView, kinds::Tuple)
-    options = Pair{Symbol, String}[_kind_name(k) => _kind_label(k) for k in kinds]
+function _view_switch(v::_DetectorView, views::Tuple)
+    options = Pair{Symbol, String}[cv.name => cv.label for cv in views]
     s = _Segmented(v.header[1, 1], options; theme = v.theme, tellwidth = true)
     on(k -> v.refreshing || v.on_options(; kind = k), s.selected)
     return s
@@ -794,21 +865,21 @@ _boxes_meet(a::Rect2f, b::Rect2f, gap) =
     all(minimum(a) .< maximum(b) .+ gap) && all(minimum(b) .< maximum(a) .+ gap)
 
 """
-    _view_decorations(lims, size, measure, status) -> (; xpos, xtext, zpos, ztext, boxes)
+    _view_decorations(lims, size, measure, status, names = _POSITION_NAMES) -> (; xpos, xtext, zpos, ztext, boxes)
 
 The tick labels inside the frame of an axis with the limits `lims` and the `size` [px]: the
 positions [data] and texts of the x labels at its bottom edge and of the z labels at its right
-edge, and the pixel `boxes` in the frame of all texts, first those of the axis names in the bottom
-left and the top right corner and of the `status` in the top left corner (if not empty).
+edge, and the pixel `boxes` in the frame of all texts, first those of the axis `names` in the
+bottom left and the top right corner and of the `status` in the top left corner (if not empty).
 `measure(text)` returns the size of a text [px]. A tick label that would stick out of the frame or
 come closer than `_VIEW_LABEL_GAP` to a text placed before is left out.
 """
-function _view_decorations(lims, size::Vec2f, measure, status::String)
+function _view_decorations(lims, size::Vec2f, measure, status::String, names = _POSITION_NAMES)
     lo, w = Makie.origin(lims), Makie.widths(lims)
     W, H = size
     o = _VIEW_LABEL_OFFSET
     box(x, y, s) = Rect2f(x, y, s[1], s[2])
-    sx, sz = measure("x [mm]"), measure("z [mm]")
+    sx, sz = measure(names[1]), measure(names[2])
     boxes = Rect2f[box(o.corner, o.x, sx), box(W - o.z - sz[1], H - o.corner - sz[2], sz)]
     if !isempty(status)
         s = measure(status)
@@ -848,11 +919,11 @@ function _update_decorations!(v::_DetectorView)
     (all(>(0), size) && all(x -> isfinite(x) && x > 0, w)) || return nothing
     top_left = [Makie.Point2d(lo[1], lo[2] + w[2])]
     Makie.update!(v.status; arg1 = top_left, text = [v.status_text])
-    decorated = !isnothing(v.kind)
+    decorated = !isnothing(v.view)
     Makie.update!(v.xname; arg1 = [Makie.Point2d(lo)], visible = decorated)
     Makie.update!(v.zname; arg1 = [Makie.Point2d(lo .+ w)], visible = decorated)
     if decorated
-        d = _view_decorations(lims, size, s -> _text_size(v, s), v.status_text)
+        d = _view_decorations(lims, size, s -> _text_size(v, s), v.status_text, v.names)
         Makie.update!(v.xlabels; arg1 = d.xpos, text = d.xtext)
         Makie.update!(v.zlabels; arg1 = d.zpos, text = d.ztext)
         v.boxes = d.boxes
@@ -864,26 +935,49 @@ function _update_decorations!(v::_DetectorView)
     return nothing
 end
 
-# Look of the axis per kind: white texts with a glow on the image of a field, whose frame has the
-# lowest color of the colormap; the text color of the theme on the spots, whose background is the card
-_kind_look(::_FieldKind, t) = (; text = RGBAf(1, 1, 1, 1), glow = 2.0, tick = RGBAf(1, 1, 1, 1),
+# Look of the axis per form: white texts with a glow on the image of a field, whose frame has the
+# lowest color of the colormap; the text color of the theme on the spots and the series, whose
+# background is the card
+_form_look(::_FieldForm, t) = (; text = RGBAf(1, 1, 1, 1), glow = 2.0, tick = RGBAf(1, 1, 1, 1),
     background = RGBAf(first(Makie.to_colormap(:viridis))))
-_kind_look(::_SpotKind, t) = (; text = RGBAf(Makie.to_color(t.text)), glow = 0.0,
+_form_look(::_ViewForm, t) = (; text = RGBAf(Makie.to_color(t.text)), glow = 0.0,
     tick = RGBAf(Makie.to_color(t.muted)), background = RGBAf(0, 0, 0, 0))
 
-_is_field(::_FieldKind) = true
+_is_field(::_FieldForm) = true
 _is_field(_) = false
+_is_series(::_SeriesForm) = true
+_is_series(_) = false
+
+# The names of the axes inside the frame: positions in mm, a series over the solves
+const _POSITION_NAMES = ("x [mm]", "z [mm]")
+_view_names(::_ViewForm, _) = _POSITION_NAMES
+_view_names(::_SeriesForm, cv::CardView) = ("solve", isempty(cv.unit) ? "value" : cv.unit)
+
+# Equal scales for positions, none for a series
+_aspect(::_ViewForm) = 1
+_aspect(::_SeriesForm) = nothing
+
+# Whether the shown view is the `CardView` `b`: the method of `card_views` builds them anew
+_same_view(::Nothing, _) = false
+_same_view(a::CardView, b::CardView) = a.name === b.name && a.form === b.form && a.label == b.label &&
+    a.unit == b.unit && a.normalize == b.normalize
 
 # The color of the background of the frames of the thumbnail and of the axis, see `_view_plots!`
 _set_frames!(v::_DetectorView, color::RGBAf) =
     foreach(p -> Makie.update!(p; arg3 = fill(color, 1, 1)), v.frames)
 
-# Shows the look and the controls of the `kind`; returns whether it is another kind than before
-function _set_kind!(v::_DetectorView, kind::_ViewKind)
-    v.kind == kind && return false
-    v.kind = kind
+# Shows the look and the controls of the `CardView` `cv`; returns whether it is another view than before
+function _set_view_look!(v::_DetectorView, cv::CardView)
+    _same_view(v.view, cv) && (v.view = cv; return false)
+    v.view = cv
     v.zoomed = false
-    look = _kind_look(kind, v.theme)
+    form = _form(cv)
+    look = _form_look(form, v.theme)
+    v.names = _view_names(form, cv)
+    Makie.update!(v.xname; text = [v.names[1]])
+    Makie.update!(v.zname; text = [v.names[2]])
+    _update!(v.ax.autolimitaspect, _aspect(form))
+    _update!(v.thumb_ax.autolimitaspect, _aspect(form))
     for p in (v.xlabels, v.zlabels, v.xname, v.zname, v.status)
         Makie.update!(p; color = look.text, glowwidth = look.glow)
     end
@@ -892,7 +986,8 @@ function _set_kind!(v::_DetectorView, kind::_ViewKind)
     Makie.update!(v.select_fill; color = RGBAf(look.text.r, look.text.g, look.text.b, _VIEW_SELECT_ALPHA))
     Makie.update!(v.select_line; color = look.text)
     _set_frames!(v, look.background)
-    _show_field_controls!(v, _is_field(kind))
+    _show_field_controls!(v, _is_field(form))
+    _show_series_controls!(v, _is_series(form))
     return true
 end
 
@@ -931,7 +1026,7 @@ end
 
 _draw!(v::_DetectorView, ::Nothing, _, _) = (_show_switch!(v, (), nothing); _draw_empty!(v, "no result"))
 function _draw!(v::_DetectorView, r::_ViewResult, opts::_ViewOptions, fresh::Bool)
-    _show_switch!(v, r.kinds, r.kind)
+    _show_switch!(v, r.views, r.view)
     _draw_data!(v, r.error, r, opts, fresh)
     return nothing
 end
@@ -944,21 +1039,29 @@ function _draw_data!(v::_DetectorView, e, ::_ViewResult, _, _)
 end
 function _draw_data!(v::_DetectorView, ::Nothing, r::_ViewResult, opts::_ViewOptions, fresh::Bool)
     v.last_error = nothing
-    _draw_kind!(v, r.kind, r, opts, fresh)
+    _draw_form!(v, _form(r.view), r, opts, fresh)
     return nothing
 end
 
 _preview_text(r::_ViewResult) = (r.coarse || r.preview) ? "preview" : ""
 _with_preview(s::String, r::_ViewResult) = (r.coarse || r.preview) ? s * " (preview)" : s
 
-_draw_kind!(v::_DetectorView, ::Nothing, r::_ViewResult, _, _) = _draw_empty!(v, _with_preview("no hits", r))
+_draw_form!(v::_DetectorView, ::Nothing, r::_ViewResult, _, _) = _draw_empty!(v, _with_preview("no hits", r))
 
-function _draw_kind!(v::_DetectorView, kind::_SpotKind, r::_ViewResult, ::_ViewOptions, fresh::Bool)
-    changed = _set_kind!(v, kind)
+# The colors of the `n` spots: those of the result, or the text color of the theme (a plot keeps the
+# type of its color attribute, hence always a vector)
+_spot_colors(v::_DetectorView, colors::AbstractVector, n::Int) =
+    length(colors) == n ? RGBAf[RGBAf(Makie.to_color(c)) for c in colors] : _spot_colors(v, nothing, n)
+_spot_colors(v::_DetectorView, _, n::Int) = fill(RGBAf(Makie.to_color(v.theme.text)), n)
+
+function _draw_form!(v::_DetectorView, form::_PointsForm, r::_ViewResult, ::_ViewOptions, fresh::Bool)
+    changed = _set_view_look!(v, r.view)
     if fresh || changed
         v.xy = [Point2f(1e3 * q[1], 1e3 * q[2]) for q in r.data]
+        color = _spot_colors(v, r.colors, length(v.xy))
         foreach(p -> Makie.update!(p; visible = false), v.images)
-        foreach(p -> Makie.update!(p; arg1 = v.xy, visible = true), v.spots)
+        foreach(p -> Makie.update!(p; visible = false), v.lines)
+        foreach(p -> Makie.update!(p; arg1 = v.xy, color, visible = true), v.spots)
         _show_centroid!(v, r.metrics)
         _fit_spots!(v.thumb_ax, v.xy)
         v.zoomed || _fit_spots!(v.ax, v.xy)
@@ -966,12 +1069,12 @@ function _draw_kind!(v::_DetectorView, kind::_SpotKind, r::_ViewResult, ::_ViewO
     _show_profiles!(v, false)
     _set_cuts!(v, nothing)
     _show_bar!(v, false)
-    _show_texts!(v, kind, r)
+    _show_texts!(v, form, r)
     return nothing
 end
 
-function _draw_kind!(v::_DetectorView, kind::_FieldKind, r::_ViewResult, opts::_ViewOptions, fresh::Bool)
-    changed = _set_kind!(v, kind)
+function _draw_form!(v::_DetectorView, form::_FieldForm, r::_ViewResult, opts::_ViewOptions, fresh::Bool)
+    changed = _set_view_look!(v, r.view)
     x, z, I = r.data
     scale = (opts.colorscale, opts.colorrange)
     if fresh || changed || scale != v.scale
@@ -981,16 +1084,55 @@ function _draw_kind!(v::_DetectorView, kind::_FieldKind, r::_ViewResult, opts::_
         # The samples are the centers of the pixels of the image
         ex, ez = _pixel_edges(x), _pixel_edges(z)
         foreach(p -> Makie.update!(p; visible = false), v.spots)
+        foreach(p -> Makie.update!(p; visible = false), v.lines)
         foreach(p -> Makie.update!(p; arg1 = ex, arg2 = ez, arg3 = Float32.(values), colorrange,
                 visible = true), v.images)
-        _set_bar!(v, kind, colorrange, opts.colorscale)
+        _set_bar!(v, r.view, colorrange, opts.colorscale)
     end
     _show_bar!(v, opts.colorbar)
     v.extent = 1e3 .* (Float64(first(x)), Float64(last(x)), Float64(first(z)), Float64(last(z)))
     _view_limits!(v.thumb_ax, v.extent)
     _view_limits!(v.ax, _window_mm(opts.window, v.extent))
     _draw_profiles!(v, opts.profiles, x, z, I, r.metrics)
-    _show_texts!(v, kind, r)
+    _show_texts!(v, form, r)
+    return nothing
+end
+
+# The values of a series as points (solve, value): one value of a view without a live view
+_series_points(values::AbstractVector) = [Point2f(i, x) for (i, x) in enumerate(values)]
+_series_points(x::Real) = [Point2f(1, x)]
+
+function _draw_form!(v::_DetectorView, form::_SeriesForm, r::_ViewResult, ::_ViewOptions, fresh::Bool)
+    changed = _set_view_look!(v, r.view)
+    if fresh || changed
+        v.xy = _series_points(r.data)
+        foreach(p -> Makie.update!(p; visible = false), v.images)
+        foreach(p -> Makie.update!(p; arg1 = Point2f[], color = RGBAf[], visible = false), v.spots)
+        foreach(p -> Makie.update!(p; arg1 = Point2f[]), v.crosses)
+        foreach(p -> Makie.update!(p; arg1 = v.xy, visible = true), v.lines)
+        _fit_series!(v.thumb_ax, v.xy)
+        v.zoomed || _fit_series!(v.ax, v.xy)
+    end
+    _show_profiles!(v, false)
+    _set_cuts!(v, nothing)
+    _show_bar!(v, false)
+    _show_texts!(v, form, r)
+    return nothing
+end
+
+# Limits of a series: all its values; a single value, or values that are all equal, in a range
+# around them
+function _fit_series!(ax::Axis, xy)
+    autolimits!(ax)
+    isempty(xy) && return nothing
+    lo, hi = extrema(q -> Float64(q[2]), xy)
+    n = length(xy)
+    if hi - lo <= 1e-12 * max(abs(lo), abs(hi), floatmin(Float64))
+        h = lo == 0 ? 1.0 : abs(lo) / 10
+        limits!(ax, 0.5, n + 0.5, lo - h, hi + h)
+    elseif n == 1
+        limits!(ax, 0.5, 1.5, lo, hi)
+    end
     return nothing
 end
 
@@ -1009,31 +1151,30 @@ const _SUPERSCRIPTS = ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸
 _superscript(k::Integer) = join(c == '-' ? '⁻' : _SUPERSCRIPTS[c - '0' + 1] for c in string(k))
 
 """
-    _bar_unit(kind) -> String
-    _bar_prefix(kind, hi) -> Pair{Float64, String}
+    _bar_unit(cv) -> String
+    _bar_prefix(cv, hi) -> Pair{Float64, String}
 
-The unit of the values of the field `kind`: `W/m²` for the intensity, `rel.` for the PSF, which is
-normalized to its maximum. `_bar_prefix` is the SI prefix (`factor => prefix`) with which the
-linear colorbar shows values up to `hi`, such that its largest tick has two to four digits, e.g.
-`1e3 => "k"` for 25000 W/m²; none for the PSF.
+The unit of the values of the field of the `CardView` `cv`: its `unit`, e.g. `W/m²` for the
+intensity, `rel.` for a field that is normalized to its peak, e.g. the PSF. `_bar_prefix` is the SI
+prefix (`factor => prefix`) with which the linear colorbar shows values up to `hi`, such that its
+largest tick has two to four digits, e.g. `1e3 => "k"` for 25000 W/m²; none for a normalized field
+or one without a unit.
 """
-_bar_unit(::_IntensityKind) = "W/m²"
-_bar_unit(::_PSFKind) = "rel."
-_bar_prefix(::_IntensityKind, hi::Real) =
+_bar_unit(cv::CardView) = cv.normalize ? "rel." : cv.unit
+_bar_prefix(cv::CardView, hi::Real) = (cv.normalize || isempty(cv.unit)) ? (1.0 => "") :
     _BAR_PREFIXES[something(findlast(p -> 10 * first(p) <= hi, _BAR_PREFIXES), 1)]
-_bar_prefix(::_PSFKind, _) = 1.0 => ""
 
 """
-    _bar_scale(kind, colorrange, colorscale) -> (; limits, ticks, unit)
+    _bar_scale(cv, colorrange, colorscale) -> (; limits, ticks, unit)
 
-What the colorbar of the field `kind` shows for the `colorrange` of its image: its `limits`, its
+What the colorbar of the field of the `CardView` `cv` shows for the `colorrange` of its image: its `limits`, its
 `ticks` (an object for the `xticks` of an `Axis`) and its `unit`. On the linear scale, the limits
 are the color range in the unit with the prefix of `_bar_prefix`. On the logarithmic scale, the
 color range and the limits are `log10` of the values in the unit without a prefix, with ticks at
 the powers of ten (at most about five, e.g. `10⁻²`); a range without a power of ten gets the values
 themselves as tick labels.
 """
-function _bar_scale(kind::_FieldKind, colorrange, colorscale::Symbol)
+function _bar_scale(kind::CardView, colorrange, colorscale::Symbol)
     lo, hi = Float64.(Tuple(colorrange))
     # A degenerate range has no limits
     hi > lo || (hi = lo + 1)
@@ -1052,13 +1193,13 @@ function _bar_scale(kind::_FieldKind, colorrange, colorscale::Symbol)
 end
 
 """
-    _set_bar!(view, kind, colorrange, colorscale)
+    _set_bar!(view, cv, colorrange, colorscale)
 
-Shows the `colorrange` of the image of the field `kind` in the colorbar of the `view`, see
+Shows the `colorrange` of the image of the field of the `CardView` `cv` in the colorbar of the `view`, see
 `_bar_scale`: the colormap spans its limits, i.e. the bar looks the same for every range and only
 its ticks and its unit change.
 """
-function _set_bar!(v::_DetectorView, kind::_FieldKind, colorrange, colorscale::Symbol)
+function _set_bar!(v::_DetectorView, kind::CardView, colorrange, colorscale::Symbol)
     s = _bar_scale(kind, colorrange, colorscale)
     lo, hi = s.limits
     Makie.update!(v.bar_image; arg1 = (lo, hi))
@@ -1108,10 +1249,11 @@ function _update_cuts!(v::_DetectorView, c::Point2f)
     return nothing
 end
 
-function _show_texts!(v::_DetectorView, kind::_ViewKind, r::_ViewResult)
-    _update!(v.kind_label.text, _with_preview(_kind_label(kind), r))
-    _update!(v.info_label.text, _thumb_text(kind, r.metrics))
-    _update!(v.metrics_label.text, _metrics_text(kind, r.metrics))
+function _show_texts!(v::_DetectorView, form::_ViewForm, r::_ViewResult)
+    cv = r.view
+    _update!(v.kind_label.text, _with_preview(cv.label, r))
+    _update!(v.info_label.text, _thumb_text(form, cv, r.metrics, r.text))
+    _update!(v.metrics_label.text, _metrics_text(form, cv, r.metrics, r.text))
     _set_status!(v, _preview_text(r))
     return nothing
 end
@@ -1124,18 +1266,20 @@ end
 
 # No plots and the `message` in place of the kind and the metrics, e.g. without hits
 function _draw_empty!(v::_DetectorView, message::String)
-    v.kind = nothing
+    v.view = nothing
     v.scale = nothing
     v.zoomed = false
     v.xy = Point2f[]
     _set_frames!(v, RGBAf(0, 0, 0, 0))
     foreach(p -> Makie.update!(p; visible = false), v.images)
-    foreach(p -> Makie.update!(p; arg1 = Point2f[], visible = false), v.spots)
+    foreach(p -> Makie.update!(p; arg1 = Point2f[], color = RGBAf[], visible = false), v.spots)
     foreach(p -> Makie.update!(p; arg1 = Point2f[]), v.crosses)
+    foreach(p -> Makie.update!(p; arg1 = Point2f[], visible = false), v.lines)
     _show_profiles!(v, false)
     _set_cuts!(v, nothing)
     _show_bar!(v, false)
     _show_field_controls!(v, false)
+    _show_series_controls!(v, false)
     _update!(v.kind_label.text, message)
     _update!(v.info_label.text, "")
     _update!(v.metrics_label.text, message)
@@ -1188,20 +1332,21 @@ end
 # The limits of the axis were changed by the mouse: a field is computed again for this window by
 # the host, a spot diagram keeps them
 _limits_changed!(::_DetectorView, ::Nothing) = nothing
-_limits_changed!(v::_DetectorView, ::_SpotKind) = (v.zoomed = true; nothing)
-_limits_changed!(v::_DetectorView, ::_FieldKind) = (v.on_options(; window = 1e-3 .* _shown_limits(v.ax)); nothing)
+_limits_changed!(v::_DetectorView, ::_ViewForm) = (v.zoomed = true; nothing)
+_limits_changed!(v::_DetectorView, ::_FieldForm) = (v.on_options(; window = 1e-3 .* _shown_limits(v.ax)); nothing)
 
 """Shows all of the result in the view `v` again: the spots, or the field in its automatic window."""
 function _fit!(v::_DetectorView)
     v.zoomed = false
     v.drag = nothing
     _end_selection!(v)
-    _fit_kind!(v, v.kind)
+    _fit_kind!(v, _form(v.view))
     return nothing
 end
 _fit_kind!(::_DetectorView, ::Nothing) = nothing
-_fit_kind!(v::_DetectorView, ::_SpotKind) = _fit_spots!(v.ax, v.xy)
-function _fit_kind!(v::_DetectorView, ::_FieldKind)
+_fit_kind!(v::_DetectorView, ::_PointsForm) = _fit_spots!(v.ax, v.xy)
+_fit_kind!(v::_DetectorView, ::_SeriesForm) = _fit_series!(v.ax, v.xy)
+function _fit_kind!(v::_DetectorView, ::_FieldForm)
     _view_limits!(v.ax, v.extent)
     isnothing(v.opts.window) || v.on_options(; window = nothing)
     return nothing
@@ -1221,7 +1366,7 @@ end
 function _zoom_to!(v::_DetectorView, lims::NTuple{4, Float64})
     (lims[2] - lims[1] > 1e-9 && lims[4] - lims[3] > 1e-9) || return nothing
     limits!(v.ax, lims...)
-    _limits_changed!(v, v.kind)
+    _limits_changed!(v, _form(v.view))
     return nothing
 end
 
@@ -1294,7 +1439,7 @@ end
 
 function _on_scroll!(v::_DetectorView, events, (_, dy))
     p = Point2f(events.mouseposition[])
-    (_over_axis(v, p) && !isnothing(v.kind)) || return Consume(false)
+    (_over_axis(v, p) && !isnothing(v.view)) || return Consume(false)
     iszero(dy) || _zoom!(v, p, (1 - _VIEW_ZOOM_SPEED)^dy)
     return Consume(true)
 end
@@ -1314,7 +1459,7 @@ function _on_left!(v::_DetectorView, p::Point2f, ::Val{true}, ctrl::Bool)
         v.thumb_pressed = true
         return Consume(true)
     end
-    (_over_axis(v, p) && !isnothing(v.kind)) || return Consume(false)
+    (_over_axis(v, p) && !isnothing(v.view)) || return Consume(false)
     # the right button pans
     isnothing(v.drag) || return Consume(true)
     now = time()
@@ -1344,7 +1489,7 @@ function _on_left!(v::_DetectorView, p::Point2f, ::Val{false}, ::Bool)
 end
 
 function _on_right!(v::_DetectorView, p::Point2f, ::Val{true})
-    (_over_axis(v, p) && !isnothing(v.kind)) || return Consume(false)
+    (_over_axis(v, p) && !isnothing(v.view)) || return Consume(false)
     # the left button selects
     isnothing(v.select) || return Consume(true)
     v.drag, v.dragged = (p, _shown_limits(v.ax)), false
@@ -1354,7 +1499,7 @@ end
 function _on_right!(v::_DetectorView, ::Point2f, ::Val{false})
     isnothing(v.drag) && return Consume(false)
     v.drag = nothing
-    v.dragged && _limits_changed!(v, v.kind)
+    v.dragged && _limits_changed!(v, _form(v.view))
     return Consume(true)
 end
 

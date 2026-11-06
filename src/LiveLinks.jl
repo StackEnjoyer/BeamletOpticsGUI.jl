@@ -654,9 +654,10 @@ function _follow_solved!(gui::LiveView, from::LiveView, systems, @nospecialize(o
         trace.pending = false
         gui.status.text[] = _LINK_TRACED
     end
-    states = _DetectorState[gui.detectors.states[pd] for pd in _find_detectors(systems)
-                            if haskey(gui.detectors.states, pd)]
+    states = _view_states(gui, systems)
     foreach(state -> state.stale = true, states)
+    # A series gets the value of the solve of `from`, see `_record_series`
+    preview || (gui.detectors.solve += 1)
     # the beams of a preview, which the layers of the debug mode show as well
     preview && return _debug_solved!(gui)
     if !trace.stale

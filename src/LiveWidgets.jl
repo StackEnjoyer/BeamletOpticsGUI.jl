@@ -191,9 +191,12 @@ function _Segmented(parent, options::Vector{Pair{Symbol, String}}; theme,
     grid = GridLayout(parent; default_colgap = 2, halign = :left, tellwidth = false, attributes...)
     sel = Observable(selected)
     ks = first.(options)
-    # the colors of the theme also where the figure has Makie's theme, e.g. on a floating card
+    # the colors of the theme also where the figure has Makie's theme, e.g. on a floating card; the
+    # stroke color is a color from the start, since a plot keeps the type of an attribute (Makie's
+    # default `:transparent` would fail once `look!` sets a color before the first draw)
     buttons = [Button(grid[1, i]; label, fontsize = 12, padding = (7, 7, 4, 4), cornerradius = 4,
-                   buttoncolor_hover = t.hover, buttoncolor_active = t.accent_soft, strokewidth = 1)
+                   buttoncolor_hover = t.hover, buttoncolor_active = t.accent_soft, strokewidth = 1,
+                   strokecolor = t.border)
                for (i, (_, label)) in enumerate(options)]
     function look!(k)
         for (key, b) in zip(ks, buttons)

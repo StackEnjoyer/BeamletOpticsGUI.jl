@@ -70,12 +70,14 @@ _add_system(::LiveView, x) =
 # A detector that is added gets the state of its view when its card first shows the page "Results",
 # see `_detector_state`. The view forgets a removed one; its cards were unpinned before, see
 # `remove_component!`
-function _forget_detector!(gui::LiveView, pd::BMO.Detector)
-    delete!(gui.detectors.states, pd)
-    filter!(((p, _),) -> p !== pd, gui.detectors.registered)
+function _forget_detector!(gui::LiveView, @nospecialize(obj))
+    delete!(gui.detectors.states, obj)
+    registered = gui.detectors.registered
+    for i in length(registered):-1:1
+        registered[i][1] === obj && deleteat!(registered, i)
+    end
     return nothing
 end
-_forget_detector!(::LiveView, _) = nothing
 
 # `origin` is `nothing` or `(; code, pose0)`: the constructor call of `obj` as Julia code and its
 # pose as constructed, e.g. of a component of the catalog, see `_ComponentState` and `_export_code`.

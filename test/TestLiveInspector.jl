@@ -306,8 +306,8 @@ const GUI = BeamletOpticsGUI
         @test card.page == GUI._default_page(o.pd) == :results
         @test view isa GUI._DetectorView && view.expanded && card.view_expanded
         @test GUI._layout_views(gui) == [(o.pd, view)] && GUI._shown_views(gui) == [(o.pd, view)]
-        @test !state.stale && GUI._kind_name(state.result.kind) == :spot
-        @test view.result === state.result && view.name == "PD1" && view.kind == GUI._SpotKind()
+        @test !state.stale && state.result.view.name == :spot
+        @test view.result === state.result && view.name == "PD1" && view.view.name == :spot
         @test _visible(view.ax) && view.switch.keys == [:spot, :psf]
         # as wide as the sidebar, its axis as high as wide; below the page bar
         w = Makie.widths(_rect(insp.grid))[1]
@@ -324,10 +324,10 @@ const GUI = BeamletOpticsGUI
         view.log_toggle.active[] = true
         @test state.opts.colorscale == :log
         view.switch.selected[] = :psf
-        @test state.opts.kind == :psf && GUI._kind_name(state.result.kind) == :psf
-        @test view.kind == GUI._PSFKind()
+        @test state.opts.kind == :psf && state.result.view.name == :psf
+        @test view.view.name == :psf
         view.switch.selected[] = :spot
-        @test view.kind == GUI._SpotKind()
+        @test view.view.name == :spot
         # the wheel over the view zooms its axis, not the camera of the 3D view
         cam = cameracontrols(gui.ax.scene)
         eye, limits = cam.eyeposition[], view.ax.finallimits[]
@@ -359,8 +359,8 @@ const GUI = BeamletOpticsGUI
         ctrl.selected[] = o.pd2
         @test card.view === view && card.page == :results
         @test GUI._layout_views(gui) == [(o.pd2, view)]
-        @test view.name == GUI._label(gui, o.pd2) != "PD1" && isnothing(view.kind) && isnothing(view.switch)
-        @test isempty(GUI._detector_state(gui, o.pd2).result.kinds)
+        @test view.name == GUI._label(gui, o.pd2) != "PD1" && isnothing(view.view) && isnothing(view.switch)
+        @test isempty(GUI._detector_state(gui, o.pd2).result.views)
         # an object without a view hides it, no selection too
         ctrl.selected[] = o.m
         @test isempty(GUI._layout_views(gui)) && !_visible(view.ax)

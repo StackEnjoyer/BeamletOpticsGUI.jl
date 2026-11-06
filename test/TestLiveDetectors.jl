@@ -117,7 +117,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         state = GUI._detector_state(gui, pd)
         # a view that is shown after the solve is computed from its hits
         @test GUI._shown_views(gui) == [(pd, view)]
-        @test !state.stale && GUI._kind_name(state.result.kind) == :spot
+        @test !state.stale && state.result.view.name == :spot
         @test state.result.metrics.n == 40
         @test GUI._signal_text(gui, pd) == "N = 40"
         @test isnothing(gui.trace.job)
@@ -132,7 +132,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         r = state.result
         GUI._set_view!(gui, pd; kind = :psf)
         @test state.opts.kind == :psf && state.result !== r && !state.stale
-        @test GUI._kind_name(state.result.kind) == :psf
+        @test state.result.view.name == :psf
         r = state.result
         GUI._set_view!(gui, pd; colorscale = :log)
         @test state.opts.colorscale == :log && state.result === r && !state.stale
@@ -146,7 +146,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         @test state.stale && state.result === r
         @test GUI._signal_text(gui, pd) == "40 hits"
         GUI._resolve!(gui, nothing)
-        @test !state.stale && GUI._kind_name(state.result.kind) == :spot
+        @test !state.stale && state.result.view.name == :spot
         close(gui)
     end
 
@@ -155,7 +155,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         gui = _live_view(System([m, pd]), _gauss())
         view = _view!(gui, pd; expanded = false)
         state = GUI._detector_state(gui, pd)
-        @test GUI._kind_name(state.result.kind) == :intensity
+        @test state.result.view.name == :intensity
         @test state.result.n == GUI._THUMB_N < state.opts.num_points
         @test startswith(GUI._signal_text(gui, pd), "P = ")
         # the expanded view needs the grid of the options
@@ -170,7 +170,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         @test state.result.n == state.opts.num_points
         # the beams of a Gaussian beamlet as a spot diagram
         GUI._set_view!(gui, pd; kind = :spot)
-        @test GUI._kind_name(state.result.kind) == :spot
+        @test state.result.view.name == :spot
         close(gui)
     end
 
@@ -252,7 +252,7 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
         translate3d!(gui, pd, [0, 0, 0.5e-3])
         @test length(pd) == 0 && gui.trace.stale
-        @test !state.stale && isempty(state.result.kinds) && view.kind_label.text[] == "no hits"
+        @test !state.stale && isempty(state.result.views) && view.kind_label.text[] == "no hits"
         @test GUI._signal_text(gui, pd) == "no hits"
         GUI._trace!(gui)
         @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"

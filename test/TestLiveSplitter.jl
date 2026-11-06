@@ -594,7 +594,7 @@ const GUI = BeamletOpticsGUI
         views = (card.view, pinned.view)
         # the state of the views: the kind and the limits that the mouse set
         card.view.zoomed = true
-        kind = card.view.kind
+        kind = card.view.view
         b = _right_edge(gui)
         _mouse!(gui, b)
         _press!(gui)
@@ -608,7 +608,7 @@ const GUI = BeamletOpticsGUI
         @test right.size == Fixed(400) && GUI._docked_width(gui) ≈ w + 100
         @test all(v -> v.ax.width[] == w + 100 && v.ax.height[] == w + 100, views)
         @test (card.view, pinned.view) === views
-        @test card.view.zoomed && card.view.kind == kind && card.page == :results
+        @test card.view.zoomed && card.view.view == kind && card.page == :results
         @test card.view_obj === pd && pinned.view_obj === pd
         # narrower, and the double click
         b = _right_edge(gui)

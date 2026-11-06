@@ -539,35 +539,45 @@ end
 """
     _DetectorState
 
-The view of the detector `pd` of a `LiveView`, shared by all cards that show it (see
+The view of the page "Results" of the object `pd` of a `LiveView` (an object with
+[`card_views`](@ref), e.g. a `Detector`), shared by all cards that show it (see
 `LiveDetectors.jl`): its options `opts` (a `_ViewOptions`), the `result` of its last computation (a
 `_ViewResult`, `nothing` before the first one) and whether it is `stale`, i.e. the hits of the
 detector or the options changed since. `window_changed` is the time of the last zoom or pan of a
 field view, whose recomputation waits until the mouse rests (`0.0` if none is pending), see
-`_set_view!`.
+`_set_view!`. `series` holds the values of each series view of the object (by its `name`), one per
+full solve, and `recorded` the number of the solve (see `_DetectorStates`) of its last value, see
+`_record_series`.
 """
 mutable struct _DetectorState
-    const pd::BMO.Detector
+    const pd::Any
     opts::Any
     result::Any
     stale::Bool
     window_changed::Float64
+    const series::Dict{Symbol, Vector{Float64}}
+    const recorded::Dict{Symbol, Int}
 end
+
+_DetectorState(@nospecialize(obj), opts) =
+    _DetectorState(obj, opts, nothing, true, 0.0, Dict{Symbol, Vector{Float64}}(), Dict{Symbol, Int}())
 
 """
     _DetectorStates
 
-The detector views of a `LiveView`: the `states` per detector, created on demand (see
+The views of the pages "Results" of a `LiveView`: the `states` per object, created on demand (see
 `_detector_state`); `hits_valid` is `true` while the hits of the detectors are those of a complete
 solve, i.e. stale views can be computed from them; `start` holds the specs of the `detectors`
 kwarg of [`live_view`](@ref), whose cards start pinned, see `_detector_specs`; `registered` the
-views `(pd, view)` that are shown outside the cards and the layout, see `_register_view!`.
+views `(obj, view)` that are shown outside the cards and the layout, see `_register_view!`;
+`solve` counts the solves, such that a series gets one value per solve, see `_record_series`.
 """
 Base.@kwdef mutable struct _DetectorStates
     states::IdDict{Any, _DetectorState} = IdDict{Any, _DetectorState}()
     hits_valid::Bool = false
     start::Vector{Any} = Any[]
     registered::Vector{Tuple{Any, Any}} = Tuple{Any, Any}[]
+    solve::Int = 0
 end
 
 """
