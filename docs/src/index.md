@@ -53,8 +53,10 @@ session of either layout, about 1.5 s instead of 0.8 s of compilation). The same
 | [Live view](@ref) | `live_view`: the complete window with cards, panels, clip planes, tracing and export |
 | [Kinematic controls](@ref) | `kinematic_controls!`: moving components with the mouse and keyboard |
 | [View cube](@ref) | `view_cube!`: the CAD-style cube for the standard views |
+| [Adding and removing components](@ref components_page) | the catalog, `add_component!`, `remove_component!` and the systems of a view |
 | [Cards and widgets](@ref) | recipes for cards of own component types, own widgets and controls |
 | [Interactive Michelson interferometer](@ref) | a complete example |
+| [Building a setup on an empty table](@ref) | an example that starts from an empty `System()` in the app layout |
 | [API](@ref) | the exported names |
 
 ## Design principles

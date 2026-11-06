@@ -40,7 +40,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `sidebar_width = (240, 300)`, `dock_height = nothing` | app layout only (compact ignores them): start widths [px] of the left and right sidebar (a number sets both, each within 160 and 600) and start height [px] of the dock (within 80 and 70 % of the figure height; `nothing`: 36 % of the window); outside the limits throws `ArgumentError`. In the window: drag the edge of a sidebar or the upper edge of the dock, a double click restores the start size |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
 | `constraints = Dict(obj => (; move = (), rotate = (:x, :z)))` | lock local axes `:x`, `:y`, `:z` of components (`:v` is an error) |
-| `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; num_points, colorscale, colorrange, colorbar, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries go to `BeamletOptics.intensity`; `history` throws `ArgumentError`) |
+| `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; num_points, colorscale, colorrange, colorbar, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries are keywords of `BeamletOptics.RegularGrid`, e.g. `x_min` or `crop_factor`; `n` (now `num_points`) and `history` throw `ArgumentError`) |
 | `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units); compact: entry "Sliders" of the tool rail, app: "Parameters" |
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
 | `extras = [housing => (; color = ...)]` | objects without a system: shown, movable, but never traced (listed under "No system" in the tree; removable; can become a member of a system later) |
@@ -114,7 +114,7 @@ for infrared and dark violet for ultraviolet), unless its `beam_kwargs` set a fi
 rays (`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`;
 `(; color = :wavelength)` or `(:wavelength, alpha)` are accepted). A view may start
 without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
-`add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, 1.5)")` gives the constructor call of an
+`add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))")` gives the constructor call of an
 object built in code (also of a source): add it in the pose in which `code` constructs it and move
 it afterwards (inside `retrace!(gui) do ... end`); `export_script` then writes the call and the
 moves, as for a part of the catalog. `code` is one expression that runs on its own after
