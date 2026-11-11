@@ -36,6 +36,13 @@ wait_solve
 Makie.record(::Any, ::BeamletOpticsGUI.LiveView, ::AbstractString, ::Any)
 ```
 
+## Projects
+
+```@docs
+open_project
+save_project(::BeamletOpticsGUI.LiveView, ::AbstractString)
+```
+
 ## Adding and removing components
 
 ```@docs
