@@ -1,6 +1,6 @@
 # BeamletOpticsGUI.jl: developer instructions for coding agents
 
-The interactive GUI of [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl) (BMO):
+The interactive GUI of [BeamletOptics.jl](https://github.com/StackEnjoyer/BeamletOptics.jl) (BMO):
 `live_view` and the tools around it (kinematic controls, view cube, cards, custom panels, controls
 and tools), built on Makie. BMO does the physics and draws the components; this package arranges
 them into an interactive window.

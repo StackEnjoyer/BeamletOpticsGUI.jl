@@ -12,7 +12,7 @@ ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
-BeamletOptics = {url = "https://github.com/JuliaPhysics/BeamletOptics.jl", rev = "master"}
+BeamletOptics = {url = "https://github.com/StackEnjoyer/BeamletOptics.jl", rev = "master"}
 BeamletOpticsGUI = {path = ".."}
 BeamletOpticsProjects = {url = "https://github.com/StackEnjoyer/BeamletOpticsProjects.jl", rev = "main"}
 

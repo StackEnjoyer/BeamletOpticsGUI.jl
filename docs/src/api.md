@@ -3,7 +3,7 @@
 The exported names of BeamletOpticsGUI. The functions and types of BeamletOptics that the GUI
 builds on (`render!`, `live_render!`, `update_render!`, `remove_render!`, `pick_object` and the
 render handle protocol) are documented on the
-[BeamletOptics site](https://github.com/JuliaPhysics/BeamletOptics.jl).
+[BeamletOptics site](https://github.com/StackEnjoyer/BeamletOptics.jl).
 
 ```@docs
 BeamletOpticsGUI

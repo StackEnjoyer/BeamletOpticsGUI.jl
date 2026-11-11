@@ -7,7 +7,7 @@ include(joinpath(dir, "live_michelson_showcase.jl"))
 
 # Interactive Michelson interferometer
 
-This example shows how to build an interactive application with [`live_view`](@ref), which is based on the live rendering functions of BeamletOptics (`live_render!`, `update_render!`). The Michelson interferometer of the [Michelson interferometer tutorial](https://juliaphysics.github.io/BeamletOptics.jl/dev/tutorials/michelson) is rendered into a `GLMakie` window, in which the components can be moved and rotated with the mouse and keyboard. After each change, the system is solved again and the beam path, the fringe pattern on the detector and the optical power are updated live.
+This example shows how to build an interactive application with [`live_view`](@ref), which is based on the live rendering functions of BeamletOptics (`live_render!`, `update_render!`). The Michelson interferometer of the [Michelson interferometer tutorial](https://stackenjoyer.github.io/BeamletOptics.jl/dev/tutorials/michelson) is rendered into a `GLMakie` window, in which the components can be moved and rotated with the mouse and keyboard. After each change, the system is solved again and the beam path, the fringe pattern on the detector and the optical power are updated live.
 
 ![Interactive Michelson interferometer](live_michelson_fringes.png)
 
