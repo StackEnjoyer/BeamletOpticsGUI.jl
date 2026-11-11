@@ -28,11 +28,11 @@ BeamletOpticsGUIGLMakieExt = "GLMakie"
 
 [sources]
 BeamletOptics = {url = "https://github.com/StackEnjoyer/BeamletOptics.jl", rev = "master"}
-BeamletOpticsProjects = {url = "https://github.com/StackEnjoyer/BeamletOpticsProjects.jl", rev = "main"}
+BeamletOpticsProjects = {url = "https://github.com/StackEnjoyer/BeamletOpticsProjects.jl", rev = "feature/own-types"}
 
 [compat]
 AbstractTrees = "0.4"
-BeamletOptics = "0.14"
+BeamletOptics = "0.14.1"
 BeamletOpticsProjects = "0.1"
 FileWatching = "1"
 GLMakie = "0.13"

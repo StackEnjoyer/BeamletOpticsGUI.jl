@@ -435,6 +435,24 @@ unless it is called with `force = true`, which the card does after an input was 
 function card_show! end
 
 """
+    card_widget(gui::LiveView, obj, name::Symbol) -> Union{Nothing, Makie.Block}
+
+The widget declared with `name` (see [`CardWidget`](@ref)) on a card of the [`live_view`](@ref)
+`gui` that shows `obj`: the card of the selection, a pinned card or, in the layout `:app`, the
+docked card. `nothing` if no card shows `obj` or its page has no widget of that `name`. An own
+widget type is returned as the object that the card built (see [`card_input`](@ref)).
+
+For tests and scripts: e.g. a slider of [`card_rows`](@ref) of an own type, moved as by the mouse:
+
+```julia
+select!(gui, obj)  # opens the card of the selection
+s = card_widget(gui, obj, :width)
+Makie.set_close_to!(s, 30.0)
+```
+"""
+function card_widget end
+
+"""
     add_component!(gui, obj; system = nothing, select = true, label = nothing, code = nothing) -> obj
 
 Adds the object `obj` (an `AbstractObject` or an object group) to a system of the

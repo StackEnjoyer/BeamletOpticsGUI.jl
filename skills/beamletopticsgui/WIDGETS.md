@@ -117,6 +117,62 @@ BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
         aligned = true))
 ```
 
+## Recipe: a card for a type of a project
+
+A project of BeamletOpticsProjects (`open_project(dir)`) may define own types in its code
+`src/<Name>.jl`. Their card goes into `src/gui.jl` of the project, which only the window loads:
+
+1. `src/<Name>.jl` defines the type and tells its constructor with a method of
+   `BeamletOpticsProjects.constructor_code(x)`: the code (a `String`) that builds `x` as it is now,
+   without its pose. Only then is a change of its shape on a card saved to its line of `system.jl`.
+2. `src/gui.jl` defines `BeamletOpticsGUI.card_rows(x::MyType)` as above. The window includes it into
+   the module of the project after `src/<Name>.jl` (its exported names are known, `BeamletOpticsGUI`
+   is bound), at the start and again whenever the files of `src/` change (the card shows the new rows
+   without a restart). An error in it is named in the status line (`src/gui.jl:<line>: ...`); the
+   window opens without its methods.
+3. An input of the card that changes what `constructor_code` returns (e.g. a slider of a parameter of
+   the shape, `solve = true`) draws the object again (`BeamletOptics.rerender!`), writes the new code
+   to its line (the line keeps `pos` and `rot`) and is one entry of the undo history: `Ctrl+Z` builds
+   the object again from the old code in its place, `Ctrl+Y` brings the changed one back. The steps
+   of a dragged slider are one entry.
+4. A type without `constructor_code` takes the inputs as in any window, but they live only in the
+   window: the status line says once per type that changes of its shape are not saved.
+5. Agents never load `src/gui.jl` (`load_project` does not include it, its packages are not part of
+   the project's `[packages]`); they see the new code in the line of the object and can change it
+   there.
+
+```julia
+# src/Bench.jl of the project "Bench"
+module Bench
+using BeamletOptics
+import ..BeamletOpticsProjects
+export Block
+
+# A block of a width and a thickness [m], which absorbs the rays that hit it
+struct Block{T} <: BeamletOptics.AbstractObject{T}
+    shape::BeamletOptics.PlanoSurfaceSDF{T}
+end
+Block(width, thickness) = Block(BeamletOptics.PlanoSurfaceSDF(thickness, width))
+BeamletOptics.interact3d(::BeamletOptics.AbstractSystem, ::Block, ::Beam, ::Ray) = nothing
+BeamletOpticsProjects.constructor_code(b::Block) = "Block($(b.shape.diameter), $(b.shape.thickness))"
+end
+```
+
+```julia
+# src/gui.jl of the project: the card of a Block, a slider of its width
+using BeamletOpticsGUI
+using GLMakie: Slider
+
+BeamletOpticsGUI.card_rows(b::Block) = (pose_card_rows(b)...,
+    CardRow("width [mm]", CardWidget(Slider; name = :width, range = 10.0:5.0:50.0,
+        value = (gui, b) -> 1e3 * b.shape.diameter,
+        on = (gui, b, w) -> (b.shape.diameter = 1e-3 * w), solve = true)))
+```
+
+A line `@component K1 = Block(0.025, 0.005) pos = (0.0, 0.1, 0.0)` of `system.jl` becomes
+`Block(0.04, 0.005)` after the slider moved to 40. Test it with `open_project(dir; display = false)`,
+`select!(gui, obj)` and `card_widget(gui, obj, :width)` (see `API.md`).
+
 ## Recipe: a card for your system type
 
 A system (subtype of `AbstractSystem`) has a card too: shown, without gizmo and without a selection

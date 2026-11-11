@@ -575,11 +575,16 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
     end
     s.failed = false
     s.load_error = ""
+    # The window's part of the own code, in the new module of the project, whose types the adopted
+    # objects have; its error is told when the own code changed
+    code_changed = src != s.src
+    gui_error = _include_gui!(disk)
+    _own_module!(gui, disk)
     # The window compares in the poses of the files of the last merge
     _finish_glides!(gui)
     # The lines without uid (of an agent) get those of their objects in the window
     _align_uids!(gui, disk)
-    rebuild = src == s.src ? Symbol[] : _calls_own_code(disk)
+    rebuild = code_changed ? _calls_own_code(disk) : Symbol[]
     mine = _collect_project(gui, dir)
     # A conflict of before stays until the person decides, or the files agree with the window. A
     # new id of the files that an unsaved object of the window has too stays the files': the
@@ -600,6 +605,7 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
         # The other person whose window wrote these files, else an agent
         who = something(_writer(gui, disk.stamp), "agent")
         isempty(done) || (gui.status.text[] = "$who: " * join(done, ", "))
+        (code_changed && !isnothing(gui_error)) && (gui.status.text[] = gui_error)
         _note_session!(gui)
         return :applied
     end
@@ -1189,6 +1195,8 @@ function _load_from_disk!(gui::LiveView)
         _note_session!(gui)
         return nothing
     end
+    gui_error = _include_gui!(disk)
+    _own_module!(gui, disk)
     _finish_glides!(gui)
     _align_uids!(gui, disk)
     mine = _collect_project(gui, gui.project)
@@ -1199,6 +1207,7 @@ function _load_from_disk!(gui::LiveView)
     # Taken in from the files, not written by the window
     _saved!(gui, disk; written = false)
     gui.status.text[] = isempty(done) ? "project reloaded, nothing changed" : "reloaded: " * join(done, ", ")
+    isnothing(gui_error) || (gui.status.text[] = gui_error)
     return nothing
 end
 

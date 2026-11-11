@@ -17,7 +17,7 @@ import BeamletOptics: translate3d!, translate_to3d!, rotate3d!, set_pivot3d!
 const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
-       pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
+       pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, card_widget,
        add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
        add_system!, remove_system!,
        CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!,

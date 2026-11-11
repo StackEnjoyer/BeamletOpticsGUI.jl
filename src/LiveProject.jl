@@ -640,6 +640,70 @@ function _open_from(project; view = _read_view(project), kwargs...)
     return gui
 end
 
+#=
+The window's part of the own code of a project: `src/gui.jl`
+=#
+
+"""
+The file of the window's part of the own code of a project, relative to its folder: the card rows
+of its own types (`card_rows`, ...), which `BeamletOpticsProjects.load_project` never includes (the
+agents do not need the GUI), see `_include_gui!`.
+"""
+const _GUI_FILE = joinpath("src", "gui.jl")
+
+"""
+    _OwnCode
+
+What a live view keeps of the own code of its project: `mod`, the module of the project as the
+window loaded it last (`src/gui.jl` is included into it, and the code of the constructor of an
+object is evaluated in it, see `_build_from_code`), and the names of the types whose changes of the
+shape the status line said are not saved (`unsaved`, see `_note_unsaved_shape!`).
+"""
+mutable struct _OwnCode
+    mod::Union{Nothing, Module}
+    const unsaved::Set{Symbol}
+end
+
+# Per live view, without a field of it: the window of a project only
+const _OWN_CODE = WeakKeyDict{LiveView, _OwnCode}()
+
+"""The `_OwnCode` of the `gui`."""
+_own_code(gui::LiveView) = get!(() -> _OwnCode(nothing, Set{Symbol}()), _OWN_CODE, gui)
+
+"""Notes that the `gui` shows the objects of the loaded `project`, whose module it keeps, see `_OwnCode`."""
+function _own_module!(gui::LiveView, project)
+    _own_code(gui).mod = project.mod
+    return nothing
+end
+
+"""
+    _include_gui!(project) -> Union{Nothing, String}
+
+Includes `src/gui.jl` of the loaded `project` (see `_GUI_FILE`) into the module of the project,
+after the own code `src/<Name>.jl` and `system.jl`: `BeamletOpticsGUI` is bound there (also without
+`using BeamletOpticsGUI` in the file), the names of `src/<Name>.jl` are known (see
+`BeamletOpticsProjects.load_project`). Every load of the window does it again, since each one makes
+a new module, whose types the window shows once it adopts their objects. Returns `nothing`, or the
+message of an error of the file for the status line, `"src/gui.jl:<line>: <reason>"` (logged once);
+the window works on without the file's methods.
+"""
+function _include_gui!(project)
+    mod = project.mod
+    file = joinpath(project.path, _GUI_FILE)
+    (isnothing(mod) || !isfile(file)) && return nothing
+    try
+        Base.invokelatest(isdefined, mod, :BeamletOpticsGUI) ||
+            Core.eval(mod, :(const BeamletOpticsGUI = $(@__MODULE__)))
+        Base.include(mod, file)
+    catch e
+        e isa InterruptException && rethrow()
+        msg = "src/" * _load_message(e)
+        @warn "the window's code of the project was not loaded: $msg" _id = Symbol(msg) maxlog = 1
+        return msg
+    end
+    return nothing
+end
+
 """
     open_project(path; display = true, kwargs...) -> LiveView
 
@@ -655,6 +719,11 @@ to them (an agent or the window of another person), notes the selection and the 
 of the person in `.bmo/session-<person>.md` and shows where the others work (see
 `LiveProjectPresence.jl`). `Ctrl+S` saves a version of the project (a git commit with a message), see
 [`save_project`](@ref). The components and sources from the catalog can be edited and copied.
+The window's part of the own code of the project, `src/gui.jl` (e.g. [`card_rows`](@ref) of its
+own types), is loaded into the module of the project after `src/<Name>.jl`, and again when the files
+of `src/` change; an error in it is named in the status line, and the window opens without it. A
+change of the shape of an object on its card is saved to its line if its type tells its
+constructor (`BeamletOpticsProjects.constructor_code`).
 `Ctrl+O` or the tool "Open" of a window opens a project chosen in a dialog and closes the window;
 `Ctrl+N` or the tool "New project" makes an empty project and opens it the same way.
 Warns when the project was saved with newer or incompatible versions of the packages, or its own
@@ -664,7 +733,10 @@ dialog of "Open" asks instead, see `_open_checked!`.
 function open_project(path::AbstractString; display::Bool = true, kwargs...)
     _warn_versions(path)
     project = BMOP.load_project(path)
+    gui_error = _include_gui!(project)
     gui = _open_from(project; kwargs...)
+    _own_module!(gui, project)
+    isnothing(gui_error) || (gui.status.text[] = gui_error)
     if display
         title = basename(project.path)
         _multi_light_backend() ? Base.display(gui; title) : Base.display(gui)

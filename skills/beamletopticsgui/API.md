@@ -28,7 +28,7 @@ Look up the docstring of any name before use, e.g.
 | Components and systems at runtime | `add_component!`, `remove_component!`, `add_system!`, `remove_system!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
-| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
+| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!`, `card_widget` |
 
 Not exported: `BeamletOpticsGUI.install_agent_skill`.
 

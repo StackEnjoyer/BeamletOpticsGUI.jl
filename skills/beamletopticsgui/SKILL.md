@@ -128,7 +128,11 @@ When this Skill is active:
   any window, e.g. of `live_view(System())`). `Ctrl+N` or the tool "New project" makes an empty project in a new or
   empty folder (the dialog of "Save as") and opens it in place of the window, after writing what
   is pending of the old project; from code: `BeamletOpticsProjects.new_project(dir)`, then
-  `open_project(dir)`.
+  `open_project(dir)`. Own types of the project's code (`src/<Name>.jl`) get their card in
+  `src/gui.jl` of the project, which only the window loads (again when `src/` changes); a change
+  of their shape on the card is drawn at once, saved to the line and undone with `Ctrl+Z` if the
+  type has `BeamletOpticsProjects.constructor_code`, see "a card for a type of a project" in
+  `WIDGETS.md`.
 - A group or a selection of several rotates about its pivot, a dot (dashed line to the gizmo) while
   it is selected: the mean of the objects for one made in the window or a selection, the pivot of the
   script for a group of the script (BeamletOptics starts it at the origin). The row "pivot" of the

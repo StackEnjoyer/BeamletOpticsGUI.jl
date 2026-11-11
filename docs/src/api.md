@@ -75,6 +75,7 @@ CardRow
 CardWidget
 card_input
 card_show!
+card_widget
 ```
 
 ## Agent skill
