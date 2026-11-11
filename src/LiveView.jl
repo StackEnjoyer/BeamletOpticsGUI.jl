@@ -658,7 +658,10 @@ What the view knows of the files of its project, which an agent may change while
   merge, `adopting` whether a merge is being applied (its solves wait for its end), `saving`
   whether the view writes the files (no look reads them meanwhile, see `_without_looks`) and
   `monitor` the notifications of changes of the files, see `LiveProjectWatch.jl`;
-- `claim`: the claims of the person of the view and of the others, see `LiveProjectClaims.jl`.
+- `claim`: the claims of the person of the view and of the others, see `LiveProjectClaims.jl`;
+- `background`: whether the view writes its files in the background (a watched window, see
+  `_start_watching!`), `save` the write of the autosave that runs there (see `_start_save!`) and
+  `writer` the writes of its session file (see `_write_later!`).
 """
 Base.@kwdef mutable struct _ProjectSync
     base::Any = nothing
@@ -695,6 +698,9 @@ Base.@kwdef mutable struct _ProjectSync
     saving::Bool = false
     monitor::Any = nothing
     claim::Any = nothing
+    background::Bool = false
+    save::Any = nothing
+    writer::Any = nothing
 end
 
 """

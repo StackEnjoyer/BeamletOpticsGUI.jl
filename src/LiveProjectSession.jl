@@ -220,9 +220,22 @@ and the journal. Does nothing without a project. An error of writing never propa
 logged once per distinct message.
 """
 function _write_session!(gui::LiveView)
-    isnothing(gui.project) && return nothing
+    dir = gui.project
+    isnothing(dir) && return nothing
+    text = _session_text(gui)
+    # A watched window writes it in the background, see `_write_later!`
+    if gui.sync.background
+        _write_later!(gui, :session, () -> _put_session_logged(dir, text))
+    else
+        _put_session_logged(dir, text)
+    end
+    return nothing
+end
+
+# Writes the session file `text` of the project `dir`; an error is logged once per distinct message
+function _put_session_logged(dir, text)
     try
-        _put_session(gui.project, _session_text(gui))
+        _put_session(dir, text)
     catch e
         e isa InterruptException && rethrow()
         msg = sprint(showerror, e)
@@ -236,6 +249,75 @@ end
 
 # The last message of a failed write that was logged
 const _SESSION_WARNED = Ref("")
+
+"""
+The writes of a window in the background (`gui.sync.writer`, see `_write_later!`): the latest
+write per file (`jobs`, by a key, in the order of their first request, `order`), done by one task
+on a thread of the background while `running`.
+"""
+mutable struct _Writer
+    jobs::Dict{Symbol, Function}
+    order::Vector{Symbol}
+    running::Bool
+    idle::Threads.Condition
+end
+_Writer() = _Writer(Dict{Symbol, Function}(), Symbol[], false, Threads.Condition())
+
+_file_writer(gui::LiveView) = (w = gui.sync.writer; w isa _Writer ? w : (gui.sync.writer = _Writer()))
+
+"""
+    _write_later!(gui, key, f)
+
+Writes a file of the `gui` in the background: `f()` (which must not touch the window, only write)
+runs on a thread of the background, after the writes that were requested before. A request of the
+same `key` that has not run yet is replaced: only the latest text of a file is written. See
+`_drain_writes!`.
+"""
+function _write_later!(gui::LiveView, key::Symbol, f::Function)
+    w = _file_writer(gui)
+    start = lock(w.idle) do
+        haskey(w.jobs, key) || push!(w.order, key)
+        w.jobs[key] = f
+        w.running && return false
+        w.running = true
+        return true
+    end
+    start && Threads.@spawn _run_writes!(w)
+    return nothing
+end
+
+# The task of the writer `w`: the requested writes, one after the other, until there are none
+function _run_writes!(w::_Writer)
+    while true
+        f = lock(w.idle) do
+            if isempty(w.order)
+                w.running = false
+                notify(w.idle)
+                return nothing
+            end
+            return pop!(w.jobs, popfirst!(w.order))
+        end
+        isnothing(f) && return nothing
+        try
+            f()
+        catch e
+            e isa InterruptException && rethrow()
+            @warn "a write of the window in the background failed" exception = e
+        end
+    end
+end
+
+"""Waits until the writes of the `gui` in the background are done (see `_write_later!`)."""
+function _drain_writes!(gui::LiveView)
+    w = gui.sync.writer
+    w isa _Writer || return nothing
+    lock(w.idle) do
+        while w.running
+            wait(w.idle)
+        end
+    end
+    return nothing
+end
 
 """
     _connect_session!(gui)
@@ -266,6 +348,8 @@ function _session_closed!(gui::LiveView)
         off(l)
     end
     empty!(gui.sync.session)
+    # A write in the background would bring the file back after it was removed
+    _drain_writes!(gui)
     isnothing(gui.project) && return nothing
     try
         kept = _closed_kept(gui)

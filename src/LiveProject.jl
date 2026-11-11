@@ -436,9 +436,13 @@ Writes the view of the `gui` to `.bmo/view-<id>.toml` of the person, in the fold
 with the `names` of its sources. `view.toml` in the folder is written only if it does not exist: it is
 the default for a person who has no view file yet.
 """
-function _write_view_toml(gui::LiveView, project, names)
+_write_view_toml(gui::LiveView, project, names) =
+    _put_view_toml(project, sprint(io -> TOML.print(io, _view_dict(gui, names); sorted = true)))
+
+# Writes the `text` of a view file (see `_write_view_toml`) into the folder of the `project`; touches
+# no window, so that it can run in the background
+function _put_view_toml(project, text::AbstractString)
     path = _view_file(project.path)
-    text = sprint(io -> TOML.print(io, _view_dict(gui, names); sorted = true))
     _put_atomic(path, text)
     default = BMOP.project_file(project, _VIEW_TOML)
     isfile(default) || _put_atomic(default, text)
@@ -723,6 +727,24 @@ files in their own project; the window keeps its own and writes it once the conf
 is over. Objects that glide to a pose of the files land first.
 """
 function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
+    # A write of the autosave in the background ends first, see `_start_save!`
+    _settle_save!(gui)
+    prep = _save_prepare(gui, dir; force)
+    # Refuses a line that another participant claimed (see `BeamletOpticsProjects.claim!`)
+    written = _without_looks(() -> _save_write(prep), gui)
+    return _save_finish!(gui, prep, written)
+end
+
+"""
+    _save_prepare(gui, dir; force = false) -> NamedTuple
+
+The first part of `save_project(gui, dir)`, on the thread of the window: what the save writes, taken
+from the `gui` (the project of its setup with the lines that keep the state of the files, see
+`_composed`, the text of its view file), such that `_save_write` needs nothing of the `gui` and can
+run in the background. Objects that glide land first. "Save as" copies the own code of the project
+to the new folder here.
+"""
+function _save_prepare(gui::LiveView, dir::AbstractString; force::Bool = false)
     dir = abspath(dir)
     from = gui.project
     save_as = !isnothing(from) && dir != from
@@ -744,16 +766,40 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
         BMOP.copy_code(from, dir)
     end
     new = !_is_project(dir)
-    # Refuses a line that another participant claimed (see `BeamletOpticsProjects.claim!`)
-    path = _without_looks(gui) do
-        save_project(project; packages = _project_packages(), force, by = _person().id)
-    end
+    view = sprint(io -> TOML.print(io, _view_dict(gui, parts.names); sorted = true))
+    return (; dir, from, save_as, parts, keep, composed, project, new, force, view,
+        packages = _project_packages(), by = _person().id)
+end
+
+"""
+    _save_write(prep) -> NamedTuple
+
+The second part of `save_project(gui, dir)`: writes the files of the prepared save `prep` (see
+`_save_prepare`) and returns their `path` and `marks` (see `_file_marks`). Touches nothing of the
+window: it runs on the thread of the window or in the background (see `_start_save!`). Throws as
+`BeamletOpticsProjects.save_project`.
+"""
+function _save_write(prep)
+    path = save_project(prep.project; prep.packages, prep.force, prep.by)
     # A new project gets the skills of BeamletOptics and BeamletOpticsProjects from its scaffold,
     # and the one of the GUI here; derived copies, not part of the versions
-    new && Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
-        install_agent_skill(joinpath(dir, ".claude", "skills"))
+    prep.new && Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+        install_agent_skill(joinpath(prep.dir, ".claude", "skills"))
     end
-    _write_view_toml(gui, parts.project, parts.names)
+    _put_view_toml(prep.project, prep.view)
+    return (; path, marks = _file_marks(prep.dir))
+end
+
+"""
+    _save_finish!(gui, prep, written) -> String
+
+The last part of `save_project(gui, dir)`, on the thread of the window, after `_save_write` wrote
+the prepared save `prep`: the window takes the machine ids of the save, its new base and stamp,
+the folder of the project and the status line. Returns the path of `system.jl`.
+"""
+function _save_finish!(gui::LiveView, prep, written)
+    (; dir, from, save_as, parts, keep, composed, project) = prep
+    path = written.path
     # The uids that the save gave are those of `project`; at the lines that keep the files' state
     # it holds those of the files, not of the window
     _apply_project_names!(gui, project; skip = composed.keys, window = parts.project)
@@ -773,7 +819,7 @@ function save_project(gui::LiveView, dir::AbstractString; force::Bool = false)
     gui.project = dir
     # The files of this stamp are the window's own write, see `_own_written`
     _own_save!(gui, project.stamp)
-    _saved!(gui, project; keep)
+    _saved!(gui, project; keep, marks = written.marks)
     connected && _connect_session!(gui)
     dir == from || _set_title!(gui, basename(dir))
     msg = save_as ? "project saved as $dir" : "project saved to $dir"

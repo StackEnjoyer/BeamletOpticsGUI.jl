@@ -31,9 +31,10 @@ function _shown(gui::LiveView)
 end
 
 """
-    _saved!(gui, project; written = true, keep = String[])
+    _saved!(gui, project; written = true, keep = String[], marks = nothing)
 
-Records that the `gui` and the files of the `project` agree, after it was opened, saved or the
+`marks` are the `_file_marks` of the files if a write in the background read them (else they are
+read here). Records that the `gui` and the files of the `project` agree, after it was opened, saved or the
 files were merged: `project` becomes the `base` of the comparisons (see `_ProjectSync`), the
 conflicts are over except those of `keep` (a save of the window writes the files' state of the
 objects in conflict and keeps them open, see `_saved_state`), the states that the window wrote are
@@ -42,12 +43,13 @@ remembered (unless `written` is `false`, e.g. for files that `Ctrl+R` took in; s
 watched view publishes the stamp of the files in its presence file (the others name it as the
 writer, see `_writer`).
 """
-function _saved!(gui::LiveView, project; written::Bool = true, keep = String[])
+function _saved!(gui::LiveView, project; written::Bool = true, keep = String[], marks = nothing)
     s = gui.sync
     before = s.base
     s.base = _align_uids!(gui, project)
     s.stamp = project.stamp
-    s.marks = _file_marks(project.path)
+    # read by a write in the background already, see `_save_write`
+    s.marks = something(marks, _file_marks(project.path))
     s.src = _src_marks(s.marks)
     s.changed_at = s.handled = nothing
     s.failed = false
@@ -202,10 +204,21 @@ line, tried again after `_AUTOSAVE_RETRY` seconds. `force` saves without waiting
 files changed or objects glide (when the window closes or `Ctrl+S` saves a version). A window that
 closes with objects whose state of the window is not written (see `_kept_back`) writes its setup to
 the backup of the person, which `.bmo/session.md` names.
+
+A watched window (`background`, see `_start_watching!`) writes in the background instead, such
+that a slow drive does not stop the window (see `_start_save!`): `:saving` while that write runs;
+its result is taken at a later look (see `_take_save!`), which returns the result above. `force`
+waits for a write that runs and then saves on the thread of the window.
 """
 function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
     s = gui.sync
     dir = gui.project
+    if force
+        _settle_save!(gui)
+    elseif !isnothing(s.save)
+        # `:saving` also when it wrote again after a merge
+        return _take_save!(gui)
+    end
     (isnothing(dir) || isnothing(s.base)) && return :none
     if force
         _finish_glides!(gui)
@@ -239,7 +252,127 @@ function _autosave!(gui::LiveView; now::Real = time(), force::Bool = false)
         _write_backup!(gui, parts.project)
         return :paused
     end
+    # The files that changed meanwhile are found by the save itself (`ProjectChanged`) and merged
+    # then, see `_take_save!`: reading their stamp here would cost the window a round trip of the drive
+    s.background && !force && return _start_save!(gui, parts, now)
     return _autosave_write!(gui, parts, now)
+end
+
+"""
+    _start_save!(gui, parts, now; merged = false, refreshed = false) -> Symbol
+
+Starts the write of the autosave of the setup `parts` (see `_project_parts`) of the `gui` in the
+background: `_save_prepare` here, `_save_write` on a thread of the background (after the look that
+runs, see `_without_looks`; no look starts meanwhile), and returns `:saving`. `_take_save!` takes its
+result. `merged` and `refreshed` are the retries that `_save_to!` makes: after a merge of files
+that changed, after reading the claims of the others again.
+"""
+function _start_save!(gui::LiveView, parts, now::Real; merged::Bool = false, refreshed::Bool = false)
+    s = gui.sync
+    dir = gui.project
+    changes = BMOP.diff_projects(s.base, _saved_state(gui, parts.project))
+    status = gui.status.text[]
+    prep = _save_prepare(gui, dir)
+    run = s.look
+    look = isnothing(run) ? nothing : run.task
+    s.saving = true
+    task = Threads.@spawn begin
+        isnothing(look) || timedwait(() -> istaskdone(look), _LOOK_DRAIN; pollint = 0.01)
+        try
+            _SAVE_HOOK[]()
+            (; ok = true, written = _save_write(prep), busy = false, error = nothing)
+        catch e
+            e isa InterruptException && rethrow()
+            # Another writer holds the lock, if the files are still those that the window knows
+            busy = e isa BMOP.ProjectChanged && try
+                BMOP.project_stamp(prep.dir) == prep.project.stamp
+            catch
+                false
+            end
+            (; ok = false, written = nothing, busy, error = e)
+        end
+    end
+    s.save = (; task, prep, parts, changes, status, now = Float64(now), merged, refreshed)
+    return :saving
+end
+
+"""
+Waits for the write of the autosave of the `gui` in the background and takes its result (see
+`_take_save!`), also a write that starts again after a merge; nothing if none runs.
+"""
+function _settle_save!(gui::LiveView)
+    while !isnothing(gui.sync.save)
+        _take_save!(gui; wait = true)
+    end
+    return nothing
+end
+
+# Called by the write of the autosave in the background before it writes (a test slows it down)
+const _SAVE_HOOK = Ref{Function}(() -> nothing)
+
+"""
+    _take_save!(gui; wait = false) -> Symbol
+
+Takes the result of the write of the autosave of the `gui` in the background (see `_start_save!`):
+`:saving` while it runs (`wait` waits for it), else as `_autosave!` after a save: `:saved` (the
+window takes the machine ids and the new base, the journal of the session), `:busy` (another
+writer holds the lock, tried again later), `:failed`, `:paused` (the files do not load) or
+`:saving` again when the files changed or the claims of others did meanwhile: the window merged
+them or read them again and writes again at once. As the retries of `_save_to!`.
+"""
+function _take_save!(gui::LiveView; wait::Bool = false)
+    s = gui.sync
+    sv = s.save
+    isnothing(sv) && return :none
+    wait ? Base.wait(sv.task) : (istaskdone(sv.task) || return :saving)
+    s.save = nothing
+    s.saving = false
+    r = fetch(sv.task)
+    dir = gui.project
+    if r.ok
+        _save_finish!(gui, sv.prep, r.written)
+        return _autosaved!(gui, sv.parts, sv.changes, sv.status)
+    end
+    e = r.error
+    if e isa BMOP.ProjectChanged
+        if sv.merged || r.busy
+            s.edited_at = sv.now
+            return :busy
+        end
+        # Without gliding: the save right after must see the poses of the files
+        s.changed_at = nothing
+        if _adopting(() -> _sync!(gui; animate = false), gui) === :failed || s.failed
+            _write_backup!(gui, _collect_project(gui, dir))
+            return :paused
+        end
+        return _restart_save!(gui, sv; merged = true)
+    elseif e isa ArgumentError && !sv.refreshed && _refresh_claims!(gui, dir)
+        return _restart_save!(gui, sv; refreshed = true)
+    elseif e isa Union{Base.IOError, SystemError}
+        # The file system refused the write for now, see `_save_to!`
+        @debug "save_project: the files are busy" exception = e
+        s.edited_at = sv.now
+        return :busy
+    end
+    Base.CoreLogging.with_logger(Base.CoreLogging.SimpleLogger(stderr, Base.CoreLogging.Error)) do
+        _save_failed!(gui, e)
+    end
+    if s.failed
+        _write_backup!(gui, _collect_project(gui, dir))
+        return :paused
+    end
+    s.edited_at = sv.now + _AUTOSAVE_RETRY
+    return :failed
+end
+
+# Starts the write of `sv` (see `_start_save!`) again with the setup as it is now, after a merge or a
+# new read of the claims; `:none` if the setup is as in the files then
+function _restart_save!(gui::LiveView, sv; merged::Bool = sv.merged, refreshed::Bool = sv.refreshed)
+    s = gui.sync
+    parts = _project_parts(gui, gui.project)
+    _uidless_code(_saved_state(gui, parts.project)) == _uidless_code(s.base) && return :none
+    _start_save!(gui, parts, sv.now; merged, refreshed)
+    return :saving
 end
 
 """Whether the mouse drags or places an object in the `gui` or in a view linked to it."""
@@ -290,6 +423,17 @@ function _autosave_write!(gui::LiveView, parts, now::Real)
         s.edited_at = now + _AUTOSAVE_RETRY
         return :failed
     end
+    return _autosaved!(gui, parts, changes, status)
+end
+
+"""
+After a save of the autosave (on the thread of the window or in the background): the `changes` of
+the person go into the journal of the session, except those of lines that others claim; a new list
+of objects without a recipe of `parts` is warned once, otherwise the status line before the save,
+`status`, stays. Returns `:saved`.
+"""
+function _autosaved!(gui::LiveView, parts, changes, status)
+    s = gui.sync
     # Not the changes of the lines that the save did not write: claimed since the last read
     held = _held_keys(gui)
     isempty(held) || (changes = map(cs -> filter(c -> !(_change_key(c) in held), cs), changes))
@@ -1033,6 +1177,8 @@ end
 
 """Takes all of the files of the project into the open `gui`, see `_reload_key!`."""
 function _load_from_disk!(gui::LiveView)
+    # A write of the autosave that runs in the background ends first: it would write afterwards
+    _settle_save!(gui)
     disk = try
         BMOP.load_project(gui.project)
     catch e

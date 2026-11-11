@@ -748,11 +748,21 @@ end
         wait(s.look.task)
         slow = Threads.@spawn (sleep(1.0); GUI._files_look(dir))
         s.look = (; task = slow, gen = s.gen, presence = false)
-        # While it runs, nothing, until `_LOOK_WAIT` passed: then read here, without the stamp
+        # Without a solve, a slow look (e.g. on a slow drive) is waited for, never read here
         @test GUI._take_look!(gui; now = t2 + 0.1) === nothing
-        look = GUI._take_look!(gui; now = t2 + GUI._LOOK_WAIT)
+        @test GUI._take_look!(gui; now = t2 + GUI._LOOK_WAIT) === nothing
+        # Behind a solve: nothing, until `_LOOK_WAIT` passed; then read here, without the stamp
+        done = Base.Event()
+        solve = Threads.@spawn (wait(done); nothing)
+        gui.trace.job = GUI._SolveJob(solve, done, [BeamletOptics.ProgressSink()], [Point3f(0)],
+            r -> nothing, nothing, :solve_time, time(), (; k = 0, t0 = NaN, t = NaN, count = 0))
+        @test GUI._take_look!(gui; now = t2 + 0.2) === nothing
+        look = GUI._take_look!(gui; now = t2 + 0.2 + GUI._LOOK_WAIT)
         @test look.marks == GUI._file_marks(dir) && look.stamp === nothing
-        @test GUI._take_look!(gui; now = t2 + GUI._LOOK_WAIT + 0.1) === nothing
+        @test GUI._take_look!(gui; now = t2 + 0.3 + GUI._LOOK_WAIT) === nothing
+        gui.trace.job = nothing
+        notify(done)
+        wait(solve)
         # The waiting one is dropped once it is done: it started before
         wait(slow)
         @test GUI._take_look!(gui; now = t2 + 3) === nothing

@@ -87,9 +87,11 @@ to a file waits for the network, often longer than a frame: the window never wai
   files are settled, and writes the own presence file when it is due (see `_presence_due!`).
 - A look that started before the last save of the window (see `_saved!`) or before a look here is
   dropped; one of another folder too.
-- While a look waits longer than `_LOOK_WAIT` seconds, e.g. behind a solve on the only thread of
-  the background (a solve does not yield), the files are read here instead, without the stamp, at
-  most every `_LOOK_WAIT` seconds, so that changes of the files and the own presence go on.
+- While a look waits longer than `_LOOK_WAIT` seconds behind a solve on the only thread of the
+  background (a solve does not yield, see `_running`), the files are read here instead, without
+  the stamp, at most every `_LOOK_WAIT` seconds, so that changes of the files and the own presence
+  go on. Without a solve the look is waited for: on a slow drive it takes that long by itself, and
+  a read here would stop the window.
 - An error of a look is thrown here once, after the next look started.
 - While the window writes the files (`saving`, see `_without_looks`) no look starts.
 """
@@ -100,7 +102,9 @@ function _take_look!(gui::LiveView; now::Real = time())
     dir = gui.project
     run = s.look
     if !isnothing(run) && !istaskdone(run.task)
-        (isnothing(dir) || now - s.look_at < _LOOK_WAIT) && return nothing
+        # Only a solve holds the thread of the background that long; a look on a slow drive takes
+        # longer than `_LOOK_WAIT` by itself and is waited for, not read here again
+        (isnothing(dir) || now - s.look_at < _LOOK_WAIT || !_running(gui)) && return nothing
         s.look_at = Float64(now)
         s.gen += 1
         # Two writes of the own presence file at a time would share its temporary file
@@ -242,6 +246,8 @@ or of a script) is not watched and writes neither; the functions can be called i
 function _start_watching!(gui::LiveView; notes::Bool = true, poll::Real = _POLL_WITH_MONITOR)
     s = gui.sync
     (isnothing(s.timer) && !s.closed && !isnothing(gui.project) && _shown(gui)) || return nothing
+    # The autosave and the session file are written in the background, see `_start_save!`
+    s.background = true
     _connect_session!(gui)
     # The presence file is written by the looks of the watcher, see `_presence_due!`
     s.presence_due = true
