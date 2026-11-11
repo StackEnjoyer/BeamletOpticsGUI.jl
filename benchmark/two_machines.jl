@@ -108,14 +108,27 @@ function signal(name; data...)
     return nothing
 end
 
+"""
+The data of the signal file `file`. A file that the other side is just replacing can not be opened
+for a moment ("Permission denied" on a shared drive): read again for up to 10 s.
+"""
 function readsignal(file)
-    d = Dict{String, String}()
-    for l in eachline(file)
-        occursin('=', l) || continue
-        k, v = split(l, '='; limit = 2)
-        d[k] = v
+    t0 = time()
+    while true
+        try
+            d = Dict{String, String}()
+            for l in eachline(file)
+                occursin('=', l) || continue
+                k, v = split(l, '='; limit = 2)
+                d[k] = v
+            end
+            return d
+        catch e
+            (e isa Union{Base.IOError, SystemError} && time() - t0 < 10) || rethrow()
+            reach()
+            sleep(0.2)
+        end
     end
-    return d
 end
 
 """Waits for the signal `name` of the other side; halts when it halts or the folder is gone."""
@@ -560,7 +573,13 @@ function at_once(gui, skew, idA, idB, tag, name)
     shot(gui, "at-once")
     deselect!(gui)
     signal("dragged-$tag"; pos = mine)
-    await("dragged-$tag"; timeout = 120.0)
+    theirs = await("dragged-$tag"; timeout = 120.0)
+    if idA !== idB
+        # The other object arrives here before the windows are compared
+        other_id = ROLE == "A" ? idB : idA
+        t = until(() -> near(wpos(gui, other_id), vec3(theirs["pos"])); timeout = 90.0)
+        check(!isnothing(t), "$other_id glides to the place of $THEM", "after $(fmt(t)) from the signal")
+    end
     if idA === idB
         # The same object: the window whose write came second finds the object changed in the
         # files and here, a conflict that the person decides on its card (unless the claim of the
