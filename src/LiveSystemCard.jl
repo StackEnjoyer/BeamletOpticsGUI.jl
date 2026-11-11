@@ -481,11 +481,15 @@ end
 
 "×" of the member `i` of the list of the card of the system `sys` (see `_members`): a source has no
 system afterwards (see `_set_source_system!`), an object is taken out of `sys` and stays in the
-view (see `_remove_member!`). What can not be done only shows a message in the status line.
+view (see `_remove_member!`). What can not be done only shows a message in the status line. A
+gesture on `sys` (its line changes): refused while another participant of the project claims it,
+see `_gesture!`.
 """
 function _take_out_member!(gui::LiveView, sys::BMO.AbstractSystem, i::Int)
     members = _members(gui, sys)
     i <= length(members) || return nothing
+    # claimed by another participant: the status line names the holder
+    _gesture!(gui, sys) || return nothing
     try
         _take_out!(gui, members[i], sys)
     catch e

@@ -328,6 +328,40 @@ mine(dir, me) = sort!([String(c.id) for c in values(BMOP.claims(dir)) if c.by ==
             @test isempty(mine(dir, me))
         end
 
+        @testset "picking members and taking them out ask the claim of the system" begin
+            S1 = obj(gui, :S1)
+            members = copy(GUI._members(gui, S1))
+            # "−" started before another claimed the system: the clicks of the pick are refused
+            GUI._set_member_pick!(gui, S1, false)
+            @test !isnothing(GUI._member_pick(gui))
+            @test BMOP.claim!(dir; by = "bob@PC9", ids = [:S1])
+            look!(gui)
+            gui.status.text[] = ""
+            GUI._pick_member!(gui, L1)
+            @test GUI._has(GUI._members(gui, S1), L1)
+            @test gui.status.text[] == "Bob is editing S1"
+            # "×" of a row of the list of members
+            gui.status.text[] = ""
+            GUI._take_out_member!(gui, S1, 1)
+            @test GUI._members(gui, S1) == members
+            @test gui.status.text[] == "Bob is editing S1"
+            # released: the pick works and claims the system
+            BMOP.release!(dir; by = "bob@PC9")
+            look!(gui)
+            GUI._pick_member!(gui, L1)
+            @test !GUI._has(GUI._members(gui, S1), L1)
+            @test haskey(GUI._claims(gui).held, uid(gui, :S1))
+            GUI._set_member_pick!(gui, S1, false)
+            GUI._pick_member!(gui, L1)
+            GUI._set_member_pick!(gui, S1, true)
+            GUI._pick_member!(gui, L1)
+            GUI._set_member_pick!(gui, S1, true)
+            @test isnothing(GUI._member_pick(gui))
+            GUI._release!(gui)
+            ctrl.selected[] = nothing
+            look!(gui)
+        end
+
         @testset "undo and redo of an edit ask the claims" begin
             entry = only(e for e in component_catalog() if e.name == "Thin lens")
             c = GUI._catalog_component(entry, String[GUI._catalog_string(p) for p in entry.params])
