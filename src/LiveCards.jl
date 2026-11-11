@@ -502,6 +502,7 @@ function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obs
     sel = _screen_rect(scene, corners, obj)
     c.auto_collapsed = false
     c.step_shown = _shows_step(gui, c, obj)
+    _fit_rows!(c)
     _fit_properties!(c)
     _fit_view!(c, view)
     size = _card_size(c)
@@ -714,17 +715,39 @@ function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
     end
     grids = GridLayout[]
     for (i, row) in enumerate(rows)
-        layout = GridLayout(c.rows[i, 1]; _row_attributes(c)...)
+        # a row with a widget that fills spans the width of the card without telling its own
+        layout = GridLayout(c.rows[i, 1]; _row_attributes(c)..., (_fills(row) ? (; tellwidth = false) : (;))...)
         for (j, cell) in enumerate(row.cells)
             _add_cell!(gui, c, layout[1, j], cell)
         end
         push!(grids, layout)
     end
+    _align_first_cells!(rows, grids)
     c.content_key = key
     push!(gui.cards.settle, (gui.cards.ticks, GridLayout[c.actions; grids]))
     _on_content_built!(gui, c)
     return nothing
 end
+
+"""
+    _align_first_cells!(rows, grids)
+
+Gives the first cells of the `aligned` rows among the declared `rows` (see [`CardRow`](@ref)), if
+they are texts, the width of the widest of them, such that their second cells start at the same x:
+the first column of each of their layouts `grids` gets that width. The texts are part of the layout
+of the declarations (see `_layout_key`), hence widths that are set once stay right.
+"""
+function _align_first_cells!(rows, grids::Vector{GridLayout})
+    aligned = GridLayout[g for (r, g) in zip(rows, grids) if r.aligned && !isempty(r.cells) && first(r.cells) isa String]
+    isempty(aligned) && return nothing
+    w = maximum(_first_cell_width, aligned)
+    foreach(g -> Makie.colsize!(g, 1, Makie.Fixed(w)), aligned)
+    return nothing
+end
+
+# The width that the text in the first column of the row layout `g` needs [px]
+_first_cell_width(g::GridLayout) =
+    maximum(l -> something(l.layoutobservables.autosize[][1], 0.0f0), Makie.contents(g[1, 1]))
 
 # Ticks from the growth of the viewports of new widgets until their size is restored, see
 # `_settle_cards!`: about 0.1 s; a restore in the next frame is missed now and then

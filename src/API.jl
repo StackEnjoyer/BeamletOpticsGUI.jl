@@ -229,6 +229,11 @@ textboxes take the keyboard. `T` may be an own widget type with methods of [`car
 - `solve = true`: the input changes the optics, e.g. a parameter of `obj`: a running solve is
   cancelled before `on`, and the systems are solved again afterwards (or the beams are marked as
   outdated without auto tracing), like after a move, via the `on_change` of the controls.
+- `fill = true`: the widget takes the rest of the width of the card, e.g. a `Slider` that ends at
+  the right edge of the card, however wide its other rows or its head make it. Its row spans the
+  width of the card and makes the card only as wide as its other cells and a short widget need. At
+  most one widget of a [`CardRow`](@ref) fills. A `width` among the `attributes` wins: the widget
+  keeps that width, and `fill` is ignored.
 - `name`: finds the widget on a card, e.g. in tests.
 
 `gui` is the `LiveView`, e.g. for the beams of the last solve or the status line.
@@ -240,22 +245,37 @@ struct CardWidget
     on::Any
     solve::Bool
     name::Union{Nothing, Symbol}
+    fill::Bool
 end
 
-CardWidget(type::Type; name = nothing, value = nothing, on = nothing, solve::Bool = false, attributes...) =
-    CardWidget(type, NamedTuple(attributes), value, on, solve, name)
+CardWidget(type::Type; name = nothing, value = nothing, on = nothing, solve::Bool = false, fill::Bool = false,
+    attributes...) = CardWidget(type, NamedTuple(attributes), value, on, solve, name, fill)
 
 """
-    CardRow(cells...)
+    CardRow(cells...; aligned = false)
 
 A line of a card of [`live_view`](@ref), see [`card_rows`](@ref): its `cells` from left to right,
 each a text or a [`CardWidget`](@ref).
+
+- `aligned = true`: the first cell, if it is a text, is as wide as the widest first text of the
+  `aligned` rows of the card, such that their second cells start at the same x, e.g. the labels of
+  a column of sliders. The first cell of a row without `aligned` keeps its own width.
+
+At most one widget of a row has `fill = true`, else an `ArgumentError` is thrown: it takes the rest
+of the width of the card, see [`CardWidget`](@ref).
 """
 struct CardRow
     cells::Vector{Union{String, CardWidget}}
+    aligned::Bool
+    function CardRow(cells::Vector{Union{String, CardWidget}}, aligned::Bool)
+        count(c -> c isa CardWidget && c.fill, cells) <= 1 ||
+            throw(ArgumentError("a CardRow has at most one CardWidget with `fill = true`"))
+        return new(cells, aligned)
+    end
 end
 
-CardRow(cells::Union{AbstractString, CardWidget}...) = CardRow(Union{String, CardWidget}[_card_cell(c) for c in cells])
+CardRow(cells::Union{AbstractString, CardWidget}...; aligned::Bool = false) =
+    CardRow(Union{String, CardWidget}[_card_cell(c) for c in cells], aligned)
 _card_cell(s::AbstractString) = String(s)
 _card_cell(w::CardWidget) = w
 

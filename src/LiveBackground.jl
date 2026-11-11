@@ -34,10 +34,11 @@ The `row` of the card of `obj` on the card of the `_BackgroundItem` of `obj`: it
 instead of the item in `value(gui, obj)` and `on(gui, obj, v)`. An input with `solve = true` is
 applied like on the card of `obj` itself (see `_apply_on!`), i.e. `on_change` gets `obj`.
 """
-_for_object(r::CardRow, @nospecialize(obj)) = CardRow(Union{String, CardWidget}[_for_object(c, obj) for c in r.cells])
+_for_object(r::CardRow, @nospecialize(obj)) =
+    CardRow(Union{String, CardWidget}[_for_object(c, obj) for c in r.cells], r.aligned)
 _for_object(s::String, _) = s
 _for_object(w::CardWidget, @nospecialize(obj)) = CardWidget(w.type, w.attributes, _value_of(w.value, obj),
-    _on_of(w.on, obj, w.solve), false, w.name)
+    _on_of(w.on, obj, w.solve), false, w.name, w.fill)
 
 _value_of(::Nothing, _) = nothing
 _value_of(value, @nospecialize(obj)) = (gui, _) -> value(gui, obj)

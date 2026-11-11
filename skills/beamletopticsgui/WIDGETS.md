@@ -35,7 +35,7 @@ control on its page "Pose" (the rows of `card_rows`), and every card, also a pin
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
    `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams, the box
    `:flen` for the drawn length of rays that hit nothing).
-2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
+2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, fill, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
 3. `value(gui, obj)` returns what the widget shows, in display units (e.g. mm, %); it must be cheap,
    it runs after every move, solve and input.
@@ -83,6 +83,38 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
     invoke(BeamletOpticsGUI.card_actions, Tuple{BeamletOptics.AbstractObject}, a)...,
     CardWidget(Button; name = :block, label = "block",
         on = (gui, a, _) -> (a.transmission = 0.0), solve = true))
+```
+
+### Widths of rows: a widget to the right edge, labels in one column
+
+Each row is laid out on its own, as wide as its cells; the widest row (or the head) sets the width of
+the card. Do not measure pixels to line rows up:
+
+- `CardWidget(T; fill = true, ...)`: the widget takes the rest of the width of the card, e.g. a
+  `Slider` that ends at the right edge. Its row then does not make the card wider (only as wide as
+  its other cells and a short widget need). At most one widget per row (`ArgumentError` otherwise);
+  a `width` among the attributes wins, and `fill` is ignored.
+- `CardRow(cells...; aligned = true)`: the first cells (texts) of all `aligned` rows of the card get
+  the width of the widest of them, so their second cells start at the same x. Rows without
+  `aligned` keep the width of their own first cell.
+
+```julia
+# A wheel with two neutral density filters: the labels in one column, the sliders to the right edge
+mutable struct MyFilterWheel{T} <: BeamletOptics.AbstractObject{T}
+    shape::BeamletOptics.PlanoSurfaceSDF{T}
+    od1::Float64
+    od2::Float64
+end
+
+BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
+    CardRow("OD 1",
+        CardWidget(Slider; name = :od1, range = 0:0.1:4, fill = true,
+            value = (gui, w) -> w.od1, on = (gui, w, v) -> (w.od1 = v));
+        aligned = true),
+    CardRow("OD 2 (back)",
+        CardWidget(Slider; name = :od2, range = 0:0.1:4, fill = true,
+            value = (gui, w) -> w.od2, on = (gui, w, v) -> (w.od2 = v));
+        aligned = true))
 ```
 
 ## Recipe: a card for your system type
