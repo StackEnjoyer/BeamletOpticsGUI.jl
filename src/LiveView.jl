@@ -767,6 +767,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     project::Union{Nothing, String} = nothing
     # the files of the project when it was opened or saved, see `_ProjectSync`
     sync::_ProjectSync = _ProjectSync()
+    # what the others did in the project, see `_Activity` (`LiveActivity.jl`), created at first use
+    activity::Any = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
     layout::L
