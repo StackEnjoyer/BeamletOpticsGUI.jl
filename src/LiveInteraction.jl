@@ -495,6 +495,9 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     undo_stack::Vector{_AnyHistoryEntry}
     redo_stack::Vector{_AnyHistoryEntry}
     last_key_step::Union{Nothing, _KeyStepInfo}
+    # pose of the object of the last key step before its motion, after its gesture (which may land
+    # a glide, see `gesture`), for the undo history, see `_key_step!`
+    step_from::Union{Nothing, Tuple{Point3{Float64}, Matrix{Float64}}}
     # selection box and gizmo of the keyboard controls
     box_obs::Observable{Vector{Point3f}}
     arrow_pos::Observable{Vector{Point3f}}
@@ -1585,6 +1588,8 @@ function _key_step!(ctrl::KinematicController, @nospecialize(obj), key, factor)
     isnothing(axis) && return false
     _within_constraints(ctrl, obj, ctrl.mode[], axis) || return true # locked: consumed, no motion
     ctrl.gesture(obj) || return true # refused: consumed, no motion
+    # The undo of the step goes back to here: after the gesture, which may land a glide
+    ctrl.step_from = _pose(obj)
     _change!(ctrl, obj) do
         if ctrl.mode[] == :move
             translate3d!(obj, (sign * factor * ctrl.fine_step) .* axis)
@@ -2243,7 +2248,7 @@ function kinematic_controls!(
         Observable(spectator), true, nothing, select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
-        nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing,
+        nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing, nothing,
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
@@ -2501,8 +2506,11 @@ function kinematic_controls!(
             _push_history!(ctrl, obj, P0, R0, P1, R1)
             _request_update!(ctrl)
         else
+            ctrl.step_from = nothing
             P0, R0 = _pose(obj)
             if _key_step!(ctrl, obj, event.key, _shift_pressed(scene) ? 10 : 1)
+                # the pose before the motion, after a glide that the gesture landed
+                isnothing(ctrl.step_from) || ((P0, R0) = ctrl.step_from)
                 P1, R1 = _pose(obj)
                 _record_key_step!(ctrl, obj, event.key, P0, R0, P1, R1)
                 _request_update!(ctrl)

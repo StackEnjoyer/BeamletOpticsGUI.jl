@@ -468,6 +468,16 @@ mine(dir, me) = sort!([String(c.id) for c in values(BMOP.claims(dir)) if c.by ==
             events(scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release)
             @test GUI._undo!(ctrl)
             @test pose(M1)[1] ≈ P
+            # a key step too: its undo gives back the pose of the files, not the one halfway
+            glide!()
+            ctrl.selected[] = M1
+            kb = events(scene).keyboardbutton
+            kb[] = Makie.KeyEvent(Keyboard.up, Keyboard.press)
+            kb[] = Makie.KeyEvent(Keyboard.up, Keyboard.release)
+            @test isempty(gui.sync.gliding)
+            @test !(pose(M1)[1] ≈ P)
+            @test GUI._undo!(ctrl)
+            @test pose(M1)[1] ≈ P
             # a glide of another object goes on
             gui.sync.gliding[M2] = (Point3{Float64}(pose(M2)[1]), pose(M2)[2], (; rec.pos, rec.rot))
             @test GUI._gesture!(gui, M1)
