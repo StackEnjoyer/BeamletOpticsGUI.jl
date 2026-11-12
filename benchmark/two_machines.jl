@@ -109,6 +109,24 @@ function signal(name; data...)
 end
 
 """
+Makes the folder `dir` and its parents if they are missing. A shared drive may report a folder as
+missing that another computer made or removed a moment ago, and then refuse to make it (EEXIST):
+tried again for up to 10 s.
+"""
+function ensuredir(dir)
+    t0 = time()
+    while true
+        try
+            return mkpath(dir)
+        catch e
+            (e isa Base.IOError && time() - t0 < 10) || rethrow()
+            isdir(dir) && return dir
+            sleep(0.2)
+        end
+    end
+end
+
+"""
 The data of the signal file `file`. A file that the other side is just replacing can not be opened
 for a moment ("Permission denied" on a shared drive): read again for up to 10 s.
 """
@@ -275,7 +293,7 @@ written(gui, id; timeout = 20.0) = until(() -> near(fpos(id), wpos(gui, id); ato
 function shot(gui, name)
     try
         reach()
-        mkpath(SHOTS)
+        ensuredir(SHOTS)
         img = Makie.colorbuffer(Makie.getscreen(gui.fig.scene))
         Makie.save(joinpath(SHOTS, "$ROLE-$(lpad(STEP[], 2, '0'))-$name.png"), img)
     catch e
@@ -318,13 +336,13 @@ function clock_offset()
 end
 
 function start_run()
-    mkpath(ROOT)
+    ensuredir(ROOT)
     reach()
     if ROLE == "A"
         for d in (COORD, joinpath(ROOT, "project"), SHOTS, RESULTS)
             rm(d; recursive = true, force = true)
         end
-        mkpath(COORD)
+        ensuredir(COORD)
         RUN[] = Dates.format(now(), "yyyymmdd-HHMMSS")
         write(joinpath(COORD, "run.txt"), RUN[])
     else
@@ -341,7 +359,7 @@ function start_run()
         RUN[] = strip(read(joinpath(COORD, "run.txt"), String))
     end
     write(LOGF, "# Machine $ROLE ($ME), run $(RUN[])\n\n| time | step | result | details |\n|---|---|---|---|\n")
-    mkpath(RESULTS)
+    ensuredir(RESULTS)
     return nothing
 end
 
@@ -390,7 +408,7 @@ function notifications()
         out = joinpath(RESULTS, "notify-$watcher-watches.txt")
         if ROLE == watcher
             rm(dir; recursive = true, force = true)
-            mkpath(dir)
+            ensuredir(dir)
             p = run(pipeline(`$julia --startup-file=no $script watch $dir 300`; stdout = out, stderr = out); wait = false)
             sleep(8)
             signal("watching-$n")
@@ -414,7 +432,7 @@ end
 function open_window()
     step!("open the project")
     if ROLE == "A"
-        mkpath(PROJ)
+        ensuredir(PROJ)
         close(LibGit2.init(PROJ))
         BMOP.new_project(PROJ; name = "Bench")
         write(joinpath(PROJ, "system.jl"), START)
