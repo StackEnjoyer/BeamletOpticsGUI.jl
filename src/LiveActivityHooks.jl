@@ -158,10 +158,6 @@ function _name_episode!(gui::LiveView; now::Real = time())
     return nothing
 end
 
-# The texts of `doing` that a write of an agent sets itself (`_announce_wrote` of
-# BeamletOpticsProjects): no message of the agent, the merge is its episode
-const _WRITE_DOINGS = ("added ", "moved ", "changed ", "copied ", "removed ", "put ", "took ")
-
 """
     _record_message!(gui, id, o; old = nothing, now = time())
 
@@ -172,7 +168,8 @@ write no `doing`.
 function _record_message!(gui::LiveView, id::AbstractString, o; old = nothing, now::Real = time())
     doing = strip(String(o.doing))
     (isempty(doing) || (!isnothing(old) && String(old.doing) == o.doing)) && return nothing
-    any(p -> startswith(doing, p), _WRITE_DOINGS) && return nothing
+    # the merge of the write is its episode
+    _write_note(doing) && return nothing
     items = _ActivityItem[]
     obj = isempty(o.selected_id) ? nothing : _object_of_id(gui, o.selected_id)
     if !isnothing(obj)

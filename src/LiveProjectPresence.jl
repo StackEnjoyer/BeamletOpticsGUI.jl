@@ -283,8 +283,16 @@ end
 # The strings of a list field of a presence file, `String[]` if it is missing or not a list
 _string_list(x) = x isa AbstractVector ? String[s for s in x if s isa AbstractString] : String[]
 
-# The label of the other `o`: its name, with what it is doing in a second line
-_other_label(o) = isempty(o.doing) ? o.name : o.name * "\n" * o.doing
+# The label of the other `o`: its name, with what it is doing in a second line; not the note of
+# one of its writes ("moved M2", see `_write_note`), which the cue of the change and the timeline show
+_other_label(o) = (isempty(o.doing) || _write_note(o.doing)) ? o.name : o.name * "\n" * o.doing
+
+# The starts of a `doing` that a write of an agent sets itself (`_announce_wrote` of
+# BeamletOpticsProjects), not what it does next
+const _WRITE_DOINGS = ("added ", "moved ", "changed ", "copied ", "removed ", "put ", "took ")
+
+# Whether the `doing` of a presence is the note of a write, see `_WRITE_DOINGS`
+_write_note(doing::AbstractString) = any(p -> startswith(strip(doing), p), _WRITE_DOINGS)
 
 # What the overlay of the others shows at `now`, sorted by the id of the participant: per alive
 # other with an object in the view the edges of the box of the object, the label and `false`; per
@@ -345,10 +353,11 @@ function _draw_presence!(gui::LiveView, now::Real)
             color = _presence_color(gui, who)
             box = linesegments!(gui.ax, pts; color, linewidth = _OTHER_BOX_WIDTH, visible,
                 clip_planes = Plane3f[], inspectable = false)
-            # the name of a claimed object after its lock
+            # the name of a claimed object after its lock; in front of the objects, which would
+            # hide a part of it
             label = text!(gui.ax, maximum(pts); text = name, color, fontsize = _OTHER_FONTSIZE,
-                align = (:left, :bottom), offset = (locked ? 0.6 * _LOCK_SIZE : 0.0, 0.0), visible,
-                clip_planes = Plane3f[], inspectable = false)
+                align = (:left, :bottom), offset = (locked ? 0.6 * _LOCK_SIZE : 4.0, 4.0), visible,
+                overdraw = true, clip_planes = Plane3f[], inspectable = false)
             push!(s.presence, box, label)
         end
         _draw_locks!(gui, shown, visible)

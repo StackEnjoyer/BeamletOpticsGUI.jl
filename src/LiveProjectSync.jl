@@ -1236,8 +1236,9 @@ _tree_kind(::_ProjectConflict) = :warning
 _keep_plots!(::LiveView, ::_ProjectConflict) = nothing
 _keepable(::_ProjectConflict) = false
 function card_rows(x::_ProjectConflict)
-    rows = Any[_text_row("files", :conflict_files,
-        (_, _) -> "the rest is applied and saved; these keep the files' state until you choose"; width = 48)]
+    # One sentence over the width of the card, without a label in front
+    rows = Any[CardRow(CardWidget(Label; name = :conflict_files, halign = :left,
+        value = (_, _) -> "The rest is applied and saved; these keep the state of the files until you choose."))]
     for (i, (name, key)) in enumerate(zip(x.names, x.keys))
         push!(rows, CardRow(name,
             CardWidget(Button; name = Symbol("conflict_theirs_", i), label = "theirs",

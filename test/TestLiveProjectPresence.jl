@@ -222,7 +222,11 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
             agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 2, selected_id = "L1", doing = "moving L1")
             GUI._check_presence!(gui; now = 1001.0)
             @test labels(gui) == ["Claude (Opus 5.5)\nmoving L1"]
-            agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 3, selected_id = "L1", doing = "x"^200)
+            # the note of a write is shown by the cue of the change, not in the label
+            agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 3, selected_id = "L1", doing = "moved L1")
+            GUI._check_presence!(gui; now = 1001.5)
+            @test labels(gui) == ["Claude (Opus 5.5)"]
+            agent!(dir, "claude@agent"; name = "Claude (Opus 5.5)", beat = 4, selected_id = "L1", doing = "x"^200)
             GUI._check_presence!(gui; now = 1002.0)
             @test labels(gui) == ["Claude (Opus 5.5)\n" * "x"^GUI._DOING_CHARS]
 
