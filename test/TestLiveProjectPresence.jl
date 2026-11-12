@@ -107,7 +107,9 @@ labels(gui) = [GUI._label_text(p) for p in gui.sync.presence if p isa Makie.Text
             box = only(boxes(gui))
             bb = GUI._part_box(gui, obj(gui, :M1))
             @test box[1][] == GUI._bbox_wireframe(bb)
-            @test box.color[] == Makie.to_color(GUI._OTHER_COLOR)
+            # in the colour of Bob, the same for its name
+            @test box.color[] == Makie.to_color(GUI._presence_color(gui, "bob@PC9"))
+            @test only(filter(p -> p isa Makie.Text, gui.sync.presence)).color[] == box.color[]
             # Nothing changed: not drawn again
             GUI._check_presence!(gui; now = 201.0)
             @test only(boxes(gui)) === box

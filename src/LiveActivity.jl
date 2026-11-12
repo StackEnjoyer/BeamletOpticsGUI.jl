@@ -95,6 +95,11 @@ Base.@kwdef mutable struct _Activity
     hover::Union{Nothing, Int} = nothing
     cue_plots::Any = nothing
     strip::Any = nothing
+    # the mark under the mouse and the scrub as the step per frame last took them, see `_activity_tick!`
+    shown_hover::Union{Nothing, Int} = nothing
+    shown_cursor::Union{Nothing, Float64} = nothing
+    # the episode of a merge whose writer was not known yet and the stamp of its files, see `_name_episode!`
+    unnamed::Union{Nothing, Tuple{Int, String}} = nothing
 end
 
 """The activity of the others in the `gui`, see `_Activity`; created at the first use."""

@@ -69,7 +69,20 @@ state in another folder. `Ctrl+S` saves no version while a conflict is open.
 Several windows and agents can work on one project at once, also from a shared drive.
 
 - **Presence.** Each window shows where the others work: a box at the object they selected, with
-  their name and what they are doing, people and agents alike.
+  their name and what they are doing, people and agents alike, each in a calm colour of its own.
+- **What the others changed.** A change of another participant is shown where it happened: a thin
+  frame in the participant's colour at the new place, a dashed ghost at the old one and a soft arc
+  between them, a small chip with the name and the change ("claude · moved M2 by 12 mm"); new
+  objects settle into a frame, removed ones leave a ghost. What an agent says it does next
+  (`announce(...; doing)`) appears as a bubble at its object. The cues fade after about 3 s. When an
+  agent changes things faster than one can follow, the setup changes at once, but the cues play one
+  after the other at a readable pace; more than 3 s behind, the waiting ones become one cue
+  ("claude · 14 changes").
+- **Timeline.** Once another participant was there, a strip at the bottom of the 3D view lists who
+  changed what and when, in one line, or, after a click, in a lane per participant. The mouse over
+  a mark shows the change again, a click replays it, a double click frames its objects, dragging
+  along the lanes shows ghosts of how the setup was at that time, and the eye of a lane makes the
+  camera follow that participant.
 - **Claims.** The first gesture on an object claims it for the person, until it is deselected or
   30 s pass without a gesture. A gesture on an object that another participant claims is refused,
   the status line names the holder ("Bob is editing M1"), and the object shows a lock. A change

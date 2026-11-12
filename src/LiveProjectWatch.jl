@@ -249,6 +249,8 @@ function _start_watching!(gui::LiveView; notes::Bool = true, poll::Real = _POLL_
     # The autosave and the session file are written in the background, see `_start_save!`
     s.background = true
     _connect_session!(gui)
+    # The cues and the timeline of the activity of the others, see `_activity_tick!`
+    push!(gui.controls.listeners, on(_ -> _activity_tick!(gui), events(gui.ax.scene).tick))
     # The presence file is written by the looks of the watcher, see `_presence_due!`
     s.presence_due = true
     push!(gui.controls.listeners, on(gui.controls.selected) do _

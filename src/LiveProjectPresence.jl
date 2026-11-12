@@ -28,9 +28,7 @@ const _BEAT = 20.0
 const _ALIVE = 60.0
 # At most this many characters of `doing` are shown
 const _DOING_CHARS = 80
-# The color of the boxes and names of the others: the green of Julia, not the accent of the themes
-# (the selection, the boxes of the parts), not the purple of the clip planes or the orange of aiming
-const _OTHER_COLOR = RGBf(0.22, 0.596, 0.149)
+# The boxes and names of the others have the colour of each participant, see `_presence_color`
 const _OTHER_BOX_WIDTH = 2
 const _OTHER_FONTSIZE = 14
 
@@ -228,6 +226,8 @@ function _check_presence!(gui::LiveView; now::Real = time(), look = nothing)
             selected_id = data["selected_id"], selected_uids = _string_list(get(data, "selected_uids", nothing)),
             selected_ids = _string_list(get(data, "selected_ids", nothing)),
             doing = first(data["doing"], _DOING_CHARS), written = data["written"], ttl = data["ttl"], seen_at, beat)
+        # what an agent says it does next, in the activity of a watched window, see `_record_message!`
+        s.background && _record_message!(gui, id, s.others[id]; old, now)
     end
     # A file that is skipped (it does not parse) keeps its participant as it was; a file that is gone drops it
     for id in collect(keys(s.others))
@@ -235,6 +235,7 @@ function _check_presence!(gui::LiveView; now::Real = time(), look = nothing)
         id in look.known && !(id in look.present) && delete!(s.others, id)
     end
     _name_writer!(gui, now)
+    _name_episode!(gui; now)
     _versions_notice!(gui, look, now)
     _claims_tick!(gui; now)
     _draw_presence!(gui, now)
@@ -290,7 +291,7 @@ _other_label(o) = isempty(o.doing) ? o.name : o.name * "\n" * o.doing
 # object of the view that a participant claims (see `_claimed_objects`, also of one whose presence
 # is not shown) the box, the label with "editing" and `true` for the lock
 function _presence_shown(gui::LiveView, now::Real)
-    shown = Tuple{Vector{Point3f}, String, Bool}[]
+    shown = Tuple{Vector{Point3f}, String, Bool, String}[]
     claimed = _claimed_objects(gui)
     for id in sort!(unique!([collect(keys(gui.sync.others)); collect(keys(claimed))]))
         o = get(gui.sync.others, id, nothing)
@@ -302,13 +303,13 @@ function _presence_shown(gui::LiveView, now::Real)
                 _has(objs, obj) && continue
                 bb = _part_box(gui, obj)
                 isnothing(bb) && continue
-                push!(shown, (_bbox_wireframe(bb), label, false))
+                push!(shown, (_bbox_wireframe(bb), label, false, String(id)))
                 label = ""
             end
         end
         for obj in objs
             bb = _part_box(gui, obj)
-            isnothing(bb) || push!(shown, (_bbox_wireframe(bb), _claim_label(gui, id, o), true))
+            isnothing(bb) || push!(shown, (_bbox_wireframe(bb), _claim_label(gui, id, o), true, String(id)))
         end
     end
     return shown
@@ -317,7 +318,7 @@ end
 # What the plots of the overlay show now, in the form of `_presence_shown`
 function _presence_drawn(gui::LiveView)
     c = gui.sync.claim
-    return c isa _ClaimState ? c.drawn : Tuple{Vector{Point3f}, String, Bool}[]
+    return c isa _ClaimState ? c.drawn : Tuple{Vector{Point3f}, String, Bool, String}[]
 end
 
 # The text of a label of the overlay (Makie keeps it as a vector of one string)
@@ -327,8 +328,9 @@ _label_text(p) = (t = p.text[]; String(t isa AbstractString ? t : only(t)))
     _draw_presence!(gui, now)
 
 Draws where the others of the `gui` (people and agents alike) are at `now` (see
-`_check_presence!`): the box of the object each works on in `_OTHER_COLOR` and its name at the
-upper corner, with what it is doing (`doing`) in a second line; overlays in `gui.sync.presence` (a
+`_check_presence!`): the box of the object each works on and its name at the
+upper corner, with what it is doing (`doing`) in a second line, in the colour of the participant
+(see `_presence_color`); overlays in `gui.sync.presence` (a
 box and a label per other). An object that a participant claims (see `LiveProjectClaims.jl`) has a
 lock at the corner (`gui.sync.claim.locks`) and "editing" after the name. Only an object of the view
 is shown. Draws again only if the boxes or names changed; hidden in the spectator mode.
@@ -339,11 +341,12 @@ function _draw_presence!(gui::LiveView, now::Real)
     visible = !gui.controls.spectator[]
     if shown != _presence_drawn(gui)
         _delete_presence!(gui)
-        for (pts, name, locked) in shown
-            box = linesegments!(gui.ax, pts; color = _OTHER_COLOR, linewidth = _OTHER_BOX_WIDTH, visible,
+        for (pts, name, locked, who) in shown
+            color = _presence_color(gui, who)
+            box = linesegments!(gui.ax, pts; color, linewidth = _OTHER_BOX_WIDTH, visible,
                 clip_planes = Plane3f[], inspectable = false)
             # the name of a claimed object after its lock
-            label = text!(gui.ax, maximum(pts); text = name, color = _OTHER_COLOR, fontsize = _OTHER_FONTSIZE,
+            label = text!(gui.ax, maximum(pts); text = name, color, fontsize = _OTHER_FONTSIZE,
                 align = (:left, :bottom), offset = (locked ? 0.6 * _LOCK_SIZE : 0.0, 0.0), visible,
                 clip_planes = Plane3f[], inspectable = false)
             push!(s.presence, box, label)

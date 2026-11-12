@@ -58,7 +58,7 @@ Base.@kwdef mutable struct _ClaimState
     task::Union{Nothing, Task} = nothing
     run_at::Float64 = -Inf
     dirty::Bool = false
-    drawn::Vector{Tuple{Vector{Point3f}, String, Bool}} = Tuple{Vector{Point3f}, String, Bool}[]
+    drawn::Vector{Tuple{Vector{Point3f}, String, Bool, String}} = Tuple{Vector{Point3f}, String, Bool, String}[]
     locks::Vector{Any} = Any[]
     last_error::String = ""
 end
@@ -558,10 +558,10 @@ end
 # Draws the locks at the claimed objects of `shown` (see `_presence_shown`), after the boxes
 function _draw_locks!(gui::LiveView, shown, visible::Bool)
     c = _claims(gui)
-    for (pts, _, locked) in shown
+    for (pts, _, locked, who) in shown
         locked || continue
         lock = scatter!(gui.ax, [maximum(pts)]; marker = _LOCK_ICON, markersize = _LOCK_SIZE,
-            color = _OTHER_COLOR, markerspace = :pixel, visible, clip_planes = Plane3f[],
+            color = _presence_color(gui, who), markerspace = :pixel, visible, clip_planes = Plane3f[],
             inspectable = false)
         push!(c.locks, lock)
     end

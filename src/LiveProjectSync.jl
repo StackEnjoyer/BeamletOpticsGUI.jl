@@ -594,7 +594,10 @@ function _sync!(gui::LiveView; animate::Bool = _shown(gui))
         keep = s.conflicts)
     conflicts = plan.conflicts
     new_conflicts = setdiff(conflicts, s.conflicts)
+    # A watched window shows the change of the others as an episode of their activity
+    before = s.background ? _merge_snapshot(gui, plan.take) : nothing
     done = _adopt!(gui, mine, disk, plan.take; rebuild = Set(rebuild), animate, merged = plan.merged)
+    isnothing(before) || isempty(done) || _record_merge!(gui, before, mine, disk, plan.take)
     s.base = _align_uids!(gui, disk)
     s.stamp = disk.stamp
     s.src = src

@@ -1249,6 +1249,64 @@ function _project_session(step; dir = mktempdir())
         _check(_project_pos(gui, mirror) ≈ target && _pos(mirror) ≈ target, "the mirror did not glide")
         settle!()
     end
+    step("project: the activity of the others, its cues and its timeline") do
+        a = GUI._activity(gui)
+        # following the agent moves the camera: the steps after this one find the view as it was
+        home = GUI._current_view(gui)
+        # A move and a message of an agent (in a watched window, a merge and `doing` record them)
+        p = _pos(mirror)
+        R = Matrix{Float64}(BMO.orientation(mirror))
+        bb = GUI._part_box(gui, mirror)
+        frame = GUI._bbox_wireframe(bb)
+        item = GUI._ActivityItem(gui.sync.ids[mirror][2], :M1, :moved, (p .- [0.0, 0.01, 0.0], R), (p, R), frame)
+        t = time()
+        GUI._record_episode!(gui, "claude@agent", "claude", true, [item]; text = "moved M1 by 10 mm", now = t)
+        GUI._record_episode!(gui, "claude@agent", "claude", true, [item]; text = "aligning M1",
+            message = "aligning M1", now = t)
+        for _ in 1:3
+            GUI._activity_tick!(gui)
+            frame!()
+        end
+        _check(!isnothing(a.strip) && !isempty(a.cues), "the cues and the timeline are not shown")
+        tl = a.strip
+        hit(kind) = (h = findfirst(x -> x[2] === kind, tl.hits); isnothing(h) ? nothing : tl.hits[h])
+        center(r) = Tuple(Float64.(minimum(r) .+ widths(r) ./ 2))
+        # expand, hover a mark, click it, scrub the lanes, follow, collapse
+        _click!(gui, center(hit(:toggle)[1]))
+        GUI._activity_tick!(gui)
+        frame!()
+        _check(a.expanded, "a click on the timeline did not expand it")
+        m = hit(:mark)
+        _move!(gui, center(m[1]))
+        GUI._activity_tick!(gui)
+        frame!()
+        _check(!isnothing(a.hover), "the mark under the mouse is not hovered")
+        _click!(gui)
+        GUI._activity_tick!(gui)
+        frame!()
+        lanes = hit(:lanes)[1]
+        y = minimum(lanes)[2] + widths(lanes)[2] / 2
+        _drag!(gui, (minimum(lanes)[1] + 10, y), (maximum(lanes)[1] - 10, y))
+        GUI._activity_tick!(gui)
+        frame!()
+        eye = hit(:eye)
+        _click!(gui, center(eye[1]))
+        GUI._activity_tick!(gui)
+        frame!()
+        _check(a.follow == "claude@agent", "the eye did not follow the agent")
+        _click!(gui, center(eye[1]))
+        _click!(gui, center(hit(:toggle)[1]))
+        GUI._activity_tick!(gui)
+        frame!()
+        _check(!a.expanded, "a click on the head did not collapse the timeline")
+        # the cues end
+        a.cues = Tuple{GUI._Episode, Float64}[]
+        empty!(a.queue)
+        GUI._activity_tick!(gui)
+        settle!()
+        GUI._animate_camera!(gui, home...)
+        settle!()
+    end
     step("project: Ctrl+S, the card of the version, Enter") do
         ask_version!()
         foreach(char -> (_events(gui).unicode_input[] = char), " ok")
