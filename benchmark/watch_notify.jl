@@ -29,19 +29,37 @@ function write_probes(folder; n = 60, mode = "rename")
     mkpath(probe_dir(folder))
     file = probe_file(folder)
     tmp = joinpath(probe_dir(folder), ".probe.$(getpid()).tmp")
+    refused = 0
     for k in 1:n
         text = "$k $(time())\n"
-        if mode == "direct"
-            write(file, text)
-        else
-            write(tmp, text)
-            mv(tmp, file; force = true)
+        # A shared drive refuses the write for a moment while the watcher reads the file (as for the
+        # writes of a project): tried again, and counted
+        refused += retry_refused() do
+            if mode == "direct"
+                write(file, text)
+            else
+                write(tmp, text)
+                mv(tmp, file; force = true)
+            end
         end
         println("wrote $k")
         sleep(1.0)
     end
-    write(file, "done $(time())\n")
-    println("done")
+    refused += retry_refused(() -> write(file, "done $(time())\n"))
+    println("done; writes refused for a moment by the drive: $refused")
+end
+
+# Calls `f()` until the file system takes it (at most 40 times, 50 ms apart); returns how often it refused
+function retry_refused(f)
+    for attempt in 1:40
+        try
+            f()
+            return attempt - 1
+        catch e
+            (e isa Union{Base.IOError, SystemError} && attempt < 40) || rethrow()
+            sleep(0.05)
+        end
+    end
 end
 
 # The counter and the writer's time in the probe file, `nothing` if it can not be read now

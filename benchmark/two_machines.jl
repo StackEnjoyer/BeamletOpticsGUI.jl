@@ -401,8 +401,10 @@ function notifications()
             info("notifications, $OTHER writes, $ROLE watches", summary)
         else
             await("watching-$n"; timeout = 120.0)
-            run(pipeline(`$julia --startup-file=no $script write $dir 60`; stdout = devnull))
-            info("wrote 60 probes for the watcher on $watcher")
+            out = joinpath(RESULTS, "notify-$ROLE-writes.txt")
+            ok = success(pipeline(`$julia --startup-file=no $script write $dir 60`; stdout = out, stderr = out))
+            last = filter(!isempty, split(read(out, String), '\n'))
+            check(ok, "the writer of the probes ran through", isempty(last) ? "" : String(last[end]))
         end
         barrier("notify-$n-done"; timeout = 600.0)
     end
