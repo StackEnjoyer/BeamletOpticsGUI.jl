@@ -43,6 +43,9 @@ const _CHIP_BACKGROUND_ALPHA = 0.92
 # Distance of a chip from the top of its object, between stacked chips and from the edges of the view
 const _CHIP_GAP = 8.0f0
 const _CHIP_STACK = 4.0f0
+# Room above an object for the line of the label of a presence there (the name at the corner of its
+# box, see `_draw_presence!`), below the chip
+const _CHIP_LABEL_ROOM = 20.0f0
 const _CHIP_MARGIN = 6.0f0
 # At most this many characters of the text of a chip
 const _CHIP_CHARS = 56
@@ -490,7 +493,7 @@ function _chip_position(gui::LiveView, d::_CueDrawn, anchor::Point2f)
     w, h = Makie.widths(Makie.viewport(gui.ax.scene)[])
     W, H = d.size
     x = anchor[1] - W / 2
-    y = anchor[2] + _CHIP_GAP + d.slot * (H + _CHIP_STACK)
+    y = anchor[2] + _CHIP_GAP + _CHIP_LABEL_ROOM + d.slot * (H + _CHIP_STACK)
     x = clamp(x, _CHIP_MARGIN, max(_CHIP_MARGIN, w - W - _CHIP_MARGIN))
     y = clamp(y, _CHIP_MARGIN, max(_CHIP_MARGIN, h - H - _CHIP_MARGIN))
     return Point2f(x, y)
