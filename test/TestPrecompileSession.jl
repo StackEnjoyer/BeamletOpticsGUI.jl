@@ -61,7 +61,7 @@ using Test
         dir = joinpath(outer, "project")
         gui, screen = ext._project_session(step; dir)
         @test isempty(failed)
-        @test length(names) == 13
+        @test length(names) == 14
         @test LibGit2.with(LibGit2.isorphan, LibGit2.GitRepo(outer))
         @test LibGit2.with(r -> realpath(LibGit2.path(r)) == realpath(dir), LibGit2.GitRepoExt(dir))
         # the steps call the watcher themselves: none runs alongside them

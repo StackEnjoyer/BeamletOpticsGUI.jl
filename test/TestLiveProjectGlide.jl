@@ -107,17 +107,17 @@ end
     @test autosave!(a) === :saved
     starts = Dict(id => pose(obj(b, id)) for id in ids)
     targets = Dict(id => pose(obj(a, id)) for id in ids)
-    t0 = time()
     @test GUI._sync!(b; animate = true) === :applied
     @test length(b.sync.gliding) == length(ids)
     # the first frame moves all of them, none has landed
     @test wait_for(() -> any(id -> moved(obj(b, id), starts[id]), ids))
     @test all(id -> moved(obj(b, id), starts[id]), ids)
     @test !any(id -> same_pose(pose(obj(b, id)), targets[id]), ids)
-    @test wait_for(() -> isempty(b.sync.gliding))
-    elapsed = time() - t0
-    # one glide for all of them, not one after the other (5 * _GLIDE)
-    @test elapsed < 3 * GUI._GLIDE
+    # one glide for all of them, not one after the other: they land in the same frame (no clock,
+    # which a loaded machine stretches)
+    counts = Set{Int}()
+    @test wait_for(() -> (push!(counts, length(b.sync.gliding)); isempty(b.sync.gliding)))
+    @test counts == Set([length(ids), 0])
     for id in ids
         @test same_pose(pose(obj(b, id)), targets[id])
     end

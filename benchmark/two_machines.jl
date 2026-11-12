@@ -681,9 +681,15 @@ function versions(gui)
             shown = !isnothing(until(() -> !isnothing(GUI._version_box(gui)); timeout = 20.0))
             check(shown, "Ctrl+S shows the card of the version")
             type!(gui, " (two machines, $ME)")
+            # what the card and the status line show before and after Enter, for a failure
+            box = GUI._version_box(gui)
+            before = (; card = !isnothing(box), focused = !isnothing(box) && box.focused[],
+                text = isnothing(box) ? "" : box.displayed_string[], status = gui.status.text[])
             key!(gui, Keyboard.enter)
             t = until(() -> length(BMOP.versions(PROJ)) == n + 1; timeout = 60.0)
-            check(!isnothing(t), "Enter saves a version", "after $(fmt(t)); $(n + 1) versions")
+            found = length(BMOP.versions(PROJ))
+            check(!isnothing(t), "Enter saves a version", "after $(fmt(t)); $found versions (expected $(n + 1))" *
+                (isnothing(t) ? "; before Enter: $before; after: card $(!isnothing(GUI._version_card(gui))), status \"$(gui.status.text[])\"" : ""))
             shot(gui, "version")
             signal("version-$who"; n = n + 1)
         else
