@@ -18,7 +18,8 @@ copied unchanged.
 | widgets for something in the scene: a component, a group, a source, a system, an own `AbstractObject` subtype | a card | [`card_rows`](@ref), [`card_actions`](@ref) |
 | a parameter without a scene object, e.g. a setting of the whole setup | a controls section | [`add_controls!`](@ref) |
 | an action, e.g. a button or a toggle with a key | a tool | [`add_tool!`](@ref) |
-| a plot or a result that is updated after each solve | a panel | [`add_panel!`](@ref) |
+| a result of an object that is updated after each solve (points, a field, a value over the solves) | a view on its card | [`card_views`](@ref) |
+| a plot or a result without an object that is updated after each solve | a panel | [`add_panel!`](@ref) |
 
 A card needs a scene object because the object gives the card its anchor (the card is placed next
 to the bounding box of the object and follows it), its selection (the card shows what is selected,
@@ -339,6 +340,61 @@ function add_tilt_controls!(gui, mirror)
 end
 ```
 
+## Own results on a card
+
+A type that computes something worth showing, e.g. the hits of an own detector, gets the page
+"Results" of its card with a method of [`card_views`](@ref) that returns [`CardView`](@ref)s. The
+GUI only draws: a `CardView` holds a function `f` that computes what is shown from the object, and
+a form that says how the window draws it. The window hands no result back; a script that wants the
+numbers calls `f` itself. The card of an object with views shows "Results" first, with a switch
+between its views (the first is the default); a `Detector` has views of its own, see
+[Detector view](@ref).
+
+| Form | `f` returns | Drawn as |
+|:--|:--|:--|
+| `:points` | `f(obj)`: the points `(x, z)` [m], or `(points, colors)` | spot diagram, centroid cross, number, centroid, RMS and largest radius |
+| `:field` | `f(obj; num_points, window)`: `(x, z, I)` | image, colorbar in the `unit`, "log", profiles; zoom calls `f` again with the new `window` |
+| `:series` | `f(obj)`: a number | the values of the full solves as a line, the last value, "clear" |
+
+`f` runs in the background task of the solve, reads the object and must not change plots or
+observables. An error of `f` is shown in the view. With `preview = false` (the default) `f` is not
+called for the previews while an object is dragged, only after the full solve; `preview = true`
+also calls it for those. The centroid, the radii and the color scale are computed by the window to
+draw the view, they are not results of the view.
+
+A series is recorded by the GUI: one value after each full solve for every object of the systems
+that has a `:series` view, also while no card shows it. While an object is dragged nothing is
+recorded, the value comes once the movement pauses. The window keeps at most 10 000 values per
+object and view, "clear" empties them, removing the object drops them and undo keeps them.
+
+The full [script](https://github.com/StackEnjoyer/BeamletOpticsGUI.jl/blob/main/docs/src/assets/examples/live_card_views.jl)
+defines a screen that records its hits, and shows the count as a series and the hits as points:
+
+```julia
+BeamletOpticsGUI.card_views(::Screen) = (
+    CardView(hit_count, :series; name = :count, label = "Count", unit = "rays",
+        text = (s, n) -> "$(Int(n)) rays hit the screen"),
+    CardView(hit_points, :points; name = :spot, label = "Hits"))
+```
+
+Like the other card functions, a package adds the method in its package extension. To show such a
+view in a figure of your own, e.g. next to the window, use [`results_view!`](@ref), see
+[Views in an own figure](@ref).
+
+### Views in an own figure
+
+[`results_view!`](@ref) places the view of the page "Results" of an object into the position of a
+figure, e.g. in a second window. With the window `gui` it shares the view that is shown, the grid,
+the color scale and the zoom with the cards of the object and updates after each solve. Without a
+window it computes when it is built, on [`refresh!`](@ref) and on its own widgets (a series shows
+only its current value there). `close(view)` removes it.
+
+```julia
+fig = Figure()
+rv = results_view!(fig[1, 1], gui, screen; view = :spot)
+display(GLMakie.Screen(), fig)
+```
+
 ## Checklist for a new component
 
 - `interact3d(system, object, beam, ray)`: required, see Core design page of BeamletOptics.
@@ -346,6 +402,7 @@ end
   hits of an own detector. It discards them; the live view calls it before every solve.
 - `render!`: optional, how the component is drawn.
 - `card_rows` (and `card_actions`): optional, its rows and buttons on the card of the live view.
+- `card_views`: optional, its views on the page "Results" of the card, see [Own results on a card](@ref).
 - `BeamletOptics.properties`: optional, the properties listed on the page "Properties" of the card
   and of the inspector, see `properties`.
 
@@ -362,6 +419,11 @@ CardRow
 CardWidget
 card_input
 card_show!
+CardView
+card_views
+results_view!
+ResultsView
+refresh!
 add_controls!
 add_tool!
 ```

@@ -21,7 +21,7 @@ export live_view, kinematic_controls!, view_cube!, export_changes, export_script
        add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
        add_system!, remove_system!,
        CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!,
-       spectator!, wait_solve, save_project, open_project
+       spectator!, wait_solve, CardView, card_views, results_view!, ResultsView, refresh!, save_project, open_project
 
 import BeamletOpticsProjects
 # Methods of these for a window: one function each, so that loading both packages names no two
@@ -56,6 +56,7 @@ include("LiveProgress.jl")
 include("LiveIcons.jl")
 include("ViewCube.jl")
 include("LiveWidgets.jl")
+include("LiveCardViews.jl")
 include("LiveDetectorView.jl")
 include("LiveCardPages.jl")
 include("LiveCard.jl")
@@ -64,6 +65,7 @@ include("LiveLayout.jl")
 include("LiveScroll.jl")
 include("LiveSplitter.jl")
 include("LiveDetectors.jl")
+include("LiveResultsView.jl")
 include("LiveTrace.jl")
 include("LiveBeamSwitch.jl")
 include("LivePolarization.jl")

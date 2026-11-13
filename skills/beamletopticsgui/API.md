@@ -29,6 +29,7 @@ Look up the docstring of any name before use, e.g.
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
 | Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!`, `card_widget` |
+| Results views | `CardView`, `card_views`, `results_view!`, `ResultsView`, `refresh!` |
 
 Not exported: `BeamletOpticsGUI.install_agent_skill`.
 
@@ -41,7 +42,7 @@ Not exported: `BeamletOpticsGUI.install_agent_skill`.
 | `sidebar_width = (240, 300)`, `dock_height = nothing` | app layout only (compact ignores them): start widths [px] of the left and right sidebar (a number sets both, each within 160 and 600) and start height [px] of the dock (within 80 and 70 % of the figure height; `nothing`: 36 % of the window); outside the limits throws `ArgumentError`. In the window: drag the edge of a sidebar or the upper edge of the dock, a double click restores the start size |
 | `labels = Dict(obj => "name")` | names in cards, status line and menus |
 | `constraints = Dict(obj => (; move = (), rotate = (:x, :z)))` | lock local axes `:x`, `:y`, `:z` of components (`:v` is an error) |
-| `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; num_points, colorscale, colorrange, colorbar, profiles, expanded, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; other entries are keywords of `BeamletOptics.RegularGrid`, e.g. `x_min` or `crop_factor`; `n` (now `num_points`) and `history` throw `ArgumentError`) |
+| `detectors = :auto` or `[]`, or a vector (`pd`, `pd => :spot`, `pd => (:intensity, (; num_points, colorscale, colorrange, colorbar, profiles, expanded, spot_colors, x_min, ...))`) | `:auto` and `[]`: every detector has the page "Results" on its card, none is pinned at start; a vector pins the cards of these detectors at start with these options (kind `:auto`, `:spot`, `:psf` or `:intensity`; `spot_colors = hit -> color` colors each spot of the spot view, a beamlet contour in the color of its hit; other entries are keywords of `BeamletOptics.RegularGrid`, e.g. `x_min` or `crop_factor`; `n` (now `num_points`) and `history` throw `ArgumentError`) |
 | `sliders = ["label" => (range, callback)]` | custom parameters (callbacks in SI units); compact: entry "Sliders" of the tool rail, app: "Parameters" |
 | `on_change = (gui, obj) -> ...` | called after each full solve, with the moved object or `nothing` |
 | `extras = [housing => (; color = ...)]` | objects without a system: shown, movable, but never traced (listed under "No system" in the tree; removable; can become a member of a system later) |

@@ -231,8 +231,10 @@ its visible part.
 
 The results of a detector are on its card. Every card has pages, chosen by a page bar below its head: "Pose" (the rows of
 [`card_rows`](@ref); on the card of the selection also the keyboard step and the Move/Rotate mode)
-and "Properties" (the property list of the object, see `properties`). The card of a `Detector`
-has a third page, "Results", between them, which shows the detector view. The card of a source (a
+and "Properties" (the property list of the object, see `properties`). The card of an object with
+[`card_views`](@ref) has a third page, "Results", shown first, which shows the view of the object, e.g. the
+detector view of a `Detector`; an own type adds its views the same way, see
+[Own results on a card](@ref). The card of a source (a
 beam, a beam group or a Gaussian beamlet) has the page "Color": a menu sets the color in which it is
 drawn ("wavelength" draws every ray in the display color of its own wavelength (`wavelength_color`
 of BeamletOptics), so the beams of a group with several wavelengths, or the beams behind a
@@ -245,8 +247,8 @@ is traced again, and they are not part of [`export_changes`](@ref). In a script,
 `beam_kwargs = Dict(source => (; color = :orange, alpha = 0.5, linewidth = 2))` sets them from the
 start; `color = :wavelength` (or `(:wavelength, alpha)`) is the default mode. If a long solve runs
 in the background while the color or the length changes, that solve starts again. A card with a single
-page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for a
-detector and on "Pose" for every other object; a pinned card keeps its page.
+page, e.g. of an inspected point or a measurement, has no page bar. A card opens on "Results" for an
+object with views and on "Pose" for every other object; a pinned card keeps its page.
 
 The view is expanded by default. Its chevron collapses it to a thumbnail (92 px) with the kind,
 the key value (the power or the number of rays), the centroid and the radii; a click on the
@@ -268,12 +270,19 @@ peak) and at the powers of ten with "log". The image is scaled to its maximum af
 i.e. it looks the same while the intensity changes; the ticks of the bar show the change. Use
 `colorrange` for a fixed scale.
 
-The kinds depend on the hits, the first is the default:
+The kinds are the [`CardView`](@ref)s of [`card_views`](@ref) for a `Detector` (the same API as for an
+own type, see [Own results on a card](@ref)), and depend on the hits; the first is the default. With
+the kind `:auto`, a view whose function throws gives way to the next one. A `Detector` keeps its page
+"Results" without hits, where it reads "no hits":
 
 | Hits | Kinds |
 |:-----|:------|
 | rays (`RayHit`, `PolarizedRayHit`) | "Spot" (spot diagram), "PSF" (the `intensity` of the rays, which BeamletOptics returns unscaled, hence shown normalized to its peak, with the metrics without the power) |
 | Gaussian beamlets (`GaussianBeamletHit`, `AstigmaticGaussianBeamletHit`) | "Intensity" (in W/m², with the power), "Spot" (the 1/e² outlines) |
+
+The power `P` in the line below the intensity is integrated by BeamletOptics (`optical_power` of the
+samples and the intensity of the view, in the BeamletOptics release that this version of the GUI
+requires); the GUI computes no power itself.
 
 A chosen kind that the current hits do not offer falls back to their default and applies again
 when they offer it. Without hits, the view reads "no hits". Moving a detector (or a group that
@@ -303,7 +312,8 @@ computations slower than `trace_budget` show a coarse preview first.
 Only shown views are computed: the page "Results" of the card of the selected detector or of a
 pinned card that is not collapsed. A thumbnail is computed on a grid of at most 48 points per
 axis. A view that is shown later is computed from the hits of the last solve. The spectator mode
-hides the cards and with them the views.
+hides the cards and with them the views. The exception is a `:series` view of an own type, which is
+recorded after every full solve whether or not a card shows it.
 
 The floating card with an expanded view is resizable: a grip at its bottom right corner changes
 its size from 160 px up to the size of the 3D view. In the sidebar of the app layout, the view
@@ -337,10 +347,19 @@ view passes on to it:
 | `colorbar = true`       | `false` hides the colorbar below the plot of a field                  |
 | `profiles = false`      | `true` adds the axis with the intensity along x and z through the centroid |
 | `expanded = true`       | `false` starts the pinned card with the thumbnail                    |
+| `spot_colors = nothing` | `hit -> color`: the color of each spot of the spot view, a beamlet contour in the color of its hit |
 
 ```julia
 gui = live_view(system, beam; detectors = [pd => (:intensity, (; colorscale = :log, profiles = true))])
 ```
+
+```julia
+gui = live_view(system, beam; detectors = [pd => (:spot, (; spot_colors = hit -> :red))])
+```
+
+The view of a detector can also be placed into a figure of your own with [`results_view!`](@ref),
+e.g. in a second window; it takes the same options (`view`, `expanded`, `spot_colors`) and shares them
+with the cards of the detector, see [Views in an own figure](@ref).
 
 The option `n` is now `num_points` and throws an `ArgumentError`. The option `history` is no longer
 available and throws an `ArgumentError` as well: record the values in

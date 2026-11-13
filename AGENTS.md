@@ -17,9 +17,9 @@ describe it as available in docs or the skill.
 | # | Principle | Gap in 0.3 |
 |---|---|---|
 | P1 | The GUI sits on BeamletOptics systems and visualizes them. All physics is computed by BeamletOptics. Components, sources and systems can be added to and removed from the scene in the GUI. One view holds several systems with several beams each; an object belongs to any number of systems or to none and is drawn once, a source to at most one, and each system is traced on its own. | `StaticSystem`s can not be changed; only components and sources from the catalog can be changed afterwards (page "Edit"); `export_script` writes the constructors of those and of the objects added with `code` (`add_component!`), since the constructor of an object from the user's script is not known otherwise; the glasses of the catalog (`catalog_glasses`) are data of the GUI until BeamletOptics has a glass catalog |
-| P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`, `_has_view`), only `Detector` has a view; tree icons per type are internal |
+| P2 | The layout is built from widgets, one per BeamletOptics type (e.g. the card of a lens, of a detector, of a system). Widgets without a type are generic windows (`add_panel!`, `add_controls!`, `add_tool!`). | the pages of a card and its view ("Results") are chosen per type by internal traits (`_has_page`; the view from `card_views`, `_has_view`); tree icons per type are internal |
 | P3 | Any layout can be assembled from the widgets and presented to the user. Layouts are composed in code from public widget blocks; `:compact` and `:app` are two such compositions. | the layout interface `AbstractLiveLayout` is internal, the widgets have no public constructors |
-| P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads (`card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`; a component package adds them in a package extension on BeamletOpticsGUI). | own views (the page "Results") and icons per type |
+| P4 | An extensible API lets users with own BeamletOptics types define widgets that the GUI loads (`card_rows`, `card_actions`, `CardWidget`, `card_input`, `card_show!`; a component package adds them in a package extension on BeamletOpticsGUI). | icons per type |
 
 **Rules that follow from them:**
 
@@ -42,6 +42,14 @@ describe it as available in docs or the skill.
   `initialize!`, never by the GUI (no `empty!` of a detector): once for all systems before their
   sources are solved (`_compute`), since the sources superpose on a detector, and for a component
   that is removed.
+- **The GUI displays results, it does not compute them.** Results come from BMO or from the
+  user's own calculations, which the GUI calls and draws. The GUI computes only lightweight
+  helpers for showing them, such as a centroid or an RMS radius to place a marker, a cut line,
+  limits or a normalization. Such a helper takes data that BMO returned, is closed-form (sums,
+  moments, extrema, scaling; no tracing, no integration with the weights of a sampling, no fits),
+  is marked as a display helper where it is defined, and is never returned by public API: no
+  widget or view hands results to the user. A value that a user would want in a script belongs in
+  BMO.
 - **A solve in the background owns the beams and detectors**, from its start until its result is
   shown or it is cancelled. Nothing else changes or reads them meanwhile: changes of objects go
   through `_change!`, which cancels the solve first, and code that reads the beams or the hits
@@ -83,10 +91,13 @@ describe it as available in docs or the skill.
   one of them again as it is and place it with the mouse. Adding, removing and changing are actions of the undo
   history of the controls (`_push_action!` in `src/LiveInteraction.jl`, `_record_added!` in
   `src/LiveComponents.jl`).
-- `src/LiveDetectorView.jl`: the view of a detector on the page "Results" of its card: the kinds
-  of views per type of hits (spot diagram, PSF, intensity), their results and metrics, and the
-  widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of the view per detector,
-  its computation only while it is shown, and the `detectors` kwarg.
+- `src/LiveCardViews.jl`: `CardView`, `card_views` and the built-in views of a `Detector` (spot
+  diagram, PSF, intensity) as `card_views(::Detector)`. `src/LiveDetectorView.jl`: the view of the
+  page "Results" of a card: the drawing per form (`:points`, `:field`, `:series`), their results and
+  display metrics, and the widget (thumbnail, zoomable plot). `src/LiveDetectors.jl`: the state of
+  the view per object with views, its computation only while it is shown, the recording of the
+  series after every full solve, and the `detectors` kwarg. `src/LiveResultsView.jl`:
+  `results_view!`, `ResultsView`, `refresh!`: the widget of the page "Results" in a figure of its own.
 - `src/LiveTrace.jl`, `src/LiveProgress.jl`: solving, progress window. `src/LiveSystemTrace.jl`:
   tracing per system (`_system_auto`, `_set_system_auto!`, `_trace_system!`, `_trace_set`: systems
   that share a `Detector` are traced together, the outdated beams of a system). `src/LiveClip.jl`, `src/LiveMeasure.jl`, `src/LiveCamera.jl`,

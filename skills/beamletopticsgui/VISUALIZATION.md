@@ -26,8 +26,8 @@ object: shows it again). The pencil next to its label renames a component, a sou
 with its component, so several components can be edited side by side. Dragging the head of a card
 moves it to a fixed place in the view (kept when pinned; double click on the head: back next to
 its component). Every card has pages, chosen by a page bar below its head: "Pose" (the pose
-boxes and the rows of the type) and "Properties"; the card of a `Detector` has "Results" between
-them (details below), the card of a source "Color" (a menu of colors with "wavelength" and
+boxes and the rows of the type) and "Properties"; the card of an object with `card_views` (a
+`Detector`, or an own type, see `WIDGETS.md`) has "Results" between them, shown first (details below), the card of a source "Color" (a menu of colors with "wavelength" and
 "layout", a box for a hex value or a color name, sliders for the opacity and the line width;
 display only, the same as `beam_kwargs = Dict(source => (; color, alpha, linewidth))` from a
 script; sources start with `color = :wavelength`: every ray in the display color of its own
@@ -138,6 +138,26 @@ pins the card at start (floating next to the detector in compact, docked in the 
 app); other entries are keywords of `BeamletOptics.RegularGrid` (the sampling of the field),
 `x_min`/`x_max`/`z_min`/`z_max` set the area
 that "fit" shows. `history` is gone (`ArgumentError`): record in `on_change`, plot in `add_panel!`.
+The views of a `Detector` are its `card_views` (Gaussian beamlets: Intensity and Spot; rays: Spot and
+PSF); with kind `:auto` a view whose function throws gives way to the next. The power on the Intensity
+view is integrated by BeamletOptics (`optical_power`). A `Detector` keeps its page without hits
+("no hits"). `spot_colors = hit -> color` in the options colors each spot (a beamlet contour in the
+color of its hit): `detectors = [pd => (:spot, (; spot_colors = hit -> :red))]`.
+
+**A view in a second window.** `results_view!(position, gui, obj; view = :auto, expanded = true,
+width = 280, height = 280, spot_colors = nothing)` places the view of the page "Results" of `obj` (any
+object with `card_views`) into a figure of your own; it shares view, grid, scale and zoom with the
+cards of `obj` and updates after each solve. `results_view!(position, obj; theme = :light, name =
+"Results", ...)` without a window computes when built, on `refresh!(v)` (e.g. after `solve_system!`)
+and on its own widgets; a series shows only its current value there. `close(v)` removes it. It only
+draws: it returns no data, call the function of the `CardView` for the numbers.
+
+```julia
+gui = live_view(system, beam)
+fig = Figure()
+v = results_view!(fig[1, 1], gui, pd; view = :spot)
+display(GLMakie.Screen(), fig)     # v follows every solve of gui; close(v) when done
+```
 
 Own GUI parts go into a `gui = live_view(...)` via three functions that work with both
 `layout = :compact` and `layout = :app` (the layout places them); do not place blocks at fixed

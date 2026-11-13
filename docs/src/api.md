@@ -78,6 +78,18 @@ card_show!
 card_widget
 ```
 
+## Results views
+
+The views of the page "Results" of a card and their placement in a figure of your own.
+
+```@docs
+CardView
+card_views
+results_view!
+ResultsView
+refresh!
+```
+
 ## Agent skill
 
 ```@docs

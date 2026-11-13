@@ -29,9 +29,11 @@ source belongs to at most one system. Systems are added and removed in the windo
 none, and each system is traced on its own; see "Systems" and "Tracing per system" in the method
 below.
 
-The card of a `Detector` has a page "Results" with its detector view (spot diagram, PSF or
-intensity, with metrics such as centroid, RMS or 1/e² radius and power), which collapses to a
-thumbnail and, as a field, has a colorbar and can be shown on a logarithmic color scale with profiles. A click on a beam shows its position, path
+The card of an object with views (see [`card_views`](@ref)), e.g. a `Detector`, has a page
+"Results" with them: of a detector the spot diagram, the PSF or the intensity, with the centroid,
+the RMS or 1/e² radius and the power of BeamletOptics, which collapses to a thumbnail and, as a
+field, has a colorbar and can be shown on a logarithmic color scale with profiles; the same view
+is placed into a figure of its own by [`results_view!`](@ref). A click on a beam shows its position, path
 length and, for Gaussian beamlets, its radius and curvature, the "measure" toggle measures
 distances and angles between components and beams. The key `g` zooms to the selection, "home",
 the "views" menu and "save view" set and store camera views. While moving, beam groups are solved
@@ -40,7 +42,7 @@ only for their rendered beams (`preview = true`), the full group once the moveme
 Main keyword arguments: `detectors` (`:auto` or `[]`: every detector has its page "Results", no
 card is pinned at start; a vector of `pd`, `pd => kind` or `pd => (kind, kwargs)` pins the cards of
 these detectors at start, with `kind` one of `:auto`, `:spot`, `:psf` and `:intensity` and the
-options `num_points`, `colorscale`, `colorrange`, `colorbar`, `profiles` and `expanded`), `on_change = (gui, obj) -> nothing` (called after full solves),
+options `num_points`, `colorscale`, `colorrange`, `colorbar`, `profiles`, `expanded` and `spot_colors = hit -> color`), `on_change = (gui, obj) -> nothing` (called after full solves),
 `sliders = ["label" => (range, callback)]`, `system_kwargs`, `beam_kwargs`, `preview = true`,
 `views = ["name" => (eye, lookat, up)]`, `lighting = :studio` (see `BeamletOptics.studio_lighting!`),
 `edges` and `size`. `extras = [obj => render_kwargs, ...]` adds objects without a system that are
@@ -451,6 +453,138 @@ Makie.set_close_to!(s, 30.0)
 ```
 """
 function card_widget end
+
+"""
+    CardView(f, form::Symbol; name::Symbol, label = string(name), unit = "", normalize = false,
+        preview = false, text = nothing)
+
+A view on the page "Results" of a card of [`live_view`](@ref), see [`card_views`](@ref): the
+function `f` computes what the view shows from the object of the card, the `form` says how the
+window draws it. The window only draws: it hands no result of `f` back, a script that wants the
+numbers calls `f` itself.
+
+`f` is called after each full solve of the window, not after the previews while an object moves
+(unless `preview = true`), in a background task: it reads the object and calls BeamletOptics or
+own code, but must not change plots or observables. An error of `f` is shown in the view. The
+forms and what `f` returns:
+
+- `:points`: `f(obj)` returns the points `(x, z)` [m] of a spot diagram, e.g. 2-vectors or
+  `Point2`s, or a tuple `(points, colors)` with a color per point. The view marks their centroid
+  and shows their number, centroid, RMS radius and largest distance from the centroid.
+- `:field`: `f(obj; num_points, window)` returns `(x, z, I)`, the values `I[i, j]` of a field at
+  `x[i]`, `z[j]` [m], on a grid of `num_points` per axis in the `window`
+  `(x_min, x_max, z_min, z_max)` [m], or in limits of its own for `window = nothing`. The view
+  shows it as an image with a colorbar in the `unit`, `normalize = true` divides it by its peak, and
+  it marks its centroid and shows its 1/e² radii. Zoom and pan call `f` again with the new `window`.
+- `:series`: `f(obj)` returns a number, which the window records once per full solve and draws
+  over the solves, labeled with the `unit`. The window keeps the last 10 000 values of each object
+  and view, "clear" on the page empties them, and they are dropped when the object is removed.
+
+`name` identifies the view, e.g. in the `detectors` kwarg of [`live_view`](@ref) and in
+[`results_view!`](@ref), `label` is its text in the switch of the views. `text(obj, data)`, if
+given, returns a line shown below the view, with the `data` that `f` returned, e.g. a value that
+BeamletOptics computes from it; like `f`, it runs in the background task.
+
+The centroid, the radii and the scales of the colorbar are computed by the window only to draw the
+view, from what `f` returned.
+"""
+struct CardView
+    f::Any
+    form::Symbol
+    name::Symbol
+    label::String
+    unit::String
+    normalize::Bool
+    preview::Bool
+    text::Any
+end
+
+# The forms of a `CardView`
+const _CARD_VIEW_FORMS = (:points, :field, :series)
+
+function CardView(f, form::Symbol; name::Symbol, label::AbstractString = string(name),
+        unit::AbstractString = "", normalize::Bool = false, preview::Bool = false, text = nothing)
+    form in _CARD_VIEW_FORMS ||
+        throw(ArgumentError("the form of a CardView must be one of $_CARD_VIEW_FORMS, got :$form"))
+    return CardView(f, form, name, String(label), String(unit), normalize, preview, text)
+end
+
+Base.show(io::IO, v::CardView) = print(io, "CardView(:", v.name, ", :", v.form, ")")
+
+"""
+    card_views(obj) -> Tuple{Vararg{CardView}}
+
+The views on the page "Results" of the card of `obj` in [`live_view`](@ref), a tuple of
+[`CardView`](@ref)s, chosen by multiple dispatch like [`card_rows`](@ref); the first one is shown
+by default. A card whose object has views gets the page "Results", which it shows first, with a
+switch between them. By default none; a `Detector` has the intensity and the spot diagram of its
+beamlet hits, or the spot diagram and the PSF of its ray hits, none without hits.
+
+Add a method for an own type, e.g. in a package extension on BeamletOpticsGUI:
+
+```julia
+BeamletOpticsGUI.card_views(pd::MyPhotodiode) = (
+    CardView(:series; name = :power, label = "Power", unit = "W") do pd
+        BeamletOptics.optical_power(pd.detector)
+    end,)
+```
+
+The method may look at `obj`, e.g. offer a view only while it has hits; it is called whenever a
+card shows `obj` and after each solve, and must be cheap. The view with a `name` keeps its options
+(e.g. the color scale or the zoom) per object while the views of the method change.
+"""
+function card_views end
+
+"""
+    results_view!(position, gui::LiveView, obj; view = :auto, expanded = true, width = 280, height = 280,
+        spot_colors = nothing) -> ResultsView
+    results_view!(position, obj; theme = :light, name = "Results", view = :auto, expanded = true,
+        width = 280, height = 280, spot_colors = nothing) -> ResultsView
+
+Places the view of the page "Results" of the card of `obj` into the `position` of a figure, a
+`GridPosition` such as `fig[1, 2]` or a `GridLayout`, e.g. in a second window next to the
+[`live_view`](@ref) window `gui`. `obj` is any object with [`card_views`](@ref), e.g. a `Detector`.
+`view` is the `name` of the [`CardView`](@ref) that is shown, `:auto` for the first one; the switch
+of the view changes it later. The view starts `expanded` (the axis of `width` × `height` pixels with
+its controls) or collapsed to its thumbnail. `spot_colors = hit -> color` colors the spots of the
+spot diagram of a `Detector` per hit, like the option of the `detectors` kwarg of
+[`live_view`](@ref).
+
+With the window `gui`, the view shows `obj` like its cards: it is computed after each solve of the
+window, and the view that is shown, the grid, the color scale and the zoom are those of `obj` in
+the window, which a change in any of its views changes in all. A `view` other than `:auto` and
+`spot_colors` other than `nothing` are set for all of them, the other options stay. The name of the
+view is the label of `obj` in the window.
+
+Without a window, the view shows the current state of `obj` when it is built and changes only on
+[`refresh!`](@ref) (e.g. after `solve_system!`) and on its own widgets, with options of its own and
+the colors of the `theme` (`:light` or `:dark`); `name` is its name in the view. A `:series` shows
+only its current value there, since only a window records the values of its solves.
+
+Throws an `ArgumentError` if `obj` has no views or if no view of `obj` has the name `view`. A
+`Detector` without hits offers no views yet: it is accepted with any `view`, which applies once it
+has hits. Remove the view with `close(view)`.
+
+```julia
+using BeamletOptics, BeamletOpticsGUI, GLMakie
+gui = live_view(system, beam)
+fig = Figure()
+results_view!(fig[1, 1], gui, detector; view = :spot)
+display(GLMakie.Screen(), fig)
+```
+"""
+function results_view! end
+
+"""
+    refresh!(v::ResultsView) -> v
+
+Computes the view `v` again from the current state of its object, e.g. after `solve_system!` for a
+view without a live view (see [`results_view!`](@ref)). A view of a [`live_view`](@ref) window is
+computed from the results of the last solve of the window once that solve is complete, as after a
+change of its options: a change of the objects from code is solved by [`retrace!`](@ref). Throws
+an `ArgumentError` for a view that is closed.
+"""
+function refresh! end
 
 """
     add_component!(gui, obj; system = nothing, select = true, label = nothing, code = nothing) -> obj
