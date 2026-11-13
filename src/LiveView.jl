@@ -1285,7 +1285,7 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 # Adding and removing components
 
 The components of a `System` of the view and its sources can be changed at runtime, e.g. to build
-a setup from an empty `System()`, also without a source (`live_view(System())`); a `StaticSystem`
+a setup from an empty `System()`, also without a source (`live_view()`); a `StaticSystem`
 can not be changed. The catalog "Components"
 offers the sources and components of the `catalog` kwarg, see [`component_catalog`](@ref): the icons at its top
 select a group, e.g. the sources or the lenses, the tiles below an entry of the group, e.g. a doublet. The
@@ -1658,8 +1658,8 @@ function live_view(
     )
     # One compiled method for all systems, sources and keyword arguments
     @nospecialize
-    isempty(args) &&
-        throw(ArgumentError("live_view requires at least one system or system => beam pair"))
+    # Without a system: one empty system, the start of an empty table
+    isempty(args) && (args = (BMO.System(),))
     ps = Pair{BMO.AbstractSystem, Any}[p for p in args if p isa Pair]
     for b in beams_off
         any(p -> p.second === b, ps) ||

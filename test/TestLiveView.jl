@@ -118,7 +118,6 @@ _points(h) = only(render_plots(h))[1][]
         @test !any(c -> c.pinned, gui.cards.all)
         close(gui)
 
-        @test_throws ArgumentError _live_view()
         @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = [pd => :fancy])
         @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = :none)
         # the history of the former panels is recorded in `on_change` and plotted by `add_panel!`

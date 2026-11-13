@@ -54,7 +54,7 @@ Sources are added and removed with the same two functions. A view may start with
 empty table, and every source can be removed, also the last one:
 
 ```julia
-gui = live_view(System())
+gui = live_view()
 
 laser = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
 add_component!(gui, laser; label = "laser")
@@ -221,7 +221,7 @@ started with is a comment with its type and its pose, since its constructor is n
 in there.
 
 ```julia
-gui = live_view(System())
+gui = live_view()
 # place sources and components from the catalog, then
 code = export_script(gui)
 ```
