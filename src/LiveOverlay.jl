@@ -587,7 +587,28 @@ function _arrange_toast!(o::_CompactOverlay, vp::Rect2f)
     (o.toast_shown && !o.hidden) || return _park!(o.toast.outer)
     ts = _card_size(o.toast.outer)
     x = minimum(vp)[1] + (Makie.widths(vp)[1] - ts[1]) / 2
-    _place!(o.toast.outer, Point2f(max(x, minimum(vp)[1]), minimum(vp)[2] + _OVERLAY_MARGIN + ts[2]))
+    # above the timeline of the activity of the others while it is shown, see `_lift_toast!`
+    lift = get(_TOAST_LIFT, o, 0.0f0)
+    _place!(o.toast.outer, Point2f(max(x, minimum(vp)[1]), minimum(vp)[2] + _OVERLAY_MARGIN + lift + ts[2]))
+    return nothing
+end
+
+# How far [px] the toast of an overlay stands above its place, see `_lift_toast!`
+const _TOAST_LIFT = WeakKeyDict{_CompactOverlay, Float32}()
+
+"""
+    _lift_toast!(gui, top)
+
+Places the toast of the compact layout of the `gui` above the height `top` [px above the bottom of
+the 3D view], e.g. the timeline of the activity of the others (`0`: at its place). Nothing in the
+app layout, whose status line is not over the view.
+"""
+_lift_toast!(::LiveView, ::Real) = nothing
+function _lift_toast!(gui::CompactView, top::Real)
+    o = gui.layout.overlay
+    lift = Float32(max(top, 0))
+    get(_TOAST_LIFT, o, 0.0f0) == lift && return nothing
+    _TOAST_LIFT[o] = lift
     return nothing
 end
 

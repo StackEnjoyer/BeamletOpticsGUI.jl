@@ -541,10 +541,18 @@ _card_value(c::_AbstractCard, a::_ThemeColor) = getproperty(c.theme, a.name)
 
 Attributes of the block of the declared widget `w` on the card `c`: the style of the card for the
 type of the block (see `_card_style`), then the attributes of `w` with their values on the card
-(see `_card_value`), which the host may adapt, see `_host_attributes`.
+(see `_card_value`) and, if it fills the rest of its row (see `_fills`), the width of its cell
+without telling it, which the host may adapt, see `_host_attributes`.
 """
 _cell_attributes(c::_AbstractCard, w::CardWidget) = _host_attributes(c, w.type,
-    (; _card_style(c, w.type)..., map(v -> _card_value(c, v), w.attributes)...))
+    (; _card_style(c, w.type)..., map(v -> _card_value(c, v), w.attributes)...,
+    (_fills(w) ? (; width = Makie.Relative(1), tellwidth = false) : (;))...))
+
+# Whether the widget `w` takes the rest of the width of its row: `fill`, unless it has a `width`
+_fills(w::CardWidget) = w.fill && !haskey(w.attributes, :width)
+_fills(::String) = false
+# Whether the row `r` spans the width of the card, see `_build_content!`
+_fills(r::CardRow) = any(_fills, r.cells)
 
 # The attributes of a block of the type `T` on the card, as declared by default
 _host_attributes(::_AbstractCard, T::Type, attributes::NamedTuple) = attributes
@@ -608,9 +616,9 @@ _show_value!(b::Textbox, v, force::Bool) = card_show!(b, v; force)
 
 # The layout of declarations, independent of the functions `value` and `on`, see `_build_content!`
 _layout_key(rows) = map(_layout_key, rows)
-_layout_key(r::CardRow) = map(_layout_key, r.cells)
+_layout_key(r::CardRow) = (map(_layout_key, r.cells), r.aligned)
 _layout_key(s::String) = s
-_layout_key(w::CardWidget) = (w.type, w.attributes, w.name)
+_layout_key(w::CardWidget) = (w.type, w.attributes, w.name, w.fill)
 
 # The declared widgets of rows or actions, in the order of their blocks
 _declared_widgets(rows) = CardWidget[w for r in rows for w in _declared_widgets(r)]
@@ -758,6 +766,47 @@ function _fit_properties!(c::_ComponentCard)
     end
     _update!(c.list.box.width, max(w, _CARD_PROPERTIES_WIDTH))
     return nothing
+end
+
+# Width of a widget that fills the rest of its row at least [px], see `_fit_rows!`
+const _CARD_FILL_MIN = 60.0f0
+
+"""
+    _fit_rows!(c::_ComponentCard)
+
+Sets the width of the rows of the card `c`, if they are shown and one of them has a widget that
+fills the rest of its row (see `_fills`), to the width of the card: of its head with the actions and
+tools, of its other parts and of its other rows, at least the width that the other cells of the rows
+with such a widget need with `_CARD_FILL_MIN` for it, such that these rows end at the right edge of
+the card. These rows do not tell their width (see `_build_content!`), hence the width of the card
+does not depend on them. Only a changed width updates the layout.
+"""
+function _fit_rows!(c::_ComponentCard)
+    lower = _lower_parts(c)
+    any(p -> p === c.rows, lower) || return nothing
+    grids = GridLayout[x.content for x in c.rows.content if x.content isa GridLayout]
+    any(g -> !g.tellwidth[], grids) || return nothing
+    h, a, t = _head_size(c), _actions_size(c), _card_size(c.tools)
+    w = h[1] + _CARD_PADDING + a[1] + _CARD_PADDING + t[1]
+    for part in lower
+        part === c.rows || (w = max(w, _part_size(c, part)[1]))
+    end
+    for g in grids
+        w = max(w, g.tellwidth[] ? something(g.layoutobservables.autosize[][1], 0.0f0) : _fill_row_width(g))
+    end
+    size = Makie.Fixed(w)
+    c.rows.colsizes[1] == size || Makie.colsize!(c.rows, 1, size)
+    return nothing
+end
+
+# The width [px] that the row layout `g` with a widget that fills needs: its other columns, its gaps
+# and `_CARD_FILL_MIN` for the column of the widget, whose width is not determined
+function _fill_row_width(g::GridLayout)
+    GLB = Makie.GridLayoutBase
+    n = GLB.ncols(g)
+    w = sum(j -> something(GLB.determinedirsize(GLB.offset(g, j, GLB.Col()), g, GLB.Col()), _CARD_FILL_MIN), 1:n)
+    gaps = sum(gap -> gap isa Makie.Fixed ? gap.x : 0.0f0, g.addedcolgaps; init = 0.0f0)
+    return Float32(w + gaps)
 end
 
 """

@@ -890,6 +890,11 @@ added and removed with [`add_system!`](@ref) and [`remove_system!`](@ref). See
 [Adding and removing components](@ref components_page) and the section of the same name in the docstring of
 [`live_view`](@ref).
 
+## Projects
+
+A view is saved as a project folder that the window keeps up to date, and that people in other
+windows and coding agents change at the same time, see [Projects](@ref projects_page) and [`open_project`](@ref).
+
 ## Exporting the changes
 
 The "Export" button of the tool rail (or the toolbar) prints the changed poses as Julia code and copies it

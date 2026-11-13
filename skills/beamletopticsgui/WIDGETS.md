@@ -4,7 +4,7 @@ Recipes for `gui = live_view(...)` of BeamletOpticsGUI (`using BeamletOptics, Be
 needs a window, not for headless scripts). Use them when adding a component type whose parameters
 should be editable in the window, or a GUI extension. Everything works identically in
 `layout = :compact` and `layout = :app`. Look up any signature before use with
-`julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc BeamletOpticsGUI.CardRow)'`.
+`julia --project=<env> -e 'using REPL, BeamletOpticsGUI; display(@doc BeamletOpticsGUI.CardRow)'`.
 
 All card functions (`card_rows`, `card_actions`, `card_input`, `card_show!`) belong to
 BeamletOpticsGUI: extend them as `BeamletOpticsGUI.card_rows(x::MyType)`, never as
@@ -36,7 +36,7 @@ control on its page "Pose" (the rows of `card_rows`), and every card, also a pin
    own beam types add `beam_card_rows(x)...` (toggle `:beam_on`, `:show_beams` for Gaussian beamlets,
    `:polarization` and sliders `:pol_wavelength`, `:pol_amplitude` for polarized beams, the box
    `:flen` for the drawn length of rays that hit nothing).
-2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, attributes...)`
+2. One `CardRow` per line; cells are strings or `CardWidget(T; name, value, on, solve, fill, attributes...)`
    with `T` a Makie block (`Label`, `Slider`, `Toggle`, `Textbox`, `Button`, `Menu`) or an own widget type.
 3. `value(gui, obj)` returns what the widget shows, in display units (e.g. mm, %); it must be cheap,
    it runs after every move, solve and input.
@@ -85,6 +85,94 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
     CardWidget(Button; name = :block, label = "block",
         on = (gui, a, _) -> (a.transmission = 0.0), solve = true))
 ```
+
+### Widths of rows: a widget to the right edge, labels in one column
+
+Each row is laid out on its own, as wide as its cells; the widest row (or the head) sets the width of
+the card. Do not measure pixels to line rows up:
+
+- `CardWidget(T; fill = true, ...)`: the widget takes the rest of the width of the card, e.g. a
+  `Slider` that ends at the right edge. Its row then does not make the card wider (only as wide as
+  its other cells and a short widget need). At most one widget per row (`ArgumentError` otherwise);
+  a `width` among the attributes wins, and `fill` is ignored.
+- `CardRow(cells...; aligned = true)`: the first cells (texts) of all `aligned` rows of the card get
+  the width of the widest of them, so their second cells start at the same x. Rows without
+  `aligned` keep the width of their own first cell.
+
+```julia
+# A wheel with two neutral density filters: the labels in one column, the sliders to the right edge
+mutable struct MyFilterWheel{T} <: BeamletOptics.AbstractObject{T}
+    shape::BeamletOptics.PlanoSurfaceSDF{T}
+    od1::Float64
+    od2::Float64
+end
+
+BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
+    CardRow("OD 1",
+        CardWidget(Slider; name = :od1, range = 0:0.1:4, fill = true,
+            value = (gui, w) -> w.od1, on = (gui, w, v) -> (w.od1 = v));
+        aligned = true),
+    CardRow("OD 2 (back)",
+        CardWidget(Slider; name = :od2, range = 0:0.1:4, fill = true,
+            value = (gui, w) -> w.od2, on = (gui, w, v) -> (w.od2 = v));
+        aligned = true))
+```
+
+## Recipe: a card for a type of a project
+
+A project of BeamletOpticsProjects (`open_project(dir)`) may define own types in its code
+`src/<Name>.jl`. Their card goes into `src/gui.jl` of the project, which only the window loads:
+
+1. `src/<Name>.jl` defines the type and tells its constructor with a method of
+   `BeamletOpticsProjects.constructor_code(x)`: the code (a `String`) that builds `x` as it is now,
+   without its pose. Only then is a change of its shape on a card saved to its line of `system.jl`.
+2. `src/gui.jl` defines `BeamletOpticsGUI.card_rows(x::MyType)` as above. The window includes it into
+   the module of the project after `src/<Name>.jl` (its exported names are known, `BeamletOpticsGUI`
+   is bound), at the start and again whenever the files of `src/` change (the card shows the new rows
+   without a restart). An error in it is named in the status line (`src/gui.jl:<line>: ...`); the
+   window opens without its methods.
+3. An input of the card that changes what `constructor_code` returns (e.g. a slider of a parameter of
+   the shape, `solve = true`) draws the object again (`BeamletOptics.rerender!`), writes the new code
+   to its line (the line keeps `pos` and `rot`) and is one entry of the undo history: `Ctrl+Z` builds
+   the object again from the old code in its place, `Ctrl+Y` brings the changed one back. The steps
+   of a dragged slider are one entry.
+4. A type without `constructor_code` takes the inputs as in any window, but they live only in the
+   window: the status line says once per type that changes of its shape are not saved.
+5. Agents never load `src/gui.jl` (`load_project` does not include it, its packages are not part of
+   the project's `[packages]`); they see the new code in the line of the object and can change it
+   there.
+
+```julia
+# src/Bench.jl of the project "Bench"
+module Bench
+using BeamletOptics
+import ..BeamletOpticsProjects
+export Block
+
+# A block of a width and a thickness [m], which absorbs the rays that hit it
+struct Block{T} <: BeamletOptics.AbstractObject{T}
+    shape::BeamletOptics.PlanoSurfaceSDF{T}
+end
+Block(width, thickness) = Block(BeamletOptics.PlanoSurfaceSDF(thickness, width))
+BeamletOptics.interact3d(::BeamletOptics.AbstractSystem, ::Block, ::Beam, ::Ray) = nothing
+BeamletOpticsProjects.constructor_code(b::Block) = "Block($(b.shape.diameter), $(b.shape.thickness))"
+end
+```
+
+```julia
+# src/gui.jl of the project: the card of a Block, a slider of its width
+using BeamletOpticsGUI
+using GLMakie: Slider
+
+BeamletOpticsGUI.card_rows(b::Block) = (pose_card_rows(b)...,
+    CardRow("width [mm]", CardWidget(Slider; name = :width, range = 10.0:5.0:50.0,
+        value = (gui, b) -> 1e3 * b.shape.diameter,
+        on = (gui, b, w) -> (b.shape.diameter = 1e-3 * w), solve = true)))
+```
+
+A line `@component K1 = Block(0.025, 0.005) pos = (0.0, 0.1, 0.0)` of `system.jl` becomes
+`Block(0.04, 0.005)` after the slider moved to 40. Test it with `open_project(dir; display = false)`,
+`select!(gui, obj)` and `card_widget(gui, obj, :width)` (see `API.md`).
 
 ## Recipe: a card for your system type
 

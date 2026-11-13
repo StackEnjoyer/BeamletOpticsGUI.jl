@@ -16,18 +16,19 @@ script = export_script(gui) # the whole setup as a script (constructors of catal
 ```
 
 Look up the docstring of any name before use, e.g.
-`julia --project=<env> -e 'using BeamletOpticsGUI; display(@doc live_view)'`. Do not invent keywords.
+`julia --project=<env> -e 'using REPL, BeamletOpticsGUI; display(@doc live_view)'`. Do not invent keywords.
 
 ## Exported names (by category)
 
 | Category | Names |
 |----------|-------|
 | Window | `live_view`, `open_system`, `export_changes`, `export_script`, `retrace!` |
+| Projects (prototype) | `save_project`, `open_project` |
 | Scripting | `select!`, `spectator!`, `wait_solve` (plus methods of the BeamletOptics verbs, see "Scripting a window") |
 | Components and systems at runtime | `add_component!`, `remove_component!`, `add_system!`, `remove_system!`, `CatalogEntry`, `CatalogParam`, `CatalogGlass`, `component_catalog`, `catalog_glasses` |
 | Interactive helpers | `kinematic_controls!`, `view_cube!` |
 | Extending the window | `add_panel!`, `add_controls!`, `add_tool!` |
-| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!` |
+| Cards | `card_rows`, `pose_card_rows`, `beam_card_rows`, `card_actions`, `CardRow`, `CardWidget`, `card_input`, `card_show!`, `card_widget` |
 | Results views | `CardView`, `card_views`, `results_view!`, `ResultsView`, `refresh!` |
 
 Not exported: `BeamletOpticsGUI.install_agent_skill`.
@@ -179,7 +180,7 @@ set_pivot3d!(gui, group, position(lens))        # pivot of a group, nothing move
 select!(gui, lens); select!(gui, nothing)       # like a click
 select!(gui, [lens, mirror])                    # like Ctrl+click on each: moved, rotated, hidden, removed as one
 spectator!(gui, true)                           # like the key v
-wait_solve(gui)                                 # solve in the background shown, deferred solves done, also of linked windows
+wait_solve(gui)                                 # solve in the background shown, deferred solves done, also of linked windows and of a merge of the project files
 ```
 
 Screenshots and videos: `spectator!(gui; help = false, background = :black, cards = false, view_cube = false)`

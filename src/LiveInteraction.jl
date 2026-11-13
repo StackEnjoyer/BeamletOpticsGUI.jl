@@ -495,6 +495,9 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     undo_stack::Vector{_AnyHistoryEntry}
     redo_stack::Vector{_AnyHistoryEntry}
     last_key_step::Union{Nothing, _KeyStepInfo}
+    # pose of the object of the last key step before its motion, after its gesture (which may land
+    # a glide, see `gesture`), for the undo history, see `_key_step!`
+    step_from::Union{Nothing, Tuple{Point3{Float64}, Matrix{Float64}}}
     # selection box and gizmo of the keyboard controls
     box_obs::Observable{Vector{Point3f}}
     arrow_pos::Observable{Vector{Point3f}}
@@ -574,6 +577,14 @@ mutable struct KinematicController{H <: AbstractSystemRenderHandle}
     # changed object (or `nothing`) and the duration of the update [s], e.g. for the debug mode of
     # `live_view`, see `_debug_updated!`
     after_update::Function
+    # `obj -> Bool`, called at the start of each gesture of the mouse or the keys that changes the
+    # selection `obj`: a drag, a key step, a reset, an undo or redo onto it; `false` refuses the
+    # gesture, e.g. `live_view` refuses one on an object that another participant of its project
+    # claims, see `_gesture!`
+    gesture::Function
+    # `obj -> nothing`, called when a drag of the mouse ends, with the dragged selection, e.g.
+    # `live_view` fits its table to the setup again, see `_table_fit!`
+    drag_end::Function
 end
 
 function Base.show(io::IO, ctrl::KinematicController)
@@ -1486,9 +1497,16 @@ _redo_entry!(::KinematicController, e::_ActionEntry) = (e.redo(); nothing)
 Takes the entry `e` of the history back or does it again by `step!(ctrl, e)`, after it was moved to
 the `stack`. An action that no longer applies, e.g. on a component that another window of the same
 system removed meanwhile (see [`open_system`](@ref)), is dropped with a warning instead of an
-error. Returns whether the step was done.
+error. A step that the `gesture` of the `ctrl` refuses on the object of the entry (e.g. one that
+another participant of the project claims) is not done, and the entry goes back to the stack it
+came from. Returns whether the step was done.
 """
 function _history_step!(step!, ctrl::KinematicController, e, stack)
+    if !ctrl.gesture(e.obj)
+        filter!(x -> x !== e, stack)
+        push!(stack === ctrl.undo_stack ? ctrl.redo_stack : ctrl.undo_stack, e)
+        return false
+    end
     try
         step!(ctrl, e)
     catch err
@@ -1550,8 +1568,8 @@ end
 
 Moves or rotates the `obj` depending on the mode of the `ctrl`. Returns `false` if the `key` is
 not a control key. The step is along or about an axis of the gizmo, see `_control_axes`. If that
-axis is locked by the `constraints` of `obj` (see `_within_constraints`), the key is still consumed
-(returns `true`) but nothing moves.
+axis is locked by the `constraints` of `obj` (see `_within_constraints`) or the `gesture` of
+the `ctrl` refuses the step, the key is still consumed (returns `true`) but nothing moves.
 """
 function _key_step!(ctrl::KinematicController, @nospecialize(obj), key, factor)
     y, x, z = _control_axes(ctrl, obj)
@@ -1569,6 +1587,9 @@ function _key_step!(ctrl::KinematicController, @nospecialize(obj), key, factor)
     end
     isnothing(axis) && return false
     _within_constraints(ctrl, obj, ctrl.mode[], axis) || return true # locked: consumed, no motion
+    ctrl.gesture(obj) || return true # refused: consumed, no motion
+    # The undo of the step goes back to here: after the gesture, which may land a glide
+    ctrl.step_from = _pose(obj)
     _change!(ctrl, obj) do
         if ctrl.mode[] == :move
             translate3d!(obj, (sign * factor * ctrl.fine_step) .* axis)
@@ -2227,13 +2248,14 @@ function kinematic_controls!(
         Observable(spectator), true, nothing, select_modifier, Float64(drag_threshold),
         constraints_dict, Float64(source_pick_radius), ignore_keys,
         false, false, zeros(3), zeros(3), (0.0, 0.0), nothing, nothing, :none,
-        nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing,
+        nothing, _AnyHistoryEntry[], _AnyHistoryEntry[], nothing, nothing,
         box_obs, arrow_pos, arrow_dir, label_pos, ring_pts, arrow_color, label_color, ring_color,
         gizmo_size, gizmo_visible, help_obs, show_help, _HelpSection[], nothing, plots, Any[],
         nothing, obj -> false,
         () -> nothing, () -> false, pick, leaf -> false, _CLICK_HELP,
         Observable(:off), (obj, point) -> nothing, (obj, point) -> nothing, 0, 0.0, 0.0, nothing,
-        center, nothing, nothing, nothing, nothing, false, rect_obs, rect_visible, (obj, dt) -> nothing
+        center, nothing, nothing, nothing, nothing, false, rect_obs, rect_visible, (obj, dt) -> nothing,
+        obj -> true, obj -> nothing
     )
 
     # High priority, so that the camera does not receive events while an object is dragged
@@ -2345,6 +2367,7 @@ function kinematic_controls!(
                     ctrl.drag_start = nothing
                     ctrl.last_key_step = nothing
                     _push_history!(ctrl, obj, P0, R0, P1, R1)
+                    ctrl.drag_end(obj)
                 end
             elseif kind in (:pending_ring, :pending_arrow)
                 consume = true
@@ -2409,6 +2432,12 @@ function kinematic_controls!(
             cur = _px(scene)
             moved = hypot((cur .- ctrl.press_pos)...)
             moved >= ctrl.drag_threshold || return Consume(true)
+            if !ctrl.gesture(ctrl.selected[])
+                # Refused: neither the object nor the camera moves until the release
+                ctrl.press_kind = :none
+                ctrl.press_leaf = nothing
+                return Consume(true)
+            end
             ctrl.dragging = true
             ctrl.drag_start = _pose(ctrl.selected[])
             _start_snap!(ctrl, ctrl.selected[])
@@ -2465,6 +2494,8 @@ function kinematic_controls!(
             # One level up in the hierarchy of groups, deselect at the top level
             ctrl.selected[] = _parent_selection(ctrl, obj)
             _update_selection_box!(ctrl)
+        elseif event.key == Keyboard.backspace && !ctrl.gesture(obj)
+            # a reset that is refused, see `gesture`
         elseif event.key == Keyboard.backspace && _is_multi(obj)
             _reset_poses!(ctrl, obj)
         elseif event.key == Keyboard.backspace
@@ -2475,8 +2506,11 @@ function kinematic_controls!(
             _push_history!(ctrl, obj, P0, R0, P1, R1)
             _request_update!(ctrl)
         else
+            ctrl.step_from = nothing
             P0, R0 = _pose(obj)
             if _key_step!(ctrl, obj, event.key, _shift_pressed(scene) ? 10 : 1)
+                # the pose before the motion, after a glide that the gesture landed
+                isnothing(ctrl.step_from) || ((P0, R0) = ctrl.step_from)
                 P1, R1 = _pose(obj)
                 _record_key_step!(ctrl, obj, event.key, P0, R0, P1, R1)
                 _request_update!(ctrl)

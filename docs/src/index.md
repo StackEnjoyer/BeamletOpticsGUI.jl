@@ -1,6 +1,6 @@
 # BeamletOpticsGUI.jl
 
-BeamletOpticsGUI is the interactive GUI of [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl)
+BeamletOpticsGUI is the interactive GUI of [BeamletOptics.jl](https://github.com/StackEnjoyer/BeamletOptics.jl)
 (BMO), a package for non-sequential 3D ray and Gaussian beamlet tracing. It opens a window in which a BMO
 system and its beams are drawn, the components are moved and rotated with the mouse and keyboard, and
 the beams and the detector views on the cards of the detectors are updated after each change:

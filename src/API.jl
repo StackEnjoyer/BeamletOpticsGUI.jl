@@ -231,6 +231,11 @@ textboxes take the keyboard. `T` may be an own widget type with methods of [`car
 - `solve = true`: the input changes the optics, e.g. a parameter of `obj`: a running solve is
   cancelled before `on`, and the systems are solved again afterwards (or the beams are marked as
   outdated without auto tracing), like after a move, via the `on_change` of the controls.
+- `fill = true`: the widget takes the rest of the width of the card, e.g. a `Slider` that ends at
+  the right edge of the card, however wide its other rows or its head make it. Its row spans the
+  width of the card and makes the card only as wide as its other cells and a short widget need. At
+  most one widget of a [`CardRow`](@ref) fills. A `width` among the `attributes` wins: the widget
+  keeps that width, and `fill` is ignored.
 - `name`: finds the widget on a card, e.g. in tests.
 
 `gui` is the `LiveView`, e.g. for the beams of the last solve or the status line.
@@ -242,22 +247,37 @@ struct CardWidget
     on::Any
     solve::Bool
     name::Union{Nothing, Symbol}
+    fill::Bool
 end
 
-CardWidget(type::Type; name = nothing, value = nothing, on = nothing, solve::Bool = false, attributes...) =
-    CardWidget(type, NamedTuple(attributes), value, on, solve, name)
+CardWidget(type::Type; name = nothing, value = nothing, on = nothing, solve::Bool = false, fill::Bool = false,
+    attributes...) = CardWidget(type, NamedTuple(attributes), value, on, solve, name, fill)
 
 """
-    CardRow(cells...)
+    CardRow(cells...; aligned = false)
 
 A line of a card of [`live_view`](@ref), see [`card_rows`](@ref): its `cells` from left to right,
 each a text or a [`CardWidget`](@ref).
+
+- `aligned = true`: the first cell, if it is a text, is as wide as the widest first text of the
+  `aligned` rows of the card, such that their second cells start at the same x, e.g. the labels of
+  a column of sliders. The first cell of a row without `aligned` keeps its own width.
+
+At most one widget of a row has `fill = true`, else an `ArgumentError` is thrown: it takes the rest
+of the width of the card, see [`CardWidget`](@ref).
 """
 struct CardRow
     cells::Vector{Union{String, CardWidget}}
+    aligned::Bool
+    function CardRow(cells::Vector{Union{String, CardWidget}}, aligned::Bool)
+        count(c -> c isa CardWidget && c.fill, cells) <= 1 ||
+            throw(ArgumentError("a CardRow has at most one CardWidget with `fill = true`"))
+        return new(cells, aligned)
+    end
 end
 
-CardRow(cells::Union{AbstractString, CardWidget}...) = CardRow(Union{String, CardWidget}[_card_cell(c) for c in cells])
+CardRow(cells::Union{AbstractString, CardWidget}...; aligned::Bool = false) =
+    CardRow(Union{String, CardWidget}[_card_cell(c) for c in cells], aligned)
 _card_cell(s::AbstractString) = String(s)
 _card_cell(w::CardWidget) = w
 
@@ -415,6 +435,24 @@ also keep what the user is typing: the method for a `Textbox` does not change a 
 unless it is called with `force = true`, which the card does after an input was applied.
 """
 function card_show! end
+
+"""
+    card_widget(gui::LiveView, obj, name::Symbol) -> Union{Nothing, Makie.Block}
+
+The widget declared with `name` (see [`CardWidget`](@ref)) on a card of the [`live_view`](@ref)
+`gui` that shows `obj`: the card of the selection, a pinned card or, in the layout `:app`, the
+docked card. `nothing` if no card shows `obj` or its page has no widget of that `name`. An own
+widget type is returned as the object that the card built (see [`card_input`](@ref)).
+
+For tests and scripts: e.g. a slider of [`card_rows`](@ref) of an own type, moved as by the mouse:
+
+```julia
+select!(gui, obj)  # opens the card of the selection
+s = card_widget(gui, obj, :width)
+Makie.set_close_to!(s, 30.0)
+```
+"""
+function card_widget end
 
 """
     CardView(f, form::Symbol; name::Symbol, label = string(name), unit = "", normalize = false,
@@ -645,25 +683,6 @@ source of the `gui`. With the `system` that it is traced through, the source onl
 system: it keeps its marker, but is neither traced nor drawn.
 """
 function remove_component! end
-
-"""
-    add_system!(gui; label = nothing, select = true) -> System
-
-Adds a new, empty `System` to the [`live_view`](@ref) window `gui` at runtime, like "System" among
-its tools, and returns it. `label` names it, by default "System n". With `select`, its card is
-shown and it gets the next component of the catalog. Its components and sources are added with
-[`add_component!`](@ref), e.g. an object that another system holds already:
-
-```julia
-rx = add_system!(gui; label = "Receiver")
-add_component!(gui, mirror; system = rx)    # the mirror of the transmitter, in both systems
-add_component!(gui, Beam([0.0, 0.1, 0], [0.0, -1, 0], 905e-9); system = rx)
-```
-
-Each system is traced on its own, see "Tracing per system" of [`live_view`](@ref).
-[`remove_system!`](@ref) removes a system again; both are entries of the undo history.
-"""
-function add_system! end
 
 """
     remove_system!(gui, system) -> system

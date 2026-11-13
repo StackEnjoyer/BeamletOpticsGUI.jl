@@ -17,11 +17,17 @@ import BeamletOptics: translate3d!, translate_to3d!, rotate3d!, set_pivot3d!
 const BMO = BeamletOptics
 
 export live_view, kinematic_controls!, view_cube!, export_changes, export_script, card_rows,
-       pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!,
+       pose_card_rows, beam_card_rows, card_actions, CardRow, CardWidget, card_input, card_show!, card_widget,
        add_panel!, add_controls!, add_tool!, retrace!, add_component!, remove_component!, open_system,
        add_system!, remove_system!,
        CatalogEntry, CatalogParam, CatalogGlass, component_catalog, catalog_glasses, select!,
-       spectator!, wait_solve, CardView, card_views, results_view!, ResultsView, refresh!
+       spectator!, wait_solve, CardView, card_views, results_view!, ResultsView, refresh!, save_project, open_project
+
+import BeamletOpticsProjects
+# Methods of these for a window: one function each, so that loading both packages names no two
+import BeamletOpticsProjects: save_project, add_system!
+import NativeFileDialog
+import TOML
 
 import Makie
 using Makie: Figure, Axis3, LScene, mesh!, lines!, linesegments!, RGBf, RGBAf, scatter!, text!,
@@ -109,6 +115,18 @@ include("LiveCatalogWindow.jl")
 include("LiveCopy.jl")
 include("LiveGroup.jl")
 include("LiveGroupKeys.jl")
+include("LiveProject.jl")
+include("LiveProjectSync.jl")
+include("LiveProjectWatch.jl")
+include("LiveProjectGlide.jl")
+include("LiveProjectSession.jl")
+include("LiveProjectPresence.jl")
+include("LiveProjectClaims.jl")
+include("LiveActivity.jl")
+include("LiveActivityCues.jl")
+include("LiveTimeline.jl")
+include("LiveActivityHooks.jl")
+include("LiveProjectVersions.jl")
 include("LivePivot.jl")
 include("LiveDebug.jl")
 include("LiveDebugHUD.jl")

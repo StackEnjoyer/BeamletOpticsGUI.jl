@@ -64,7 +64,9 @@ end
 Turns the source `src` of the `gui` about its position such that it points at the `point` [m], by
 the smallest rotation (a half turn about the rotation axis of the controls). One gesture of the
 undo history, solved like a move. Returns whether it turned; otherwise the status line tells why
-not: a source that is not movable or whose rotation is constrained, and a point at its position.
+not: a source that is not movable or whose rotation is constrained, one that another participant of
+the project claims (see `_gesture!`, also when it was claimed after the aiming started), and a
+point at its position.
 """
 function _aim!(gui::LiveView, src::_Source, point)
     ctrl = gui.controls
@@ -77,6 +79,7 @@ function _aim!(gui::LiveView, src::_Source, point)
         gui.status.text[] = "$name can not rotate freely, see the constraints"
         return false
     end
+    _gesture!(gui, src) || return false
     P0, R0 = _pose(src)
     d = Vector{Float64}(point) .- Vector{Float64}(P0)
     if norm(d) < 1e-12

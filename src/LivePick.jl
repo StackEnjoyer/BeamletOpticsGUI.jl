@@ -104,11 +104,14 @@ _pick_candidate(@nospecialize(obj)) = obj isa BMO.ObjectOrGroup || _is_source(ob
 Applies the pick of the `gui` to `obj`, a component or a source that was clicked: it is added to
 the system of the pick or taken out of it, see `_add_member!`, `_remove_member!` and
 `_set_source_system!`. What can not be done, e.g. an object that is in the system already, only
-shows a message in the status line.
+shows a message in the status line. A gesture on the system (its line changes): refused while
+another participant of the project claims it, see `_gesture!`.
 """
 function _pick_member!(gui::LiveView, @nospecialize(obj))
     pick = _member_pick(gui)
     isnothing(pick) && return nothing
+    # claimed by another participant: the status line names the holder
+    _gesture!(gui, pick.sys) || return nothing
     top = _is_pair_source(gui, obj) ? obj : _component_top(gui, obj)
     try
         _apply_member_pick!(gui, top, pick.sys, pick.add)

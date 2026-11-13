@@ -177,7 +177,7 @@ bare number in the unit that the box shows (see `_posecard_unit`), which becomes
 box, see `_set_pose_value!`. Of a selection of several objects, an angle by which it turns about
 the global axis x, y or z. An invalid input only shows a message in the status line, e.g. "enter a
 number in mm", and so does an input for an object that is not movable, e.g. an inspected one (see
-`_inspect!`).
+`_inspect!`), or that another participant of the project claims (see `_gesture!`).
 """
 _apply_pose_input!(gui::LiveView, ::Nothing, ::Int, _) = _update_inspector!(gui; force = true)
 function _apply_pose_input!(gui::LiveView, @nospecialize(obj), k::Int, s)
@@ -193,10 +193,14 @@ function _apply_pose_input!(gui::LiveView, @nospecialize(obj), k::Int, s)
     return nothing
 end
 
-# Whether the pose of `obj` can be changed on its card, else a message in the status line
+# Whether the pose of `obj` can be changed on its card, else a message in the status line: it is
+# movable and no other participant of the project claims it (see `_gesture!`, which claims it)
 function _posecard_movable(gui::LiveView, @nospecialize(obj))
-    _is_movable(gui.controls, obj) && return true
-    gui.status.text[] = "$(_label(gui, obj)) is not movable, its pose can not be changed"
+    if !_is_movable(gui.controls, obj)
+        gui.status.text[] = "$(_label(gui, obj)) is not movable, its pose can not be changed"
+    elseif _gesture!(gui, obj)
+        return true
+    end
     _update_inspector!(gui; force = true)
     return false
 end
@@ -498,6 +502,7 @@ function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obs
     sel = _screen_rect(scene, corners, obj)
     c.auto_collapsed = false
     c.step_shown = _shows_step(gui, c, obj)
+    _fit_rows!(c)
     _fit_properties!(c)
     _fit_view!(c, view)
     size = _card_size(c)
@@ -697,7 +702,9 @@ host of the declarations, see `_AbstractCard`, e.g. the floating card, whose new
 before the mouse shield of the cards (see `_on_content_built!`), or the docked card of the app.
 """
 function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
-    actions, rows = _declarations(gui, c, obj)
+    # in the newest world: `card_rows` of a type of a project may be newer than the running code,
+    # e.g. of its `src/gui.jl`, see `_include_gui!`
+    actions, rows = Base.invokelatest(_declarations, gui, c, obj)
     key = (_layout_key(actions), _layout_key(rows))
     declared = CardWidget[_declared_widgets(actions)..., _declared_widgets(rows)...]
     if key == c.content_key
@@ -710,17 +717,39 @@ function _build_content!(gui::LiveView, c::_AbstractCard, @nospecialize(obj))
     end
     grids = GridLayout[]
     for (i, row) in enumerate(rows)
-        layout = GridLayout(c.rows[i, 1]; _row_attributes(c)...)
+        # a row with a widget that fills spans the width of the card without telling its own
+        layout = GridLayout(c.rows[i, 1]; _row_attributes(c)..., (_fills(row) ? (; tellwidth = false) : (;))...)
         for (j, cell) in enumerate(row.cells)
             _add_cell!(gui, c, layout[1, j], cell)
         end
         push!(grids, layout)
     end
+    _align_first_cells!(rows, grids)
     c.content_key = key
     push!(gui.cards.settle, (gui.cards.ticks, GridLayout[c.actions; grids]))
     _on_content_built!(gui, c)
     return nothing
 end
+
+"""
+    _align_first_cells!(rows, grids)
+
+Gives the first cells of the `aligned` rows among the declared `rows` (see [`CardRow`](@ref)), if
+they are texts, the width of the widest of them, such that their second cells start at the same x:
+the first column of each of their layouts `grids` gets that width. The texts are part of the layout
+of the declarations (see `_layout_key`), hence widths that are set once stay right.
+"""
+function _align_first_cells!(rows, grids::Vector{GridLayout})
+    aligned = GridLayout[g for (r, g) in zip(rows, grids) if r.aligned && !isempty(r.cells) && first(r.cells) isa String]
+    isempty(aligned) && return nothing
+    w = maximum(_first_cell_width, aligned)
+    foreach(g -> Makie.colsize!(g, 1, Makie.Fixed(w)), aligned)
+    return nothing
+end
+
+# The width that the text in the first column of the row layout `g` needs [px]
+_first_cell_width(g::GridLayout) =
+    maximum(l -> something(l.layoutobservables.autosize[][1], 0.0f0), Makie.contents(g[1, 1]))
 
 # Ticks from the growth of the viewports of new widgets until their size is restored, see
 # `_settle_cards!`: about 0.1 s; a restore in the next frame is missed now and then
@@ -884,12 +913,19 @@ end
 
 Applies the input `v` of the declared widget `i` of the card `c` to the object of the card (see
 `_card_object`) with `on` of its declaration (and solves again for `solve = true`), then shows the
-new values on all cards. Ignored while the card shows new values (`refreshing`).
+new values on all cards. Ignored while the card shows new values (`refreshing`). An input on an
+object that another participant of the project claims is refused (see `_gesture!`): the card shows
+the values of the object again.
 """
 function _on_input!(gui::LiveView, c::_AbstractCard, i::Int, v)
     c.refreshing && return nothing
     w = c.widgets[i][2]
-    _apply_input!(gui, w.on, _card_object(gui, c), v, w.solve)
+    obj = _card_object(gui, c)
+    if !isnothing(w.on) && !isnothing(obj) && !_gesture!(gui, obj)
+        _refresh_card!(gui, c; force = true)
+        return nothing
+    end
+    _apply_input!(gui, w.on, obj, v, w.solve)
     _update_inspector!(gui)
     _update_cards!(gui)
     return nothing
@@ -898,12 +934,173 @@ _apply_input!(gui::LiveView, on, @nospecialize(obj), v, solve::Bool) = _apply_on
 _apply_input!(::LiveView, ::Nothing, _, _, ::Bool) = nothing
 _apply_input!(::LiveView, _, ::Nothing, _, ::Bool) = nothing
 _apply_input!(::LiveView, ::Nothing, ::Nothing, _, ::Bool) = nothing
-_apply_on!(gui::LiveView, on, @nospecialize(obj), v, ::Val{false}) = (on(gui, obj, v); nothing)
+_apply_on!(gui::LiveView, on, @nospecialize(obj), v, ::Val{false}) = (_shape_input!(gui, on, obj, v); nothing)
 # The input changes the optics, see `solve` of `CardWidget`: like a move, via the `on_change` of
 # the controls, which callers of the live view may extend
 function _apply_on!(gui::LiveView, on, @nospecialize(obj), v, ::Val{true})
-    _change!(() -> on(gui, obj, v), gui.controls, obj)
+    unsaved = Ref(false)
+    _change!(() -> (unsaved[] = _shape_input!(gui, on, obj, v)), gui.controls, obj)
     gui.controls.on_change(obj)
+    # after the status of the solve
+    unsaved[] && _note_unsaved_shape!(gui, obj)
+    return nothing
+end
+
+#=
+Changes of the shape on a card: an input that changes the code of the constructor of an object of
+the code of a project (`BeamletOpticsProjects.constructor_code`, e.g. of an own type of the project)
+draws it again, saves the new code to its line and is undone by building it from the old code
+=#
+
+"""
+    _shape_input!(gui, on, obj, v) -> Bool
+
+Calls `on(gui, obj, v)` of an input of a card of `obj` (in the newest world: `on` may be of the
+`src/gui.jl` of a project, see `_include_gui!`). For an object with the code of its constructor in
+its `origin` (an object of a project, of the catalog or added with `code`), the code that
+`BeamletOpticsProjects.constructor_code` tells before and after `on` is compared: if it changed, the
+shape changed, see `_shape_changed!`. Returns whether the type of such an object tells no code in a
+window of a project (its changes of the shape are not saved, see `_note_unsaved_shape!`).
+"""
+function _shape_input!(gui::LiveView, on, @nospecialize(obj), v)
+    origin = get(gui.components.origin, obj, nothing)
+    code = isnothing(origin) ? nothing : get(origin, :code, nothing)
+    if !(code isa AbstractString)
+        Base.invokelatest(on, gui, obj, v)
+        return false
+    end
+    before = _constructor_code(obj)
+    Base.invokelatest(on, gui, obj, v)
+    after = _constructor_code(obj)
+    isnothing(after) && return !isnothing(_project_view(gui))
+    after == before || _shape_changed!(gui, obj, String(code), after)
+    return false
+end
+
+"""The code of the constructor of `obj` by `BeamletOpticsProjects.constructor_code`, or `nothing`."""
+function _constructor_code(@nospecialize(obj))
+    # a method of the code of a project is newer than the running code
+    code = Base.invokelatest(BMOP.constructor_code, obj)
+    return code isa AbstractString ? String(code) : nothing
+end
+
+"""
+    _note_unsaved_shape!(gui, obj)
+
+Says in the status line of the `gui`, once per type, that the changes of the shape of objects of the
+type of `obj` are not saved to the files of the project: it has no
+`BeamletOpticsProjects.constructor_code`. The input itself is applied as without a project.
+"""
+function _note_unsaved_shape!(gui::LiveView, @nospecialize(obj))
+    T = nameof(typeof(obj))
+    told = _own_code(something(_project_view(gui), gui)).unsaved
+    T in told && return nothing
+    push!(told, T)
+    gui.status.text[] = "changes of the shape of $T are not saved: it has no `constructor_code`"
+    return nothing
+end
+
+"""
+    _ShapeChange
+
+The object of the entry of the undo history of a change of the shape of `new` on its card (see
+`_shape_changed!`), from the code `old_code` of its constructor: undo puts `old`, built from
+`old_code` at the first undo (see `_build_from_code`), in the place of `new` (see `_replace!`), redo
+puts `new` back, each with its `origin` (`old_origin`, `new_origin`). Its objects (see
+`_selection_objects`) are both, such that an undo and a redo ask the claims of the entry of the
+project. Inputs on the same object, each less than 1 s after the last one (`time`), e.g. the steps
+of a slider that is dragged, are one entry.
+"""
+mutable struct _ShapeChange
+    const new::Any
+    const old_code::String
+    old::Any
+    old_origin::Any
+    new_origin::Any
+    time::Float64
+end
+_selection_objects(s::_ShapeChange) = isnothing(s.old) ? Any[s.new] : Any[s.new, s.old]
+
+"""
+    _shape_changed!(gui, obj, old, new)
+
+An input on the card of `obj` changed the code of its constructor from `old` to `new`: the code of
+its `origin` becomes `new` (the autosave writes it to the line of `obj`, see `_project_parts`), the
+handles of `obj` in the pool draw it again (`BeamletOptics.rerender!`), and the change is recorded
+in the undo history, see `_ShapeChange`.
+"""
+function _shape_changed!(gui::LiveView, @nospecialize(obj), old::String, new::String)
+    comp = gui.components
+    # e.g. removed by the input
+    haskey(comp.origin, obj) || return nothing
+    comp.origin[obj] = merge(comp.origin[obj], (; code = new))
+    for oh in _pool_handles(gui, obj)
+        Base.invokelatest(BMO.rerender!, oh)
+    end
+    _update_selection_box!(gui.controls)
+    comp.recording && _record_shape!(gui, obj, old)
+    return nothing
+end
+
+# Records the change of the shape of `obj` from the code `old`, see `_ShapeChange`
+function _record_shape!(gui::LiveView, @nospecialize(obj), old::String)
+    ctrl = gui.controls
+    now = time()
+    if !isempty(ctrl.undo_stack)
+        e = last(ctrl.undo_stack)
+        if e isa _ActionEntry && e.obj isa _ShapeChange && e.obj.new === obj && isnothing(e.obj.old) &&
+           now - e.obj.time <= 1.0
+            e.obj.time = now
+            empty!(ctrl.redo_stack)
+            ctrl.last_key_step = nothing
+            return nothing
+        end
+    end
+    s = _ShapeChange(obj, old, nothing, nothing, nothing, now)
+    _push_action!(ctrl, s, () -> _undo_shape!(gui, s), () -> _redo_shape!(gui, s))
+    return nothing
+end
+
+function _undo_shape!(gui::LiveView, s::_ShapeChange)
+    if isnothing(s.old)
+        old = _build_from_code(gui, s.new, s.old_code)
+        s.old_origin = merge(gui.components.origin[s.new], (; code = s.old_code, pose0 = _pose(old)))
+        s.old = old
+    end
+    s.new_origin = gui.components.origin[s.new]
+    _unrecorded(() -> _replace!(gui, s.new, s.old, s.old_origin), gui)
+    return nothing
+end
+
+_redo_shape!(gui::LiveView, s::_ShapeChange) =
+    (_unrecorded(() -> _replace!(gui, s.old, s.new, s.new_origin), gui); nothing)
+
+"""
+    _build_from_code(gui, obj, code)
+
+Builds an object anew from the `code` of the constructor of `obj`: evaluated in the module of the
+project of the `gui` as the window loaded it last (see `_OwnCode`), else in the module of the type of
+`obj`. Throws an `ArgumentError` if the code does not build, which drops the entry of the undo
+history (see `_history_step!`).
+"""
+function _build_from_code(gui::LiveView, @nospecialize(obj), code::String)
+    mod = something(_own_code(something(_project_view(gui), gui)).mod, parentmodule(typeof(obj)))
+    try
+        return Core.eval(mod, Meta.parse(code))
+    catch e
+        e isa InterruptException && rethrow()
+        throw(ArgumentError("$code does not build: $(_message_line(e))"))
+    end
+end
+
+# See the docstring in `API.jl`: the cards, floating or docked, see `_edit_cards`, whose widgets were
+# built for `obj` (`pose`, see `_refresh_card!`)
+function card_widget(gui::LiveView, @nospecialize(obj), name::Symbol)
+    for c in _edit_cards(gui)
+        (c.pose !== nothing && c.pose[1] === obj && _card_object(gui, c) === obj) || continue
+        w = _card_widget(c, name)
+        isnothing(w) || return w
+    end
     return nothing
 end
 
@@ -929,7 +1126,8 @@ function _refresh_card!(gui::LiveView, c::_AbstractCard; force::Bool = false)
     _refresh_selection_part!(gui, c, obj)
     return nothing
 end
-_refresh_widget!(b, value, gui::LiveView, @nospecialize(obj); force::Bool = false) = _show_value!(b, value(gui, obj), force)
+_refresh_widget!(b, value, gui::LiveView, @nospecialize(obj); force::Bool = false) =
+    _show_value!(b, Base.invokelatest(value, gui, obj), force)
 _refresh_widget!(_, ::Nothing, ::LiveView, _; force::Bool = false) = nothing
 
 """
@@ -1500,6 +1698,8 @@ function _connect_cards!(gui::LiveView)
                  _over_catalog(gui) || _card_menu_open(gui)
     # not in `over`: a press on the debug card ends the input into the textboxes of the cards
     ctrl.ignore_mouse = () -> over() || _over_debug(gui) || _outside_view(gui)
+    # the gestures of the controls ask the claims of the project, see `LiveProjectClaims.jl`
+    _connect_claims!(gui)
     foreach(c -> _connect_card!(gui, c), gui.cards.all)
     push!(ctrl.listeners, on(ev.tick) do tick
         # a tick tells whether the frame before it was drawn, see `_settle_cards!`

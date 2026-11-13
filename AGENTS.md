@@ -1,6 +1,6 @@
 # BeamletOpticsGUI.jl: developer instructions for coding agents
 
-The interactive GUI of [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl) (BMO):
+The interactive GUI of [BeamletOptics.jl](https://github.com/StackEnjoyer/BeamletOptics.jl) (BMO):
 `live_view` and the tools around it (kinematic controls, view cube, cards, custom panels, controls
 and tools), built on Makie. BMO does the physics and draws the components; this package arranges
 them into an interactive window.
@@ -185,8 +185,9 @@ describe it as available in docs or the skill.
 
 ## Releases
 
-The users of a registered version get BeamletOptics from the registry: Pkg reads `[sources]` only
-in the active project, never in a dependency. The entries stay in the registered version; the
+The users of a registered version get BeamletOptics from the registry: Pkg reads `[sources]` of
+the active project and of dependencies tracked by path, never of a registered dependency (checked
+on Julia 1.13). The entries stay in the registered version; the
 docs of a tag remove them and use the registered BMO. BMO and the GUI are released together: the
 latest registered GUI works with the latest registered BMO.
 

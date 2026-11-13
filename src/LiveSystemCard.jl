@@ -481,11 +481,15 @@ end
 
 "×" of the member `i` of the list of the card of the system `sys` (see `_members`): a source has no
 system afterwards (see `_set_source_system!`), an object is taken out of `sys` and stays in the
-view (see `_remove_member!`). What can not be done only shows a message in the status line.
+view (see `_remove_member!`). What can not be done only shows a message in the status line. A
+gesture on `sys` (its line changes): refused while another participant of the project claims it,
+see `_gesture!`.
 """
 function _take_out_member!(gui::LiveView, sys::BMO.AbstractSystem, i::Int)
     members = _members(gui, sys)
     i <= length(members) || return nothing
+    # claimed by another participant: the status line names the holder
+    _gesture!(gui, sys) || return nothing
     try
         _take_out!(gui, members[i], sys)
     catch e
@@ -513,13 +517,16 @@ The name
 
 Names the system `sys` of the `gui` `name`, the input of the textbox of the title of its card: in
 the component menu, the object tree, the catalog and on the cards. An empty name only shows a
-message in the status line.
+message in the status line. A gesture on `sys`: a system that another participant of the project
+claims keeps its name, the status line names the holder (see `_gesture!`).
 """
 function _rename_system!(gui::LiveView, sys::BMO.AbstractSystem, name)
     name = strip(something(name, ""))
     old = _label(gui, sys)
     if isempty(name)
         gui.status.text[] = "enter a name for $old"
+    elseif name != old && !_gesture!(gui, sys)
+        # claimed by another participant, see `_gesture!`
     elseif name != old
         gui.labels[sys] = gui.objects.names[sys] = String(name)
         h = _system_handle(gui, sys)

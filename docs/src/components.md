@@ -305,7 +305,7 @@ gui = live_view(System() => beam; catalog = entries)
 ```@docs; canonical=false
 add_component!
 remove_component!
-add_system!
+add_system!(::BeamletOpticsGUI.LiveView)
 remove_system!
 CatalogEntry
 CatalogParam

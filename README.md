@@ -10,7 +10,7 @@
 [![codecov](https://codecov.io/gh/StackEnjoyer/BeamletOpticsGUI.jl/graph/badge.svg)](https://codecov.io/gh/StackEnjoyer/BeamletOpticsGUI.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
-Interactive GUI for [BeamletOptics.jl](https://github.com/JuliaPhysics/BeamletOptics.jl): move the
+Interactive GUI for [BeamletOptics.jl](https://github.com/StackEnjoyer/BeamletOptics.jl): move the
 components of an optical setup with the mouse and keyboard, and see the beams and detector signals
 update live. BeamletOptics computes the physics and draws the components; this package arranges
 them into an interactive window.

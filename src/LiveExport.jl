@@ -532,9 +532,10 @@ function _export_code(gui::LiveView)
     for obj in comp.added
         n += _export_added_code!(lines, cx, obj)
     end
-    # a group made in the window that is not listed as added
+    # a group made in the window that is not listed as added; not one that the view started with,
+    # e.g. a group of a project (see `open_project`), which the script has already
     for top in shown
-        _exports_as_group(gui, copies, top) && !(top in cx.written) &&
+        _exports_as_group(gui, copies, top) && !(top in cx.written) && !haskey(comp.start_systems, top) &&
             (n += _export_grouping_lines!(lines, cx, top))
     end
     n += _export_member_lines!(lines, gui, names, systems)

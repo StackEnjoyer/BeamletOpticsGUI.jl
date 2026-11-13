@@ -3,7 +3,7 @@
 The exported names of BeamletOpticsGUI. The functions and types of BeamletOptics that the GUI
 builds on (`render!`, `live_render!`, `update_render!`, `remove_render!`, `pick_object` and the
 render handle protocol) are documented on the
-[BeamletOptics site](https://github.com/JuliaPhysics/BeamletOptics.jl).
+[BeamletOptics site](https://github.com/StackEnjoyer/BeamletOptics.jl).
 
 ```@docs
 BeamletOpticsGUI
@@ -36,12 +36,19 @@ wait_solve
 Makie.record(::Any, ::BeamletOpticsGUI.LiveView, ::AbstractString, ::Any)
 ```
 
+## Projects
+
+```@docs
+open_project
+save_project(::BeamletOpticsGUI.LiveView, ::AbstractString)
+```
+
 ## Adding and removing components
 
 ```@docs
 add_component!
 remove_component!
-add_system!
+add_system!(::BeamletOpticsGUI.LiveView)
 remove_system!
 CatalogEntry
 CatalogParam
@@ -68,6 +75,7 @@ CardRow
 CardWidget
 card_input
 card_show!
+card_widget
 ```
 
 ## Results views
