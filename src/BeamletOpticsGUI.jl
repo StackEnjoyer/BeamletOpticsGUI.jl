@@ -24,7 +24,8 @@ export live_view, kinematic_controls!, view_cube!, export_changes, export_script
        spectator!, wait_solve, save_project, open_project
 
 import BeamletOpticsProjects
-import BeamletOpticsProjects: save_project
+# Methods of these for a window: one function each, so that loading both packages names no two
+import BeamletOpticsProjects: save_project, add_system!
 import NativeFileDialog
 import TOML
 

@@ -551,25 +551,6 @@ system: it keeps its marker, but is neither traced nor drawn.
 function remove_component! end
 
 """
-    add_system!(gui; label = nothing, select = true) -> System
-
-Adds a new, empty `System` to the [`live_view`](@ref) window `gui` at runtime, like "System" among
-its tools, and returns it. `label` names it, by default "System n". With `select`, its card is
-shown and it gets the next component of the catalog. Its components and sources are added with
-[`add_component!`](@ref), e.g. an object that another system holds already:
-
-```julia
-rx = add_system!(gui; label = "Receiver")
-add_component!(gui, mirror; system = rx)    # the mirror of the transmitter, in both systems
-add_component!(gui, Beam([0.0, 0.1, 0], [0.0, -1, 0], 905e-9); system = rx)
-```
-
-Each system is traced on its own, see "Tracing per system" of [`live_view`](@ref).
-[`remove_system!`](@ref) removes a system again; both are entries of the undo history.
-"""
-function add_system! end
-
-"""
     remove_system!(gui, system) -> system
 
 Removes the `system` from the [`live_view`](@ref) window `gui`, like "Remove system" on its card. Nothing
