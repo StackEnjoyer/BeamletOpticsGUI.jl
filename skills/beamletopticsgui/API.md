@@ -115,7 +115,7 @@ drawn with `color = :wavelength` (every ray in the display color of its own wave
 for infrared and dark violet for ultraviolet), unless its `beam_kwargs` set a fixed `color` for all
 rays (`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`;
 `(; color = :wavelength)` or `(:wavelength, alpha)` are accepted). A view may start
-without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
+without a source: `live_view()` (one empty `System`), `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
 `add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))")` gives the constructor call of an
 object built in code (also of a source): add it in the pose in which `code` constructs it and move
 it afterwards (inside `retrace!(gui) do ... end`); `export_script` then writes the call and the

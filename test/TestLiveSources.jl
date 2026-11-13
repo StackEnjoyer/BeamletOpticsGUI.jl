@@ -108,7 +108,13 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(a, b => beam)
         @test GUI._systems(gui) == [a, b] && length(gui.pairs) == 1
         close(gui)
-        @test_throws ArgumentError live_view()
+        # without a system: an empty window with one empty system, in both layouts
+        for layout in (:compact, :app)
+            gui = _live_view(; layout)
+            @test length(GUI._systems(gui)) == 1 && isempty(gui.pairs)
+            @test only(GUI._systems(gui)) isa System && isempty(BMO.objects(only(GUI._systems(gui))))
+            close(gui)
+        end
     end
 
     @testset "add, $layout" for layout in (:compact, :app)

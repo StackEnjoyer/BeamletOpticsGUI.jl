@@ -58,7 +58,7 @@ When this Skill is active:
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
    controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added
    to and removed from the view in the window (catalog "Components", keys `Insert` and `Delete`) or from code with
-   `add_component!` and `remove_component!` (`API.md`); `live_view(System())` starts on an empty table.
+   `add_component!` and `remove_component!` (`API.md`); `live_view()` starts on an empty table.
 4) Export the alignment found in the window with `export_changes(gui)` (the button "Export" does the
    same) and paste it into the script that builds the system.
 
@@ -132,7 +132,7 @@ When this Skill is active:
   is in the skill `beamletopticsprojects` (`BeamletOpticsProjects.install_agent_skill()`).
   A project is a folder with a `system.jl`, not a Julia environment: open it from any environment
   that has BeamletOptics, BeamletOpticsProjects and the GUI (`open_project(path)`, or `Ctrl+O` in
-  any window, e.g. of `live_view(System())`). `Ctrl+N` or the tool "New project" makes an empty project in a new or
+  any window, e.g. of `live_view()`). `Ctrl+N` or the tool "New project" makes an empty project in a new or
   empty folder (the dialog of "Save as") and opens it in place of the window, after writing what
   is pending of the old project; from code: `BeamletOpticsProjects.new_project(dir)`, then
   `open_project(dir)`. Own types of the project's code (`src/<Name>.jl`) get their card in

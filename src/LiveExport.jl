@@ -905,7 +905,7 @@ other keyword arguments. A component that was added without a system or taken ou
 is part of the script (item 6), unlike an extra.
 
 ```julia
-gui = live_view(System())
+gui = live_view()
 # add components and sources from the catalog, or with `add_component!(...; code)`, move them, then
 code = export_script(gui)
 ```

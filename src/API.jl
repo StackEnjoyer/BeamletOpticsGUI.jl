@@ -15,9 +15,10 @@ function kinematic_controls! end
     live_view(system => beam, ...; kwargs...)
     live_view(system, beam; kwargs...)
     live_view(system, ...; kwargs...)
+    live_view(; kwargs...)
 
 Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
-without a source, e.g. an empty table `live_view(System())` that gets its sources in the window: a 3D view in
+without a source, e.g. an empty table `live_view()` (one empty `System`) that gets its sources in the window: a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
 sliders. After each change, all systems are initialized (`BeamletOptics.initialize!`, which empties
 the detectors) and solved again, and the beams and the shown detector views are updated. Returns a
@@ -647,7 +648,7 @@ a `system` moves it to that system (or to none), and without a `system` it throw
 constructor call of the `source` in its current pose, as for a component.
 
 ```julia
-gui = live_view(System())
+gui = live_view()
 add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); label = "laser")
 lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens, [0, 0.1, 0])
