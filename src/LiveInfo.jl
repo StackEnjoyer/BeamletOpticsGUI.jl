@@ -56,13 +56,14 @@ _has_properties(::_InfoItem) = false
 # the radius and the radius of curvature, see `_inspection_string`
 function card_rows(x::_BeamPoint)
     i = x.info
-    rows = [_text_row("at", :at, (_, _) -> _point_string(i.point)),
-        _text_row("dir", :dir, (_, _) -> _direction_string(i.direction)),
-        _text_row("path", :path, (_, _) -> "$(_fmt3(1e3 * i.length)) mm"),
-        _text_row("OPL", :opl, (_, _) -> "$(_fmt3(1e3 * i.opl)) mm")]
+    # The texts, not `i`, in the closures: the type of `i` differs per type of beam (`w`, `R`)
+    at, dir = _point_string(i.point), _direction_string(i.direction)
+    path, opl = "$(_fmt3(1e3 * i.length)) mm", "$(_fmt3(1e3 * i.opl)) mm"
+    rows = Any[_text_row("at", :at, (_, _) -> at), _text_row("dir", :dir, (_, _) -> dir),
+        _text_row("path", :path, (_, _) -> path), _text_row("OPL", :opl, (_, _) -> opl)]
     if !isnothing(i.w)
-        r = iszero(i.R) ? "∞" : _signed_length_string(1 / i.R)
-        push!(rows, _text_row("w", :w, (_, _) -> _length_string(i.w)), _text_row("R", :R, (_, _) -> r))
+        w, r = _length_string(i.w), iszero(i.R) ? "∞" : _signed_length_string(1 / i.R)
+        push!(rows, _text_row("w", :w, (_, _) -> w), _text_row("R", :R, (_, _) -> r))
     end
     return Tuple(rows)
 end

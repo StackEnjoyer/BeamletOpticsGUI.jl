@@ -7,8 +7,11 @@
 #
 # - `layout`: `compact` (default) or `app`
 # - `scene`: `same` (default): the components of the workload, i.e. what is left to compile in the
-#   best case; `other`: components of types that no workload has seen (lenses with own glasses), i.e.
-#   what a script of a user pays; `catalog`: every entry of the catalog, placed, dragged and removed
+#   best case; `gauss`: the components of the workload with a Gaussian beamlet as the source (the
+#   workload replays the compact layout with a beam and the app layout with a Gaussian beamlet, so
+#   `compact gauss` and `app same` show what the other combinations compile); `other`: components of
+#   types that no workload has seen (lenses with own glasses), i.e. what a script of a user pays;
+#   `catalog`: every entry of the catalog, placed, dragged and removed
 #
 # The environment variable `JIT_PROBE_ORDER` chooses the order in which the packages are loaded:
 # `glmakie-first` (default, the less favorable one, e.g. of a startup file that loads GLMakie) or
@@ -62,7 +65,9 @@ end
 gui, screen = if SCENE == "catalog"
     EXT._catalog_session(step)
 else
-    EXT._session(step, LAYOUT, SCENE == "other" ? other_fixture() : EXT._fixture())
+    fixture = SCENE == "other" ? other_fixture() :
+        SCENE == "gauss" ? EXT._fixture(GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)) : EXT._fixture()
+    EXT._session(step, LAYOUT, fixture)
 end
 
 println("\nlayout = ", LAYOUT, ", scene = ", SCENE)
