@@ -213,9 +213,12 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   while precompiling, every step is slow, animations end and solves go to the background. Wait with
   `_settle!`, click on the background at `_free_px`. A step that fails is swallowed by the workload
   and compiles nothing; `test/TestPrecompileSession.jl` runs the sessions with their errors.
-- **The GUI is not compiled per component type.** A function of the GUI takes a component as
-  `@nospecialize(obj)`, a closure that is called with one starts with `@nospecialize obj`, and a
-  search by identity is `_has(xs, x)` or `_index(xs, x)` instead of a closure like `o -> o === x`.
+- **The GUI is not compiled per component type.** A function of the GUI takes a component or a
+  source as `@nospecialize(obj)`, a closure that is called with one starts with `@nospecialize obj`,
+  a closure does not capture a value whose type depends on the type of the object (capture the
+  texts or numbers it needs), a vector of components or sources is a `Vector{Any}` (`last.` or a
+  comprehension narrows it to their type), and a search by identity is `_has(xs, x)` or
+  `_index(xs, x)` instead of a closure like `o -> o === x`.
   A script of a user holds types that no workload has seen, e.g. a lens with its own glass. The
   behavior per type stays dispatch (`card_rows` etc.). `live_view` and `kinematic_controls!` are
   not specialized on their arguments either.
