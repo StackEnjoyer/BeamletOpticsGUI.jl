@@ -471,9 +471,10 @@ _catalog_systems(gui::LiveView, entry::CatalogEntry) =
 
 The system that gets the `entry` of the catalog of the `gui` when it is placed, or `:none` for no
 system: the system of the selected or inspected object, otherwise the first one (of a component
-the `_target_system`, of a source the system it is traced through, see `_source_system`), unless
-another one was chosen in the menu "into" of the catalog since that object is shown, see
-`_choose_catalog_target!`. A view without a `System` places a component into `:none`.
+the `_target_system`, of a source the system it is traced through, see `_default_source_system`),
+unless another one was chosen in the menu "into" of the catalog since that object is shown, see
+`_choose_catalog_target!`. A view without a `System` places a component into `:none`, a view
+without any system also a source.
 """
 function _catalog_target(gui::LiveView, entry::CatalogEntry)
     comp = gui.components
@@ -481,7 +482,7 @@ function _catalog_target(gui::LiveView, entry::CatalogEntry)
        (comp.target === :none || any(sys -> sys === comp.target, _catalog_systems(gui, entry)))
         return comp.target
     end
-    sys = entry.source ? _source_system(gui, nothing) : _target_system(gui)
+    sys = entry.source ? _default_source_system(gui) : _target_system(gui)
     return isnothing(sys) ? :none : sys
 end
 

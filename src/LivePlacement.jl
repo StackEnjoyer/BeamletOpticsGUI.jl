@@ -181,13 +181,14 @@ end
 
 """
 The system that gets `obj` when it is placed in the `gui` without a `system`: of a component the
-`_target_system`, or `:none` in a view without a `System`; of a source the `_source_system`.
+`_target_system`, or `:none` in a view without a `System`; of a source the
+`_default_source_system`, or `:none` in a view without a system.
 """
 function _placement_system(gui::LiveView, ::BMO.ObjectOrGroup)
     sys = _target_system(gui)
     return isnothing(sys) ? :none : sys
 end
-_placement_system(gui::LiveView, ::_Source) = _source_system(gui, nothing)
+_placement_system(gui::LiveView, ::_Source) = something(_default_source_system(gui), :none)
 
 # A component changes its system, hence it needs a `System`, or none (`:none`); a source is traced
 # through any system, or none

@@ -865,16 +865,28 @@ const _ViewArg = Union{BMO.AbstractSystem, Pair{<:BMO.AbstractSystem}}
 _view_system(sys::BMO.AbstractSystem) = sys
 _view_system(p::Pair) = p.first
 
-# The status line of a view without a source
+# The status line of a view without a source, and of one without a system, whose sources and
+# components are not traced until they are put into a system
 const _NO_SOURCE = "no source, add one from the catalog or with add_component!"
+const _NO_SYSTEM = "no system, add one with the tool System or add_system!"
+_no_source_hint(gui) = isempty(gui.system_handles) ? _NO_SYSTEM : _NO_SOURCE
+# `add_component!` without a `system` in a view without a system
+const _NO_SYSTEM_ERROR = "the live view has no system, add one with add_system!(gui) or pass system = :none"
+# The status line after adding the object or source named `name` without a system
+_untraced_note(gui, name) = isempty(gui.system_handles) ?
+    "$name added without a system, it is not traced: add a system with the tool System, then + on its card" :
+    "$name added without a system, it is not traced"
 
 """
     live_view(system => beam, ...; kwargs...)
     live_view(system, beam; kwargs...)
     live_view(system, ...; kwargs...)
+    live_view(; kwargs...)
 
 Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
-without a source, which get their sources at runtime (see "Adding and removing components"). A
+without a source, which get their sources at runtime (see "Adding and removing components").
+Without a system, `live_view()` opens an empty window: the first system is added with the tool
+"System" or [`add_system!`](@ref), see "Systems". A
 source is given once: a beam or beam group in two pairs, e.g. `live_view(sys1 => beam, sys2 =>
 beam)`, throws an `ArgumentError`, since a source belongs to at most one system (see "Systems"); the
 same system may have several sources. All systems
@@ -1285,8 +1297,8 @@ cards and in controls use [`card_input`](@ref) and [`card_show!`](@ref).
 # Adding and removing components
 
 The components of a `System` of the view and its sources can be changed at runtime, e.g. to build
-a setup from an empty `System()`, also without a source (`live_view()`); a `StaticSystem`
-can not be changed. The catalog "Components"
+a setup from an empty `System()`, also without a source (`live_view(System())`, or `live_view()`
+and then the tool "System"); a `StaticSystem` can not be changed. The catalog "Components"
 offers the sources and components of the `catalog` kwarg, see [`component_catalog`](@ref): the icons at its top
 select a group, e.g. the sources or the lenses, the tiles below an entry of the group, e.g. a doublet. The
 boxes of the form take its numbers, e.g. the radii of a lens [mm], and a menu selects its glass
@@ -1294,7 +1306,7 @@ among those of [`catalog_glasses`](@ref) or "constant", for which a box takes a 
 index. "Place" attaches the component to the mouse. An input that is no number, or that the
 constructor of the component rejects, is reported in the status line. The line "into" names the
 system that gets the component: the system of the selected or inspected object, else the first
-one. It is a menu, also in a view with one system, since systems can be added in the window: it
+one, or "no system" in a view without a system. It is a menu, also in a view with one system, since systems can be added in the window: it
 lists the systems that can get the entry (a component is added to a `System` only, a source is
 traced through any system), then "no system", which places the entry without a system, and "New
 system…", which adds a system (see [`add_system!`](@ref)) that gets the entry. The choice holds
@@ -1369,8 +1381,9 @@ A view holds any number of systems, which are added and removed in the window. T
 empty system and shows its card; from code, [`add_system!`](@ref) does the same. It gets the next
 component of the catalog, see the menu "into" in "Adding and removing components". "remove" on the
 card of a system, or [`remove_system!`](@ref), removes it again. Nothing is deleted: its sources and
-its objects that are in no other system stay in the view without a system. The last system of a
-view can not be removed, nor can one that is open in another window. Adding and removing a system
+its objects that are in no other system stay in the view without a system. A system that is open
+in another window can not be removed; removing the last one leaves a view without a system, as
+`live_view()` opens. Adding and removing a system
 are steps of the undo history.
 
 An object belongs to any number of the systems of the view, or to none, and is drawn once: it has
@@ -1658,8 +1671,6 @@ function live_view(
     )
     # One compiled method for all systems, sources and keyword arguments
     @nospecialize
-    # Without a system: one empty system, the start of an empty table
-    isempty(args) && (args = (BMO.System(),))
     ps = Pair{BMO.AbstractSystem, Any}[p for p in args if p isa Pair]
     for b in beams_off
         any(p -> p.second === b, ps) ||
@@ -1867,7 +1878,7 @@ function live_view(
         _mark_stale!(gui, nothing; msg = _NOT_TRACED)
         _update_info!(gui)
     end
-    isempty(ps) && (gui.status.text[] = _NO_SOURCE)
+    isempty(ps) && (gui.status.text[] = _no_source_hint(gui))
     # The overlays of the beams with `show_polarization` or `show_beams`, after the solve they show
     _init_overlays!(gui)
     # Initial view from the Front-Right-Top corner, in which the labels of the view cube read

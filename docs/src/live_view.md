@@ -94,9 +94,12 @@ A source is given once: a beam in two pairs, `live_view(sys1 => beam, sys2 => be
 `live_view(sys => beam1, sys => beam2)`. Systems that share objects are described in
 [Several systems](@ref).
 
-A system can also be shown without a source, e.g. an empty table `live_view()` (one empty `System`): its sources
+A system can also be shown without a source, e.g. an empty table `live_view(System())`: its sources
 are added in the window, from the group "Sources" of the catalog, or from code, see
-[Adding and removing components](@ref components_page).
+[Adding and removing components](@ref components_page). Without any argument, `live_view()` opens an
+empty window without a system: the tool "System" or [`add_system!`](@ref) adds the first one, and
+until then the status line and the object tree of the app layout say so. Components placed from the
+catalog before are shown, but not traced, until "+" of a system takes them in.
 
 ## Movable sources in the live view
 
@@ -154,8 +157,8 @@ never traced. A component that is taken out of its last system, or added with
 `add_component!(gui, obj; system = :none)`, is in this state, and so is a source that is left
 without a system, except that a source without a system is not drawn either and keeps its marker.
 Removing a system with "Remove system" on its card or [`remove_system!`](@ref) deletes nothing: its sources
-and the objects that are in no other system stay in the view without a system. The last system of a
-view can not be removed.
+and the objects that are in no other system stay in the view without a system. Removing the last
+system leaves a view without a system.
 
 Each system is traced on its own. The toggle "auto" of the card switches the auto tracing of that
 system; the "Auto trace" toggle of the tool rail or the toolbar is on while any system is traced

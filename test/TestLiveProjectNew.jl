@@ -99,14 +99,18 @@ const GUI = BeamletOpticsGUI
             @test new isa GUI.LiveView && new !== gui
             @test new.project == dir && new.sync.base.path == dir
             @test isempty(new.sync.ids) && isempty(new.beams.unassigned)
-            @test all(s -> isempty(s.objects), GUI._systems(new))
+            @test isempty(GUI._systems(new))
             @test new.status.text[] == "project New_bench opened from $dir"
             @test gui.sync.closed
-            # the new project saves like any other
+            # the new project saves like any other, also its first system while it is empty
+            sys = add_system!(new; select = false)
+            save_project(new)
+            @test length(load_project(dir).systems) == 1
             c = _built("Round mirror")
             add_component!(new, c.obj; origin = c.origin, label = "M1", select = false)
             save_project(new)
-            @test length(load_project(dir).entries) == 1
+            p = load_project(dir)
+            @test length(p.entries) == 1 && length(only(p.systems).members) == 1
             close(new)
         end
 

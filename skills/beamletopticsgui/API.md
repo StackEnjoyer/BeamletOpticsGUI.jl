@@ -71,7 +71,8 @@ per window. Closing a window ends the link.
 from the view and from all its systems (also an extra). `add_system!(gui; label, select)` adds an
 empty `System` to the view and returns it, `remove_system!(gui, system)` removes one (nothing is
 deleted: its sources and its objects that are in no other system stay in the view without a system;
-the last system of a view, and one that is open in another window, throw `ArgumentError`).
+removing the last one leaves a view without a system; one that is open in another window throws
+`ArgumentError`).
 
 **Systems.** An object belongs to any number of the systems of the view, or to none, and is drawn
 once (one pose, one card, one set of plots; the beams of all its systems are traced through it).
@@ -115,7 +116,9 @@ drawn with `color = :wavelength` (every ray in the display color of its own wave
 for infrared and dark violet for ultraviolet), unless its `beam_kwargs` set a fixed `color` for all
 rays (`add_component!(...; beam_kwargs = (; color = ...))`, or the `beam_kwargs` of `live_view`;
 `(; color = :wavelength)` or `(:wavelength, alpha)` are accepted). A view may start
-without a source: `live_view()` (one empty `System`), `live_view(System())`, or `live_view(sys1, sys2 => beam)`.
+without a source: `live_view(System())`, or `live_view(sys1, sys2 => beam)`. `live_view()` opens without a
+system: add one with `add_system!(gui)` (or the tool "System") before `add_component!`, which throws an
+`ArgumentError` without a system unless it gets `system = :none`; the catalog places into "no system" then.
 `add_component!(...; code = "ThinLens(0.05, -0.05, 0.0254, ConstantRefractiveIndex(1.5))")` gives the constructor call of an
 object built in code (also of a source): add it in the pose in which `code` constructs it and move
 it afterwards (inside `retrace!(gui) do ... end`); `export_script` then writes the call and the
@@ -127,7 +130,8 @@ The catalog "Components" does the same with the mouse: a movable window over the
 at the mouse with the key `Insert` or with the toggle "Components" among the tools; it closes after
 the drop unless its pin is on, and its chevron minimizes it. With `layout = :app` it is docked in
 the left sidebar (section "Components"), from where its buttons move it into the window and back. Its
-line "into" names the system that gets the entry (of the selection, else the first one) and is a menu
+line "into" names the system that gets the entry (of the selection, else the first one, "no system" in
+a view without a system) and is a menu
 of the systems that can get it, then "no system" and "New system…". Its icons select a
 group (sources, lenses, mirrors, curved mirrors, beamsplitters, prisms, polarizers, detectors), its tiles a
 component (all components of BeamletOptics with a constructor of numbers and glasses) or a source

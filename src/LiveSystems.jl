@@ -105,6 +105,9 @@ function _take_system!(gui::LiveView, sys::BMO.AbstractSystem)
     _unrecorded(gui) do
         foreach(src -> _set_source_system!(gui, src, nothing), sources)
     end
+    # Moving its sources off solved the system again, possibly in the background: that solve owns
+    # the detectors, which are initialized below, also when no system is left to solve afterwards
+    _change!(() -> nothing, gui.controls, nothing)
     deleteat!(gui.system_handles, index)
     extras = rendered(gui.extras)
     orphans = Any[]
@@ -147,13 +150,13 @@ end
 function remove_system!(gui::LiveView, sys::BMO.AbstractSystem)
     isnothing(_system_handle(gui, sys)) &&
         throw(ArgumentError("the system is not shown in the live view"))
-    length(gui.system_handles) > 1 ||
-        throw(ArgumentError("the last system of a live view can not be removed"))
     any(v -> v !== gui && !isnothing(_system_handle(v, sys)), gui.links.views) && throw(ArgumentError(
         "$(_label(gui, sys)) is open in another window, close that window first"))
     name = _label(gui, sys)
     taken = Ref{Any}(_take_system!(gui, sys))
-    gui.status.text[] = "$name removed, its components stay in the view"
+    # The last system leaves a view without a system, as `live_view()` opens
+    gui.status.text[] = isempty(gui.system_handles) ? "$name removed, " * _NO_SYSTEM :
+                        "$name removed, its components stay in the view"
     _debug_event!(gui, "removed $name")
     # The detectors that it shares with other systems lose its hits
     _on_change!(gui, nothing)

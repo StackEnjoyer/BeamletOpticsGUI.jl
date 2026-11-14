@@ -50,6 +50,14 @@ using Test
         @test any(n -> occursin("edit switch", n), names)
     end
 
+    @testset "empty window, $layout" for layout in (:compact, :app)
+        empty!(failed)
+        empty!(names)
+        ext._close!(ext._empty_session(step, layout)...)
+        @test isempty(failed)
+        @test length(names) == 5
+    end
+
     @testset "project" begin
         empty!(failed)
         empty!(names)

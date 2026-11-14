@@ -311,15 +311,14 @@ function _export_added_lines!(lines, gui::LiveView, names, systems,
 end
 
 """
-    _export_member_lines!(lines, gui, names, systems) -> n
+    _export_system_lines!(lines, gui, systems) -> n
 
 Appends the lines of `export_changes` for the systems that were added to and removed from the `gui`
-at runtime (see `add_system!` and `remove_system!`) and for the objects and sources that the view
-started with and that changed their systems since (see `_add_member!` and `_set_source_system!`):
-a `push!` to or a `delete!` from a system per object, a comment per source. Returns the number `n`
-of changes.
+at runtime (see `add_system!` and `remove_system!`): the definition of an added system, before the
+lines of the components and sources that use it, and a comment per removed one. Returns the number
+`n` of changes.
 """
-function _export_member_lines!(lines, gui::LiveView, names, systems)
+function _export_system_lines!(lines, gui::LiveView, systems)
     comp = gui.components
     n = 0
     shown = _systems(gui)
@@ -333,7 +332,21 @@ function _export_member_lines!(lines, gui::LiveView, names, systems)
         push!(lines, "", "# $(_label(gui, sys)), removed from the view")
         n += 1
     end
-    tops = unique(objectid, Any[(obj for sys in shown for obj in sys.objects)..., rendered(gui.extras).objects...])
+    return n
+end
+
+"""
+    _export_member_lines!(lines, gui, names, systems) -> n
+
+Appends the lines of `export_changes` for the objects and sources that the view started with and
+that changed their systems since (see `_add_member!` and `_set_source_system!`): a `push!` to or a
+`delete!` from a system per object, a comment per source. Returns the number `n` of changes.
+"""
+function _export_member_lines!(lines, gui::LiveView, names, systems)
+    comp = gui.components
+    n = 0
+    shown = _systems(gui)
+    tops =unique(objectid, Any[(obj for sys in shown for obj in sys.objects)..., rendered(gui.extras).objects...])
     for obj in tops
         (haskey(comp.start_systems, obj) && !_has(comp.added, obj)) || continue
         start = comp.start_systems[obj]
@@ -513,6 +526,8 @@ function _export_code(gui::LiveView)
         _export_removed_lines!(lines, gui, systems, used, obj)
         n += 1
     end
+    # before the added components and sources, which use the added systems
+    n += _export_system_lines!(lines, gui, systems)
     added = Base.IdSet{Any}(comp.added)
     # The groups made in the window and their members, see `_export_grouping_lines!`
     shown = unique(objectid, Any[(obj for sys in _systems(gui) for obj in sys.objects)...,
@@ -738,9 +753,17 @@ end
 Appends the call of `live_view` to the `lines` of `export_script`. `args` and `labels` are pairs
 `code => active` of its arguments and of the entries of its `labels`; those that are not active,
 since the script does not define their variables, are commented out. Without an active argument the
-whole call is commented out.
+whole call is commented out; without any argument, i.e. for a view without a system, the call is
+`live_view()` with the `labels` as its keyword argument.
 """
 function _export_view_lines!(lines, args, labels)
+    if isempty(args)
+        isempty(labels) && (push!(lines, "gui = live_view()"); return nothing)
+        call = String["gui = live_view(;", "    labels = Dict("]
+        append!(call, (active ? "        $code," : "        # $code," for (code, active) in labels))
+        append!(lines, push!(call, "    )", ")"))
+        return nothing
+    end
     call = String["gui = live_view("]
     last_active = findlast(last, args)
     for (i, (code, active)) in enumerate(args)
@@ -873,7 +896,8 @@ The script consists of, in this order:
 4. a `solve_system!(system, source)` per pair of the view
 5. after the comment line `# Live view`: `using BeamletOpticsGUI, GLMakie` and the call
    `gui = live_view(…)` with the pairs `system => source`, the systems without a source and the
-   `labels`. The lines above it run without a window.
+   `labels`; `gui = live_view()` for a view without a system. The lines above it run without a
+   window.
 6. `add_component!(gui, name; system = :none)` for each object and source without a system, which
    the call of `live_view` does not contain: it is shown, but not traced. A source without a system
    has no `solve_system!` and no pair in `live_view`.
@@ -906,6 +930,7 @@ is part of the script (item 6), unlike an extra.
 
 ```julia
 gui = live_view()
+add_system!(gui)   # or the tool "System"
 # add components and sources from the catalog, or with `add_component!(...; code)`, move them, then
 code = export_script(gui)
 ```

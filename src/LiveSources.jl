@@ -10,13 +10,24 @@ const _Source = Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}
     _source_system(gui, system) -> AbstractSystem
 
 The system that a source added to the `gui` is traced through: the given `system`, which must be
-shown in the `gui`, or, for `nothing`, the system that gets a component (see `_target_system`), else
-the first system of the view. A source does not change its system, hence a `StaticSystem` takes
-sources as well. Throws an `ArgumentError` otherwise.
+shown in the `gui`, or, for `nothing`, the `_default_source_system`. A source does not change its
+system, hence a `StaticSystem` takes sources as well. Throws an `ArgumentError` otherwise, also for
+`nothing` in a view without a system.
 """
 function _source_system(gui::LiveView, ::Nothing)
+    sys = _default_source_system(gui)
+    isnothing(sys) && throw(ArgumentError(_NO_SYSTEM_ERROR))
+    return sys
+end
+"""
+The system that a source added to the `gui` without a `system` is traced through: the system that
+gets a component (see `_target_system`), else the first system of the view; `nothing` in a view
+without a system, e.g. of `live_view()`.
+"""
+function _default_source_system(gui::LiveView)
     sys = _target_system(gui)
-    return isnothing(sys) ? rendered(first(gui.system_handles)) : sys
+    isnothing(sys) || return sys
+    return isempty(gui.system_handles) ? nothing : rendered(first(gui.system_handles))
 end
 function _source_system(gui::LiveView, sys::BMO.AbstractSystem)
     isnothing(_system_handle(gui, sys)) &&
@@ -140,7 +151,8 @@ function add_component!(gui::LiveView, src::_Source; system = nothing, select::B
             _select!(gui, src)
         end
     end
-    _on_change!(gui, src)
+    # A source without a system is not traced
+    isnothing(sys) ? (gui.status.text[] = _untraced_note(gui, _label(gui, src))) : _on_change!(gui, src)
     # After the solve, like the overlays of the sources of the start, see `_init_overlays!`
     get(kw, :show_polarization, false) === true && _set_polarization!(gui, src, true)
     get(kw, :show_beams, false) === true && _set_generating_beams!(gui, src, true)
@@ -255,7 +267,7 @@ function remove_component!(gui::LiveView, src::_Source; system = nothing)
     snap, _ = _take_out!(gui, src)
     # The detectors lose the hits of the source with the next solve
     _on_change!(gui, nothing)
-    isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _NO_SOURCE)
+    isempty(gui.pairs) && (gui.status.text[] = "$name removed, " * _no_source_hint(gui))
     _record_removed!(gui, src, snap)
     # The table fits what is left, see `_table_fit!`
     _table_fit!(gui)

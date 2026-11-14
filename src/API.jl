@@ -18,7 +18,9 @@ function kinematic_controls! end
     live_view(; kwargs...)
 
 Opens a complete interactive window for one or several pairs of `system` and `beam`, or for systems
-without a source, e.g. an empty table `live_view()` (one empty `System`) that gets its sources in the window: a 3D view in
+without a source, e.g. an empty table `live_view(System())` that gets its sources in the window, or
+an empty window without a system, `live_view()`, whose first system is added with the tool
+"System" or [`add_system!`](@ref): a 3D view in
 which all components can be moved via [`kinematic_controls!`](@ref), a status line and optional
 sliders. After each change, all systems are initialized (`BeamletOptics.initialize!`, which empties
 the detectors) and solved again, and the beams and the shown detector views are updated. Returns a
@@ -602,7 +604,8 @@ beams paired with that system are traced through `obj`. `system = :none` adds `o
 system: it is shown, moved and exported like any component, but not traced, until it becomes a
 member of a system. A `StaticSystem` can not be changed: it throws an `ArgumentError`, like a
 `system` that is not shown in the `gui` and, without a `system`, an `obj` that the `gui` shows
-already. `select = true` selects `obj` afterwards (or shows its card if it is not movable), `label`
+already or a view without a `System` (add one first with [`add_system!`](@ref), or pass
+`system = :none`). `select = true` selects `obj` afterwards (or shows its card if it is not movable), `label`
 names it like an entry of the `labels` kwarg of `live_view`.
 
 An object belongs to any number of systems of the view: for an `obj` that the `gui` shows already
@@ -641,7 +644,8 @@ red for 632.8 nm and a dark red for infrared light, and a beam group with `rende
 which it is selected and moved like the sources the view started with, also in a view with
 `movable_sources = false`. `system` is any system of the `gui`, also a `StaticSystem`, which a
 source does not change; by default the system that gets a component, otherwise the first system of
-the view. A source belongs to at most one system: `system = :none` adds it without one, which
+the view; without a `system` in a view without any system it throws an `ArgumentError` (add one
+first with [`add_system!`](@ref), or pass `system = :none`). A source belongs to at most one system: `system = :none` adds it without one, which
 shows its marker, but neither traces nor draws it. For a `source` that the `gui` shows already,
 a `system` moves it to that system (or to none), and without a `system` it throws an
 `ArgumentError`. A view may start without a source, see `live_view(system)`. `code` is the
@@ -649,6 +653,7 @@ constructor call of the `source` in its current pose, as for a component.
 
 ```julia
 gui = live_view()
+add_system!(gui)
 add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); label = "laser")
 lens = ThinLens(50e-3, -50e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
 translate_to3d!(lens, [0, 0.1, 0])
@@ -691,8 +696,8 @@ function remove_component! end
 Removes the `system` from the [`live_view`](@ref) window `gui`, like "Remove system" on its card. Nothing
 is deleted: its sources and its objects that are in no other system of the view stay in the view
 without a system, i.e. shown but not traced, and the objects of the `system` itself are not
-changed. It throws an `ArgumentError` for the last system of the view, for a system that the `gui`
-does not show and for one that is open in another window, see [`open_system`](@ref).
+changed. Removing the last system leaves a view without a system, as `live_view()` opens. It
+throws an `ArgumentError` for a system that the `gui` does not show and for one that is open in another window, see [`open_system`](@ref).
 """
 function remove_system! end
 

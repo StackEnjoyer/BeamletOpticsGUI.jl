@@ -610,6 +610,13 @@ function _on_change!(gui::LiveView, @nospecialize(obj); systems = nothing)
     # after each change, see `_system_auto`; the other ones are outdated until they are traced
     affected = isnothing(systems) ? _affected_systems(gui, obj) : systems
     (!isnothing(affected) && isempty(affected)) && return nothing
+    # A view without a system, e.g. after its last system was removed, has nothing to trace, and
+    # nothing that it showed is outdated any more
+    if isnothing(affected) && isempty(gui.system_handles)
+        trace.stale && _set_fresh!(gui, nothing)
+        trace.pending = false
+        return nothing
+    end
     trace.last_change = time()
     # A merge of the files of the project solves once, after it, see `_adopting`
     gui.sync.adopting && return _note_adopted!(gui, obj, affected)
@@ -795,6 +802,8 @@ solve runs in the background.
 """
 function _trace!(gui::LiveView)
     _running(gui) && return nothing
+    # Nothing to trace before a system is added
+    isempty(gui.system_handles) && (gui.status.text[] = _NO_SYSTEM; return nothing)
     obj = gui.controls.selected[]
     # A clip plane is not part of the systems
     obj isa LiveClipPlane && (obj = nothing)

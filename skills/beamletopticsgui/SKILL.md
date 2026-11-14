@@ -58,7 +58,8 @@ When this Skill is active:
 3) Add own parts if the user needs them: a card for an own component type, a catalog entry for it, a
    controls section, a tool or a panel (`WIDGETS.md`, `VISUALIZATION.md`). Components and sources can be added
    to and removed from the view in the window (catalog "Components", keys `Insert` and `Delete`) or from code with
-   `add_component!` and `remove_component!` (`API.md`); `live_view()` starts on an empty table.
+   `add_component!` and `remove_component!` (`API.md`); `live_view()` starts on an empty table without a
+   system: add one with `add_system!(gui)` before `add_component!`.
 4) Export the alignment found in the window with `export_changes(gui)` (the button "Export" does the
    same) and paste it into the script that builds the system.
 
@@ -149,8 +150,7 @@ When this Skill is active:
   linked views follow; `export_changes` writes `set_pivot3d!(g, [...])` of a group of the script.
   From code: `set_pivot3d!(gui, group, p)`.
 - A source belongs to at most one system: `live_view(sys1 => b, sys2 => b)` throws an
-  `ArgumentError`, and a source without a system is not traced or drawn. The last system of a view
-  cannot be removed. The auto tracing of a single system and the picking of members with "+" and "−"
+  `ArgumentError`, and a source without a system is not traced or drawn. The auto tracing of a single system and the picking of members with "+" and "−"
   exist in the window only; there is no public function for them (from code: `add_component!` and
   `remove_component!` with `system`).
 - Aligning is done in the window only: the buttons "onto beam" and "face beam" of the card of a
