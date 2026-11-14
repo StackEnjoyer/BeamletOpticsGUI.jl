@@ -46,7 +46,9 @@ function _top_levels(h::AbstractSystemRenderHandle)
 end
 
 """Returns the sources of the `gui`, i.e. the beams of its pairs, without duplicates."""
-_sources(gui::LiveView) = unique(objectid, last.(gui.pairs))
+# `Any[...]`: `last.` would narrow it to the type of the sources, and every loop over them would be
+# compiled per type of source (see "Precompilation" in AGENTS.md)
+_sources(gui::LiveView) = unique(objectid, Any[last(p) for p in gui.pairs])
 
 """
     _name_objects!(gui::LiveView)

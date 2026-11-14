@@ -112,7 +112,13 @@ function _menu_options(labels, entries)
 end
 function _menu_options(gui::LiveView, entries)
     isempty(entries) && return [("no components", 0)]
-    return [("  "^depth * _label(gui, obj), i) for (i, (obj, depth)) in enumerate(entries)]
+    # a loop, not a comprehension: its closure would be compiled per type of object
+    options = Tuple{String, Int}[]
+    for (i, entry) in enumerate(entries)
+        obj, depth = entry
+        push!(options, ("  "^depth * _label(gui, obj), i))
+    end
+    return options
 end
 
 """

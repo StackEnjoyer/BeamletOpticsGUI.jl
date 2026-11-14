@@ -56,7 +56,7 @@ struct _TreeRow
     buttons::Union{Symbol, Nothing}
 end
 
-_TreeRow(key, label, depth, kind, expandable, expanded, visible; count::Integer = 0,
+_TreeRow(@nospecialize(key), label, depth, kind, expandable, expanded, visible; count::Integer = 0,
     buttons::Union{Symbol, Nothing} = nothing) =
     _TreeRow(key, label, depth, kind, expandable, expanded, visible, count, buttons)
 

@@ -515,7 +515,7 @@ function _dim_beams!(gui::LiveView)
 end
 
 # Whether the `beam` of the `gui` is outdated: the system that it is traced through is
-function _beam_stale(gui::LiveView, beam)
+function _beam_stale(gui::LiveView, @nospecialize(beam))
     gui.trace.stale || return false
     sys = _system_of_source(gui, beam)
     return isnothing(sys) || _system_stale(gui, sys)

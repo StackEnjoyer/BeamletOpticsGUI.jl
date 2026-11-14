@@ -203,7 +203,7 @@ end
 Shows the inspected point `info` of a beam with a marker, in the status line and on a card at the
 point in the 3D view (see `_show_info!`) of the `gui`.
 """
-function _show_inspection!(gui::LiveView, info)
+function _show_inspection!(gui::LiveView, @nospecialize(info))
     _clear_inspection!(gui)
     gui.measure.inspection = info
     gui.measure.inspection_plot = _point_marker!(gui, [Point3f(info.point)])

@@ -1672,16 +1672,20 @@ end
 """
     _precompile_sessions(step)
 
-The sessions of the workload: `_session` in both layouts, with a beam and with a Gaussian beamlet,
-`_catalog_session`, `_empty_session` in both layouts and `_project_session`. Closes their windows.
+The sessions of the workload: `_session` in the compact layout with a beam and in the app layout
+with a Gaussian beamlet, `_catalog_session`, `_empty_session` in both layouts and
+`_project_session`. Closes their windows.
+
+The other two combinations of layout and beam type are not replayed: they took about 2 minutes of
+every precompilation and compiled 0.3 s, since the GUI is not specialized on the type of a source
+(see "Precompilation" in AGENTS.md).
 """
 function _precompile_sessions(step)
     # Without an OpenGL context, e.g. on a headless machine, no window opens: the error is thrown
     # here, to the caller, instead of in every step of the sessions, where `step` may swallow it
     close(_screen())
     gauss() = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
-    for (layout, fixture) in ((:compact, _fixture()), (:app, _fixture(gauss())),
-            (:compact, _fixture(gauss())), (:app, _fixture()))
+    for (layout, fixture) in ((:compact, _fixture()), (:app, _fixture(gauss())))
         _close!(_session(step, layout, fixture)...)
     end
     _close!(_catalog_session(step)...)

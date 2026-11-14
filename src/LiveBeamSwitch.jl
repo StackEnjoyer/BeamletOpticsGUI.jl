@@ -96,7 +96,7 @@ Renders the `beam` of a pair of a live view into `ax`: in the style of the `layo
 `kwargs` of `live_render!` of the beam (see `_BeamState`) and without clip planes, which
 `_apply_clip_planes!` sets explicitly, see `clip_beams`.
 """
-_live_render_beam!(ax, layout, beam, kwargs::NamedTuple) =
+_live_render_beam!(ax, layout, @nospecialize(beam), kwargs::NamedTuple) =
     live_render!(ax, beam; _beam_style(layout, beam)..., kwargs..., clip_planes = Plane3f[])
 
 """
