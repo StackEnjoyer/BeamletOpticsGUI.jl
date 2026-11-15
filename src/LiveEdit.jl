@@ -437,6 +437,9 @@ _edit_param_rows(::LiveView, _, p::CatalogToggle, i::Int) = (CardRow(_edit_label
     CardWidget(Toggle; name = _edit_toggle(i),
         value = (gui, o) -> _catalog_value(p, _edit_strings(gui, o)[i]),
         on = (gui, o, v) -> _toggle_edit!(gui, o, i, v))),)
+# A detector is switched on its card in place, see `_set_stop!`: "Apply" keeps its current state,
+# which the switch writes into the inputs as well
+_edit_param_rows(::LiveView, ::BMO.Detector, ::CatalogToggle, ::Int) = ()
 
 _edit_param_rows(::LiveView, _, p::CatalogGlass, i::Int) = (
     CardRow(_edit_label(p.name), CardWidget(Menu; name = _edit_menu(i),

@@ -42,12 +42,11 @@ using Test
         empty!(names)
         ext._close!(ext._catalog_session(step)...)
         @test isempty(failed)
-        # each entry is placed, dragged and removed; one with a switch is also switched on its
-        # page "Edit", e.g. the detector
-        switched = count(e -> any(p -> p isa BeamletOpticsGUI.CatalogToggle, e.params), component_catalog())
-        @test switched >= 1
+        # each entry is placed, dragged and removed; one with a switch on its page "Edit" is also
+        # switched there (the detector has its switch on its card instead)
+        switched = count(n -> occursin("edit switch", n), names)
         @test length(names) == 3 * length(component_catalog()) + switched
-        @test any(n -> occursin("edit switch", n), names)
+        @test !any(n -> occursin("Detector: edit switch", n), names)
     end
 
     @testset "empty window, $layout" for layout in (:compact, :app)

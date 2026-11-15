@@ -558,9 +558,36 @@ function _export_code(gui::LiveView)
         (top isa LiveClipPlane || top in added || top in cx.written || haskey(inside, top)) && continue
         n += _export_pose_lines!(lines, gui, names, top)
     end
+    n += _export_stop_lines!(lines, gui, names, added)
     n == 0 && push!(lines, "", "# no changes")
     return join(lines, "\n") * "\n", n
 end
+
+"""
+    _export_stop_lines!(lines, gui, names, added) -> n
+
+Appends a `BeamletOptics.stop!(name, stop)` to the `lines` of `export_changes` for each detector of
+the `gui` that was switched on its card (see `_set_stop!`) and stops the beams now or not unlike at
+the start of the view, except for one that was `added` in the window, whose code has the state.
+Returns the number `n` of such detectors.
+"""
+function _export_stop_lines!(lines, gui::LiveView, names, added)
+    comp = gui.components
+    switched = String[]
+    for (d, stop0) in comp.stops0
+        (d in added || _has(comp.removed, d) || BMO.stop(d) == stop0) && continue
+        name = get(names, d, nothing)
+        isnothing(name) || push!(switched, "BeamletOptics.stop!($name, $(BMO.stop(d)))")
+    end
+    isempty(switched) && return 0
+    push!(lines, "", "# Detectors switched on their cards")
+    append!(lines, sort!(switched))
+    return length(switched)
+end
+
+# Whether the detector `obj` of the `gui` was switched on its card since the start, see `_set_stop!`
+_stop_switched(gui::LiveView, @nospecialize(obj)) =
+    haskey(gui.components.stops0, obj) && BMO.stop(obj) != gui.components.stops0[obj]
 
 """Copies `code` to the clipboard, returns `false` if there is no clipboard, e.g. headless."""
 function _copy_to_clipboard(code::String)
@@ -738,6 +765,8 @@ function _export_construct_lines!(lines, gui::LiveView, names, @nospecialize(obj
         pose = String[]
         _export_pose_lines!(pose, gui, names, obj; heading = false, current)
         append!(lines, (_commented(line) for line in pose))
+        # a detector of the script that was switched on its card, see `_set_stop!`
+        _stop_switched(gui, obj) && push!(lines, "# BeamletOptics.stop!($name, $(BMO.stop(obj)))")
         return false
     end
     push!(lines, _export_heading(gui, obj))

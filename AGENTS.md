@@ -86,7 +86,9 @@ describe it as available in docs or the skill.
 - `src/LiveCard.jl`, `src/LiveCards.jl`, `src/LiveCardRows.jl`: cards and the card API.
   `src/LiveCardPages.jl`: the pages of a card per type ("Pose", "Color", "Results", "Properties").
   `src/LiveBeamColor.jl`: the page "Color" of the sources (color, opacity and line width of their
-  beams). `src/LiveEdit.jl`: the page "Edit" of the components and sources from the catalog, which
+  beams). `src/LiveDetectorStop.jl`: the switch "stop beams" on the card of a detector, which
+  switches it in place (`BeamletOptics.stop!`) and writes the state into its code.
+  `src/LiveEdit.jl`: the page "Edit" of the components and sources from the catalog, which
   builds them again with other parameters. `src/LiveCopy.jl`: `Ctrl+C` and `Ctrl+V`, which build
   one of them again as it is and place it with the mouse. Adding, removing and changing are actions of the undo
   history of the controls (`_push_action!` in `src/LiveInteraction.jl`, `_record_added!` in

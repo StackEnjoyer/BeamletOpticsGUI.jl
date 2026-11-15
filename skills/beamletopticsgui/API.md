@@ -147,7 +147,9 @@ lens with an asphere is built and exported as the `Lens`, `DoubletLens` or `Trip
 surfaces, e.g. `Lens(SphericalSurface(r, d), EvenAsphericalSurface(r, d, k, [0.0, A4, ...]),
 thickness, n)`; a cemented surface belongs to both elements that it joins. The detector has a
 switch "stop beams" (on by default); off, the beams pass it unchanged (`Detector(edge_length,
-false)`) and reach the components behind it. "Place"
+false)`) and reach the components behind it. The card of any detector switches it later in place
+(page "Pose"; the page "Edit" has no switch), and `export_changes` writes
+`BeamletOptics.stop!(name, false)` for a detector without code of its own. "Place"
 attaches the chosen component to the mouse, a click drops it, `Esc` cancels, `Delete` removes the
 selected component or source. It moves in the plane of the table (perpendicular to `rotation_axis`,
 at the height of the source of its system) and snaps onto beams while `snap` is on; the first component or source of
