@@ -382,6 +382,9 @@ const GUI = BeamletOpticsGUI
         GUI._save_key!(gui)
         c = GUI._version_card(gui)
         @test !isnothing(c)
+        # in the middle of the view like a dialog, without a line to a point of the scene
+        @test GUI._centered(c.obj) && isempty(c.link[])
+        @test GUI._center_position(Vec2f(100, 50), Rect2f(10, 20, 400, 300)) == Point2f(160, 195)
         box = GUI._version_box(gui)
         @test box.displayed_string[] == "moved $lens" == version_summary(dir)
         @test box.focused[] && gui.controls.ignore_keys()
