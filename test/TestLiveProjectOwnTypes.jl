@@ -129,6 +129,32 @@ end
         close(gui)
     end
 
+    @testset "a change of the shape in a second window is saved (#88)" begin
+        dir = project()
+        gui = open_project(dir; display = false, const_kw...)
+        k1 = obj(gui, :K1)
+        second = open_system(gui, only(GUI._systems(gui)); display = false)
+        select!(second, k1)
+        Makie.set_close_to!(card_widget(second, k1, :width), 40.0)
+        @test k1.shape.diameter ≈ 0.04
+        # the code in both windows, saved by the window of the project
+        @test second.components.origin[k1].code == "Block(0.04, 0.005)"
+        @test gui.components.origin[k1].code == "Block(0.04, 0.005)"
+        @test GUI._autosave!(gui; force = true) === :saved
+        @test startswith(line(dir, :K1), "@component K1 = Block(0.04, 0.005)")
+        # undo in the second window: the old shape again, also in the files
+        @test GUI._undo!(second.controls)
+        old = obj(gui, :K1)
+        @test old !== k1 && old.shape.diameter == 0.025
+        @test GUI._autosave!(gui; force = true) === :saved
+        @test startswith(line(dir, :K1), "@component K1 = Block(0.025, 0.005)")
+        @test GUI._redo!(second.controls)
+        @test GUI._autosave!(gui; force = true) === :saved
+        @test startswith(line(dir, :K1), "@component K1 = Block(0.04, 0.005)")
+        close(second)
+        close(gui)
+    end
+
     @testset "a type without constructor_code" begin
         dir = project()
         gui = open_project(dir; display = false, const_kw...)

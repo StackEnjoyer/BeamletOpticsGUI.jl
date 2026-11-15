@@ -1025,20 +1025,25 @@ _selection_objects(s::_ShapeChange) = isnothing(s.old) ? Any[s.new] : Any[s.new,
     _shape_changed!(gui, obj, old, new)
 
 An input on the card of `obj` changed the code of its constructor from `old` to `new`: the code of
-its `origin` becomes `new` (the autosave writes it to the line of `obj`, see `_project_parts`), the
-handles of `obj` in the pool draw it again (`BeamletOptics.rerender!`), and the change is recorded
-in the undo history, see `_ShapeChange`.
+its `origin` becomes `new` in the `gui` and in every window linked with it that shows `obj` (see
+`open_system`), such that the window of the project saves it (the autosave writes it to the line of
+`obj`, see `_project_parts`); the handles of `obj` in the pools of these windows draw it again
+(`BeamletOptics.rerender!`), and the change is recorded in the undo history of the `gui`, see
+`_ShapeChange`.
 """
 function _shape_changed!(gui::LiveView, @nospecialize(obj), old::String, new::String)
-    comp = gui.components
     # e.g. removed by the input
-    haskey(comp.origin, obj) || return nothing
-    comp.origin[obj] = merge(comp.origin[obj], (; code = new))
-    for oh in _pool_handles(gui, obj)
-        Base.invokelatest(BMO.rerender!, oh)
+    haskey(gui.components.origin, obj) || return nothing
+    for v in unique(objectid, Any[gui, gui.links.views...])
+        origin = v.components.origin
+        haskey(origin, obj) || continue
+        origin[obj] = merge(origin[obj], (; code = new))
+        for oh in _pool_handles(v, obj)
+            Base.invokelatest(BMO.rerender!, oh)
+        end
+        _update_selection_box!(v.controls)
     end
-    _update_selection_box!(gui.controls)
-    comp.recording && _record_shape!(gui, obj, old)
+    gui.components.recording && _record_shape!(gui, obj, old)
     return nothing
 end
 

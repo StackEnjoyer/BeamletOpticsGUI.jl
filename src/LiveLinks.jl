@@ -219,6 +219,11 @@ function _link!(gui::LiveView, new::LiveView, system)
         to.system[obj] = system
         to.origin[obj] = get(from.origin, obj, nothing)
     end
+    # the code of the objects and sources that the view started with as well, e.g. of a project:
+    # a change of their shape in `new` reaches the code of every view, see `_shape_changed!`
+    for obj in Iterators.flatten((system.objects, _sources_of(gui, system)))
+        haskey(from.origin, obj) && !haskey(to.origin, obj) && (to.origin[obj] = from.origin[obj])
+    end
     for obj in from.removed
         if haskey(from.source_systems, obj)
             _has(from.source_systems[obj], system) || continue
