@@ -1373,6 +1373,27 @@ function _project_session(step; dir = mktempdir())
         _check(_project_pos(gui, mirror) ≈ target && _pos(mirror) ≈ target, "the mirror did not glide")
         settle!()
     end
+    # an object that the files add fades in, one that they remove fades out (see `_fade!`)
+    step("project: an agent adds a mirror, then removes it") do
+        text = read(file, String)
+        merge!() = (t = time(); GUI._check_files!(gui; now = t);
+            _check(GUI._check_files!(gui; now = t + 1) === :applied, "the window did not merge the file"))
+        write(file, text * "@component M9 = RoundPlanoMirror(0.0254, 0.006) pos = (0.0, 0.3, 0.05)\n")
+        merge!()
+        m9 = findfirst(((name, _),) -> name === :M9, gui.sync.ids)
+        _check(!isnothing(m9), "the mirror of the file was not added")
+        opaque() = all(p -> GUI._plot_alpha(p) == 1, GUI._object_plots(gui.controls.h, m9))
+        timedwait(opaque, 60.0; pollint = 0.01)
+        frame!()
+        _check(opaque(), "the added mirror did not fade in")
+        n = length(gui.ax.scene.plots)
+        write(file, text)
+        merge!()
+        timedwait(() -> length(gui.ax.scene.plots) < n, 60.0; pollint = 0.01)
+        frame!()
+        _check(!haskey(gui.sync.ids, m9), "the mirror of the file was not removed")
+        settle!()
+    end
     step("project: the activity of the others, its cues and its timeline") do
         a = GUI._activity(gui)
         # following the agent moves the camera: the steps after this one find the view as it was

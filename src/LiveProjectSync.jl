@@ -1071,7 +1071,8 @@ end
 Makes the entries, systems and groups of the `keys` in the open `gui` (whose state is the project
 `mine`, see `_collect_project`) as in the files `disk`, without undo entries: removes, adds,
 rebuilds (other code, or calling own code in `rebuild`), moves (gliding if `animate`, see
-`_glide_all!`), renames and relabels; the systems and groups of `merged` get the merged members (see
+`_glide_all!`), renames and relabels; with `animate`, added objects fade in and removed ones fade
+out (see `_fade!`); the systems and groups of `merged` get the merged members (see
 `_sync_members!`). A group whose members change is made anew with the window groups around and
 inside it (see `_group_plan`), one that only moved or was renamed is changed in place. The changed
 objects get a box for a moment. Returns what was done, e.g. `"moved M1"`.
@@ -1081,6 +1082,8 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
     done = String[]
     touched = Any[]
     glides = Tuple{Any, Any, Any}[]
+    # the objects that fade in and the ghosts of those that fade out, see `_fade!`
+    fades, ghosts = Tuple{Any, Any}[], AbstractObjectRenderHandle[]
     m = BMOP.match_entries(disk.entries, mine.entries)
     # The trees of groups that change are dissolved first and made again after the entries and the
     # systems, so that removed and rebuilt members are top-level objects then
@@ -1098,6 +1101,7 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
     for e in m.added
         _key(e) in keys || continue
         _remove_entry!(gui, e.object)
+        animate && _fade_ghost!(ghosts, gui, e.object)
         push!(done, "removed $(_shown_label(e))")
     end
     ms = BMOP.match_entries(disk.systems, mine.systems)
@@ -1110,7 +1114,10 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
     # In the files only: added
     for e in m.removed
         _key(e) in keys || continue
-        push!(touched, _add_entry!(gui, e))
+        obj = _add_entry!(gui, e)
+        # transparent before it is drawn, see `_fade_start!`
+        animate && _fade_start!(fades, gui, obj)
+        push!(touched, obj)
         push!(done, "added $(_shown_label(e))")
     end
     for (e, mine_e) in m.pairs
@@ -1152,6 +1159,13 @@ function _adopt!(gui::LiveView, mine, disk, keys; rebuild = Set{Symbol}(), anima
     for (se, mine_se) in ms.pairs
         _key(se) in keys || continue
         (se.name !== mine_se.name || se.label != mine_se.label) && _name!(gui, mine_se.object, se)
+    end
+    if !(isempty(fades) && isempty(ghosts))
+        @async try
+            _fade!(fades, ghosts)
+        catch err
+            gui.last_error = _log_once(gui, err, gui.last_error, "fade of the objects of the files")
+        end
     end
     # The table fits the setup of the files, see `_table_fit!`
     isempty(glides) && (_flash!(gui, touched); _table_fit!(gui); return done)
