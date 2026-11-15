@@ -74,7 +74,9 @@ Several windows and agents can work on one project at once, also from a shared d
   frame in the participant's colour at the new place, a dashed ghost at the old one and a soft arc
   between them, a small chip with the name and the change ("claude · moved M2 by 12 mm"); new
   objects settle into a frame, removed ones leave a ghost. What an agent says it does next
-  (`announce(...; doing)`) appears as a bubble at its object. The cues fade after about 3 s. When an
+  (`announce(...; doing, selected_id)`) appears as a bubble at its object; one that names no object
+  of the window stands in the upper-left corner of the view and says "(no object)" after the name.
+  The cues fade after about 3 s. When an
   agent changes things faster than one can follow, the setup changes at once, but the cues play one
   after the other at a readable pace; more than 3 s behind, the waiting ones become one cue
   ("claude · 14 changes").
