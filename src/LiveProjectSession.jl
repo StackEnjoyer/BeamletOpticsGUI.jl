@@ -22,6 +22,12 @@ function _session_code(code)
     return length(s) > 60 ? first(s, 57) * "..." : s
 end
 
+_pos_changed(old, new) = _entry_pos(old) != _entry_pos(new)
+_rot_changed(old, new) = maximum(abs, BMOP.rotation_matrix(old.rot) - BMOP.rotation_matrix(new.rot)) > 1e-13
+
+# The 3 angles in degrees of the rotation of an entry (`nothing` is the constructed pose: zero), `nothing` for a matrix
+_rot_angles(rot) = rot isa Tuple ? rot : isnothing(rot) ? (0.0, 0.0, 0.0) : nothing
+
 """The one line of the journal for one change of an entry, see `_journal!`."""
 function _entry_line(c)
     new, old = c.new, c.old
@@ -32,11 +38,13 @@ function _entry_line(c)
     c.kind === :relabeled && return "relabeled $(new.name) \"$(something(new.label, ""))\""
     c.kind === :meta && return "changed settings of $(new.name)"
     if c.kind === :moved
-        p = _entry_pos(old) != _entry_pos(new)
-        r = maximum(abs, BMOP.rotation_matrix(old.rot) - BMOP.rotation_matrix(new.rot)) > 1e-13
-        p && r && return "moved and rotated $(new.name) to $(_session_pos(_entry_pos(new)))"
-        p && return "moved $(new.name) to $(_session_pos(_entry_pos(new)))"
-        return "rotated $(new.name)"
+        p, r = _pos_changed(old, new), _rot_changed(old, new)
+        ps = "from $(_session_pos(_entry_pos(old))) to $(_session_pos(_entry_pos(new)))"
+        a0, a1 = _rot_angles(old.rot), _rot_angles(new.rot)
+        rs = isnothing(a0) || isnothing(a1) ? nothing : "from $(_session_pos(a0))° to $(_session_pos(a1))°"
+        p && r && return "moved and rotated $(new.name) " * ps * (isnothing(rs) ? "" : ", " * rs)
+        p && return "moved $(new.name) " * ps
+        return "rotated $(new.name)" * (isnothing(rs) ? "" : " " * rs)
     end
     return "changed $(new.name)"
 end
@@ -70,28 +78,158 @@ end
     _journal!(gui, changes)
 
 Adds the changes of the person to the journal of the `gui` (`gui.sync.journal`, the last
-`$(_JOURNAL_MAX)`) and writes the session file. `changes` is the result of
-`BeamletOpticsProjects.diff_projects` from the state before an autosave to the one it saved.
+`$(_JOURNAL_MAX)`) and to its log (`gui.sync.log`, all of them), and writes the session file and
+the log file. `changes` is the result of `BeamletOpticsProjects.diff_projects` from the state
+before an autosave to the one it saved.
 """
 function _journal!(gui::LiveView, changes)
     lines = String[]
+    records = Any[]
+    t = time()
     for c in changes.entries
-        push!(lines, _entry_line(c))
+        l = _entry_line(c)
+        push!(lines, l)
+        push!(records, _log_record(t, c, l))
     end
     renames = Dict{Symbol, Symbol}(c.old.name => c.new.name for c in changes.entries if c.kind === :renamed)
     for c in changes.systems
         if c.kind === :members
-            append!(lines, _member_lines(c, renames))
+            for l in _member_lines(c, renames)
+                push!(lines, l)
+                push!(records, (; time = t, kind = :members, id = c.new.name, text = l))
+            end
         else
-            push!(lines, _system_line(c))
+            l = _system_line(c)
+            push!(lines, l)
+            push!(records, (; time = t, kind = :system, id = something(c.new, c.old).name, text = l))
         end
     end
     isempty(lines) && return nothing
-    t = time()
     j = gui.sync.journal
     foreach(l -> push!(j, (t, l)), lines)
     length(j) > _JOURNAL_MAX && deleteat!(j, 1:(length(j) - _JOURNAL_MAX))
+    append!(gui.sync.log, records)
     _write_session!(gui)
+    _write_changes!(gui)
+    return nothing
+end
+
+# The record of the log for the change `c` of an entry with the line `text`; a move holds the old and new pose
+function _log_record(t, c, text)
+    id = something(c.new, c.old).name
+    base = (; time = t, kind = c.kind, id, text)
+    c.kind === :moved || return base
+    old, new = c.old, c.new
+    p, r = _pos_changed(old, new), _rot_changed(old, new)
+    return merge(base,
+        p ? (; old_pos = collect(Float64.(_entry_pos(old))), new_pos = collect(Float64.(_entry_pos(new)))) : (;),
+        r ? (; old_rot = _rot_toml(old.rot), new_rot = _rot_toml(new.rot)) : (;))
+end
+
+# A rotation for the log: the 3 angles in degrees or the 9 numbers of the matrix, row by row
+_rot_toml(rot) = rot isa Matrix ? vec(permutedims(Float64.(rot))) : collect(Float64.(something(rot, (0.0, 0.0, 0.0))))
+
+# The UTC time `t` (seconds since 1970) as `2026-11-15T10:01:02.120Z`
+function _utc_text(t::Real)
+    ms = round(Int, 1000t)
+    days, rest = fldmod(ms, 86_400_000)
+    # the civil date of a day number (H. Hinnant)
+    z = days + 719468
+    era = fld(z, 146097)
+    doe = z - era * 146097
+    yoe = (doe - doe ÷ 1460 + doe ÷ 36524 - doe ÷ 146096) ÷ 365
+    doy = doe - (365yoe + yoe ÷ 4 - yoe ÷ 100)
+    mp = (5doy + 2) ÷ 153
+    d = doy - (153mp + 2) ÷ 5 + 1
+    m = mp < 10 ? mp + 3 : mp - 9
+    y = yoe + era * 400 + (m <= 2)
+    h, rest = divrem(rest, 3_600_000)
+    mi, rest = divrem(rest, 60_000)
+    sec, milli = divrem(rest, 1000)
+    f(x, n) = lpad(x, n, '0')
+    return "$(f(y, 4))-$(f(m, 2))-$(f(d, 2))T$(f(h, 2)):$(f(mi, 2)):$(f(sec, 2)).$(f(milli, 3))Z"
+end
+
+# The log file `.bmo/changes-<person>.toml` of the person of this window
+_changes_file(dir::AbstractString) = BMOP.changes_file(dir, _person().id)
+
+# `s` as a basic string of TOML: `repr` of Julia escapes `$`, which TOML does not know
+function _toml_string(s::AbstractString)
+    io = IOBuffer()
+    print(io, '"')
+    for c in s
+        if c == '"' || c == '\\'
+            print(io, '\\', c)
+        elseif c == '\n'
+            print(io, "\\n")
+        elseif iscntrl(c)
+            print(io, "\\u", lpad(string(UInt32(c); base = 16), 4, '0'))
+        else
+            print(io, c)
+        end
+    end
+    print(io, '"')
+    return String(take!(io))
+end
+
+# The text of the log file: every change since the window opened the project, oldest first
+function _changes_text(gui::LiveView)
+    s = gui.sync
+    p = _person()
+    io = IOBuffer()
+    println(io, "person = ", _toml_string(p.id))
+    println(io, "name = ", _toml_string(p.name))
+    println(io, "started = ", _utc_text(s.log_started))
+    for r in s.log
+        println(io, "\n[[change]]")
+        println(io, "time = ", _utc_text(r.time))
+        println(io, "kind = ", _toml_string(String(r.kind)))
+        println(io, "id = ", _toml_string(String(r.id)))
+        println(io, "text = ", _toml_string(r.text))
+        for k in (:old_pos, :new_pos, :old_rot, :new_rot)
+            haskey(r, k) && println(io, k, " = ", repr(collect(r[k])))
+        end
+    end
+    return String(take!(io))
+end
+
+# Writes `text` to the log file atomically
+function _put_changes(dir::AbstractString, text::AbstractString)
+    file = _changes_file(dir)
+    mkpath(dirname(file))
+    tmp = file * ".tmp"
+    write(tmp, text)
+    mv(tmp, file; force = true)
+    return nothing
+end
+
+"""
+    _write_changes!(gui)
+
+Writes the log of the person of the `gui` (`gui.sync.log`, every change since the window opened
+the project) to `.bmo/changes-<person>.toml`. Does nothing without a project. An error of writing
+never propagates; it is logged once per distinct message.
+"""
+function _write_changes!(gui::LiveView)
+    dir = gui.project
+    isnothing(dir) && return nothing
+    text = _changes_text(gui)
+    job = () -> _put_changes_logged(dir, text)
+    gui.sync.background ? _write_later!(gui, :changes, job) : job()
+    return nothing
+end
+
+function _put_changes_logged(dir, text)
+    try
+        _put_changes(dir, text)
+    catch e
+        e isa InterruptException && rethrow()
+        msg = sprint(showerror, e)
+        if msg != _SESSION_WARNED[]
+            _SESSION_WARNED[] = msg
+            @warn "could not write the log of changes" exception = e
+        end
+    end
     return nothing
 end
 
@@ -192,6 +330,7 @@ function _session_text(gui::LiveView; kept = _closed_kept(gui))
         for (t, l) in Iterators.reverse(s.journal)
             println(io, "- ", _session_clock(t), " ", l)
         end
+        println(io, "\nAll changes of this session with old and new values: BeamletOpticsProjects.changes(\".\")")
     end
     return String(take!(io))
 end
@@ -328,6 +467,10 @@ Does nothing if it is connected already.
 function _connect_session!(gui::LiveView)
     isnothing(gui.project) && return nothing
     if isempty(gui.sync.session)
+        # The log of a person lasts from opening the project until the same person opens it again
+        empty!(gui.sync.log)
+        gui.sync.log_started = time()
+        _write_changes!(gui)
         l = on(_ -> _write_session!(gui), gui.controls.selected)
         push!(gui.sync.session, l)
     end

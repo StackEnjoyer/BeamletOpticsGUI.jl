@@ -241,7 +241,7 @@ pos_line(dir, id) = only(l for l in split(read(system(dir), String), "\n")
         @test occursin("pos = (0.0, 0.1, 0.01)", pos_line(dir, "L1"))
         # Its own write is no change of the files
         @test tick!(gui) === :none
-        @test last(gui.sync.journal)[2] == "moved L1 to (0.0, 0.1, 0.01)"
+        @test last(gui.sync.journal)[2] == "moved L1 from (0.0, 0.1, 0.0) to (0.0, 0.1, 0.01)"
         @test occursin("moved L1", read(GUI._session_file(dir), String))
     end
 

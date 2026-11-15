@@ -652,7 +652,9 @@ What the view knows of the files of its project, which an agent may change while
   `_own_change`) and `edited_at` the time it last changed, `skipped` the objects without a recipe that the last save
   left out (warned once);
 - `journal`: the recent changes of the person in the view, `(time, line)`, newest last, and
-  `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`;
+  `session` the listeners that write them to `.bmo/session.md`, see `LiveProjectSession.jl`; `log`
+  every change since the window opened the project (records with the old and new poses of a move,
+  oldest first) and `log_started` when that was, written to `.bmo/changes-<person>.toml`;
 - `gliding`: the objects that glide to a pose of the files, `obj => (P, R, entry)`, and a group
   that glides as one, `group => _GroupGlide`, see `_glide_all!`;
 - `others`: the other people who have the project open (by the id of their presence file, see
@@ -689,6 +691,8 @@ Base.@kwdef mutable struct _ProjectSync
     text::Union{Nothing, String} = nothing
     edited_at::Union{Nothing, Float64} = nothing
     journal::Vector{Tuple{Float64, String}} = Tuple{Float64, String}[]
+    log::Vector{Any} = Any[]
+    log_started::Float64 = time()
     session::Vector{Any} = Any[]
     gliding::IdDict{Any, Any} = IdDict{Any, Any}()
     skipped::Vector{String} = String[]
