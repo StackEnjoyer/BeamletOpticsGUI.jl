@@ -60,6 +60,11 @@ describe it as available in docs or the skill.
   `card_rows` method, not a branch in the card code.
 - **Layout-independent code does not know the layouts.** Shared logic calls the hooks of
   `AbstractLiveLayout`; a new widget must not depend on `CompactLayout` or `AppLayout` (P3).
+- **A layout hook dispatches on `gui.layout`, never on the view type.** `LiveView` has no type
+  parameter. A hook is called as `_pin!(gui, obj)`; its barrier passes `gui.layout` on to
+  `_pin!(gui::LiveView, layout::AppLayout, obj)` or to the fallback on `::AbstractLiveLayout` (see
+  the docstring of `AbstractLiveLayout`). Code of one layout that is no hook takes `gui::LiveView`
+  and reads `_app(gui)` or `_compact(gui)`.
 
 ## Code map
 
@@ -70,7 +75,7 @@ describe it as available in docs or the skill.
   `gui.pool`: the one handle that renders every object of the view once, also an object of several
   systems; the `LiveSystemHandle` of a system holds the object handles of its members, which are the
   pool's, see `_render_members!`), and small pose helpers.
-- `src/LiveView.jl`: `LiveView{L}` and its state structs (`_TraceState`, `_ClipState`,
+- `src/LiveView.jl`: `LiveView` and its state structs (`_TraceState`, `_ClipState`,
   `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_DetectorStates`, `_LayoutWidgets`), `live_view`,
   and the docstring of `AbstractLiveLayout` (the layout interface).
 - `src/LiveScroll.jl`: scroll areas (`_ScrollArea`), e.g. the sidebars of the app layout: Makie has
@@ -222,6 +227,8 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   A script of a user holds types that no workload has seen, e.g. a lens with its own glass. The
   behavior per type stays dispatch (`card_rows` etc.). `live_view` and `kinematic_controls!` are
   not specialized on their arguments either.
+- **The GUI is not compiled per layout either**: `LiveView` has no layout parameter, and what
+  differs per layout dispatches on `gui.layout` (see "Design principles").
 - **Measure** with `benchmark/jit_probe.jl` (see its header): it replays a session step by step and
   prints the compile time of each step; `benchmark/jit_trace_summary.jl` lists the methods of a
   trace. The scene `other` holds types that no workload has seen. A step of a new action that

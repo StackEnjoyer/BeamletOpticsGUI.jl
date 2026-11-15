@@ -38,10 +38,8 @@ const GUI = BeamletOpticsGUI
     end
     # The number of hits of the detector, which has no list of hits before its first one
     _nhits(pd) = (hits = BMO.hits(pd); isnothing(hits) ? 0 : length(hits))
-    _listed(gui::GUI.AppView, obj) = _in(obj, [r.key for r in GUI._tree_rows(gui)])
-    _listed(gui, obj) = _in(obj, gui.objects.menu)
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _listed(gui, obj) = gui.layout isa GUI.AppLayout ? (_in(obj, [r.key for r in GUI._tree_rows(gui)])) : (_in(obj, gui.objects.menu))
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _message(f) = try
         f()
         ""

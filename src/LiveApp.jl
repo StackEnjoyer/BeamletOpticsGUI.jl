@@ -76,8 +76,8 @@ mutable struct AppLayout <: AbstractLiveLayout
     AppLayout(theme::NamedTuple) = new(theme)
 end
 
-"""`LiveView` with the app layout, i.e. `live_view(...; layout = :app)`."""
-const AppView = LiveView{AppLayout}
+# The layout of a `LiveView` made with `layout = :app`, for the helpers of the app layout
+_app(gui::LiveView) = gui.layout::AppLayout
 
 _layout_name(::AppLayout) = :app
 
@@ -141,8 +141,7 @@ and the dock of the `gui` have now, see `_part_size_kwargs`: a dock that was nei
 nor dragged keeps following the window (`nothing`), a higher one than a window of the default size
 allows gets its largest height there.
 """
-function _part_size_kwargs(gui::AppView)
-    layout = gui.layout
+function _part_size_kwargs(::LiveView, layout::AppLayout)
     dock = layout.dock.size
     hi = last(_dock_height_limits(_default_size(layout)[2]))
     return (; sidebar_width = (Float64(layout.left.size.x), Float64(layout.right.size.x)),
@@ -175,7 +174,7 @@ function _add_toolbar_entry!(layout::AppLayout, group::Symbol)
     end
     return grid[1, length(grid.content) + 1]
 end
-_add_toolbar_entry!(gui::AppView, group::Symbol) = _add_toolbar_entry!(gui.layout, group)
+_add_toolbar_entry!(::LiveView, layout::AppLayout, group::Symbol) = _add_toolbar_entry!(layout, group)
 
 """
     _add_sidebar_section!(layout::AppLayout, side::Symbol, title; grow = false) -> GridLayout
@@ -218,8 +217,8 @@ function _add_sidebar_section!(layout::AppLayout, side::Symbol, title::AbstractS
     end
     return content
 end
-_add_sidebar_section!(gui::AppView, side::Symbol, title::AbstractString; kwargs...) =
-    _add_sidebar_section!(gui.layout, side, title; kwargs...)
+_add_sidebar_section!(::LiveView, layout::AppLayout, side::Symbol, title::AbstractString; kwargs...) =
+    _add_sidebar_section!(layout, side, title; kwargs...)
 
 # `_add_dock_panel!` is defined with the tabs of the dock in `LiveDock.jl`
 
@@ -236,8 +235,7 @@ collapsed, such that the 3D view fills the window (see `_set_shown!`); afterward
 again as its toggle says, i.e. a sidebar that was collapsed stays collapsed, and the inspector and
 the dock are refreshed, which are not updated while they are collapsed.
 """
-function _set_spectator_ui!(gui::AppView, on::Bool)
-    layout = gui.layout
+function _set_spectator_ui!(gui::LiveView, layout::AppLayout, on::Bool)
     layout.ui_hidden = on
     foreach(p -> _set_shown!(p, !on), (layout.bar, layout.status_bar))
     _set_shown!(layout.left, !on && layout.collapse.left.active[])
@@ -452,29 +450,29 @@ Connections and status
 
 # The inspector follows the selection via `_update_inspector!`, called right before. The rows of all
 # objects of a selection of several are shown and highlighted, see `_selection_objects`
-function _on_selected!(gui::AppView)
+function _on_selected!(gui::LiveView, layout::AppLayout)
     sel = gui.controls.selected[]
     objs = _selection_objects(sel)
     for obj in objs
         _reveal!(gui, obj)
     end
-    _set_selected!(gui.layout.tree, _is_multi(sel) ? objs : sel)
+    _set_selected!(layout.tree, _is_multi(sel) ? objs : sel)
     return nothing
 end
 
-_on_clip_planes_changed!(gui::AppView) = _update_tree!(gui)
-_on_hidden!(gui::AppView) = _update_tree!(gui)
+_on_clip_planes_changed!(gui::LiveView, ::AppLayout) =_update_tree!(gui)
+_on_hidden!(gui::LiveView, ::AppLayout) =_update_tree!(gui)
 # Also the name in the head of the inspector: a component that takes the place of another one gets
 # its name after it was selected, see `_replace!`
-function _on_components_changed!(gui::AppView)
+function _on_components_changed!(gui::LiveView, layout::AppLayout)
     _update_tree!(gui)
-    gui.layout.right.shown && _show_header!(gui, gui.layout.inspector.shown)
+    layout.right.shown && _show_header!(gui, layout.inspector.shown)
     return nothing
 end
-_show_hint(::AppView) = "click its eye in the object tree to show it again"
+_show_hint(::LiveView, ::AppLayout) = "click its eye in the object tree to show it again"
 
-function _on_clipping!(gui::AppView)
-    active = gui.layout.clip_toggle.active
+function _on_clipping!(gui::LiveView, layout::AppLayout)
+    active = layout.clip_toggle.active
     active[] == gui.clip.enabled || (active[] = gui.clip.enabled)
     return nothing
 end
@@ -484,8 +482,7 @@ Connects the entries of the app layout that are not fields of `LiveView`: the cl
 the help in the 3D view (see `_connect_help!`), the collapse toggles, the info label, the object
 tree and the inspector. All updates are driven by events.
 """
-function _connect_layout!(gui::AppView)
-    layout = gui.layout
+function _connect_layout!(gui::LiveView, layout::AppLayout)
     ctrl = gui.controls
     listeners = ctrl.listeners
     # The listeners of the sidebars that scroll end with those of the controls, see `_ScrollArea`
@@ -520,7 +517,7 @@ function _connect_layout!(gui::AppView)
 end
 
 """
-    _build_splitters!(gui::AppView)
+    _build_splitters!(gui::LiveView)
 
 Builds and connects the splitters of the app layout of the `gui`, see `_Splitters`: the edges of
 the left and the right sidebar towards the 3D view, which change their widths within
@@ -534,8 +531,8 @@ are resized with the right sidebar (see `_resize_docked_views!`). When a drag en
 catalog is laid out again for the width of the left sidebar (see `_resize_catalog_dock!`) and the
 inspector fits its texts to the width of the right one (see `_on_inspector_resized!`).
 """
-function _build_splitters!(gui::AppView)
-    layout = gui.layout
+function _build_splitters!(gui::LiveView)
+    layout = _app(gui)
     scene = gui.fig.scene
     active = () -> !layout.ui_hidden
     sidebar = () -> Float64.(_SIDEBAR_WIDTH_LIMITS)
@@ -555,25 +552,25 @@ end
 
 # The help lies over the 3D view: the floating cards keep off it, its clicks are not clicks into the
 # 3D view
-_layout_obstacles(gui::AppView) =
-    [_overlay_rect(gui.layout.help.pill); _help_rects(gui.layout.help)]
-_over_layout(gui::AppView) =
-    _over_help(gui.layout.help, Point2f(events(gui.ax.scene).mouseposition[]))
+_layout_obstacles(::LiveView, layout::AppLayout) =
+    [_overlay_rect(layout.help.pill); _help_rects(layout.help)]
+_over_layout(gui::LiveView, layout::AppLayout) =
+    _over_help(layout.help, Point2f(events(gui.ax.scene).mouseposition[]))
 
 #=
 App layout: panels as tabs of the analysis dock, controls as sections of the left sidebar, tools
 in the toolbar group `:user` at the end of the toolbar
 =#
 
-_mark_panel_stale!(gui::AppView, p::_UserPanel) = (push!(gui.layout.tabs.stale, p); nothing)
+_mark_panel_stale!(::LiveView, layout::AppLayout, p::_UserPanel) = (push!(layout.tabs.stale, p); nothing)
 # A panel whose tab is opened later reads the detectors and beams of the last solve: not after a
 # cancelled or failed one, whose hits are incomplete
-_results_valid(gui::AppView) = gui.detectors.hits_valid && !_running(gui) && !gui.trace.preview
+_results_valid(gui::LiveView, ::AppLayout) = gui.detectors.hits_valid && !_running(gui) && !gui.trace.preview
 
 # A panel that is updated is not stale anymore, e.g. one whose tab was opened while a solve ran
-function _update_user_panel!(gui::AppView, p::_UserPanel)
-    delete!(gui.layout.tabs.stale, p)
-    return invoke(_update_user_panel!, Tuple{LiveView, _UserPanel}, gui, p)
+function _update_user_panel!(gui::LiveView, layout::AppLayout, p::_UserPanel)
+    delete!(layout.tabs.stale, p)
+    return invoke(_update_user_panel!, Tuple{LiveView, AbstractLiveLayout, _UserPanel}, gui, layout, p)
 end
 
 """
@@ -581,8 +578,7 @@ Adds the panel as a tab of the dock: the content is built into the shown tab, th
 active tab is shown again, unless `select` (or there was none). The panel is updated when its tab
 is opened, see `_refresh_tab!`.
 """
-function _add_user_panel!(f, gui::AppView, title::String, select::Bool)
-    layout = gui.layout
+function _add_user_panel!(f, ::LiveView, layout::AppLayout, title::String, select::Bool)
     tabs = layout.tabs
     old = tabs.active
     content = _add_dock_panel!(layout, title; icon = :chart)
@@ -597,16 +593,16 @@ function _add_user_panel!(f, gui::AppView, title::String, select::Bool)
     return p
 end
 
-function _refresh_tab!(gui::AppView, p::_UserPanel)
+function _refresh_tab!(gui::LiveView, p::_UserPanel)
     _results_valid(gui) || return nothing
     _update_user_panel!(gui, p)
     return nothing
 end
 
-_controls_slot!(gui::AppView, title::String) = _add_sidebar_section!(gui, :left, title)
+_controls_slot!(gui::LiveView, ::AppLayout, title::String) = _add_sidebar_section!(gui, :left, title)
 
 """
-    _catalog_dock_slot!(gui::AppView, title)
+    _catalog_dock_slot!(gui::LiveView, layout::AppLayout, title)
 
 The dock of the component catalog in the app layout: the section `title` of the left sidebar, below
 the object tree. Its content is a collapsible part, the buttons of the dock are at the right of its
@@ -614,8 +610,7 @@ title (see `_section_header`), and `reveal` switches the toggle of the sidebar o
 that of the sidebar at the start; the catalog is laid out again when the sidebar was resized, see
 `_build_splitters!`.
 """
-function _catalog_dock_slot!(gui::AppView, title::AbstractString)
-    layout = gui.layout
+function _catalog_dock_slot!(gui::LiveView, layout::AppLayout, title::AbstractString)
     left = layout.left
     content = _add_sidebar_section!(layout, :left, title)
     stack = left.grid
@@ -631,8 +626,8 @@ end
 
 # The left sidebar, the place of `add_controls!`, may be collapsed by its toggle: it is attached to
 # the figure while blocks are added to it, see `_with_ui` of all layouts
-function _with_ui(f, gui::AppView)
-    left = gui.layout.left
+function _with_ui(f, gui::LiveView, layout::AppLayout)
+    left = layout.left
     function attached()
         shown = left.shown
         _set_shown!(left, true)
@@ -642,7 +637,7 @@ function _with_ui(f, gui::AppView)
             _set_shown!(left, shown)
         end
     end
-    return invoke(_with_ui, Tuple{Any, LiveView}, attached, gui)
+    return invoke(_with_ui, Tuple{Any, LiveView, AbstractLiveLayout}, attached, gui, layout)
 end
-_on_controls_added!(gui::AppView) = _hide_collapsed!(gui.layout.left)
+_on_controls_added!(::LiveView, layout::AppLayout) = _hide_collapsed!(layout.left)
 

@@ -206,8 +206,7 @@ end
 
 # The widget `name` on the card of the object of the card of the selection: floating (compact) or
 # docked in the inspector (app)
-_card(gui) = gui.cards.selection
-_card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
+_card(gui) = gui.layout isa GUI.AppLayout ? gui.layout.inspector.card : gui.cards.selection
 _widget(gui, name) = GUI._card_widget(_card(gui), name)
 
 @testset "Live view widget recipes" begin

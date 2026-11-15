@@ -292,7 +292,7 @@ mine(dir, me) = sort!([String(c.id) for c in values(BMOP.claims(dir)) if c.by ==
             @test gui.status.text[] == "Bob is editing S1"
             # "+" and "Remove system" of the card of the system
             GUI._inspect!(gui, S1)
-            card = gui isa GUI.AppView ? gui.layout.inspector.card : gui.cards.selection
+            card = gui.layout isa GUI.AppLayout ? gui.layout.inspector.card : gui.cards.selection
             push(name) = (GUI._card_widget(card, name).clicks[] += 1; nothing)
             gui.status.text[] = ""
             push(:member_add)

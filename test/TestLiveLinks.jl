@@ -63,8 +63,7 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard.up)
         return nothing
     end
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _no_errors(guis...) = all(g -> isnothing(g.last_error), guis)
     _message(f) = try
         f()
@@ -107,7 +106,7 @@ const GUI = BeamletOpticsGUI
         sys = System([_mirror(0.0, 0.1)])
         gui = _live_view(sys; layout)
         new = open_system(gui, sys; display = false, layout = :app, theme = :dark, auto_trace = false)
-        @test new isa GUI.AppView && new.layout.theme === GUI._app_theme(:dark)
+        @test new.layout isa GUI.AppLayout && new.layout.theme === GUI._app_theme(:dark)
         @test isempty(new.pairs) && !new.trace.auto[]
         # the switch of the auto tracing is one for the linked windows, also the one of the kwarg
         @test !gui.trace.auto[]

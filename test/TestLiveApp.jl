@@ -36,7 +36,7 @@ const GUI = BeamletOpticsGUI
         m, pd = _fixture()
         gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
             sliders = ["a" => (0:0.1:1, v -> nothing)])
-        @test gui isa GUI.AppView
+        @test gui.layout isa GUI.AppLayout
         @test gui isa GUI.LiveView
         @test gui.layout isa GUI.AppLayout
         @test Tuple(gui.fig.scene.viewport[].widths) == (1600, 950)
@@ -67,7 +67,7 @@ const GUI = BeamletOpticsGUI
 
         # the compact layout is the default
         gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
-        @test gui isa GUI.CompactView
+        @test gui.layout isa GUI.CompactLayout
         @test gui.widgets.menu isa Makie.Menu
         close(gui)
 

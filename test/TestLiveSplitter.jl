@@ -125,14 +125,14 @@ const GUI = BeamletOpticsGUI
         m, pd, beam = _fixture()
         gui = live_view(System([m, pd]), beam; trace_budget = Inf, sidebar_width = (320, 280),
             dock_height = 200)
-        @test gui isa GUI.CompactView
+        @test gui.layout isa GUI.CompactLayout
         @test GUI._part_size_kwargs(gui) == (;)
         close(gui)
         # also values that the app layout rejects
         m, pd, beam = _fixture()
         gui = live_view(System([m, pd]), beam; trace_budget = Inf, layout = :compact,
             sidebar_width = 10, dock_height = 5000)
-        @test gui isa GUI.CompactView
+        @test gui.layout isa GUI.CompactLayout
         close(gui)
     end
 
