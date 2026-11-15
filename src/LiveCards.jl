@@ -1594,11 +1594,14 @@ end
 
 """Summary of the live view, shown without a selection, e.g. in the inspector of the app layout."""
 function _inspector_rows(gui::LiveView, ::Nothing)
-    objects = sum(h -> length(AbstractTrees.children(h)), gui.system_handles; init = 0)
+    # The objects shown, once each: also those of several systems and those without a system, e.g.
+    # the components placed before the first system of `live_view()`
+    objects = length(unique(objectid, Any[rendered(c) for h in (gui.system_handles..., gui.extras)
+                                          for c in AbstractTrees.children(h)]))
     rows = Tuple{String, String}[
         ("Systems", string(length(gui.system_handles))), ("Objects", string(objects)),
         ("Sources", string(length(_sources(gui)))),
-        ("Detectors", string(length(_find_detectors(_systems(gui))))),
+        ("Detectors", string(length(_find_detectors(Any[_systems(gui)..., rendered(gui.extras)])))),
         ("Clip planes", string(length(gui.clip.planes))),
         ("Last trace", gui.trace.solve_time > 0 ? _ms_string(gui.trace.solve_time) : "–")]
     return rows

@@ -117,7 +117,6 @@ const GUI = BeamletOpticsGUI
         tx = System([m])
         b1 = _beam()
         gui = _live_view(tx => b1; layout)
-        @test_throws ArgumentError remove_system!(gui, tx)
         rx = add_system!(gui; label = "Receiver")
         @test GUI._systems(gui) == [tx, rx] && GUI._label(gui, rx) == "Receiver"
         @test gui.objects.inspected === rx && GUI._target_system(gui) === rx
@@ -142,6 +141,55 @@ const GUI = BeamletOpticsGUI
         @test GUI._system_of_source(gui, b2) === rx && _target(b2) === m
         @test _redo!(gui)
         @test GUI._systems(gui) == [tx, other] && GUI._is_extra(gui, own)
+        # the last system as well, which leaves a view without a system
+        remove_system!(gui, other)
+        remove_system!(gui, tx)
+        @test isempty(GUI._systems(gui)) && GUI._is_extra(gui, m) && isnothing(GUI._system_of_source(gui, b1))
+        @test endswith(gui.status.text[], GUI._NO_SYSTEM) && !gui.trace.stale
+        @test _undo!(gui)
+        @test GUI._systems(gui) == [tx] && _target(b1) === m
+        close(gui)
+    end
+
+    @testset "a view that opens without a system, $layout" for layout in (:compact, :app)
+        gui = _live_view(; layout)
+        @test isempty(GUI._systems(gui)) && isempty(gui.pairs) && gui.status.text[] == GUI._NO_SYSTEM
+        # the tree of the app layout says how to add one
+        layout === :app && @test isnothing(only(gui.layout.tree.rows).key)
+        # code asks for a system first, the catalog and the mouse place into "no system"
+        m, src = _mirror(), _beam()
+        @test_throws ArgumentError add_component!(gui, m)
+        @test_throws ArgumentError add_component!(gui, src)
+        @test isempty(gui.components.added)
+        @test GUI._placement_system(gui, m) === :none && GUI._placement_system(gui, src) === :none
+        add_component!(gui, m; system = :none, select = false, label = "M")
+        @test GUI._is_extra(gui, m) && occursin("then + on its card", gui.status.text[])
+        add_component!(gui, src; system = :none, select = false)
+        @test isnothing(GUI._system_of_source(gui, src)) && occursin("then + on its card", gui.status.text[])
+        @test ("Objects", "1") in GUI._inspector_rows(gui, nothing)
+        # nothing to trace, nothing outdated
+        GUI._on_change!(gui, nothing)
+        @test !gui.trace.stale
+        GUI._trace!(gui)
+        @test gui.status.text[] == GUI._NO_SYSTEM
+        # the script of the view opens it again
+        script = GUI._export_script_code(gui)
+        @test occursin("\ngui = live_view(;\n", script) && occursin("add_component!(gui,", script)
+        # the first system, which the user adds
+        sys = add_system!(gui; select = false)
+        @test GUI._systems(gui) == [sys] && GUI._label(gui, sys) == "System 1"
+        layout === :app && @test !any(r -> isnothing(r.key), gui.layout.tree.rows)
+        add_component!(gui, m; system = sys, select = false)
+        add_component!(gui, src; system = sys, select = false)
+        @test GUI._system_of_source(gui, src) === sys && _target(src) === m
+        # the added system is defined before the lines that use it (#83)
+        code, _ = GUI._export_code(gui)
+        name = match(r"\n(\w+) = System\(\)\n", code)[1]
+        defined = findfirst("$name = System()", code).start
+        @test defined < findfirst("push!($name,", code).start && defined < findfirst("solve_system!($name,", code).start
+        close(gui)
+        gui = _live_view()
+        @test GUI._export_script_code(gui) |> s -> occursin("\ngui = live_view()\n", s)
         close(gui)
     end
 

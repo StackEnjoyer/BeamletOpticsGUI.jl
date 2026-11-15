@@ -252,9 +252,8 @@ constructor is skipped like any such object.
 """
 function _project_parts(gui::LiveView, dir::AbstractString; name::AbstractString = BMOP.project_name(dir))
     comp = gui.components
-    # A system without members and sources that has no name, e.g. the one of an empty view
-    systems = Any[sys for sys in _systems(gui)
-                  if !(isempty(sys.objects) && isempty(_sources_of(gui, sys)) && !haskey(gui.labels, sys))]
+    # Every system, also an empty one: the user adds the first one to an empty view, see `live_view`
+    systems = Any[_systems(gui)...]
     # Without the objects of the `extras` kwarg, which have no system at the start
     start = comp.start_systems
     free = Any[obj for obj in rendered(gui.extras).objects if !isempty(get(start, obj, Any[nothing]))]
@@ -568,7 +567,7 @@ end
     _open_from(project; kwargs...) -> LiveView
 
 The live view of a loaded `project` (see `BeamletOpticsProjects.load_project`), without showing it:
-its systems with their sources, a `System()` for a project without systems, the objects and
+its systems with their sources (none for a project without systems), the objects and
 sources without a system, their labels (else their readable ids), their ids and uids (see
 `_ProjectSync`), the origins of the objects (their code, with which they are saved again and, from
 the catalog, edited and copied), and the view file of the person (`.bmo/view-<person>.toml`, else `view.toml`). The `kwargs` of `live_view` win over those of
@@ -590,8 +589,7 @@ function _open_from(project; view = _read_view(project), kwargs...)
         sources = Any[byname[n] for n in s.sources]
         isempty(sources) ? push!(args, s.object) : append!(args, Any[s.object => src for src in sources])
     end
-    isempty(args) && push!(args, BMO.System())
-    paired = Base.IdSet{Any}(a.second for a in args if a isa Pair)
+    paired =Base.IdSet{Any}(a.second for a in args if a isa Pair)
     # The label of each, else its readable id
     labels = IdDict{Any, String}()
     for e in Iterators.flatten((project.entries, project.systems, project.groups))

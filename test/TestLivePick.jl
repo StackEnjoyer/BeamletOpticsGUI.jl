@@ -426,7 +426,7 @@ const GUI = BeamletOpticsGUI
         @test _w(gui, :trace_state).box.color[] == GUI._rgba(gui.layout.theme.ok_soft)
         @test _target(f.b1) === f.m1
 
-        # "Remove system": its components stay in the view, the last system is kept
+        # "Remove system": its components stay in the view, also of the last system
         @test _w(gui, :remove) isa GUI._IconButton && _w(gui, :remove).icon[] === GUI._icon(:trash)
         @test occursin("members stay in the view", _w(gui, :remove).tooltip[])
         _push!(gui, :remove)
@@ -435,7 +435,7 @@ const GUI = BeamletOpticsGUI
         @test gui.objects.inspected !== f.tx
         GUI._inspect!(gui, f.rx)
         _push!(gui, :remove)
-        @test GUI._systems(gui) == [f.rx] && occursin("last system", gui.status.text[])
+        @test isempty(GUI._systems(gui)) && endswith(gui.status.text[], GUI._NO_SYSTEM)
         close(gui)
     end
 

@@ -114,7 +114,8 @@ such as housings, which can be hidden, but not selected). An object of several s
 under each of them: its rows have the same key, such that they are all highlighted while it is
 selected, and show the number of its systems as their `count`. Then the sources and the objects
 without a system in the same way under a row "No system" (key: `gui.extras`, only if there are
-any), and the clip planes. The keys of all other rows are the objects. Systems and "No system" are
+any), and the clip planes. A view without a system starts with a note on how to add one (key
+`nothing`, see `_TreeRow`). The keys of all other rows are the objects. Systems and "No system" are
 expanded, and groups collapsed, by default. Objects whose plots are all hidden (see
 `gui.objects.hidden`) are muted.
 
@@ -125,6 +126,9 @@ function _tree_rows(gui::AppView)
     drawn = Base.IdSet{Any}(rendered(oh) for oh in AbstractTrees.children(gui.controls.h))
     rows = _TreeRow[]
     pick = _member_pick(gui)
+    # A view without a system, e.g. of `live_view()`: a note on how to add one
+    isempty(gui.system_handles) &&
+        push!(rows, _TreeRow(nothing, "No system: add one with the tool System", 0, :system, false, false, nothing))
     for h in gui.system_handles
         sys = rendered(h)
         buttons = (isnothing(pick) || pick.sys !== sys) ? :none : pick.add ? :add : :remove

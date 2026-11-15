@@ -54,7 +54,8 @@ Sources are added and removed with the same two functions. A view may start with
 empty table, and every source can be removed, also the last one:
 
 ```julia
-gui = live_view(System())
+gui = live_view()      # without a system
+add_system!(gui)       # or the tool "System"
 
 laser = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
 add_component!(gui, laser; label = "laser")
@@ -111,7 +112,8 @@ form take its numbers; the other arguments of the constructor keep their default
 of glasses instead of a number: N-BK7, fused silica, CaF2, N-SF11, N-SF10, N-SF6HT, N-SF5, N-F2,
 N-BAF10 and N-LAK22 with their dispersion (see [`catalog_glasses`](@ref)), and "constant" with a box
 for a constant refractive index. The line "into" at the top names the system that gets the
-component or source: the system of the selected or inspected object, else the first one. It is a
+component or source: the system of the selected or inspected object, else the first one, and "no
+system" in a view without a system (see `live_view()`). It is a
 menu, which chooses another system; the choice holds until another object is selected, which sets
 the system again. A source can be traced through any system, a component is added to a `System`
 only, hence the menu lists the systems that can get the chosen entry. Its last two options are "no
@@ -216,13 +218,13 @@ width, on and off) is not part of the history.
 The tool "Script" next to "Export" prints the whole setup as a script and copies it to the
 clipboard, like [`export_script`](@ref): the constructors and poses of all components and sources,
 the systems, the `solve_system!` calls and the `live_view` call. A view that was built from an
-empty `System()` with the catalog gives a script that runs as it is. An object that the view
+empty table with the catalog gives a script that runs as it is. An object that the view
 started with is a comment with its type and its pose, since its constructor is not known; fill it
 in there.
 
 ```julia
-gui = live_view(System())
-# place sources and components from the catalog, then
+gui = live_view()
+# add a system with the tool "System", place sources and components from the catalog, then
 code = export_script(gui)
 ```
 

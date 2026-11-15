@@ -50,6 +50,7 @@ The system that `add_component!` adds to: the given `system`, which must be a `S
 """
 function _add_system(gui::LiveView, ::Nothing)
     sys = _target_system(gui)
+    isempty(gui.system_handles) && throw(ArgumentError(_NO_SYSTEM_ERROR))
     isnothing(sys) && throw(ArgumentError(
         "the live view has no `System` to add components to, a `StaticSystem` can not be changed"))
     return sys
@@ -114,7 +115,7 @@ function add_component!(gui::LiveView, @nospecialize(obj::BMO.ObjectOrGroup); sy
     end
     if isnothing(sys)
         # An object without a system is not traced
-        gui.status.text[] = "$(_label(gui, obj)) added without a system, it is not traced"
+        gui.status.text[] = _untraced_note(gui, _label(gui, obj))
     else
         _on_change!(gui, obj)
     end
@@ -790,7 +791,7 @@ function _remove_all!(gui::LiveView, objs::Vector{Any})
     end
     traced && _on_change!(gui, nothing)
     # like after the removal of the last source, see `remove_component!`
-    gui.status.text[] = (isempty(gui.pairs) && any(_is_source, objs)) ? "$msg, " * _NO_SOURCE : msg
+    gui.status.text[] = (isempty(gui.pairs) && any(_is_source, objs)) ? "$msg, " * _no_source_hint(gui) : msg
     return snaps
 end
 

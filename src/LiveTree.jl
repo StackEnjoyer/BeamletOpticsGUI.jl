@@ -28,7 +28,9 @@ A row of an [`_ObjectTree`](@ref), plain data without any reference to the tree.
 - `key`: any value that identifies the row, e.g. the object it stands for. It is passed to the
   `clicked`, `toggled`, `eye_clicked` and `expand_clicked` observables of the tree and compared
   with `isequal` by [`_set_selected!`](@ref). Several rows may have the same key, e.g. an object that
-  is listed in several places; they are all highlighted while the key is selected
+  is listed in several places; they are all highlighted while the key is selected. A row with the
+  key `nothing` is a note, e.g. a hint in an empty tree: it is drawn muted, and clicks on it are
+  ignored
 - `label`: the displayed name, ellipsized if it does not fit
 - `depth`: the indentation level, `0` for top-level rows
 - `kind`: the type of the row, mapped to a marker and its color by the tree, e.g. `:lens`
@@ -234,6 +236,8 @@ function _ObjectTree(parent::Makie.GridPosition;
             (isnothing(hit) || hit != pressed) && return Consume(true)
             i, part = hit
             key = tree.rows[i].key
+            # a note
+            isnothing(key) && return Consume(true)
             part === :eye ? (tree.eye_clicked[] = key) :
             part === :expander ? (tree.expand_clicked[] = key) :
             part === :label ? (tree.modified ? (tree.toggled[] = key) : (tree.clicked[] = key)) :
@@ -501,7 +505,7 @@ function _redraw!(tree::_ObjectTree)
         row = rows[i]
         y = _row_y(tree, i)
         c = _row_columns(tree, row)
-        muted = row.visible === false
+        muted = row.visible === false || isnothing(row.key)
         label_pos[k] = Point2f(c.label, y)
         label_text[k] = _fit_label(tree, row.label, label_right - _row_reserved(row) - c.label)
         label_color[k] = muted ? tree.muted_color : tree.text_color
@@ -542,6 +546,7 @@ function _redraw!(tree::_ObjectTree)
             push!(selection_color, tree.selection_color, tree.accent_color)
         end
     end
+    _tree_placeholder!(marker_pos, marker_shape, marker_color => tree.icon_color)
     _tree_placeholder!(expander_pos, expander_shape)
     _tree_placeholder!(eye_pos, eye_shape, eye_color => tree.icon_color)
     p = tree.plots

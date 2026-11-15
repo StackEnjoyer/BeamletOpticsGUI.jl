@@ -1613,10 +1613,68 @@ function _project_session(step; dir = mktempdir())
 end
 
 """
+    _empty_session(step, layout) -> (gui, screen)
+
+The window of `live_view()` without a system in the `layout`: its first frames (the catalog with
+"no system", the note of the object tree of the app layout), a beam and a mirror of the catalog
+placed with the mouse into "no system", the key `t`, which has nothing to trace, the first system
+with a mirror and a beam, and the removal of that last system.
+"""
+function _empty_session(step, layout::Symbol)
+    gui = live_view(; layout)
+    screen = _screen()
+    display(screen, gui.fig)
+    frame!() = _frame!(gui, screen)
+    settle!() = _settle!(gui, screen)
+    step("empty window, $layout: first frames") do
+        settle!()
+        _check(isempty(GUI._systems(gui)) && gui.status.text[] == GUI._NO_SYSTEM, "the window has a system")
+    end
+    step("empty window, $layout: place a beam and a mirror into no system") do
+        # the first one is dropped at the origin, the second one where the mouse is
+        for (name, offset) in (("Beam", (0, 0)), ("Round mirror", (25, 10)))
+            entry = only(e for e in component_catalog() if e.name == name)
+            o = GUI._place_catalog!(gui, entry, _catalog_strings(entry))
+            isnothing(o) && error(gui.status.text[])
+            _move!(gui, _center(gui) .+ offset)
+            _tick!(gui)
+            frame!()
+            _click!(gui)
+            settle!()
+            _check(!GUI._placing(gui) && (GUI._is_extra(gui, o) || o in gui.beams.unassigned),
+                "the $name was not placed into no system")
+        end
+    end
+    step("empty window, $layout: key t") do
+        _move!(gui, _center(gui))
+        _key!(gui, Keyboard.t)
+        frame!()
+        _check(gui.status.text[] == GUI._NO_SYSTEM, "t did not say that there is no system")
+    end
+    step("empty window, $layout: first system, a mirror and a beam in it") do
+        sys = add_system!(gui)
+        mirror = RoundPlanoMirror(25e-3, 5e-3)
+        zrotate3d!(mirror, deg2rad(45))
+        translate3d!(mirror, [0, 0.1, 0])
+        add_component!(gui, mirror; system = sys, select = false)
+        add_component!(gui, Beam([0.0, 0, 0], [0.0, 1, 0]); system = sys, select = false)
+        settle!()
+        _check(GUI._systems(gui) == [sys] && count(p -> p.first === sys, gui.pairs) == 1, "the first system was not added")
+    end
+    step("empty window, $layout: remove the last system") do
+        remove_system!(gui, only(GUI._systems(gui)))
+        settle!()
+        _check(isempty(GUI._systems(gui)) && gui.status.text[] != "", "the last system was not removed")
+    end
+    return gui, screen
+end
+
+"""
     _precompile_sessions(step)
 
 The sessions of the workload: `_session` in the compact layout with a beam and in the app layout
-with a Gaussian beamlet, `_catalog_session` and `_project_session`. Closes their windows.
+with a Gaussian beamlet, `_catalog_session`, `_empty_session` in both layouts and
+`_project_session`. Closes their windows.
 
 The other two combinations of layout and beam type are not replayed: they took about 2 minutes of
 every precompilation and compiled 0.3 s, since the GUI is not specialized on the type of a source
@@ -1631,6 +1689,7 @@ function _precompile_sessions(step)
         _close!(_session(step, layout, fixture)...)
     end
     _close!(_catalog_session(step)...)
+    foreach(layout -> _close!(_empty_session(step, layout)...), (:compact, :app))
     _close!(_project_session(step)...)
     return nothing
 end
