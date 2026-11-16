@@ -465,7 +465,8 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.2, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         target = Ref{Any}(m1)
-        gui = live_view(System([m1, m2, pd]) => cs; trace_budget = Inf, throttle = false,
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(System([m1, m2, pd]) => cs; trace_budget = Inf, throttle = false, progress_delay = Inf,
             catalog = CatalogEntry[], pick = ax -> (GUI._object_plots(gui.controls.h, target[])[1], 0))
         scene = gui.ax.scene
         events(scene).mouseposition[] = (100.0, 100.0)

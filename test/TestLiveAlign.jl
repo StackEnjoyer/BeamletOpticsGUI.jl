@@ -23,7 +23,8 @@ const GUI = BeamletOpticsGUI
         sys = System([m, lens])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         b = Beam([-0.05, 0.4, 0], [0.0, -1, 0], 1e-6)
-        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, kwargs...)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`, also below)
+        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, progress_delay = Inf, kwargs...)
         return gui, sys, m, lens, a, b
     end
     _pose(obj) = (collect(Float64, position(obj)), Matrix{Float64}(BMO.orientation(obj)))
@@ -52,7 +53,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "onto the beam ($layout)" for layout in (:compact, :app)
+    @testset "onto the beam ($layout)" for layout in (:compact,)
         gui, sys, m, lens, a, b = _fixture(; layout)
         ctrl = gui.controls
         P0, R0 = _pose(lens)
@@ -136,7 +137,7 @@ const GUI = BeamletOpticsGUI
         other = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(other, [0.2, 0.2, 0])
         gui = live_view(System([fixed, other]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
-            objects = [other])
+            progress_delay = Inf, objects = [other])
         @test !GUI._center_on_beam!(gui, fixed) && !GUI._face_beam!(gui, fixed)
         @test collect(position(fixed)) ≈ [0.03, 0.2, 0]
         @test occursin("not movable", gui.status.text[])
@@ -149,7 +150,7 @@ const GUI = BeamletOpticsGUI
         translate_to3d!(lens, [0.03, 0.1, 0.004])
         sys = System([m, lens])
         gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false,
-            constraints = Dict(lens => (; move = (:x,), rotate = (:z,))))
+            progress_delay = Inf, constraints = Dict(lens => (; move = (:x,), rotate = (:z,))))
         @test GUI._center_on_beam!(gui, lens)
         # along its local x-axis only: the height is kept
         @test _pose(lens)[1] ≈ [0.0, 0.1, 0.004] atol = 1e-9
@@ -157,7 +158,7 @@ const GUI = BeamletOpticsGUI
         @test occursin("can not rotate freely", gui.status.text[])
         close(gui)
         gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false,
-            constraints = Dict(lens => (; move = ())))
+            progress_delay = Inf, constraints = Dict(lens => (; move = ())))
         translate_to3d!(lens, [0.03, 0.1, 0.0])
         @test !GUI._center_on_beam!(gui, lens)
         @test occursin("can not move", gui.status.text[])

@@ -8,7 +8,8 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "Card of a selection of several objects" begin
-    # Three mirrors, one of them in a group with a second one, and a detector
+    # Three mirrors, one of them in a group with a second one, and a detector; every solve ends
+    # before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; kwargs...)
         m1 = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m1, deg2rad(45))
@@ -24,7 +25,8 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [-0.1, 0.2, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System([m1, m2, m3, g, pd]) => cs; trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], labels = Dict(m1 => "M1", m2 => "M2", m3 => "M3"), kwargs...)
+            catalog = CatalogEntry[], labels = Dict(m1 => "M1", m2 => "M2", m3 => "M3"), progress_delay = Inf,
+            kwargs...)
         return gui, (; m1, m2, m3, m4, g, pd)
     end
     _w(c, name) = GUI._card_widget(c, name)

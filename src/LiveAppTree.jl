@@ -95,9 +95,9 @@ end
 # Clip planes are switched off, not hidden, see `_toggle_hidden!`
 _tree_visible(::LiveView, _, ::LiveClipPlane) = nothing
 
-function _push_tree_rows!(rows, gui::AppView, drawn, @nospecialize(obj), depth; count::Int = 0)
+function _push_tree_rows!(rows, gui::LiveView, drawn, @nospecialize(obj), depth; count::Int = 0)
     children = _children(obj)
-    expanded = get(gui.layout.expanded, obj, false)
+    expanded = get(_app(gui).expanded, obj, false)
     push!(rows, _TreeRow(obj, _label(gui, obj), depth, _tree_kind(obj), !isempty(children),
         expanded, _tree_visible(gui, drawn, obj); count))
     expanded && foreach(c -> _push_tree_rows!(rows, gui, drawn, c, depth + 1), children)
@@ -105,7 +105,7 @@ function _push_tree_rows!(rows, gui::AppView, drawn, @nospecialize(obj), depth; 
 end
 
 """
-    _tree_rows(gui::AppView) -> Vector{_TreeRow}
+    _tree_rows(gui::LiveView) -> Vector{_TreeRow}
 
 Returns the rows of the object tree of the `gui`, which lists the members of each system: per
 system a row (key: its system handle) followed by its sources (see `_sources_of`) and its objects
@@ -122,7 +122,7 @@ expanded, and groups collapsed, by default. Objects whose plots are all hidden (
 The row of a system has the buttons "+" and "−", which pick its members with the mouse, see
 `_tree_button!`; the one of the pick that is going on (see `_member_pick`) is highlighted.
 """
-function _tree_rows(gui::AppView)
+function _tree_rows(gui::LiveView)
     drawn = Base.IdSet{Any}(rendered(oh) for oh in AbstractTrees.children(gui.controls.h))
     rows = _TreeRow[]
     pick = _member_pick(gui)
@@ -144,10 +144,10 @@ end
 
 # The row of the system (or of "No system") of `h` with the icon of the `kind` and the `buttons`
 # (see `_TreeRow`), then its `sources` and its objects
-function _push_system_rows!(rows, gui::AppView, drawn, h::AbstractSystemRenderHandle, kind::Symbol,
+function _push_system_rows!(rows, gui::LiveView, drawn, h::AbstractSystemRenderHandle, kind::Symbol,
         sources, buttons)
     tops = _top_levels(h)
-    expanded = get(gui.layout.expanded, h, true)
+    expanded = get(_app(gui).expanded, h, true)
     push!(rows, _TreeRow(h, _label(gui, h), 0, kind, !isempty(tops) || !isempty(sources), expanded,
         _tree_visible(gui, drawn, h); buttons))
     expanded || return rows
@@ -160,14 +160,14 @@ function _push_system_rows!(rows, gui::AppView, drawn, h::AbstractSystemRenderHa
 end
 
 """Sets the rows of the object tree of the `gui`, only called on events, see `_tree_rows`."""
-function _update_tree!(gui::AppView)
-    _set_rows!(gui.layout.tree, _tree_rows(gui))
+function _update_tree!(gui::LiveView)
+    _set_rows!(_app(gui).tree, _tree_rows(gui))
     return nothing
 end
 
 """Expands or collapses the row `key` of the object tree, see `_tree_rows`."""
-function _toggle_expanded!(gui::AppView, key)
-    expanded = gui.layout.expanded
+function _toggle_expanded!(gui::LiveView, key)
+    expanded = _app(gui).expanded
     expanded[key] = !get(expanded, key, key isa AbstractSystemRenderHandle)
     _update_tree!(gui)
     return nothing
@@ -180,7 +180,7 @@ Handles a click on the button "+" (`button == :add`) or "−" (`:remove`) of the
 of `h` in the object tree: starts picking its members with the mouse, or ends it if exactly this
 is going on, see `_set_member_pick!`. The button of the pick is highlighted, see `_tree_rows`.
 """
-function _tree_button!(gui::AppView, h::AbstractSystemRenderHandle, button::Symbol)
+function _tree_button!(gui::LiveView, h::AbstractSystemRenderHandle, button::Symbol)
     _set_member_pick!(gui, rendered(h), button === :add)
     _update_tree!(gui)
     return nothing
@@ -194,9 +194,9 @@ Handles a click on the label of a row of the object tree: selects the object lik
 inspects it instead, i.e. shows its card in the inspector without selecting it, see `_inspect!`;
 the expander of a system expands or collapses it.
 """
-_tree_click!(gui::AppView, h::AbstractSystemRenderHandle) = _inspect!(gui, h)
+_tree_click!(gui::LiveView, h::AbstractSystemRenderHandle) = _inspect!(gui, h)
 
-function _tree_click!(gui::AppView, @nospecialize(obj))
+function _tree_click!(gui::LiveView, @nospecialize(obj))
     _is_movable(gui.controls, obj) ? _select!(gui, obj) : _inspect!(gui, obj)
     return nothing
 end
@@ -209,18 +209,18 @@ Handles a click with `Ctrl` (`Cmd` on macOS) on the label of a row of the object
 `Ctrl`+click in the 3D view, see `_toggle_select!`. On any other row, e.g. of a system or of an
 object that is not movable, it is a plain click, see `_tree_click!`.
 """
-_tree_toggle!(gui::AppView, h::AbstractSystemRenderHandle) = _tree_click!(gui, h)
+_tree_toggle!(gui::LiveView, h::AbstractSystemRenderHandle) = _tree_click!(gui, h)
 
-function _tree_toggle!(gui::AppView, @nospecialize(obj))
+function _tree_toggle!(gui::LiveView, @nospecialize(obj))
     _is_movable(gui.controls, obj) ? _toggle_select!(gui, obj) : _tree_click!(gui, obj)
     return nothing
 end
 
 # The row of the inspected object is highlighted like the selected one, see `_on_selected!`
-_show_inspected!(::AppView, ::Nothing) = nothing
-function _show_inspected!(gui::AppView, @nospecialize(obj))
+_show_inspected!(::LiveView, ::AppLayout, ::Nothing) = nothing
+function _show_inspected!(gui::LiveView, layout::AppLayout, @nospecialize(obj))
     _reveal!(gui, obj)
-    _set_selected!(gui.layout.tree, _row_key(gui, obj))
+    _set_selected!(layout.tree, _row_key(gui, obj))
     return nothing
 end
 
@@ -229,12 +229,12 @@ Expands the groups that contain `obj` and a system that lists it (or "No system"
 of it is shown in the object tree: of an object of several systems the first one, unless one of
 them is expanded. The rows are only set again if a row was expanded.
 """
-_reveal!(::AppView, ::Nothing) = nothing
+_reveal!(::LiveView, ::Nothing) = nothing
 # The rows of the systems are always shown
-_reveal!(::AppView, ::BMO.AbstractSystem) = nothing
+_reveal!(::LiveView, ::BMO.AbstractSystem) = nothing
 
-function _reveal!(gui::AppView, @nospecialize(obj))
-    expanded = gui.layout.expanded
+function _reveal!(gui::LiveView, @nospecialize(obj))
+    expanded = _app(gui).expanded
     chain = _chain(gui.controls, obj)
     changed = false
     for group in chain[2:end]
@@ -254,10 +254,10 @@ The handles of the systems of the `gui` whose rows list the top-level object or 
 in the object tree, in the order of the tree; `gui.extras` for one without a system. Empty for what
 is listed under no system, e.g. a clip plane.
 """
-_listing_handles(gui::AppView, @nospecialize(obj)) = AbstractSystemRenderHandle[
+_listing_handles(gui::LiveView, @nospecialize(obj)) = AbstractSystemRenderHandle[
     h for h in (gui.system_handles..., gui.extras) if _has(_top_levels(h), obj)]
 
-function _listing_handles(gui::AppView, src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})
+function _listing_handles(gui::LiveView, src::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})
     sys = _system_of_source(gui, src)
     h = isnothing(sys) ? gui.extras : _system_handle(gui, sys)
     return isnothing(h) ? AbstractSystemRenderHandle[] : AbstractSystemRenderHandle[h]
@@ -291,8 +291,8 @@ Returns the tooltip of the object tree of the `gui` (see `_TreeTip`), `nothing` 
 `_connect_tree_tips!`. A field of the layout and not an entry of a global registry, which would keep
 every closed window alive, see `_highlight`.
 """
-_tree_tip_state(gui::AppView) =
-    isdefined(gui.layout, :tree_tip) ? gui.layout.tree_tip::_TreeTip : nothing
+_tree_tip_state(gui::LiveView) =
+    isdefined(_app(gui), :tree_tip) ? _app(gui).tree_tip::_TreeTip : nothing
 
 """
     _tree_tip(gui) -> Union{Nothing, NamedTuple}
@@ -303,8 +303,8 @@ eye of a row hides or shows its object, "+" and "−" of a system pick its membe
 (see `_set_member_pick!`) and the counter is the number of systems of an object. `nothing` for a
 label, an expander and beside the rows.
 """
-function _tree_tip(gui::AppView)
-    tree = gui.layout.tree
+function _tree_tip(gui::LiveView)
+    tree = _app(gui).tree
     _mouse_in_tree(tree) || return nothing
     hit = _hit(tree)
     isnothing(hit) && return nothing
@@ -324,7 +324,7 @@ function _tree_tip(gui::AppView)
 end
 
 """Hides the tooltip of the object tree of the `gui` and forgets what it was for."""
-function _hide_tree_tip!(gui::AppView)
+function _hide_tree_tip!(gui::LiveView)
     tip = _tree_tip_state(gui)
     isnothing(tip) && return nothing
     isnothing(tip.timer) || (close(tip.timer); tip.timer = nothing)
@@ -337,7 +337,7 @@ end
 Shows the tooltip of the part of the object tree of the `gui` under the mouse (see `_tree_tip`),
 if the mouse still rests on the part that the tooltip waits for.
 """
-function _show_tree_tip!(gui::AppView)
+function _show_tree_tip!(gui::LiveView)
     tip = _tree_tip_state(gui)
     isnothing(tip) && return nothing
     info = _tree_tip(gui)
@@ -352,7 +352,7 @@ end
 The mouse moved in the window of the `gui`: the tooltip of the object tree waits for
 `_TREE_TIP_DELAY` on another eye, button or counter, and is hidden elsewhere.
 """
-function _on_tree_hover!(gui::AppView)
+function _on_tree_hover!(gui::LiveView)
     tip = _tree_tip_state(gui)
     isnothing(tip) && return nothing
     info = _tree_tip(gui)
@@ -372,17 +372,17 @@ function _on_tree_hover!(gui::AppView)
 end
 
 """
-    _connect_tree_tips!(gui::AppView)
+    _connect_tree_tips!(gui::LiveView)
 
 Gives the eyes, the buttons "+" and "−" and the counters of the object tree of the `gui` tooltips
 like those of the icons of the toolbar: the tree draws them as markers of one plot, which have no
 tooltip of their own. A click, scrolling and the closed window hide the tooltip.
 """
-function _connect_tree_tips!(gui::AppView)
+function _connect_tree_tips!(gui::LiveView)
     scene = gui.fig.scene
-    t = gui.layout.theme
+    t = _app(gui).theme
     tip = _TreeTip(Observable(""), Observable(Point2f(0)), Observable(false), nothing, nothing)
-    gui.layout.tree_tip = tip
+    _app(gui).tree_tip = tip
     plot = Makie.tooltip!(scene, tip.pos, tip.text; placement = :below, visible = tip.visible,
         backgroundcolor = t.tooltip, textcolor = t.tooltip_text, outline_linewidth = 0,
         triangle_size = 6, offset = 4, fontsize = 13, textpadding = (6, 6, 4, 4), overdraw = true,

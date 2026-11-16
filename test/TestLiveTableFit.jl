@@ -7,13 +7,14 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "Optical table fits the setup again" begin
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture()
         m = RoundPlanoMirror(25e-3, 5e-3)
         lens = SphericalLens(0.05, -0.05, 0.01, 0.02)
         translate_to3d!(lens, [0.0, 0.1, 0.0])
         sys = System([m, lens])
         gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
-            throttle = false, plane_normal = [0, 0, 1], table = true)
+            throttle = false, plane_normal = [0, 0, 1], table = true, progress_delay = Inf)
         return gui, sys, m, lens
     end
 

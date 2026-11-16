@@ -10,8 +10,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Polarization overlays" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf), kwargs)...)
 
     _pbeam(pos, dir = [0.0, 1, 0]) = Beam(pos, dir, 633e-9, [1.0, 0, 0])
     # A wrapped source of polarized beams, the central beam is not the first one
@@ -111,6 +112,7 @@ const GUI = BeamletOpticsGUI
         # solving afterwards does not touch the removed overlay
         GUI._resolve!(gui, nothing)
         @test length(_lines(gui)) == n
+        close(gui)
     end
 
     @testset "group: central beam only" begin
@@ -131,6 +133,7 @@ const GUI = BeamletOpticsGUI
         @test _mid_x(line) ≈ 0 atol = 1e-4
         GUI._set_polarization!(gui, src, false)
         @test length(_visible_lines(gui)) == n
+        close(gui)
     end
 
     @testset "astigmatic beamlet and group" begin
@@ -151,6 +154,7 @@ const GUI = BeamletOpticsGUI
         GUI._set_polarization!(gui, agb, false)
         GUI._set_polarization!(gui, sg, false)
         @test length(_visible_lines(gui)) == n
+        close(gui)
     end
 
     @testset "not polarizable" begin
@@ -159,6 +163,7 @@ const GUI = BeamletOpticsGUI
         gui = _live_view(sys => b)
         @test_throws ArgumentError GUI._set_polarization!(gui, b, true)
         @test !GUI._polarization_on(gui, b)
+        close(gui)
     end
 
     @testset "beam_kwargs show_polarization" begin
@@ -177,6 +182,7 @@ const GUI = BeamletOpticsGUI
         # a beam without polarized rays is rejected before the window is built
         b3 = Beam([0.0, 0, 0], [0.0, 1, 0])
         @test_throws ArgumentError _live_view(sys => b3; beam_kwargs = Dict(b3 => (; show_polarization = true)))
+        close(gui)
     end
 
     @testset "clip beams and beams off" begin
@@ -211,6 +217,7 @@ const GUI = BeamletOpticsGUI
         @test all(p -> !p.visible[], render_plots(gui.beams.pol[b]))
         GUI._set_beam_on!(gui, b, true)
         @test count(p -> p.visible[], render_plots(gui.beams.pol[b])) == 1
+        close(gui)
     end
 
     @testset "overlay of outdated beams is dimmed" begin
@@ -225,6 +232,7 @@ const GUI = BeamletOpticsGUI
         # the removed overlay is forgotten by the restore after the next trace
         GUI._trace!(gui)
         @test !gui.trace.stale
+        close(gui)
     end
 
     @testset "sliders of the curve" begin

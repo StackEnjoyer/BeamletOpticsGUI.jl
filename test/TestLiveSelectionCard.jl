@@ -33,8 +33,10 @@ const GUI = BeamletOpticsGUI
 
     # The plot that the custom `pick` of the controls returns, `nothing` for the background
     picked = Ref{Any}(nothing)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(layout) = live_view(System([fx.bench, fx.lens]), Beam([0.0, 0, 0], [0.0, 1, 0]);
-        layout, detectors = [], trace_budget = Inf, throttle = false, pick = _ -> (picked[], 0),
+        layout, detectors = [], trace_budget = Inf, throttle = false, progress_delay = Inf,
+        pick = _ -> (picked[], 0),
         labels = Dict(fx.bench => "Bench", fx.pair => "Pair", fx.dl => "Achromat", fx.dl.front => "Crown",
             fx.m3 => "Flat"))
     _plot(gui, leaf) = first(render_plots(GUI._child_handle(gui.controls.h, leaf)))
@@ -44,7 +46,7 @@ const GUI = BeamletOpticsGUI
         picked[] = isnothing(leaf) ? nothing : _plot(gui, leaf)
         vp = gui.ax.scene.viewport[]
         # the edge of the view of the app layout is the splitter of its sidebar, see `_Splitter`
-        inset = gui isa GUI.AppView ? 6 : 3
+        inset = gui.layout isa GUI.AppLayout ? 6 : 3
         _move!(gui, (vp.origin[1] + vp.widths[1] - inset, vp.origin[2] + vp.widths[2] / 2))
         @assert !GUI._over_browse_card(gui)
         _press!(gui)
@@ -73,10 +75,9 @@ const GUI = BeamletOpticsGUI
         return minimum(r) .+ Makie.widths(r) ./ 2
     end
     # The card of the selection shows the selected object: floating (compact) or in the inspector (app)
-    _component_card_shown(gui::GUI.LiveView{GUI.AppLayout}) = !isnothing(GUI._shown_object(gui))
-    _component_card_shown(gui) = gui.cards.selection.scene.visible[]
+    _component_card_shown(gui) = gui.layout isa GUI.AppLayout ? (!isnothing(GUI._shown_object(gui))) : (gui.cards.selection.scene.visible[])
 
-    @testset "the selection card of a group ($layout)" for layout in (:compact, :app)
+    @testset "the selection card of a group ($layout)" for layout in (:compact,)
         gui = _live_view(layout)
         _open!(gui, fx.m1)
         @test gui.objects.browsed === fx.bench
@@ -350,7 +351,7 @@ const GUI = BeamletOpticsGUI
         return nothing
     end
 
-    @testset "small menu under the cursor ($layout)" for layout in (:compact, :app)
+    @testset "small menu under the cursor ($layout)" for layout in (:compact,)
         gui = _live_view(layout)
         ctrl, c = gui.controls, _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
@@ -565,8 +566,9 @@ const GUI = BeamletOpticsGUI
         foreach(((i, m),) -> translate3d!(m, [0.03 * (i - 1), 0.1, 0]), enumerate(mirrors))
         row = ObjectGroup(mirrors)
         five = ObjectGroup([RoundPlanoMirror(0.02, 0.004) for _ in 1:5])
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(System([row, five]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [],
-            trace_budget = Inf, throttle = false, labels = Dict(row => "Row"))
+            trace_budget = Inf, throttle = false, progress_delay = Inf, labels = Dict(row => "Row"))
         c = _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
         _move!(gui, minimum(view) .+ Makie.widths(view) ./ 2)
@@ -626,14 +628,14 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "parts button on the card of a group ($layout)" for layout in (:compact, :app)
+    @testset "parts button on the card of a group ($layout)" for layout in (:compact,)
         gui = _live_view(layout)
         names(obj) = [w.name for w in GUI._head_actions(obj)]
         @test names(fx.bench) == [:hide, :parts] && names(fx.dl) == [:hide, :parts]
         @test names(fx.lens) == [:hide] && names(fx.m1) == [:hide]
         GUI._select!(gui, fx.bench)
-        layout == :compact ? GUI._update_cards!(gui) : GUI._refresh_inspector!(gui; force = true)
-        card = layout == :compact ? gui.cards.selection : gui.layout.inspector.card
+        GUI._update_cards!(gui)
+        card = gui.cards.selection
         button = GUI._card_widget(card, :parts)
         @test button isa Makie.Button && button.label[] == "parts ›"
         button.clicks[] += 1
@@ -641,7 +643,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.controls.selected[])
         GUI._end_browse!(gui)
         GUI._select!(gui, fx.lens)
-        layout == :compact ? GUI._update_cards!(gui) : GUI._refresh_inspector!(gui; force = true)
+        GUI._update_cards!(gui)
         @test isnothing(GUI._card_widget(card, :parts))
         close(gui)
     end

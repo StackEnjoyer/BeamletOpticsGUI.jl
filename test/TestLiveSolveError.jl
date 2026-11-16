@@ -9,8 +9,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Solve error message" begin
 
-    _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false), kwargs)...)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+    _live_view(args...; kwargs...) = live_view(args...;
+        merge((; trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf), kwargs)...)
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
@@ -30,10 +31,11 @@ const GUI = BeamletOpticsGUI
     end
     _texts(c) = [GUI._card_widget(c, Symbol(:error_, i)).text[] for i in eachindex(c.obj.rows)]
 
-    @testset "two kinds of beams on one detector ($layout)" for layout in (:compact, :app)
+    # the message is shared logic; the layouts differ in its pin, see "other errors" below
+    @testset "two kinds of beams on one detector" begin
         sys, pd, b1, b2 = _fixture()
         # the initial solve fails, the window opens with the message at the detector
-        gui = @test_logs (:error, r"solving the systems failed") _live_view(sys => b1, sys => b2; layout,
+        gui = @test_logs (:error, r"solving the systems failed") _live_view(sys => b1, sys => b2;
             labels = Dict(pd => "PD"))
         c = _message(gui)
         @test !isnothing(c)
