@@ -148,6 +148,8 @@ describe it as available in docs or the skill.
   (`_ViewLinks`) and show the same objects; the view that changes solves, the others follow
   (`_sync_links!` after a solve and when the beams become outdated, `_sync_structure!` after adding
   and removing, which `_attach!` and `_detach!` do for a view without changing the system).
+- `src/LiveProjectFade.jl`: objects that the files of a project add fade in, removed ones fade out
+  (`_fade!`, started by `_adopt!` in `src/LiveProjectSync.jl`).
 - `src/LiveMarkers.jl`: clip planes and source markers.
 - `src/LiveDebug.jl`: the debug mode (`debug` kwarg, tool "Debug", taken over by `open_system`): its
   state `_Debug`, the stats (`_DebugStats`), the event log (`_debug_event!`) and the layer protocol
