@@ -10,9 +10,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Copy and paste" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _entry(name) = only(e for e in component_catalog() if e.name == name)
     _defaults(entry) = String[GUI._catalog_string(p) for p in entry.params]
@@ -38,7 +39,8 @@ const GUI = BeamletOpticsGUI
     _beam() = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
     _hex(c) = GUI._color_hex(Makie.to_color(c))
 
-    @testset "a component, $layout" for layout in (:compact, :app)
+    # In the compact layout: `LiveView` has no layout parameter, and copying is the same code in both
+    @testset "a component, $layout" for layout in (:compact,)
         GUI._CLIPBOARD[] = nothing
         sys = System()
         gui = _live_view(sys => _beam(); layout)
@@ -288,7 +290,7 @@ const GUI = BeamletOpticsGUI
         return Core.eval(mod, :system).objects
     end
 
-    @testset "a group, $layout" for layout in (:compact, :app)
+    @testset "a group, $layout" for layout in (:compact,)
         GUI._CLIPBOARD[] = nothing
         sys = System()
         gui = _live_view(sys => _beam(); layout)

@@ -6,7 +6,8 @@ using Makie
 using Test
 
 const GUI = BeamletOpticsGUI
-const const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
+# Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+const const_kw = (; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
 
 const LENS = "SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5))"
 const START = """
@@ -31,7 +32,7 @@ session(dir) = read(GUI._session_file(dir), String)
 
 @testset "session file" begin
     @testset "no file without a project" begin
-        gui = live_view(BeamletOptics.System(); trace_budget = Inf, throttle = false, detectors = [])
+        gui = live_view(BeamletOptics.System(); trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
         @test GUI._write_session!(gui) === nothing
         @test GUI._connect_session!(gui) === nothing
         @test GUI._session_closed!(gui) === nothing

@@ -9,13 +9,14 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live view analysis dock" begin
 
-    # Rays along +y through a transparent detector onto a second one
+    # Rays along +y through a transparent detector onto a second one; every solve ends before the
+    # call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; layout = :app, kwargs...)
         pds = [Detector(25e-3, false), Detector(25e-3)]
         foreach(((k, pd),) -> translate3d!(pd, [0, 0.05k, 0]), enumerate(pds))
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System(pds) => src; layout, labels = Dict(pds[1] => "PD1", pds[2] => "PD2"),
-            trace_budget = Inf, throttle = false, preview = false, kwargs...)
+            trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf, kwargs...)
         return gui, pds
     end
 

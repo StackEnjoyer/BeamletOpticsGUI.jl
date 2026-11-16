@@ -10,8 +10,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live card rows" begin
 
+    # Each solve and each computation of a view ends before the call returns, independent of the
+    # speed of the machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, progress_delay = Inf), kwargs)...)
     function _select!(gui, obj)
         gui.controls.selected[] = obj
         GUI._update_selection_box!(gui.controls)
@@ -105,34 +107,31 @@ const GUI = BeamletOpticsGUI
         @test startswith(_text(gui, :signal), "P = ") && endswith(_text(gui, :signal), " mW")
         close(gui)
 
+        # the ray sources in one window, the checks only read: the point, line and fan sources
+        # beside the mirror and the detector, such that only the rays of `src` hit the mirror
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rings = 2, num_rays = 40)
-        gui = _live_view(System([m, pd]), src; preview = false)
-        _select!(gui, src)
-        @test _text(gui, :source) == "633 nm, ⌀ 4 mm"
-        # the rays of the source hit the mirror: the center ray first, the range of all of them
-        _select!(gui, m)
-        @test startswith(_text(gui, :beam), "40 rays, AOI 45.0° (")
-        close(gui)
-
-        ps = PointSource([0.0, 0, 0], [0.0, 1, 0], 0.01, 633e-9; num_rings = 2, num_rays = 40)
-        gui = _live_view(System([m, pd]), ps)
-        _select!(gui, ps)
-        @test _text(gui, :source) == "633 nm, NA 0.01"
-        close(gui)
-
+        ps = PointSource([0.5, 0, 0], [0.0, 1, 0], 0.01, 633e-9; num_rings = 2, num_rays = 40)
         # a line source: its width, only odd numbers of rays on the slider, an even current count kept
         steps = [11, 21, 51, 101, 201, 501, 1001, 2001, 5001, 10001, 20001]
-        line = UniformLineSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 101, basis = [1.0, 0, 0])
+        line = UniformLineSource([0.5, 0, 0.1], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 101, basis = [1.0, 0, 0])
         @test GUI._ray_steps(line.sampling, 10, 101) == steps
         @test GUI._ray_steps(line.sampling, 10, 40) == sort([steps; 40])
-        fan = UniformFanSource([0.0, 0, 0], [0.0, 1, 0], 0.1, 633e-9; num_rays = 11, basis = [1.0, 0, 0])
+        fan = UniformFanSource([0.5, 0, 0.2], [0.0, 1, 0], 0.1, 633e-9; num_rays = 11, basis = [1.0, 0, 0])
         @test GUI._ray_steps(fan.sampling, 10, 11) == steps
         # ring and sunflower sources keep the steps 1-2-5
         disc = UniformDiscSource([0.0, 0, 0], [0.0, 1, 0], 4e-3, 633e-9; num_rays = 20)
         @test GUI._ray_steps(disc.sampling, 10, 20) == GUI._ray_steps(10, 20) ==
               [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
         @test GUI._ray_steps(BMO.DiscRings(2), 40, 40) == GUI._ray_steps(40, 40)
-        gui = _live_view(System([m, pd]), line)
+        sys = System([m, pd])
+        gui = _live_view(sys => src, sys => ps, sys => line, sys => fan; preview = false)
+        _select!(gui, src)
+        @test _text(gui, :source) == "633 nm, ⌀ 4 mm"
+        # the rays of the source hit the mirror: the center ray first, the range of all of them
+        _select!(gui, m)
+        @test startswith(_text(gui, :beam), "40 rays, AOI 45.0° (")
+        _select!(gui, ps)
+        @test _text(gui, :source) == "633 nm, NA 0.01"
         _select!(gui, line)
         @test _text(gui, :source) == "633 nm, width 4 mm"
         @test collect(GUI._card_widget(gui.cards.selection, :rays).range[]) == steps
@@ -140,8 +139,6 @@ const GUI = BeamletOpticsGUI
         names = first.(GUI._properties(line))
         @test "Width [m]" in names && !("Diameter [m]" in names)
         @test "Diameter [m]" in first.(GUI._properties(disc))
-        close(gui)
-        gui = _live_view(System([m, pd]), fan)
         _select!(gui, fan)
         @test _text(gui, :source) == "633 nm, NA $(round(sin(0.1); digits = 3))"
         @test all(isodd, GUI._card_widget(gui.cards.selection, :rays).range[])
@@ -166,11 +163,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "beam toggles ($layout)" for layout in (:compact, :app)
-        # the card of the selection: floating (compact) or in the inspector (app)
-        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-        _card(gui) = gui.cards.selection
-        _w(gui, name) = GUI._card_widget(_card(gui), name)
+    # The rows of the beams are shared logic, tested in the compact layout; the docked card of the
+    # app layout, which hosts the same declared widgets, is tested in TestLiveInspector.jl
+    @testset "beam toggles" begin
+        _w(gui, name) = GUI._card_widget(gui.cards.selection, name)
         _nhits(pd) = (h = BMO.hits(pd); isnothing(h) ? 0 : length(h))
         m, pd = _fixture()
         sys = System([m, pd])
@@ -178,7 +174,7 @@ const GUI = BeamletOpticsGUI
         # polarized, hits the mirror but misses the detector (a detector takes one kind of ray)
         pol = Beam([0.0, 0, 10e-3], [0.0, 1, 0], 1e-6, [1.0, 0, 0])
         src = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
-        gui = _live_view(sys => b, sys => pol, sys => src; layout, preview = false)
+        gui = _live_view(sys => b, sys => pol, sys => src; preview = false)
         @test _nhits(pd) == 41
         # an unpolarized beam: only the on/off toggle
         _select!(gui, b)
@@ -247,10 +243,8 @@ const GUI = BeamletOpticsGUI
         end
     end
 
-    @testset "length of the final rays ($layout)" for layout in (:compact, :app)
-        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-        _card(gui) = gui.cards.selection
-        _w(gui, name) = GUI._card_widget(_card(gui), name)
+    @testset "length of the final rays" begin
+        _w(gui, name) = GUI._card_widget(gui.cards.selection, name)
         # a mirror beside the beams, which all end in free space
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0.2, 0.1, 0])
@@ -259,7 +253,7 @@ const GUI = BeamletOpticsGUI
         pol = Beam([0.0, 0, 10e-3], [0.0, 1, 0], 1e-6, [1.0, 0, 0])
         src = CollimatedSource([0.0, 0, 20e-3], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         g = GaussianBeamlet([0.0, 0, 30e-3], [0.0, 1, 0], 1e-6, 0.5e-3)
-        gui = _live_view(sys => b, sys => pol, sys => src, sys => g; layout, preview = false,
+        gui = _live_view(sys => b, sys => pol, sys => src, sys => g; preview = false,
             beam_kwargs = Dict(src => (; render_every = 3, flen = 0.4)))
         h(beam) = gui.beam_handles[findfirst(p -> p.second === beam, gui.pairs)]
         in_scene(plot) = any(q -> q === plot, gui.ax.scene.plots)

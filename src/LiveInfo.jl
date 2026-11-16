@@ -42,7 +42,6 @@ _title(::_Measurement) = "Measurement"
 
 # The item takes the place of an object on a card: its label, icon, pose and bounding box
 _label(::LiveView, x::_InfoItem) = _title(x)
-_label(::AppView, x::_InfoItem) = _title(x)
 _tree_kind(::_BeamPoint) = :trace
 _tree_kind(::_Measurement) = :measure
 _pose(x::_InfoItem) = (Point3{Float64}(sum(_points(x)) / length(_points(x))), Matrix{Float64}(I, 3, 3))
@@ -122,7 +121,8 @@ Keeps the transient card `c` of the `gui` when its pin is clicked: it becomes a 
 the next inspection or measurement does not replace. In the app layout, whose pinned cards are
 docked (see `_pin!`), the item is pinned there and the floating card is removed.
 """
-function _keep_info!(gui::LiveView, c::_ComponentCard)
+_keep_info!(gui::LiveView, c::_ComponentCard) = _keep_info!(gui, gui.layout, c)
+function _keep_info!(gui::LiveView, ::AbstractLiveLayout, c::_ComponentCard)
     _keepable(c.obj) || return _release_info!(gui, _InfoItem)
     _keep_plots!(gui, c.obj)
     c.transient = false
@@ -131,7 +131,7 @@ function _keep_info!(gui::LiveView, c::_ComponentCard)
     _on_pinned!(gui)
     return nothing
 end
-function _keep_info!(gui::AppView, c::_ComponentCard)
+function _keep_info!(gui::LiveView, ::AppLayout, c::_ComponentCard)
     x = c.obj
     _keepable(x) || return _release_info!(gui, _InfoItem)
     _keep_plots!(gui, x)
@@ -174,8 +174,8 @@ _forget!(::LiveView, _) = nothing
 
 # The dock button of the transient card of `x` in the app layout keeps it, docked like its pin does,
 # see `_keep_info!`; a kept card moves like the card of a component, see `_dock!`
-function _dock!(gui::AppView, x::_InfoItem)
+function _dock!(gui::LiveView, layout::AppLayout, x::_InfoItem)
     c = _info_card(gui)
     !isnothing(c) && c.obj === x && return _keep_info!(gui, c)
-    return invoke(_dock!, Tuple{AppView, Any}, gui, x)
+    return invoke(_dock!, Tuple{LiveView, AppLayout, Any}, gui, layout, x)
 end

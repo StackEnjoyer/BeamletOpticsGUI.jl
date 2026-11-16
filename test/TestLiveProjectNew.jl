@@ -10,8 +10,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "New project" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
-    const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
+    const_kw = (; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
 
     _entry(name) = only(e for e in component_catalog() if e.name == name)
     _defaults(entry) = String[GUI._catalog_string(p) for p in entry.params]

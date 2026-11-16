@@ -49,7 +49,15 @@ Layout of a [`LiveView`](@ref), i.e. where its widgets are placed in the figure,
 camera, inspection) is shared by all layouts: it works on the observables of the widgets, e.g.
 `clicks` of a button, `active` of a toggle and `stored_string` of a textbox, never on their type
 or position. A layout `L` holds its own state (e.g. the slots of its sidebars) and is stored in
-`gui.layout` of the `LiveView{L}`.
+`gui.layout` of the `LiveView`, which has no type parameter: the code of the window is compiled once
+for all layouts.
+
+The hooks below are called by the shared code with the view, e.g. `_pin!(gui, obj)`. Each hook has a
+barrier that passes the layout on, `_pin!(gui, obj) = _pin!(gui, gui.layout, obj)`, and a fallback
+for `::AbstractLiveLayout`; a layout implements the hook as a method with the layout as its second
+argument, `_pin!(gui::LiveView, layout::L, obj)` (after `f` for the hooks that take a function first,
+`_with_ui(f, gui, layout)` and `_add_user_panel!(f, gui, layout, title, select)`). Code of one layout
+that is no hook takes `gui::LiveView` and reads its layout typed, e.g. `_app(gui)`.
 
 # Interface
 
@@ -84,7 +92,7 @@ and optionally, with defaults for any layout,
   returns them as the layout uses them, in `spec.part_sizes` of `_build_layout`; a layout without
   such parts ignores them (the default). `_part_size_kwargs(gui)` returns these kwargs for the
   sizes that the parts have now, e.g. for a second window (none by default)
-- `_connect_layout!(gui::LiveView{L})`: connects the widgets that only the layout has, e.g.
+- `_connect_layout!(gui)`: connects the widgets that only the layout has, e.g.
   collapsing; its listeners belong in `gui.controls.listeners`; `_close_layout!(gui)` stops what
   runs besides them when the view is closed, e.g. timers
 - where the controls of the selected object are shown, i.e. the widgets that
@@ -171,7 +179,8 @@ The `sidebar_width` and `dock_height` kwargs of [`live_view`](@ref) with the siz
 of the layout of the `gui` have now, e.g. after they were dragged, for a window that takes them
 over; none for a layout that ignores these kwargs, see `_part_sizes`.
 """
-_part_size_kwargs(_) = (;)
+_part_size_kwargs(gui) = _part_size_kwargs(gui, gui.layout)
+_part_size_kwargs(_, ::AbstractLiveLayout) = (;)
 
 """
     _UserPanel
@@ -743,10 +752,11 @@ they are rendered, selectable and movable, but not traced, see `_live_render_ext
 before), which `Ctrl+S` saves to, see [`save_project`](@ref) and [`open_project`](@ref); `sync`
 what the view knows of its files, which an agent may change meanwhile, see `_ProjectSync`.
 
-The type parameter `L` is the type of the `layout`, see `AbstractLiveLayout`: `CompactView` and
-`AppView` are the `LiveView`s of `live_view(...; layout = :compact)` and `layout = :app`.
+`layout` is the `CompactLayout` of `live_view(...; layout = :compact)` or the `AppLayout` of
+`layout = :app`, see `AbstractLiveLayout`. It is no type parameter, such that the code of the
+window is compiled once for all layouts; what differs per layout dispatches on `gui.layout`.
 """
-Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
+Base.@kwdef mutable struct LiveView
     fig::Figure
     ax::LScene
     pairs::Vector{Pair{BMO.AbstractSystem, Any}}
@@ -785,11 +795,8 @@ Base.@kwdef mutable struct LiveView{L <: AbstractLiveLayout}
     activity::Any = nothing
     widgets::_LayoutWidgets
     # state of the layout, e.g. the slots of the app layout, see `AbstractLiveLayout`
-    layout::L
+    layout::AbstractLiveLayout
 end
-
-# Infers the layout type like the constructor of a non-parametric type
-LiveView(fields...) = LiveView{typeof(last(fields))}(fields...)
 
 """
 The systems of the `gui` in the order in which they are rendered: those of its pairs and those

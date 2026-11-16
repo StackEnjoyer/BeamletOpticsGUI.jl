@@ -94,7 +94,8 @@ _card_view(_) = nothing
 The detector views shown by the layout of the `gui` outside the floating cards, each with its
 detector, e.g. on the docked cards of the app layout; none by default, see `AbstractLiveLayout`.
 """
-_layout_views(::LiveView) = ()
+_layout_views(gui::LiveView) = _layout_views(gui, gui.layout)
+_layout_views(::LiveView, ::AbstractLiveLayout) = ()
 
 """
     _shown_views(gui) -> Vector{Tuple{Any, Any}}
@@ -527,7 +528,8 @@ Pins a card to the detector `pd` that shows its page "Results", with the view `e
 collapsed to its thumbnail: a floating card next to the detector by default; a layout that docks
 the pinned cards, e.g. the app layout, docks it, see `AbstractLiveLayout`.
 """
-function _pin_view!(gui::LiveView, pd; expanded::Bool = true)
+_pin_view!(gui::LiveView, pd; kw...) = _pin_view!(gui, gui.layout, pd; kw...)
+function _pin_view!(gui::LiveView, ::AbstractLiveLayout, pd; expanded::Bool = true)
     c = _spare_card!(gui)
     c.page, c.view_expanded = :results, expanded
     _pin!(gui, c, pd)

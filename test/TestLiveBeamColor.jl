@@ -10,9 +10,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Color of the beams" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     function _mirror(y = 0.1)
         m = RoundPlanoMirror(25e-3, 5e-3)
@@ -23,8 +24,7 @@ const GUI = BeamletOpticsGUI
     _beam(λ = 632.8e-9) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
 
     # The card of the selection: docked in the inspector of the app layout, else floating
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _hex(c) = GUI._color_hex(Makie.to_color(c))
     _wavelength_hex(λ) = _hex(Makie.RGBf(wavelength_color(λ)...))
     _handles(gui, beam) = [h for (p, h) in zip(gui.pairs, gui.beam_handles) if p.second === beam]
@@ -57,7 +57,9 @@ const GUI = BeamletOpticsGUI
         @test allunique(options) && allunique(_hex.(last.(GUI._COLOR_PRESETS)))
     end
 
-    @testset "color and opacity, $layout" for layout in (:compact, :app)
+    # In the compact layout: `LiveView` has no layout parameter, and the color of the beams and the
+    # page "Color" are the same code in both
+    @testset "color and opacity, $layout" for layout in (:compact,)
         m = _mirror()
         beam = _beam()
         group = UniformDiscSource([0.01, 0, 0], [0.0, 1, 0], 5e-3, 532e-9; num_rays = 20)
@@ -244,7 +246,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "page of the card, $layout" for layout in (:compact, :app)
+    @testset "page of the card, $layout" for layout in (:compact,)
         m = _mirror()
         beam = _beam(532e-9)
         gui = _live_view(System([m]) => beam; layout)

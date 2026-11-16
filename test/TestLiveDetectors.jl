@@ -230,25 +230,16 @@ BMO.initialize!(b::CountingBlock) = (b.count[] = 0; nothing)
         close(gui)
     end
 
-    @testset "manual tracing" begin
+    @testset "manual tracing; a moved detector has no hits until it is traced" begin
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), _rays(); auto_trace = false)
-        _view!(gui, pd)
+        view = _view!(gui, pd)
         state = GUI._detector_state(gui, pd)
         @test !gui.detectors.hits_valid && state.stale && isnothing(state.result)
         @test GUI._signal_text(gui, pd) == "no hits"
         GUI._trace!(gui)
         @test gui.detectors.hits_valid && !state.stale && !isnothing(state.result)
-        close(gui)
-    end
-
-    @testset "a moved detector has no hits until it is traced" begin
         # BeamletOptics empties a detector that moves: without auto trace its view shows "no hits"
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _rays(); auto_trace = false)
-        view = _view!(gui, pd)
-        state = GUI._detector_state(gui, pd)
-        GUI._trace!(gui)
         @test state.result.metrics.n == 40 && view.kind_label.text[] != "no hits"
         translate3d!(gui, pd, [0, 0, 0.5e-3])
         @test length(pd) == 0 && gui.trace.stale

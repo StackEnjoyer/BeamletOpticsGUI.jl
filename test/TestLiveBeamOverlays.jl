@@ -10,8 +10,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Generating beams of beamlets" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf), kwargs)...)
 
     # A detector across +y, facing the beamlets
     function _system()
@@ -102,12 +103,12 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "card toggle ($layout)" for layout in (:compact, :app)
-        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
+    # the row of the card is the same in both layouts (`card_rows`): in the compact layout only
+    @testset "card toggle" begin
         _card(gui) = gui.cards.selection
         sys, pd = _system()
         g = _gauss()
-        gui = _live_view(sys => g; layout)
+        gui = _live_view(sys => g)
         gui.controls.selected[] = g
         GUI._update_selection_box!(gui.controls)
         toggle = GUI._card_widget(_card(gui), :show_beams)

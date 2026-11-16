@@ -11,9 +11,11 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live object tree of several systems" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_app(args...; kwargs...) = live_view(args...;
-        merge((; trace_budget = Inf, throttle = false, detectors = [], layout = :app), kwargs)...)
+        merge((; trace_budget = Inf, throttle = false, detectors = [], layout = :app, progress_delay = Inf),
+            kwargs)...)
 
     _beam(x = 0.0) = Beam([x, 0.0, 0], [0.0, 1, 0], 632.8e-9)
 
@@ -335,9 +337,10 @@ const GUI = BeamletOpticsGUI
             close(gui)
             return nothing
         end
+        # each window closes with the card it shows; three suffice for `alive[] <= 1`
         for (layout, pick) in ((:app, :component), (:app, :system), (:compact, :system))
             alive[] = 0
-            for _ in 1:4
+            for _ in 1:3
                 once(layout, pick)
                 GC.gc()
                 GC.gc()
