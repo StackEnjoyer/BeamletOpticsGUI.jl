@@ -168,8 +168,7 @@ const GUI = BeamletOpticsGUI
 
     @testset "beam toggles ($layout)" for layout in (:compact, :app)
         # the card of the selection: floating (compact) or in the inspector (app)
-        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-        _card(gui) = gui.cards.selection
+        _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
         _w(gui, name) = GUI._card_widget(_card(gui), name)
         _nhits(pd) = (h = BMO.hits(pd); isnothing(h) ? 0 : length(h))
         m, pd = _fixture()
@@ -248,8 +247,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "length of the final rays ($layout)" for layout in (:compact, :app)
-        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-        _card(gui) = gui.cards.selection
+        _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
         _w(gui, name) = GUI._card_widget(_card(gui), name)
         # a mirror beside the beams, which all end in free space
         m = RoundPlanoMirror(25e-3, 5e-3)

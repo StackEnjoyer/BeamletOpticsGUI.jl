@@ -19,8 +19,7 @@ const GUI = BeamletOpticsGUI
     # A component or source of the catalog with the texts `strings` of its form
     _built(name, strings = _defaults(_entry(name))) = GUI._catalog_component(_entry(name), strings)
 
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _names(card) = [w.name for (_, w) in card.widgets if !isnothing(w.name)]
     function _show!(gui, obj, page)
         gui.controls.selected[] = obj

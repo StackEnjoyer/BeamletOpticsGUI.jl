@@ -23,8 +23,7 @@ const GUI = BeamletOpticsGUI
     _beam(λ = 632.8e-9) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
 
     # The card of the selection: docked in the inspector of the app layout, else floating
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _hex(c) = GUI._color_hex(Makie.to_color(c))
     _wavelength_hex(λ) = _hex(Makie.RGBf(wavelength_color(λ)...))
     _handles(gui, beam) = [h for (p, h) in zip(gui.pairs, gui.beam_handles) if p.second === beam]

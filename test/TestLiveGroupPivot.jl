@@ -37,7 +37,7 @@ const GUI = BeamletOpticsGUI
     _pose(obj) = (Vector{Float64}(position(obj)), Matrix{Float64}(BMO.orientation(obj)))
     _same_pose(obj, pose; atol = 1e-12) = _close(position(obj), pose[1]; atol) &&
         norm(Matrix{Float64}(BMO.orientation(obj)) .- pose[2]) < atol
-    _card(gui) = gui isa GUI.AppView ? gui.layout.inspector.card : gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? gui.layout.inspector.card : gui.cards.selection
     function _select!(gui, sel)
         select!(gui, sel)
         GUI._update_cards!(gui)

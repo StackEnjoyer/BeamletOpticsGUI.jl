@@ -12,9 +12,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live sources" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
@@ -38,10 +39,8 @@ const GUI = BeamletOpticsGUI
     end
     # The number of hits of the detector, which has no list of hits before its first one
     _nhits(pd) = (hits = BMO.hits(pd); isnothing(hits) ? 0 : length(hits))
-    _listed(gui::GUI.AppView, obj) = _in(obj, [r.key for r in GUI._tree_rows(gui)])
-    _listed(gui, obj) = _in(obj, gui.objects.menu)
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _listed(gui, obj) = gui.layout isa GUI.AppLayout ? (_in(obj, [r.key for r in GUI._tree_rows(gui)])) : (_in(obj, gui.objects.menu))
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _message(f) = try
         f()
         ""

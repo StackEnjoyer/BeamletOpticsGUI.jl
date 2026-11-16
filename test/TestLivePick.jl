@@ -67,8 +67,7 @@ const GUI = BeamletOpticsGUI
     end
 
     # The card of the selection: floating (compact) or in the inspector (app)
-    _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _w(gui, name) = GUI._card_widget(_card(gui), name)
     _text(gui, name) = _w(gui, name).text[]
     _push!(gui, name) = (_w(gui, name).clicks[] += 1; nothing)
@@ -317,8 +316,7 @@ const GUI = BeamletOpticsGUI
     end
 
     # The line below the name of the card, whether it has a page bar and shows the step and the mode
-    _subtitle(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.type.text[]
-    _subtitle(gui) = (c = gui.cards.selection; c.subtitle_shown ? c.subtitle.text[] : nothing)
+    _subtitle(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.type.text[]) : ((c = gui.cards.selection; c.subtitle_shown ? c.subtitle.text[] : nothing))
     _has_bar(c::GUI._DockedCard) = c.bar_part.shown
     _has_bar(c::GUI._ComponentCard) = !isnothing(c.bar)
     _has_step(c::GUI._DockedCard) = c.step_part.shown

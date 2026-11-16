@@ -47,13 +47,12 @@ BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
 @testset "Live card row width" begin
 
     _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf, detectors = []), kwargs)...)
-    _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     function _select!(gui, obj)
         gui.controls.selected[] = obj
         GUI._update_selection_box!(gui.controls)
         GUI._update_cards!(gui)
-        gui isa GUI.LiveView{GUI.AppLayout} && GUI._update_inspector!(gui; force = true)
+        gui.layout isa GUI.AppLayout && GUI._update_inspector!(gui; force = true)
         return nothing
     end
     _w(gui, name) = GUI._card_widget(_card(gui), name)

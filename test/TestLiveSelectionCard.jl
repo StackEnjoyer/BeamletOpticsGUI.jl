@@ -44,7 +44,7 @@ const GUI = BeamletOpticsGUI
         picked[] = isnothing(leaf) ? nothing : _plot(gui, leaf)
         vp = gui.ax.scene.viewport[]
         # the edge of the view of the app layout is the splitter of its sidebar, see `_Splitter`
-        inset = gui isa GUI.AppView ? 6 : 3
+        inset = gui.layout isa GUI.AppLayout ? 6 : 3
         _move!(gui, (vp.origin[1] + vp.widths[1] - inset, vp.origin[2] + vp.widths[2] / 2))
         @assert !GUI._over_browse_card(gui)
         _press!(gui)
@@ -73,8 +73,7 @@ const GUI = BeamletOpticsGUI
         return minimum(r) .+ Makie.widths(r) ./ 2
     end
     # The card of the selection shows the selected object: floating (compact) or in the inspector (app)
-    _component_card_shown(gui::GUI.LiveView{GUI.AppLayout}) = !isnothing(GUI._shown_object(gui))
-    _component_card_shown(gui) = gui.cards.selection.scene.visible[]
+    _component_card_shown(gui) = gui.layout isa GUI.AppLayout ? (!isnothing(GUI._shown_object(gui))) : (gui.cards.selection.scene.visible[])
 
     @testset "the selection card of a group ($layout)" for layout in (:compact, :app)
         gui = _live_view(layout)

@@ -120,7 +120,7 @@ end
                 Makie.colorbuffer(screen)
                 @test isnothing(a().shown_cursor)
                 # the toast of the compact layout stands above the shown timeline
-                if gui isa GUI.CompactView && a().strip.shown
+                if gui.layout isa GUI.CompactLayout && a().strip.shown
                     lift = get(GUI._TOAST_LIFT, gui.layout.overlay, 0.0f0)
                     @test lift > 0
                     @test GUI._TOAST_LIFT[gui.layout.overlay] + minimum(gui.ax.scene.viewport[])[2] >=

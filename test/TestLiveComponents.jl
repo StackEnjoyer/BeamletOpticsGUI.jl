@@ -33,11 +33,9 @@ const GUI = BeamletOpticsGUI
     _rendered(gui, obj) = !isnothing(_handle(gui, obj))
     _hit(gui, obj) = !isempty(GUI._hits(gui, obj))
     _in_scene(gui, plots) = any(p -> _in(p, gui.ax.scene.plots), plots)
-    _listed(gui::GUI.AppView, obj) = _in(obj, [r.key for r in GUI._tree_rows(gui)])
-    _listed(gui, obj) = _in(obj, gui.objects.menu)
+    _listed(gui, obj) = gui.layout isa GUI.AppLayout ? (_in(obj, [r.key for r in GUI._tree_rows(gui)])) : (_in(obj, gui.objects.menu))
     # The card of the selection: docked in the inspector of the app layout, else floating
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _message(f) = try
         f()
         ""

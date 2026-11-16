@@ -45,8 +45,9 @@ _edit_field(i::Int, k::Int) = k == 1 ? _edit_box(i) : k == 2 ? Symbol(:edit_, i,
                               Symbol(:edit_, i, :_A, _SURFACE_ORDERS[k - 2])
 
 """The cards of the `gui` that can show the page "Edit": the floating ones, and docked ones of a layout."""
-_edit_cards(gui::LiveView) = Any[gui.cards.all...]
-_edit_cards(gui::AppView) = Any[gui.cards.all..., _docked_cards(gui)...]
+_edit_cards(gui::LiveView) = _edit_cards(gui, gui.layout)
+_edit_cards(gui::LiveView, ::AbstractLiveLayout) = Any[gui.cards.all...]
+_edit_cards(gui::LiveView, ::AppLayout) = Any[gui.cards.all..., _docked_cards(gui)...]
 
 """
     _read_edit_inputs!(gui, obj)

@@ -25,8 +25,10 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
+        # solved at once, also on a slow machine where a first solve compiles: a solve longer than
+        # `progress_delay` would continue in the background (a testset may ask for that)
         gui = live_view(System([m, pd]) => cs; trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], constraints = constraints(m), kwargs...)
+            catalog = CatalogEntry[], constraints = constraints(m), merge((; progress_delay = Inf), kwargs)...)
         return gui, m, pd
     end
 

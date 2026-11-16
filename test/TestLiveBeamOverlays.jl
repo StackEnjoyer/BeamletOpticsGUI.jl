@@ -103,8 +103,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "card toggle ($layout)" for layout in (:compact, :app)
-        _card(gui::GUI.LiveView{GUI.AppLayout}) = gui.layout.inspector.card
-        _card(gui) = gui.cards.selection
+        _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
         sys, pd = _system()
         g = _gauss()
         gui = _live_view(sys => g; layout)

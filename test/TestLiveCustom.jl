@@ -11,7 +11,8 @@ const GUI = BeamletOpticsGUI
     GLB = Makie.GridLayoutBase
 
     # Rays along +y, the mirror at 45° reflects them along +x onto the detector. The source is a
-    # beam group, which is solved as a preview while moving, see `preview`. Without the catalog,
+    # beam group, which is solved as a preview while moving, see `preview`; every solve ends before
+    # the call returns, also on a slow machine (`progress_delay = Inf`). Without the catalog,
     # whose toggle "Components" is tested in TestLiveCatalog.jl: the tools here are the own ones
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
@@ -22,7 +23,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.1, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System([m, pd]) => cs; trace_budget = Inf, throttle = false,
-            fine_step = 1e-4, idle_delay = 10.0, catalog = CatalogEntry[], kwargs...)
+            fine_step = 1e-4, idle_delay = 10.0, catalog = CatalogEntry[], progress_delay = Inf, kwargs...)
         return gui, m, pd
     end
 
