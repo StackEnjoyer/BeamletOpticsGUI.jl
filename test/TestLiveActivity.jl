@@ -140,6 +140,8 @@ const R0 = [1.0 0 0; 0 1 0; 0 0 1]
         # alpha passed through
         @test GUI._activity_color(gui, "p2"; alpha = 0.3) == RGBAf(RGBf(cs[2]), 0.3)
         @test GUI._activity_color(gui, "p2").alpha == 1
+        # the window of the light theme below: it gave the colours in the order of `ids`
+        light = gui
         # recording assigns the colour of a new participant
         gui = _gui()
         _rec!(gui, "Bob@PC3", 0.0)
@@ -148,7 +150,6 @@ const R0 = [1.0 0 0; 0 1 0; 0 0 1]
         @test RGBf(GUI._activity_color(gui, "claude@agent")) == GUI._ACTIVITY_PALETTE[2]
 
         # the dark theme: lighter, each mixed 30 % towards white
-        light = _gui()
         dark = _gui(; theme = :dark)
         @test !GUI._is_dark(light)
         @test GUI._is_dark(dark)

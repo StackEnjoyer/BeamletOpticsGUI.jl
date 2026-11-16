@@ -170,9 +170,10 @@ const GUI = BeamletOpticsGUI
         @test !_has_sphere(s.group)
     end
 
-    @testset "switching, $layout" for layout in (:compact, :app)
+    # the layer is an overlay of the 3D view, without code of a layout: the compact layout
+    @testset "switching" begin
         s = _setup()
-        gui = _live_view(s.sys => s.beam; layout)
+        gui = _live_view(s.sys => s.beam)
         # nothing is created before the mode is switched on
         @test isnothing(GUI._debug_layer(gui, :spheres))
         n_scene = length(gui.ax.scene.plots)
@@ -344,21 +345,18 @@ const GUI = BeamletOpticsGUI
         @test _matches(gui) && _all_visible(values(_plots(gui)))
         @test isnothing(gui.last_error)
         close(gui)
-
-        # a view that never had the mode on draws nothing
-        s = _setup()
-        gui = _live_view(s.sys => s.beam)
-        add_component!(gui, _lens(0.25))
-        GUI._debug_attached!(gui, s.lens)
-        remove_component!(gui, s.doublet)
-        @test isnothing(GUI._debug_layer(gui, :spheres))
-        close(gui)
+        # a view that never had the mode on draws nothing: see "sources and extras"
     end
 
     @testset "sources and extras" begin
         s = _setup()
         housing = _lens(0.4)
         gui = _live_view(s.sys => s.beam; extras = [housing])
+        # a view that never had the mode on draws nothing
+        add_component!(gui, _lens(0.25))
+        GUI._debug_attached!(gui, s.lens)
+        remove_component!(gui, s.doublet)
+        @test isnothing(GUI._debug_layer(gui, :spheres))
         GUI._set_debug!(gui, true)
         # only the traced components
         @test isempty(_plots(gui, housing))

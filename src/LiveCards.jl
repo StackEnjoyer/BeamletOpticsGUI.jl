@@ -34,13 +34,15 @@ _has_open_menu(c::_AbstractCard) = any(b -> !isnothing(_open_menu(b)), c.blocks)
 Whether a menu of a card of the `gui` is open: its options may reach beyond the card, hence presses
 are left to it and the keys to its search, see `_connect_cards!` and `_typing`.
 """
-_card_menu_open(gui::LiveView) = any(_has_open_menu, gui.cards.all)
+_card_menu_open(gui::LiveView) = _card_menu_open(gui, gui.layout)
+_card_menu_open(gui::LiveView, ::AbstractLiveLayout) = any(_has_open_menu, gui.cards.all)
 
 """
 Returns the textboxes of the `gui` outside of the cards, e.g. of the inspector of the app layout,
 which take the keyboard like those of the cards, see `_typing`. None by default.
 """
-_layout_boxes(::LiveView) = ()
+_layout_boxes(gui::LiveView) = _layout_boxes(gui, gui.layout)
+_layout_boxes(::LiveView, ::AbstractLiveLayout) = ()
 
 """Shows `s` in the textbox `tb` without triggering its listeners, `""` shows the placeholder."""
 function _set_box!(tb::Textbox, s::String)
@@ -66,7 +68,8 @@ end
 Refreshes the parts of the layout of the `gui` that show the selected object besides the cards,
 e.g. the inspector of the app layout; nothing by default.
 """
-_refresh_inspector!(::LiveView; force::Bool = false) = nothing
+_refresh_inspector!(gui::LiveView; kw...) = _refresh_inspector!(gui, gui.layout; kw...)
+_refresh_inspector!(::LiveView, ::AbstractLiveLayout; force::Bool = false) = nothing
 
 #=
 Values of the pose card in the frame of the controls, see `pose_card_rows` and `_PoseDisplay`
@@ -445,7 +448,8 @@ The rectangles [figure px] of the parts of the layout of the `gui` that lie over
 are shown, e.g. the overlay of the compact layout (see `_CompactOverlay`), which the floating
 cards keep off like the view cube; none by default.
 """
-_layout_obstacles(::LiveView) = Rect2f[]
+_layout_obstacles(gui::LiveView) = _layout_obstacles(gui, gui.layout)
+_layout_obstacles(::LiveView, ::AbstractLiveLayout) = Rect2f[]
 
 """
     _over_layout(gui) -> Bool
@@ -454,14 +458,16 @@ Returns `true` if the mouse is over a part of the layout of the `gui` that lies 
 whose presses and scrolling the camera must not get, like those over the cards (see
 `_shield_cards!`), e.g. the overlay of the compact layout; `false` by default.
 """
-_over_layout(::LiveView) = false
+_over_layout(gui::LiveView) = _over_layout(gui, gui.layout)
+_over_layout(::LiveView, ::AbstractLiveLayout) = false
 
 """
 Returns `true` if the layout of the `gui` shows the card of the selection (`gui.cards.selection`) next to the
 selected object; layouts that show the card elsewhere, e.g. docked in the inspector of the app
 layout, return `false`. Pinned cards are shown in all layouts.
 """
-_selection_card_shown(::LiveView) = true
+_selection_card_shown(gui::LiveView) = _selection_card_shown(gui, gui.layout)
+_selection_card_shown(::LiveView, ::AbstractLiveLayout) = true
 
 """
     _update_card!(gui, c, obj, obstacles)
@@ -1383,10 +1389,12 @@ function _reset_pages!(gui::LiveView, c::_ComponentCard)
 end
 
 """Unpins the cards of the `gui` that are pinned to `obj`, e.g. a removed clip plane."""
-_unpin!(gui::LiveView, @nospecialize(obj)) = foreach(c -> _toggle_pinned!(gui, c), _floating_cards(gui, obj))
+_unpin!(gui::LiveView, @nospecialize(obj)) = _unpin!(gui, gui.layout, obj)
+_unpin!(gui::LiveView, ::AbstractLiveLayout, @nospecialize(obj)) = foreach(c -> _toggle_pinned!(gui, c), _floating_cards(gui, obj))
 
 """Returns `true` if a card of the `gui` is pinned to `obj`: the pinned cards float by default."""
-_is_pinned(gui::LiveView, @nospecialize(obj)) = _is_floating(gui, obj)
+_is_pinned(gui::LiveView, @nospecialize(obj)) = _is_pinned(gui, gui.layout, obj)
+_is_pinned(gui::LiveView, ::AbstractLiveLayout, @nospecialize(obj)) = _is_floating(gui, obj)
 
 """Returns the pinned cards of the `gui` that float next to `obj` in the 3D view."""
 _floating_cards(gui::LiveView, @nospecialize(obj)) = filter(c -> c.pinned && c.obj === obj, gui.cards.all)
@@ -1402,15 +1410,17 @@ Hand the cards pinned to `old` over to `new`, which takes its place, see `_repla
 `_take_pins!` detaches them from `old` before it is removed, which would unpin them, and
 `_give_pins!` pins them to `new` once it is in the view. A floating card keeps its spot, its page,
 if `new` has it, and whether it is collapsed; until then it is pinned to no object and hidden. A
-layout that docks pinned cards hands those over as well, see `_take_pins!(::AppView, old)`.
+layout that docks pinned cards hands those over as well, see `_take_pins!(gui, ::AppLayout, old)`.
 """
-function _take_pins!(gui::LiveView, @nospecialize(old))
+_take_pins!(gui::LiveView, @nospecialize(old)) = _take_pins!(gui, gui.layout, old)
+function _take_pins!(gui::LiveView, ::AbstractLiveLayout, @nospecialize(old))
     floating = _floating_cards(gui, old)
     foreach(c -> c.obj = nothing, floating)
     return (; floating, docked = ())
 end
 
-function _give_pins!(gui::LiveView, pins, @nospecialize(new))
+_give_pins!(gui::LiveView, pins, @nospecialize(new)) = _give_pins!(gui, gui.layout, pins, new)
+function _give_pins!(gui::LiveView, ::AbstractLiveLayout, pins, @nospecialize(new))
     # the card builds its rows for `new`, see `_update_card!`
     foreach(c -> (c.obj, c.key, c.pose) = (new, nothing, nothing), pins.floating)
     isempty(pins.floating) || _update_cards!(gui)
@@ -1425,8 +1435,10 @@ Moves the card pinned to `obj` from the sidebar into the 3D view, next to `obj`,
 layout that docks the pinned cards, e.g. the app layout, implements them; by default, e.g. in the
 compact layout, which has no sidebar, the pinned cards always float and these do nothing.
 """
-_float!(::LiveView, _) = nothing
-_dock!(::LiveView, _) = nothing
+_float!(gui::LiveView, @nospecialize(x)) = _float!(gui, gui.layout, x)
+_float!(::LiveView, ::AbstractLiveLayout, _) = nothing
+_dock!(gui::LiveView, @nospecialize(x)) = _dock!(gui, gui.layout, x)
+_dock!(::LiveView, ::AbstractLiveLayout, _) = nothing
 
 """
     _toggle_pin!(gui, obj)
@@ -1452,7 +1464,8 @@ also if the mouse moved it before. The card `c` keeps its `page`, if `obj` has i
 `view_expanded` and the size `view_size` of its view, which a caller may set before, e.g. to those
 of a docked card.
 """
-function _pin!(gui::LiveView, @nospecialize(obj))
+_pin!(gui::LiveView, @nospecialize(obj)) = _pin!(gui, gui.layout, obj)
+function _pin!(gui::LiveView, ::AbstractLiveLayout, @nospecialize(obj))
     c = _spare_card!(gui)
     c.page = _default_page(obj)
     return _pin!(gui, c, obj)
@@ -1465,7 +1478,8 @@ function _pin!(gui::LiveView, c::_ComponentCard, @nospecialize(obj))
 end
 
 # Called after a card was pinned or unpinned, see `AbstractLiveLayout`
-_on_pinned!(::LiveView) = nothing
+_on_pinned!(gui::LiveView) = _on_pinned!(gui, gui.layout)
+_on_pinned!(::LiveView, ::AbstractLiveLayout) = nothing
 
 """Returns a card of the `gui` that is neither pinned nor the card of the selection, or a new one."""
 function _spare_card!(gui::LiveView)
@@ -1683,7 +1697,8 @@ Returns `true` if the mouse is over a part of the layout of the `gui` whose pres
 into the 3D view, see `ignore_mouse` of the controls: the controls neither select nor deselect on
 them. By default none, see `AbstractLiveLayout`.
 """
-_outside_view(::LiveView) = false
+_outside_view(gui::LiveView) = _outside_view(gui, gui.layout)
+_outside_view(::LiveView, ::AbstractLiveLayout) = false
 
 """
     _connect_cards!(gui)

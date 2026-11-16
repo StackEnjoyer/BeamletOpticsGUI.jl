@@ -9,9 +9,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Debug mode: ray diagnostics" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
         live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false,
-            catalog = CatalogEntry[]), kwargs)...)
+            catalog = CatalogEntry[], progress_delay = Inf), kwargs)...)
 
     # The layer of the rays of the `gui`, with the mode switched on
     function _rays!(gui)
@@ -106,6 +107,24 @@ const GUI = BeamletOpticsGUI
         update_cam!(gui.ax.scene, cam.eyeposition[] .+ Vec3f(0.05, 0, 0.05), cam.lookat[])
         q = Makie.project(gui.ax.scene, :data, :pixel, only(r.ends[:object]))
         @test only(r.ends_px[:object][]) ≈ Point2f(q[1], q[2]) atol = 0.5
+
+        # the same setup, in the same window
+        @testset "nothing is read while a solve runs" begin
+            before = _summary(gui)
+            GUI._debug(gui).stats.rays = nothing
+            # a job of the view in the background (never started), see `_running`
+            gui.trace.job = GUI._SolveJob(Task(() -> nothing), Base.Event(), BMO.ProgressSink[],
+                Point3f[], identity, nothing, :solve_time, 0.0, (k = 0, t0 = 0.0, t = 0.0, count = 0))
+            @test GUI._running(gui)
+            try
+                GUI._debug_solved!(gui)
+                @test isnothing(_summary(gui))
+            finally
+                gui.trace.job = nothing
+            end
+            GUI._debug_solved!(gui)
+            @test _summary(gui).ends == before.ends
+        end
         close(gui)
 
         # The hit point of a thick Gaussian beamlet on a mirror is drawn inside the beam, in the
@@ -222,27 +241,6 @@ const GUI = BeamletOpticsGUI
         GUI._set_flen!(gui, src, 0.25)
         @test only(r.ends[:open]) ≈ Point3f(-0.2, 0.25, 0) atol = 1e-6
         @test r.visible[]
-        close(gui)
-    end
-
-    @testset "nothing is read while a solve runs" begin
-        fx = _fixture()
-        gui = _live_view(fx.sys => fx.stopped)
-        r = _rays!(gui)
-        before = _summary(gui)
-        GUI._debug(gui).stats.rays = nothing
-        # a job of the view in the background (never started), see `_running`
-        gui.trace.job = GUI._SolveJob(Task(() -> nothing), Base.Event(), BMO.ProgressSink[],
-            Point3f[], identity, nothing, :solve_time, 0.0, (k = 0, t0 = 0.0, t = 0.0, count = 0))
-        @test GUI._running(gui)
-        try
-            GUI._debug_solved!(gui)
-            @test isnothing(_summary(gui))
-        finally
-            gui.trace.job = nothing
-        end
-        GUI._debug_solved!(gui)
-        @test _summary(gui).ends == before.ends
         close(gui)
     end
 end

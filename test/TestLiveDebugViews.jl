@@ -14,12 +14,13 @@ const GUI = BeamletOpticsGUI
     VIEWS = ["top" => ([0.0, 0.1, 0.5], [0.0, 0.1, 0.0], [0.0, 1, 0]),
         "side" => ([0.4, 0.1, 0.05], [0.0, 0.1, 0.0], Z)]
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         gui = live_view(System([m]) => beam; trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], detectors = [], views = VIEWS, kwargs...)
+            catalog = CatalogEntry[], detectors = [], views = VIEWS, progress_delay = Inf, kwargs...)
         return gui
     end
     # Ticks of the window: the first one sets the home view
@@ -61,6 +62,42 @@ const GUI = BeamletOpticsGUI
         @test isempty(v.plots[:highlight][1][]) && isempty(v.plots[:full][1][])
         # the row of the debug card
         @test GUI._hud_views(gui) == "2 saved · home"
+
+        # the checks below read or restore: in the same window
+        @testset "the camera under the mouse is highlighted, its label with eye and pivot" begin
+            i = findfirst(==("side"), first.(v.views))
+            apex = v.plots[:labels][1][][i]
+            @test GUI._view_at(gui, v, apex) == i
+            @test GUI._view_at(gui, v, apex .+ Point2f(300, 300)) == 0
+            GUI._set_view_hover!(gui, v, i)
+            @test v.hover == i
+            @test length(v.plots[:highlight][1][]) == 22
+            @test length(v.plots[:frames][1][]) == 2 * 22
+            @test length(v.plots[:full][1][]) == 16
+            @test _names(v)[i] == "side\neye (400.0, 100.0, 50.0) mm\npivot (0.0, 100.0, 0.0) mm"
+            @test _names(v)[1] == "home"
+            GUI._set_view_hover!(gui, v, 0)
+            @test _names(v)[i] == "side"
+            @test isempty(v.plots[:highlight][1][]) && isempty(v.plots[:full][1][])
+            # by the mouse: in the 3D view, at the eye of the camera
+            o = Point2f(Makie.origin(Makie.viewport(gui.ax.scene)[]))
+            events(gui.ax.scene).mouseposition[] = Tuple(Float64.(apex .+ o))
+            @test v.hover == i
+            events(gui.ax.scene).mouseposition[] = Tuple(Float64.(apex .+ o .+ Point2f(300, 300)))
+            @test v.hover == 0
+        end
+
+        @testset "hidden in the spectator mode and with the mode off" begin
+            @test _shown(v)
+            spectator!(gui)
+            GUI._debug_show!(gui)
+            @test !any(p -> p.visible[], values(v.plots))
+            spectator!(gui, false)
+            GUI._debug_show!(gui)
+            @test _shown(v)
+            GUI._set_debug!(gui, false)
+            @test !any(p -> p.visible[], values(v.plots))
+        end
         close(gui)
     end
 
@@ -120,49 +157,6 @@ const GUI = BeamletOpticsGUI
         v = _views!(gui)
         _away!(gui)
         @test length(v.plots[:frames][1][]) == length(v.views) * 30
-        close(gui)
-    end
-
-    @testset "the camera under the mouse is highlighted, its label with eye and pivot" begin
-        gui = _fixture()
-        v = _views!(gui)
-        _away!(gui)
-        i = findfirst(==("side"), first.(v.views))
-        apex = v.plots[:labels][1][][i]
-        @test GUI._view_at(gui, v, apex) == i
-        @test GUI._view_at(gui, v, apex .+ Point2f(300, 300)) == 0
-        GUI._set_view_hover!(gui, v, i)
-        @test v.hover == i
-        @test length(v.plots[:highlight][1][]) == 22
-        @test length(v.plots[:frames][1][]) == 2 * 22
-        @test length(v.plots[:full][1][]) == 16
-        @test _names(v)[i] == "side\neye (400.0, 100.0, 50.0) mm\npivot (0.0, 100.0, 0.0) mm"
-        @test _names(v)[1] == "home"
-        GUI._set_view_hover!(gui, v, 0)
-        @test _names(v)[i] == "side"
-        @test isempty(v.plots[:highlight][1][]) && isempty(v.plots[:full][1][])
-        # by the mouse: in the 3D view, at the eye of the camera
-        o = Point2f(Makie.origin(Makie.viewport(gui.ax.scene)[]))
-        events(gui.ax.scene).mouseposition[] = Tuple(Float64.(apex .+ o))
-        @test v.hover == i
-        events(gui.ax.scene).mouseposition[] = Tuple(Float64.(apex .+ o .+ Point2f(300, 300)))
-        @test v.hover == 0
-        close(gui)
-    end
-
-    @testset "hidden in the spectator mode and with the mode off" begin
-        gui = _fixture()
-        v = _views!(gui)
-        _away!(gui)
-        @test _shown(v)
-        spectator!(gui)
-        GUI._debug_show!(gui)
-        @test !any(p -> p.visible[], values(v.plots))
-        spectator!(gui, false)
-        GUI._debug_show!(gui)
-        @test _shown(v)
-        GUI._set_debug!(gui, false)
-        @test !any(p -> p.visible[], values(v.plots))
         close(gui)
     end
 end

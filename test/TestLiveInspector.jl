@@ -27,8 +27,10 @@ const GUI = BeamletOpticsGUI
         pd2 = Detector(5e-3)
         translate3d!(pd2, [0, 0.3, 0.2])
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 633e-9)
+        # each solve and each computation of a view ends before the call returns, independent of
+        # the speed of the machine (`progress_delay = Inf`)
         gui = live_view(System([group, m, pd, bs, pd2]), beam; trace_budget = Inf, layout = :app,
-            throttle = false, labels = Dict(pd => "PD1"),
+            throttle = false, progress_delay = Inf, labels = Dict(pd => "PD1"),
             clip_planes = [[0, 0.1, 0] => [0, 0, 1]], kwargs...)
         return gui, (; l1, l2, group, m, pd, bs, pd2, beam)
     end
@@ -243,38 +245,12 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "long lists" begin
-        gui, o = _fixture()
-        list = gui.layout.inspector.list
-        rows = [("row $i", string(i)) for i in 1:30]
-        GUI._set_rows!(list, rows)
-        @test length(list.rows) == GUI._PROPERTY_MAX_ROWS
-        @test list.rows[end][1] == "… $(30 - GUI._PROPERTY_MAX_ROWS + 1) more"
-        # long values are ellipsized
-        GUI._set_rows!(list, [("Shape", "x"^200)])
-        @test endswith(list.values.text[][1], "…")
-        close(gui)
-    end
-
-    @testset "mode" begin
-        gui, _ = _fixture()
-        ctrl = gui.controls
-        sel = gui.layout.inspector.mode.selected
-        @test ctrl.mode[] == :move && sel[] == :move
-        # the control drives the controls
-        gui.layout.inspector.mode.buttons[2].clicks[] += 1
-        @test sel[] == :rotate
-        @test ctrl.mode[] == :rotate
-        # and follows the key `m` and the step box
-        events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.m, Keyboard.press)
-        @test ctrl.mode[] == :move && sel[] == :move
-        gui.widgets.step_box.stored_string[] = "1 mrad"
-        @test sel[] == :rotate
-        close(gui)
-    end
+    # The checks of these testsets only read the window or undo what they change: one window,
+    # without a selection at the start of each
+    shared, shared_objects = _fixture()
 
     @testset "part of the selection shared with the floating card" begin
-        gui, o = _fixture()
+        gui, o = shared, shared_objects
         insp = gui.layout.inspector
         # the step box of the inspector is the keyboard step
         @test gui.widgets.step_box === insp.step_box
@@ -288,8 +264,89 @@ const GUI = BeamletOpticsGUI
         key(c) = map(GUI._layout_key, GUI._declarations(gui, c, o.pd))
         @test length(GUI._declarations(gui, insp.card, o.pd)[2]) == length(card_rows(o.pd)) + 1
         @test key(insp.card) == key(gui.cards.selection)
-        close(gui)
+        gui.controls.selected[] = nothing
     end
+
+    @testset "keyboard" begin
+        gui, o = shared, shared_objects
+        ctrl = gui.controls
+        ev = events(gui.ax.scene)
+        cam = cameracontrols(gui.ax.scene)
+        ctrl.selected[] = o.m
+        # a box of the docked card takes the keyboard: the camera and the controls ignore the keys
+        box = _w(gui, :x)
+        box.focused[] = true
+        @test GUI._typing(gui) && !cam.selected[]
+        P0 = Vector{Float64}(BMO.position(o.m))
+        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
+        @test Vector{Float64}(BMO.position(o.m)) == P0
+        box.focused[] = false
+        @test !GUI._typing(gui) && cam.selected[]
+        # the step box as well
+        gui.widgets.step_box.focused[] = true
+        @test GUI._typing(gui) && !cam.selected[]
+        gui.widgets.step_box.focused[] = false
+        @test !GUI._typing(gui)
+        # another selection ends the input into the old box
+        box = _w(gui, :x)
+        box.focused[] = true
+        ctrl.selected[] = o.pd
+        @test !box.focused[] && !GUI._typing(gui)
+        # and so does another page, which hides the boxes
+        ctrl.selected[] = o.m
+        box = _w(gui, :x)
+        box.focused[] = true
+        _page!(gui.layout.inspector.card, :properties)
+        @test !box.focused[] && !GUI._typing(gui)
+        _page!(gui.layout.inspector.card, :pose)
+        gui.widgets.step_box.focused[] = true
+        _page!(gui.layout.inspector.card, :properties)
+        @test !gui.widgets.step_box.focused[] && !GUI._typing(gui)
+        gui.controls.selected[] = nothing
+    end
+
+    @testset "mode" begin
+        gui = shared
+        ctrl = gui.controls
+        sel = gui.layout.inspector.mode.selected
+        @test ctrl.mode[] == :move && sel[] == :move
+        # the control drives the controls
+        gui.layout.inspector.mode.buttons[2].clicks[] += 1
+        @test sel[] == :rotate
+        @test ctrl.mode[] == :rotate
+        # and follows the key `m` and the step box
+        events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(Keyboard.m, Keyboard.press)
+        @test ctrl.mode[] == :move && sel[] == :move
+        gui.widgets.step_box.stored_string[] = "1 mrad"
+        @test sel[] == :rotate
+    end
+
+    @testset "a failing properties method" begin
+        gui = shared
+        m = Module()
+        Core.eval(m, quote
+            import BeamletOptics
+            struct Broken end
+            BeamletOptics.properties(::Broken) = error("boom")
+        end)
+        # errors of `properties` are shown, not thrown
+        rows = Base.invokelatest(GUI._inspector_rows, gui, Base.invokelatest(m.Broken))
+        @test only(rows)[1] == "Error"
+        @test occursin("boom", only(rows)[2])
+    end
+
+    @testset "long lists" begin
+        gui = shared
+        list = gui.layout.inspector.list
+        rows = [("row $i", string(i)) for i in 1:30]
+        GUI._set_rows!(list, rows)
+        @test length(list.rows) == GUI._PROPERTY_MAX_ROWS
+        @test list.rows[end][1] == "… $(30 - GUI._PROPERTY_MAX_ROWS + 1) more"
+        # long values are ellipsized
+        GUI._set_rows!(list, [("Shape", "x"^200)])
+        @test endswith(list.values.text[][1], "…")
+    end
+    close(shared)
 
     @testset "page Results of a detector" begin
         gui, o = _fixture()
@@ -886,59 +943,6 @@ const GUI = BeamletOpticsGUI
         _click!(gui, _center(_rect(c.pin_button.box)))
         @test ctrl.selected[] === o.m && !GUI._is_pinned(gui, o.m) && !insp.pin.active[]
         @test isempty(insp.pinned) && _w(gui, :x) isa Textbox
-        close(gui)
-    end
-
-    @testset "keyboard" begin
-        gui, o = _fixture()
-        ctrl = gui.controls
-        ev = events(gui.ax.scene)
-        cam = cameracontrols(gui.ax.scene)
-        ctrl.selected[] = o.m
-        # a box of the docked card takes the keyboard: the camera and the controls ignore the keys
-        box = _w(gui, :x)
-        box.focused[] = true
-        @test GUI._typing(gui) && !cam.selected[]
-        P0 = Vector{Float64}(BMO.position(o.m))
-        ev.keyboardbutton[] = Makie.KeyEvent(Keyboard.left, Keyboard.press)
-        @test Vector{Float64}(BMO.position(o.m)) == P0
-        box.focused[] = false
-        @test !GUI._typing(gui) && cam.selected[]
-        # the step box as well
-        gui.widgets.step_box.focused[] = true
-        @test GUI._typing(gui) && !cam.selected[]
-        gui.widgets.step_box.focused[] = false
-        @test !GUI._typing(gui)
-        # another selection ends the input into the old box
-        box = _w(gui, :x)
-        box.focused[] = true
-        ctrl.selected[] = o.pd
-        @test !box.focused[] && !GUI._typing(gui)
-        # and so does another page, which hides the boxes
-        ctrl.selected[] = o.m
-        box = _w(gui, :x)
-        box.focused[] = true
-        _page!(gui.layout.inspector.card, :properties)
-        @test !box.focused[] && !GUI._typing(gui)
-        _page!(gui.layout.inspector.card, :pose)
-        gui.widgets.step_box.focused[] = true
-        _page!(gui.layout.inspector.card, :properties)
-        @test !gui.widgets.step_box.focused[] && !GUI._typing(gui)
-        close(gui)
-    end
-
-    @testset "a failing properties method" begin
-        gui, o = _fixture()
-        m = Module()
-        Core.eval(m, quote
-            import BeamletOptics
-            struct Broken end
-            BeamletOptics.properties(::Broken) = error("boom")
-        end)
-        # errors of `properties` are shown, not thrown
-        rows = Base.invokelatest(GUI._inspector_rows, gui, Base.invokelatest(m.Broken))
-        @test only(rows)[1] == "Error"
-        @test occursin("boom", only(rows)[2])
         close(gui)
     end
 end

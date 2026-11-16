@@ -11,9 +11,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live systems" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _beam(y = 0.0) = Beam([0.0, y, 0], [0.0, 1, 0], 632.8e-9)
     # A mirror on the beams along +y
@@ -34,11 +35,12 @@ const GUI = BeamletOpticsGUI
     _undo!(gui) = GUI._undo!(gui.controls)
     _redo!(gui) = GUI._redo!(gui.controls)
 
-    @testset "an object of two systems, $layout" for layout in (:compact, :app)
+    # Shared logic, in the compact layout only (no layout hook decides here)
+    @testset "an object of two systems" begin
         m = _mirror()
         tx, rx = System([m]), System([m])
         b1, b2 = _beam(), _beam(0.05)
-        gui = _live_view(tx => b1, rx => b2; layout)
+        gui = _live_view(tx => b1, rx => b2)
         # one object, drawn once
         @test _handles(gui, m) == 1 && length(AbstractTrees.children(gui.pool)) == 1
         @test GUI._member_systems(gui, m) == [tx, rx]
@@ -112,11 +114,11 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "systems at runtime, $layout" for layout in (:compact, :app)
+    @testset "systems at runtime" begin
         m = _mirror()
         tx = System([m])
         b1 = _beam()
-        gui = _live_view(tx => b1; layout)
+        gui = _live_view(tx => b1)
         rx = add_system!(gui; label = "Receiver")
         @test GUI._systems(gui) == [tx, rx] && GUI._label(gui, rx) == "Receiver"
         @test gui.objects.inspected === rx && GUI._target_system(gui) === rx

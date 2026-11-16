@@ -170,8 +170,9 @@ const GUI = BeamletOpticsGUI
         translate3d!(m, [0, 0.2, 0])
         pd = Detector(20e-3)
         translate3d!(pd, [0, 0.3, 0])
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(System([m, pd]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout = :app,
-            size = (1400, 560), trace_budget = Inf)
+            size = (1400, 560), trace_budget = Inf, progress_delay = Inf)
         layout, fig = gui.layout, gui.fig
         left, right = layout.left.area, layout.right.area
         @test layout.left.grid === left.layout && layout.right.grid === right.layout
