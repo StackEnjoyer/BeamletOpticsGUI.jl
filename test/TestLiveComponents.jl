@@ -12,9 +12,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live components" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
@@ -43,6 +44,10 @@ const GUI = BeamletOpticsGUI
         e isa ArgumentError ? e.msg : rethrow()
     end
 
+    # Shared logic runs in the compact layout: `LiveView` has no layout parameter, and adding and
+    # removing is the same code in both. "add to an empty system", "remove" and "detector added at
+    # runtime" run in both layouts, whose list of objects and pinned cards differ; "Delete and the
+    # card" of `TestLiveSources.jl` runs in the app layout
     @testset "add to an empty system, $layout" for layout in (:compact, :app)
         sys = System()
         beam = _beam()
@@ -82,7 +87,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "group, $layout" for layout in (:compact, :app)
+    @testset "group, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys => _beam(); layout)
         a, b = _mirror(0.1), _mirror(0.2)
@@ -208,7 +213,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "StaticSystem and extras, $layout" for layout in (:compact, :app)
+    @testset "StaticSystem and extras, $layout" for layout in (:compact,)
         m = _mirror()
         static = StaticSystem([m])
         gui = _live_view(static => _beam(); layout)
@@ -318,7 +323,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "Delete and the card, $layout" for layout in (:compact, :app)
+    @testset "Delete and the card, $layout" for layout in (:compact,)
         m, m2, m3 = _mirror(0.1), _mirror(0.2), _mirror(0.3)
         sys = System([m, m2, m3])
         beam = _beam()

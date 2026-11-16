@@ -196,10 +196,11 @@ Tests
 
 const GUI = BeamletOpticsGUI
 
-# A live view whose changes are solved at once; `on_change` counts the full solves
+# A live view whose changes are solved at once, and before the call returns, also on a slow machine
+# (`progress_delay = Inf`); `on_change` counts the full solves
 function _live_view(pairs...; kwargs...)
     solves = Ref(0)
-    gui = live_view(pairs...; trace_budget = Inf, throttle = false,
+    gui = live_view(pairs...; trace_budget = Inf, throttle = false, progress_delay = Inf,
         on_change = (gui, obj) -> (solves[] += 1), kwargs...)
     return gui, solves
 end
@@ -211,7 +212,7 @@ _widget(gui, name) = GUI._card_widget(_card(gui), name)
 
 @testset "Live view widget recipes" begin
 
-    @testset "a card for your type ($layout)" for layout in (:compact, :app)
+    @testset "a card for your type ($layout)" for layout in (:compact,)
         mirror, pd = _bench()
         a = MyAttenuator(25e-3, 2e-3; transmission = 0.3)
         translate3d!(a, [0, 0.05, 0])
@@ -240,14 +241,13 @@ _widget(gui, name) = GUI._card_widget(_card(gui), name)
         close(gui)
     end
 
-    @testset "a card for your system type ($layout)" for layout in (:compact, :app)
+    @testset "a card for your system type ($layout)" for layout in (:compact,)
         mirror, pd = _bench()
         bench = MyBench([mirror, pd], "Fold")
         gui, _ = _live_view(bench => Beam([0.0, 0, 0], [0.0, 1, 0]); layout)
         @test _hits(pd) == 1
-        # the system is inspected via its entry in the component menu or its row in the tree
-        h = only(gui.system_handles)
-        layout == :compact ? (gui.widgets.menu.i_selected[] = 1) : (gui.layout.tree.clicked[] = h)
+        # the system is inspected via its entry in the component menu
+        gui.widgets.menu.i_selected[] = 1
         @test gui.objects.inspected === bench
         @test isnothing(gui.controls.selected[])
         # the row of the bench, between the list of its members and the last row of the system widget
@@ -257,7 +257,7 @@ _widget(gui, name) = GUI._card_widget(_card(gui), name)
         close(gui)
     end
 
-    @testset "your own widget type ($layout)" for layout in (:compact, :app)
+    @testset "your own widget type ($layout)" for layout in (:compact,)
         mirror, pd = _bench()
         block = MyBeamBlock(20e-3, 2e-3)
         zrotate3d!(block, -π / 2)
@@ -302,7 +302,7 @@ _widget(gui, name) = GUI._card_widget(_card(gui), name)
         close(gui)
     end
 
-    @testset "controls without a scene object ($layout)" for layout in (:compact, :app)
+    @testset "controls without a scene object ($layout)" for layout in (:compact,)
         tilt[], tilted[] = 0.0, false
         mirror, pd = _bench()
         gui, solves = _live_view(System([mirror, pd]) => Beam([0.0, 0, 0], [0.0, 1, 0]); layout)

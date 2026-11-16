@@ -229,11 +229,20 @@ const GUI = BeamletOpticsGUI
         @test GUI._catalog_code(oap, _defaults(oap)) == "OffAxisParabolicMirror(0.05, 0.0254; angle = 90.0)"
     end
 
-    @testset "every entry in a view" begin
+    @testset "an entry per group in a view" begin
         sys = System()
-        gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false)
-        # the components; adding and removing a source is tested in `TestLiveSources.jl`
-        for entry in filter(e -> !e.source, gui.components.catalog)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false,
+            progress_delay = Inf)
+        # the components; adding and removing a source is tested in `TestLiveSources.jl`. The view
+        # adds every component by the same code, only BeamletOptics draws it per type; every entry
+        # is built and its code read back in "built-in entries". One entry per group, and one that
+        # is a group of objects
+        components = filter(e -> !e.source, gui.components.catalog)
+        entries = [first(e for e in components if e.group == g) for g in unique(e.group for e in components)]
+        k = findfirst(e -> GUI._catalog_object(e, _defaults(e)) isa BMO.AbstractObjectGroup, components)
+        isnothing(k) || components[k] in entries || push!(entries, components[k])
+        for entry in entries
             obj = GUI._catalog_object(entry, _defaults(entry))
             translate_to3d!(obj, [0, 0.1, 0])
             add_component!(gui, obj; label = entry.name)

@@ -72,14 +72,16 @@ const GUI = BeamletOpticsGUI
         e isa ArgumentError ? e.msg : rethrow()
     end
 
-    @testset "open_system, $layout" for layout in (:compact, :app)
-        gui, a, b = _views(; layout, theme = :dark, snap = :pose, table = (; pitch = 0.05))
+    # The links know no layout (`src/LiveLinks.jl` only passes the name of the layout on): the app
+    # layout here, which the new window takes over; the compact layout below
+    @testset "open_system" begin
+        gui, a, b = _views(; layout = :app, theme = :dark, snap = :pose, table = (; pitch = 0.05))
         GUI._set_beam_color!(gui, b.beam, :green)
         gui.labels[b.mirror] = "fold"
         GUI._set_frame!(gui.controls, :local)
         new = open_system(gui, b.sys; display = false)
         @test new.controls.frame[] == :local
-        @test new isa typeof(gui)
+        @test new.layout isa GUI.AppLayout
         @test GUI._systems(new) == [b.sys] && only(GUI._systems(new)) === b.sys
         @test length(new.pairs) == 1 && _paired(new, b.sys, b.beam)
         @test _shown(new, b.lens) && _shown(new, b.mirror) && !_shown(new, a.lens)
@@ -104,7 +106,7 @@ const GUI = BeamletOpticsGUI
 
         # the kwargs of `live_view` take precedence, a system without a source
         sys = System([_mirror(0.0, 0.1)])
-        gui = _live_view(sys; layout)
+        gui = _live_view(sys)
         new = open_system(gui, sys; display = false, layout = :app, theme = :dark, auto_trace = false)
         @test new.layout isa GUI.AppLayout && new.layout.theme === GUI._app_theme(:dark)
         @test isempty(new.pairs) && !new.trace.auto[]
@@ -128,8 +130,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a move is followed, $layout" for layout in (:compact, :app)
-        gui, a, b = _views(; layout)
+    # Following a change is code of the links and of the hooks of the layouts that any change calls,
+    # once in the compact layout
+    @testset "a move is followed" begin
+        gui, a, b = _views()
         log = Any[]
         new = open_system(gui, b.sys; display = false, on_change = (g, obj) -> push!(log, obj))
         empty!(log)
@@ -168,8 +172,8 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "components are followed, $layout" for layout in (:compact, :app)
-        gui, a, b = _views(; layout)
+    @testset "components are followed" begin
+        gui, a, b = _views()
         new = open_system(gui, b.sys; display = false)
         # added in the first window, in front of the lens
         m = _mirror(0.3, 0.03)
@@ -215,8 +219,8 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "sources are followed, $layout" for layout in (:compact, :app)
-        gui, a, b = _views(; layout)
+    @testset "sources are followed" begin
+        gui, a, b = _views()
         new = open_system(gui, b.sys; display = false)
         src = Beam([0.302, 0, 0], [0.0, 1, 0], 532e-9)
         add_component!(new, src)
@@ -443,8 +447,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "the button of the card of a system, $layout" for layout in (:compact, :app)
-        gui, a, b = _views(; layout)
+    # The card of the app layout, which also has the button that floats a docked card; the head of a
+    # card and its actions are the same code in the compact layout
+    @testset "the button of the card of a system" begin
+        gui, a, b = _views(; layout = :app)
         @test [w.name for w in card_actions(b.sys)] == [:hide, :open]
         @test [w.name for w in card_actions(a.lens)] == [:hide]
         GUI._inspect!(gui, b.sys)

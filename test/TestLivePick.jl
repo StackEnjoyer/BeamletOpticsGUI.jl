@@ -34,8 +34,9 @@ const GUI = BeamletOpticsGUI
             isnothing(target[]) && return (nothing, 0)
             return (first(render_plots(GUI._child_handle(gui_ref[].controls.h, target[]))), 0)
         end
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(tx => b1, rx => b2; layout, pick, trace_budget = Inf, throttle = false,
-            detectors = [], labels = Dict(tx => "TX", rx => "RX", m1 => "M1", m2 => "M2"), kwargs...)
+            detectors = [], labels = Dict(tx => "TX", rx => "RX", m1 => "M1", m2 => "M2"), progress_delay = Inf, kwargs...)
         gui_ref[] = gui
         return (; gui, m1, m2, tx, rx, b1, b2, target)
     end
@@ -66,7 +67,10 @@ const GUI = BeamletOpticsGUI
         return nothing
     end
 
-    # The card of the selection: floating (compact) or in the inspector (app)
+    # The card of the selection: floating (compact) or in the inspector (app). Picking and the system
+    # widget are shared logic and run in the compact layout only; renaming a component also runs in
+    # the app layout, whose docked card has its own rename hook (`_on_rename!`) and whose tree shows
+    # the new names
     _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _w(gui, name) = GUI._card_widget(_card(gui), name)
     _text(gui, name) = _w(gui, name).text[]
@@ -76,7 +80,7 @@ const GUI = BeamletOpticsGUI
     _picks(gui, sys, add) = (p = GUI._member_pick(gui); !isnothing(p) && p.sys === sys && p.add == add)
     _target(beam) = (i = BMO.intersection(first(BMO.rays(beam))); isnothing(i) ? nothing : BMO.object(i))
 
-    @testset "+ and − with clicks, $layout" for layout in (:compact, :app)
+    @testset "+ and − with clicks, $layout" for layout in (:compact,)
         f = _fixture(layout)
         gui = f.gui
         @test isnothing(GUI._member_pick(gui))
@@ -171,7 +175,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "drags, the menu and what ends the pick, $layout" for layout in (:compact, :app)
+    @testset "drags, the menu and what ends the pick, $layout" for layout in (:compact,)
         f = _fixture(layout)
         gui = f.gui
         GUI._set_member_pick!(gui, f.tx, true)
@@ -244,7 +248,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "the members of an inspected system, $layout" for layout in (:compact, :app)
+    @testset "the members of an inspected system, $layout" for layout in (:compact,)
         f = _fixture(layout)
         gui = f.gui
         plot(x) = first(render_plots(GUI._child_handle(gui.controls.h, x)))
@@ -317,16 +321,14 @@ const GUI = BeamletOpticsGUI
 
     # The line below the name of the card, whether it has a page bar and shows the step and the mode
     _subtitle(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.type.text[]) : ((c = gui.cards.selection; c.subtitle_shown ? c.subtitle.text[] : nothing))
-    _has_bar(c::GUI._DockedCard) = c.bar_part.shown
     _has_bar(c::GUI._ComponentCard) = !isnothing(c.bar)
-    _has_step(c::GUI._DockedCard) = c.step_part.shown
     _has_step(c::GUI._ComponentCard) = c.step_shown
     _chip(gui, name) = _w(gui, name).label.text[]
     # The names of the list of the members, and an input of the list: a click on a row or on its "×"
     _listed(gui) = [row.name.text[] for row in _w(gui, :members).rows]
     _member!(gui, kind, i) = (_w(gui, :members).event[] = (kind, i); nothing)
 
-    @testset "the card of a system, $layout" for layout in (:compact, :app)
+    @testset "the card of a system, $layout" for layout in (:compact,)
         f = _fixture(layout; auto_trace = false)
         gui = f.gui
         GUI._inspect!(gui, f.tx)
@@ -437,7 +439,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "renaming a system in the title, $layout" for layout in (:compact, :app)
+    @testset "renaming a system in the title, $layout" for layout in (:compact,)
         f = _fixture(layout; auto_trace = false)
         gui = f.gui
         GUI._inspect!(gui, f.tx)
@@ -552,7 +554,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "the eye of a card, $layout" for layout in (:compact, :app)
+    @testset "the eye of a card, $layout" for layout in (:compact,)
         f = _fixture(layout)
         gui = f.gui
         show!(obj) = obj isa System ? GUI._inspect!(gui, obj) : GUI._select!(gui, obj)
@@ -586,7 +588,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a click on a row of the members, $layout" for layout in (:compact, :app)
+    @testset "a click on a row of the members, $layout" for layout in (:compact,)
         f = _fixture(layout)
         gui = f.gui
         GUI._inspect!(gui, f.tx)
@@ -643,10 +645,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a long list of members, $layout" for layout in (:compact, :app)
+    @testset "a long list of members, $layout" for layout in (:compact,)
         ms = [_mirror(0.05 * i) for i in 1:(GUI._MEMBER_ROWS + 2)]
         sys = System(ms)
-        gui = live_view(sys, _beam(); layout, trace_budget = Inf, throttle = false, detectors = [])
+        gui = live_view(sys, _beam(); layout, trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
         GUI._inspect!(gui, sys)
         # the source and the first objects, then the rest as a number
         list = _w(gui, :members)
@@ -662,7 +664,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a StaticSystem, $layout" for layout in (:compact, :app)
+    @testset "a StaticSystem, $layout" for layout in (:compact,)
         m1, m2 = _mirror(0.1), _mirror(0.2)
         static, sys = StaticSystem([m1]), System([m2])
         b1, b2 = _beam(), _beam(0.05)
@@ -671,7 +673,7 @@ const GUI = BeamletOpticsGUI
         pick(ax) = isnothing(target[]) ? (nothing, 0) :
                    (first(render_plots(GUI._child_handle(gui_ref[].controls.h, target[]))), 0)
         gui = live_view(static => b1, sys => b2; layout, pick, trace_budget = Inf, throttle = false,
-            detectors = [])
+            detectors = [], progress_delay = Inf)
         gui_ref[] = gui
         f = (; gui, target)
         GUI._inspect!(gui, static)

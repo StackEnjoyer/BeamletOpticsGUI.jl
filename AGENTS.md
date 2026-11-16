@@ -185,6 +185,20 @@ describe it as available in docs or the skill.
   `julia --project=test test/runtests.jl TestLiveCard TestLiveSnap`; `--help` lists the options.
 - New test files are `module TestXyz ... end` in `test/`, which `test/runtests.jl` finds by itself.
   A file does not depend on another one, and sets no global state that others rely on.
+- A test checks a behavior once and lets the design imply the repeated cases (#100):
+  - **Layouts:** shared logic runs in the compact layout only. The app layout gets a test where
+    its own code runs: a hook with an `::AppLayout` method, the tree, the inspector and its docked
+    cards, the dock, the sidebars, or a viewport that does not start at the origin of the figure.
+    A helper of a test that reads different widgets per layout (e.g. the tree instead of the
+    objects menu) means that the app run checks something of its own.
+  - **Catalog entries:** one entry per kind in a window. Every entry is built and its code read
+    back without a window, and the precompile session places, drags and removes each one.
+  - **Windows:** testsets whose checks only read, or that undo what they changed, share one
+    window. A test that changes the setup opens its own window.
+  - **Themes:** a loop over the themes only where the code branches on the theme.
+- `benchmark/test_coverage.jl` shows which lines of `src/` and `ext/` only one test file covers.
+  Before removing a run, check that its lines stay covered (`check`), and that it does not check
+  a behavior of its own that the same lines have in another layout or with another widget.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
 
@@ -242,7 +256,9 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   with the workloads, and `test/TestPrecompileSession.jl` runs the sessions.
 - **A test does not depend on the speed of the machine.** The job without coverage compiles each
   first call during the tests, and workers share 4 CPUs: an `idle_delay` or a `trace_budget` that a
-  test relies on is long against that, or the test sets the time itself (`trace.last_change`).
+  test relies on is long against that, or the test sets the time itself (`trace.last_change`). A
+  window of a test is opened with `progress_delay = Inf`, so that each solve ends before the call
+  returns; only a test of the background path (progress, cancelling) keeps a finite one.
 - The workload of the extension is built with GLMakie loaded after the package. Code that Julia
   cached is checked against the methods of the session when it is loaded, and in a session that
   loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as

@@ -20,10 +20,12 @@ const GUI = BeamletOpticsGUI
         return m, pd, Beam([0.0, 0, 0], [0.0, 1, 0])
     end
 
-    # Deterministic solves, see TestLiveView.jl
+    # Deterministic solves, see TestLiveView.jl, which end before the call returns, also on a slow
+    # machine (`progress_delay = Inf`, which `open_system` takes over)
     function _live_app(; kwargs...)
         m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; merge((; trace_budget = Inf, layout = :app), kwargs)...)
+        gui = live_view(System([m, pd]), beam;
+            merge((; trace_budget = Inf, layout = :app, progress_delay = Inf), kwargs)...)
         return gui, m, pd
     end
 
@@ -67,15 +69,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "start sizes" begin
-        gui, = _live_app()
-        layout = gui.layout
-        @test layout.left.size == Fixed(240) && layout.right.size == Fixed(300)
-        @test layout.dock.size == Relative(0.36)
-        @test _width(layout.left) ≈ 240 && _width(layout.right) ≈ 300
-        @test length(layout.splitters.splitters) == 3
-        @test !_marked(gui)
-        close(gui)
-
+        # without a dock, see "dragging a sidebar"
         gui, = _with_dock()
         # 36 % of the height of the window
         @test gui.layout.dock.size == Relative(0.36)
@@ -92,16 +86,14 @@ const GUI = BeamletOpticsGUI
         # the docked catalog is laid out for the width of its sidebar
         @test GUI._catalog_window(gui).dock.widget.style.tiles_per_row == 7
         @test GUI._part_size_kwargs(gui) == (; sidebar_width = (320.0, 280.0), dock_height = 200.0)
-        close(gui)
-
-        # a number sets both sidebars
-        gui, = _live_app(; sidebar_width = 200)
-        @test gui.layout.left.size == Fixed(200) && gui.layout.right.size == Fixed(200)
-        @test _width(gui.layout.left) ≈ 200 && _width(gui.layout.right) ≈ 200
-        @test GUI._part_size_kwargs(gui) == (; sidebar_width = (200.0, 200.0), dock_height = nothing)
-        close(gui)
-        gui, = _live_app(; sidebar_width = [160, 600])
-        @test gui.layout.left.size == Fixed(160) && gui.layout.right.size == Fixed(600)
+        # the other values give the sizes of the start that the view applies like these
+        # (`_part_sizes`), without a window each: a number sets both sidebars, the limits are
+        # included, the dock up to 70 % of the height of the figure
+        sizes(sw, dh, size = (1600, 950)) = GUI._part_sizes(gui.layout, sw, dh, size)
+        @test sizes(200, nothing) == (; left = Fixed(200), right = Fixed(200), dock = Relative(0.36))
+        @test sizes([160, 600], nothing) == (; left = Fixed(160), right = Fixed(600), dock = Relative(0.36))
+        @test sizes(240, 0.7 * 950).dock == Fixed(0.7 * 950)
+        @test sizes(240, 490, (1200, 700)).dock == Fixed(490)
         close(gui)
 
         # values outside of the limits and of another kind
@@ -113,26 +105,16 @@ const GUI = BeamletOpticsGUI
             (; dock_height = 500, size = (1200, 700)))
             @test_throws ArgumentError _live_app(; kw...)
         end
-        gui, = _live_app(; dock_height = 0.7 * 950)
-        @test gui.layout.dock.size == Fixed(0.7 * 950)
-        close(gui)
-        gui, = _live_app(; dock_height = 490, size = (1200, 700))
-        @test gui.layout.dock.size == Fixed(490)
-        close(gui)
     end
 
     @testset "the compact layout ignores the kwargs" begin
-        m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; trace_budget = Inf, sidebar_width = (320, 280),
-            dock_height = 200)
-        @test gui.layout isa GUI.CompactLayout
-        @test GUI._part_size_kwargs(gui) == (;)
-        close(gui)
         # also values that the app layout rejects
         m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; trace_budget = Inf, layout = :compact,
-            sidebar_width = 10, dock_height = 5000)
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(System([m, pd]), beam; trace_budget = Inf, progress_delay = Inf, sidebar_width = 10,
+            dock_height = 5000)
         @test gui.layout isa GUI.CompactLayout
+        @test GUI._part_size_kwargs(gui) == (;)
         close(gui)
     end
 
@@ -140,6 +122,12 @@ const GUI = BeamletOpticsGUI
         gui, = _live_app()
         layout = gui.layout
         left, right = layout.left, layout.right
+        # the sizes of the start, without a dock
+        @test layout.left.size == Fixed(240) && layout.right.size == Fixed(300)
+        @test layout.dock.size == Relative(0.36)
+        @test _width(layout.left) ≈ 240 && _width(layout.right) ≈ 300
+        @test length(layout.splitters.splitters) == 3
+        @test !_marked(gui)
         view_width = widths(gui.ax.scene.viewport[])[1]
         # the left sidebar: its edge towards the 3D view, wider to the right
         a = _left_edge(gui)
@@ -256,14 +244,7 @@ const GUI = BeamletOpticsGUI
         # the sidebars keep their widths
         @test gui.layout.left.size == Fixed(240) && gui.layout.right.size == Fixed(300)
         close(gui)
-
-        # with a height of the start
-        gui, = _with_dock(; dock_height = 200)
-        dock = gui.layout.dock
-        c = _dock_edge(gui)
-        _drag!(gui, c, c .+ (0, 25))
-        @test dock.size == Fixed(225) && _height(dock) ≈ 225
-        close(gui)
+        # a drag from a height of the start: see "double click"
     end
 
     @testset "double click" begin
@@ -578,7 +559,8 @@ const GUI = BeamletOpticsGUI
 
     @testset "the docked detector views follow the width" begin
         m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; trace_budget = Inf, layout = :app,
+        # the spot diagram is computed before the call returns, also on a slow machine
+        gui = live_view(System([m, pd]), beam; trace_budget = Inf, layout = :app, progress_delay = Inf,
             detectors = [pd => :spot])
         layout = gui.layout
         insp = layout.inspector
@@ -644,19 +626,20 @@ const GUI = BeamletOpticsGUI
         _drag!(gui, b, b .+ (220, 0))
         @test gui.layout.right.size == Fixed(160)
         @test gui.controls.selected[] === m
-        close(gui)
-    end
-
-    @testset "close removes the listeners" begin
-        gui, = _live_app()
-        ev = _ev(gui)
-        left = gui.layout.left
-        a = _left_edge(gui)
-        close(gui)
-        _drag!(gui, a, a .+ (50, 0))
-        @test left.size == Fixed(240)
-        _mouse!(gui, a)
-        @test !_marked(gui)
+        @testset "close removes the listeners" begin
+            left = gui.layout.left
+            @test left.size == Fixed(240)
+            a = _left_edge(gui)
+            # the mouse away from the splitters: no line
+            vp = Rect2f(gui.ax.scene.viewport[])
+            _mouse!(gui, minimum(vp) .+ Makie.widths(vp) ./ 2)
+            @test !_marked(gui)
+            close(gui)
+            _drag!(gui, a, a .+ (50, 0))
+            @test left.size == Fixed(240)
+            _mouse!(gui, a)
+            @test !_marked(gui)
+        end
     end
 
     @testset "a second window" begin

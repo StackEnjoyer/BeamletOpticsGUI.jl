@@ -24,9 +24,10 @@ const GUI = BeamletOpticsGUI
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
-    # Deterministic solves, see TestLiveView.jl
+    # Deterministic solves, see TestLiveView.jl, which end before the call returns, also on a slow
+    # machine (`progress_delay = Inf`, also below)
     _live_app(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, layout = :app), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, layout = :app, progress_delay = Inf), kwargs)...)
 
     _width(block) = widths(block.layoutobservables.computedbbox[])[1]
     _height(block) = widths(block.layoutobservables.computedbbox[])[2]
@@ -65,12 +66,7 @@ const GUI = BeamletOpticsGUI
         @test _height(gui.ax) > 650
         close(gui)
 
-        # the compact layout is the default
-        gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
-        @test gui.layout isa GUI.CompactLayout
-        @test gui.widgets.menu isa Makie.Menu
-        close(gui)
-
+        # the compact layout is the default, see "slots"
         @test_throws ArgumentError _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
             layout = :fancy)
         @test_throws ArgumentError _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]);
@@ -80,15 +76,7 @@ const GUI = BeamletOpticsGUI
     end
 
     @testset "dark theme" begin
-        m, pd = _fixture()
-        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); theme = :dark)
         t = GUI._APP_THEMES[:dark]
-        @test gui.layout.theme == t
-        @test gui.fig.scene.backgroundcolor[] == t.background
-        @test gui.ax.scene.backgroundcolor[] == t.view
-        @test gui.status.color[] == t.text
-        close(gui)
-
         # the colors of the 3D view and of the detector view follow the theme
         _rgb(c) = RGBf(Makie.to_color(c))
         _plots(gui, obj) = render_plots(only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === obj))
@@ -97,6 +85,10 @@ const GUI = BeamletOpticsGUI
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
         dark = _live_app(System([m, pd]), beam; theme = :dark,
             clip_planes = [[0, 0.05, 0] => [0, 1, 0]], detectors = [pd => (:intensity, (; profiles = true))])
+        @test dark.layout.theme == t
+        @test dark.fig.scene.backgroundcolor[] == t.background
+        @test dark.ax.scene.backgroundcolor[] == t.view
+        @test dark.status.color[] == t.text
         # the rays in the color of their wavelength, here 1000 nm, in both themes
         @test unique(_rgb.(only(render_plots(dark.beam_handles[1])).color[])) == [RGBf(wavelength_color(1.0e-6)...)]
         @test _detector_color(dark, pd) == t.materials[:detector]
@@ -290,14 +282,7 @@ const GUI = BeamletOpticsGUI
         @test GUI._tree_kind(RoundThinBeamsplitter(0.01)) == :beamsplitter
         # one plot per part, independent of the number of rows
         @test length(tree.scene.plots) == 9
-        # the compact layout has no tree and its hooks do nothing
-        close(gui)
-        gui = live_view(System([o.m, o.pd]), o.beam; trace_budget = Inf)
-        @test !hasproperty(gui.layout, :tree)
-        @test isnothing(GUI._on_clip_planes_changed!(gui))
-        @test GUI._label(gui, o.m) == "Mirror 1"
-        _key!(gui, Keyboard.p)
-        @test gui.labels[gui.clip.planes[1]] == "Clip plane 1"
+        # the compact layout has no tree, see "slots"
         close(gui)
     end
 
@@ -518,13 +503,9 @@ const GUI = BeamletOpticsGUI
         @test all(p -> p.shown, (layout.bar, layout.status_bar, layout.left, layout.right))
         # the dock has no panels
         @test !layout.dock.shown
-        close(gui)
 
-        # panels, controls and tools added in the spectator mode are hidden until it is left, e.g.
-        # those of a view that starts in it
-        m, pd = _fixture()
-        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); spectator = true)
-        layout = gui.layout
+        # panels, controls and tools added in the spectator mode are hidden until it is left
+        GUI._set_spectator!(gui.controls, true)
         visible(b) = b.blockscene.visible[]
         axis, button = Ref{Any}(nothing), Ref{Any}(nothing)
         add_panel!(gui, "Own") do l
@@ -539,14 +520,10 @@ const GUI = BeamletOpticsGUI
         GUI._set_spectator!(gui.controls, false)
         @test visible(button[]) && visible(tool.box) && "Mine" in first.(layout.sections[:left])
         @test first.(layout.dock_panels) == ["Own"] && layout.dock.shown && visible(axis[])
-        close(gui)
 
         # controls added while the left sidebar is collapsed by its toggle
-        m, pd = _fixture()
-        gui = _live_app(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]))
-        layout = gui.layout
         layout.collapse.left.active[] = false
-        add_controls!(l -> (button[] = Button(l[1, 1]; label = "x")), gui, "Mine")
+        add_controls!(l -> (button[] = Button(l[1, 1]; label = "y")), gui, "Mine 2")
         @test !layout.left.shown && !visible(button[])
         layout.collapse.left.active[] = true
         @test layout.left.shown && visible(button[])
@@ -584,11 +561,19 @@ const GUI = BeamletOpticsGUI
         @test gui.layout.collapse.dock.active[]
         close(gui)
 
-        # the compact layout has no slots yet
-        gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
+        # the compact layout is the default and has no slots yet
+        gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf, progress_delay = Inf)
+        @test gui.layout isa GUI.CompactLayout
+        @test gui.widgets.menu isa Makie.Menu
         @test_throws ArgumentError GUI._add_toolbar_entry!(gui, :custom)
         @test_throws ArgumentError GUI._add_sidebar_section!(gui, :left, "Extra")
         @test_throws ArgumentError GUI._add_dock_panel!(gui, "Mine")
+        # it has no object tree and its hooks do nothing, the names are those of the tree
+        @test !hasproperty(gui.layout, :tree)
+        @test isnothing(GUI._on_clip_planes_changed!(gui))
+        @test GUI._label(gui, m) == "Mirror 1"
+        _key!(gui, Keyboard.p)
+        @test gui.labels[gui.clip.planes[1]] == "Clip plane 1"
         close(gui)
     end
 end

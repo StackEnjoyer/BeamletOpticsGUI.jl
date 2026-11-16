@@ -8,13 +8,14 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live timeline" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _view(layout; theme = :light)
         lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.1, 0])
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         gui = live_view(System([lens, m]) => Beam([0.0, 0, 0], [0.0, 1, 0]); layout, theme,
-            size = (1300, 800), throttle = false, detectors = [], trace_budget = Inf)
+            size = (1300, 800), throttle = false, detectors = [], trace_budget = Inf, progress_delay = Inf)
         screen = GLMakie.Screen(visible = false, start_renderloop = false)
         display(screen, gui.fig)
         @test_logs min_level = Base.CoreLogging.Warn Makie.colorbuffer(screen)
@@ -40,8 +41,10 @@ const GUI = BeamletOpticsGUI
     # the text of the tooltip
     tiptext(tl) = (s = tl.plots.tip_text.text[]; s isa AbstractString ? s : only(s))
 
-    @testset "strip ($layout)" for layout in (:compact, :app)
-        gui, screen, lens, m = _view(layout)
+    # The strip is code of the view (`src/LiveTimeline.jl`), which sees the layout only through
+    # `_layout_obstacles` and the viewport: all of it in the compact layout, the app layout below
+    @testset "strip" begin
+        gui, screen, lens, m = _view(:compact)
         a = GUI._activity(gui)
         tl = GUI._timeline!(gui)
         @test GUI._timeline!(gui) === tl
@@ -240,16 +243,29 @@ const GUI = BeamletOpticsGUI
             @test inside(tl.rect, viewport(gui))
             @test Makie.widths(tl.rect)[1] <= GUI._TL_MAX_WIDTH
         end
-        if layout === :app
-            w0 = Makie.widths(viewport(gui))[1]
-            GUI._set_shown!(gui.layout.left, false)
-            Makie.colorbuffer(screen)
-            GUI._update_timeline!(gui, now)
-            @test Makie.widths(viewport(gui))[1] > w0
-            @test inside(tl.rect, viewport(gui))
-            # centered in the 3D view
-            @test center(tl.rect)[1] ≈ center(viewport(gui))[1] atol = 1
-        end
+        @test_logs min_level = Base.CoreLogging.Warn Makie.colorbuffer(screen)
+        close(screen)
+    end
+
+    @testset "strip in the app layout" begin
+        gui, screen, _, _ = _view(:app)
+        tl = GUI._timeline!(gui)
+        now = 1.0e9
+        GUI._record_episode!(gui, "Bob@PC3", "Bob", false, [_item("L1")]; text = "moved L1", now)
+        GUI._set_expanded!(gui, true)
+        GUI._update_timeline!(gui, now + 2)
+        @test tl.shown && inside(tl.rect, viewport(gui))
+        bottom = [o for o in GUI._layout_obstacles(gui) if minimum(o)[2] < maximum(tl.rect)[2]]
+        @test all(o -> !Makie.overlaps(o, tl.rect), bottom)
+        # inside the 3D view when a sidebar is collapsed
+        w0 = Makie.widths(viewport(gui))[1]
+        GUI._set_shown!(gui.layout.left, false)
+        Makie.colorbuffer(screen)
+        GUI._update_timeline!(gui, now + 2)
+        @test Makie.widths(viewport(gui))[1] > w0
+        @test inside(tl.rect, viewport(gui))
+        # centered in the 3D view
+        @test center(tl.rect)[1] ≈ center(viewport(gui))[1] atol = 1
         @test_logs min_level = Base.CoreLogging.Warn Makie.colorbuffer(screen)
         close(screen)
     end
