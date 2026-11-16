@@ -12,8 +12,9 @@ const GUI = BeamletOpticsGUI
 # in `TestLiveGroup.jl`, here their outcome on the view
 @testset "Keys of grouping" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     ev(gui) = events(gui.ax.scene)
     _tick!(gui, dt = 1.0) = (ev(gui).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, dt))

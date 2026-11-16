@@ -8,13 +8,14 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live timeline" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _view(layout; theme = :light)
         lens = SphericalLens(0.05, -0.05, 5e-3, 25.4e-3, ConstantRefractiveIndex(1.5))
         translate3d!(lens, [0, 0.1, 0])
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         gui = live_view(System([lens, m]) => Beam([0.0, 0, 0], [0.0, 1, 0]); layout, theme,
-            size = (1300, 800), throttle = false, detectors = [], trace_budget = Inf)
+            size = (1300, 800), throttle = false, detectors = [], trace_budget = Inf, progress_delay = Inf)
         screen = GLMakie.Screen(visible = false, start_renderloop = false)
         display(screen, gui.fig)
         @test_logs min_level = Base.CoreLogging.Warn Makie.colorbuffer(screen)

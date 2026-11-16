@@ -32,8 +32,10 @@ const GUI = BeamletOpticsGUI
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
-    # Each change is solved immediately, see TestLiveView.jl
-    _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf), kwargs)...)
+    # Each change is solved immediately, see TestLiveView.jl, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`)
+    _live_view(args...; kwargs...) =
+        live_view(args...; merge((; trace_budget = Inf, progress_delay = Inf), kwargs)...)
 
     @testset "component menu, hide and show" begin
         m, pd = _fixture()

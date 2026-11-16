@@ -13,7 +13,8 @@ const GUI = BeamletOpticsGUI
     z = [0.0, 0, 1]
 
     # Beam A along +y onto a mirror at 45° at y = 0.3, beam B along -y beside it, and a lens beside
-    # beam A at y = 0.1
+    # beam A at y = 0.1. Every solve ends before the call returns, also on a slow machine
+    # (`progress_delay = Inf`), here and in the other windows of this file
     function _fixture(; lens_at = [0.03, 0.1, 0.0], lens_angle = 0.0, kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -24,7 +25,8 @@ const GUI = BeamletOpticsGUI
         sys = System([m, lens])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         b = Beam([-0.05, 0.4, 0], [0.0, -1, 0], 1e-6)
-        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, kwargs...)
+        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, progress_delay = Inf,
+            kwargs...)
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         return gui, sys, m, lens, a
     end
@@ -120,7 +122,8 @@ const GUI = BeamletOpticsGUI
         # a lens of several parts counts as a whole
         doublet = SphericalDoubletLens(62.8e-3, -45.7e-3, -128.2e-3, 4e-3, 2.5e-3, 25.4e-3, ConstantRefractiveIndex(1.5), ConstantRefractiveIndex(1.6))
         translate_to3d!(doublet, [0, 0.1, 0])
-        gui = live_view(System([doublet]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf)
+        gui = live_view(System([doublet]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
+            progress_delay = Inf)
         lines = GUI._snap_lines(gui, doublet)
         @test length(lines) == 1 && only(lines).direction ≈ y
         close(gui)
@@ -263,7 +266,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(lens, deg2rad(20))
         translate_to3d!(lens, [0.03, 0.1, 0])
         gui = live_view(System([lens]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
-            throttle = false, snap = :pose, constraints = Dict(lens => (; rotate = (:z,))))
+            throttle = false, progress_delay = Inf, snap = :pose, constraints = Dict(lens => (; rotate = (:z,))))
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         R0 = _pose(lens)[2]
         _drag!(gui, lens, _to(gui, lens, [0.003, 0.12, 0.0]))
@@ -276,7 +279,7 @@ const GUI = BeamletOpticsGUI
         lens = SphericalLens(0.05, -0.05, 0.01, 0.02)
         translate_to3d!(lens, [0.03, 0.1, 0])
         gui = live_view(System([lens]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf,
-            throttle = false, snap = true, constraints = Dict(lens => (; move = (:x,))))
+            throttle = false, progress_delay = Inf, snap = true, constraints = Dict(lens => (; move = (:x,))))
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         _drag!(gui, lens, _to(gui, lens, [0.003, 0.12, 0.0]))
         P = _pose(lens)[1]

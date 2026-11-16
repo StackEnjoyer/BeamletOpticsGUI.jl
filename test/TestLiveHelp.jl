@@ -9,7 +9,8 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live view help" begin
 
-    # Rays along +y, the mirror at 45° reflects them along +x onto the detector
+    # Rays along +y, the mirror at 45° reflects them along +x onto the detector; every solve ends
+    # before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -18,7 +19,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         gui = live_view(System([m, pd]) => Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            trace_budget = Inf, detectors = [], kwargs...)
+            trace_budget = Inf, detectors = [], progress_delay = Inf, kwargs...)
         return gui, m
     end
 

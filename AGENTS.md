@@ -256,7 +256,9 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   with the workloads, and `test/TestPrecompileSession.jl` runs the sessions.
 - **A test does not depend on the speed of the machine.** The job without coverage compiles each
   first call during the tests, and workers share 4 CPUs: an `idle_delay` or a `trace_budget` that a
-  test relies on is long against that, or the test sets the time itself (`trace.last_change`).
+  test relies on is long against that, or the test sets the time itself (`trace.last_change`). A
+  window of a test is opened with `progress_delay = Inf`, so that each solve ends before the call
+  returns; only a test of the background path (progress, cancelling) keeps a finite one.
 - The workload of the extension is built with GLMakie loaded after the package. Code that Julia
   cached is checked against the methods of the session when it is loaded, and in a session that
   loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as

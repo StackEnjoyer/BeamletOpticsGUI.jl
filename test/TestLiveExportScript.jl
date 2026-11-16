@@ -10,9 +10,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live export of a script" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _script(gui) = BeamletOpticsGUI.export_script(gui; io = devnull)
 
@@ -153,6 +154,8 @@ const GUI = BeamletOpticsGUI
         mirror = _add!(gui, "Round mirror"; at = [0.0, 0.2, 0])
         laser = _add!(gui, "Beam"; label = "laser")
         code = _script(gui)
+        # the script opens its window with the default `progress_delay`: the checks read only its
+        # structure, not its beams, and `close` cancels a solve that still runs
         mod = _run(code)
         gui2 = _value(mod, :gui)
         @test gui2 isa GUI.LiveView

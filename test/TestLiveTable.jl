@@ -12,7 +12,8 @@ const GUI = BeamletOpticsGUI
     x, y, z = [1.0, 0, 0], [0.0, 1, 0], [0.0, 0, 1]
 
     # Beam A along +y onto a mirror at 45° at y = 0.3 and a lens beside it at y = 0.1; the mouse
-    # moves the objects in the plane of the table
+    # moves the objects in the plane of the table. Every solve ends before the call returns, also on
+    # a slow machine (`progress_delay = Inf`), here and in the other windows of this file
     function _fixture(; lens_at = [0.031, 0.108, 0.0], lens_angle = 0.0, kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -23,7 +24,7 @@ const GUI = BeamletOpticsGUI
         sys = System([m, lens])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         gui = live_view(sys => a; trace_budget = Inf, throttle = false, plane_normal = [0, 0, 1],
-            kwargs...)
+            progress_delay = Inf, kwargs...)
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         return gui, sys, m, lens, a
     end
@@ -196,13 +197,13 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a view without components and sources: around the origin, two holes below it
-        gui = live_view(System(); table = true)
+        gui = live_view(System(); table = true, progress_delay = Inf)
         t = gui.components.table
         @test t.height ≈ -0.05
         @test t.range == (-5, 6, -3, 4) && length(t.holes[]) == 96
         close(gui)
         # ... or below its source
-        gui = live_view(System() => Beam([0.0, 0, 0.1], [0.0, 1, 0], 1e-6); table = true)
+        gui = live_view(System() => Beam([0.0, 0, 0.1], [0.0, 1, 0], 1e-6); table = true, progress_delay = Inf)
         @test gui.components.table.height ≈ 0.05
         close(gui)
     end

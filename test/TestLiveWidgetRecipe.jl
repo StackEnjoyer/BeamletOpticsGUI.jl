@@ -196,10 +196,11 @@ Tests
 
 const GUI = BeamletOpticsGUI
 
-# A live view whose changes are solved at once; `on_change` counts the full solves
+# A live view whose changes are solved at once, and before the call returns, also on a slow machine
+# (`progress_delay = Inf`); `on_change` counts the full solves
 function _live_view(pairs...; kwargs...)
     solves = Ref(0)
-    gui = live_view(pairs...; trace_budget = Inf, throttle = false,
+    gui = live_view(pairs...; trace_budget = Inf, throttle = false, progress_delay = Inf,
         on_change = (gui, obj) -> (solves[] += 1), kwargs...)
     return gui, solves
 end

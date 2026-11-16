@@ -26,8 +26,10 @@ const WARN = Base.CoreLogging.Warn
 
     # The plot that the custom `pick` of the controls returns, `nothing` for the background
     picked = Ref{Any}(nothing)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(fx, layout) = live_view(System([fx.bench, fx.lens]), Beam([0.0, 0, 0], [0.0, 1, 0]);
-        layout, detectors = [], trace_budget = Inf, throttle = false, pick = _ -> (picked[], 0))
+        layout, detectors = [], trace_budget = Inf, throttle = false, progress_delay = Inf,
+        pick = _ -> (picked[], 0))
 
     _plots(gui, obj) = GUI._object_plots(gui.controls.h, obj)
     # The attributes that the highlight may change and must restore

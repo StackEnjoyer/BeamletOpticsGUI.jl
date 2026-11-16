@@ -34,8 +34,9 @@ const GUI = BeamletOpticsGUI
             isnothing(target[]) && return (nothing, 0)
             return (first(render_plots(GUI._child_handle(gui_ref[].controls.h, target[]))), 0)
         end
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(tx => b1, rx => b2; layout, pick, trace_budget = Inf, throttle = false,
-            detectors = [], labels = Dict(tx => "TX", rx => "RX", m1 => "M1", m2 => "M2"), kwargs...)
+            detectors = [], labels = Dict(tx => "TX", rx => "RX", m1 => "M1", m2 => "M2"), progress_delay = Inf, kwargs...)
         gui_ref[] = gui
         return (; gui, m1, m2, tx, rx, b1, b2, target)
     end
@@ -647,7 +648,7 @@ const GUI = BeamletOpticsGUI
     @testset "a long list of members, $layout" for layout in (:compact,)
         ms = [_mirror(0.05 * i) for i in 1:(GUI._MEMBER_ROWS + 2)]
         sys = System(ms)
-        gui = live_view(sys, _beam(); layout, trace_budget = Inf, throttle = false, detectors = [])
+        gui = live_view(sys, _beam(); layout, trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
         GUI._inspect!(gui, sys)
         # the source and the first objects, then the rest as a number
         list = _w(gui, :members)
@@ -672,7 +673,7 @@ const GUI = BeamletOpticsGUI
         pick(ax) = isnothing(target[]) ? (nothing, 0) :
                    (first(render_plots(GUI._child_handle(gui_ref[].controls.h, target[]))), 0)
         gui = live_view(static => b1, sys => b2; layout, pick, trace_budget = Inf, throttle = false,
-            detectors = [])
+            detectors = [], progress_delay = Inf)
         gui_ref[] = gui
         f = (; gui, target)
         GUI._inspect!(gui, static)

@@ -11,8 +11,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Beams on and off" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf), kwargs)...)
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 

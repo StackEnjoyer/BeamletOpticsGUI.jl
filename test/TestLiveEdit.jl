@@ -10,9 +10,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Page \"Edit\" of the cards" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _entry(name) = only(e for e in component_catalog() if e.name == name)
     _defaults(entry) = String[GUI._catalog_string(p) for p in entry.params]

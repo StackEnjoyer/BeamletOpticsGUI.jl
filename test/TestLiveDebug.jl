@@ -33,6 +33,7 @@ GUI._layer_tick!(::GUI.LiveView, l::_CountingLayer, tick) = _count!(l, :tick, ti
 
 @testset "Debug mode" begin
     # Beam along +y onto a mirror at 45° at y = 0.3, a detector beside it at x = 0.2
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; source = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6), kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -42,7 +43,7 @@ GUI._layer_tick!(::GUI.LiveView, l::_CountingLayer, tick) = _count!(l, :tick, ti
         translate3d!(pd, [0.2, 0.3, 0])
         sys = System([m, pd])
         gui = live_view(sys => source; trace_budget = Inf, throttle = false, preview = false,
-            plane_normal = [0, 0, 1], kwargs...)
+            plane_normal = [0, 0, 1], progress_delay = Inf, kwargs...)
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         return gui, sys, m, pd, source
     end
@@ -297,7 +298,9 @@ GUI._layer_tick!(::GUI.LiveView, l::_CountingLayer, tick) = _count!(l, :tick, ti
         @test length(solves) == n + 4 && solves[end].kind == :failed
         @test "solve failed: boom" in _texts(gui)
 
-        # a solve that runs in the background like after a move
+        # a solve that runs in the background like after a move: with the default
+        # delay (`progress_delay = 0.5`) instead of the one of the fixture, which waits for every solve
+        gui.trace.progress_delay = 0.5
         GUI._solve!(gui, nothing)
         @test timedwait(() -> (notify(events(gui.ax.scene).tick); !GUI._running(gui)), 10.0;
             pollint = 0.005) === :ok

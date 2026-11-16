@@ -8,7 +8,8 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "Spectator mode and its options" begin
-    # Rays along +y, the mirror at 45° reflects them along +x onto the detector, whose card is pinned
+    # Rays along +y, the mirror at 45° reflects them along +x onto the detector, whose card is pinned;
+    # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(layout; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -18,7 +19,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.1, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System([m, pd]) => cs; layout, trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], detectors = [pd], kwargs...)
+            catalog = CatalogEntry[], detectors = [pd], progress_delay = Inf, kwargs...)
         return gui, m, pd
     end
     cube_shown(gui) = gui.widgets.view_cube.scene.visible[]

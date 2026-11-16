@@ -10,8 +10,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Polarization overlays" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf), kwargs)...)
 
     _pbeam(pos, dir = [0.0, 1, 0]) = Beam(pos, dir, 633e-9, [1.0, 0, 0])
     # A wrapped source of polarized beams, the central beam is not the first one

@@ -9,6 +9,8 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "View lock" begin
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`, which
+    # `open_system` takes over)
     function fixture(layout; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -17,7 +19,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); layout,
-            trace_budget = Inf, throttle = false, catalog = CatalogEntry[], kwargs...)
+            trace_budget = Inf, throttle = false, catalog = CatalogEntry[], progress_delay = Inf, kwargs...)
         screen = GLMakie.Screen(visible = false)
         display(screen, gui.fig)
         return gui, m, screen

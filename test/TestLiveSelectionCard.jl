@@ -33,8 +33,10 @@ const GUI = BeamletOpticsGUI
 
     # The plot that the custom `pick` of the controls returns, `nothing` for the background
     picked = Ref{Any}(nothing)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(layout) = live_view(System([fx.bench, fx.lens]), Beam([0.0, 0, 0], [0.0, 1, 0]);
-        layout, detectors = [], trace_budget = Inf, throttle = false, pick = _ -> (picked[], 0),
+        layout, detectors = [], trace_budget = Inf, throttle = false, progress_delay = Inf,
+        pick = _ -> (picked[], 0),
         labels = Dict(fx.bench => "Bench", fx.pair => "Pair", fx.dl => "Achromat", fx.dl.front => "Crown",
             fx.m3 => "Flat"))
     _plot(gui, leaf) = first(render_plots(GUI._child_handle(gui.controls.h, leaf)))
@@ -564,8 +566,9 @@ const GUI = BeamletOpticsGUI
         foreach(((i, m),) -> translate3d!(m, [0.03 * (i - 1), 0.1, 0]), enumerate(mirrors))
         row = ObjectGroup(mirrors)
         five = ObjectGroup([RoundPlanoMirror(0.02, 0.004) for _ in 1:5])
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(System([row, five]), Beam([0.0, 0, 0], [0.0, 1, 0]); detectors = [],
-            trace_budget = Inf, throttle = false, labels = Dict(row => "Row"))
+            trace_budget = Inf, throttle = false, progress_delay = Inf, labels = Dict(row => "Row"))
         c = _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
         _move!(gui, minimum(view) .+ Makie.widths(view) ./ 2)

@@ -231,7 +231,9 @@ const GUI = BeamletOpticsGUI
 
     @testset "an entry per group in a view" begin
         sys = System()
-        gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false,
+            progress_delay = Inf)
         # the components; adding and removing a source is tested in `TestLiveSources.jl`. The view
         # adds every component by the same code, only BeamletOptics draws it per type; every entry
         # is built and its code read back in "built-in entries". One entry per group, and one that

@@ -47,8 +47,9 @@ BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
         translate3d!(m, [0, 0.1, 0])
         b = Beam([0.0, 0, 0], [0.0, 1, 0])
         # the beam is off: a click near it would inspect it instead
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(System([m]), b; layout, detectors = [], beams_off = [b], trace_budget = Inf,
-            throttle = false, pick = _ -> (picked[], 0), kwargs...)
+            throttle = false, progress_delay = Inf, pick = _ -> (picked[], 0), kwargs...)
         return gui, m
     end
 

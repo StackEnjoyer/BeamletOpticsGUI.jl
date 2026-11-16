@@ -20,10 +20,12 @@ const GUI = BeamletOpticsGUI
         return m, pd, Beam([0.0, 0, 0], [0.0, 1, 0])
     end
 
-    # Deterministic solves, see TestLiveView.jl
+    # Deterministic solves, see TestLiveView.jl, which end before the call returns, also on a slow
+    # machine (`progress_delay = Inf`, which `open_system` takes over)
     function _live_app(; kwargs...)
         m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; merge((; trace_budget = Inf, layout = :app), kwargs)...)
+        gui = live_view(System([m, pd]), beam;
+            merge((; trace_budget = Inf, layout = :app, progress_delay = Inf), kwargs)...)
         return gui, m, pd
     end
 
@@ -108,7 +110,8 @@ const GUI = BeamletOpticsGUI
     @testset "the compact layout ignores the kwargs" begin
         # also values that the app layout rejects
         m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; trace_budget = Inf, sidebar_width = 10,
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(System([m, pd]), beam; trace_budget = Inf, progress_delay = Inf, sidebar_width = 10,
             dock_height = 5000)
         @test gui.layout isa GUI.CompactLayout
         @test GUI._part_size_kwargs(gui) == (;)
@@ -556,7 +559,8 @@ const GUI = BeamletOpticsGUI
 
     @testset "the docked detector views follow the width" begin
         m, pd, beam = _fixture()
-        gui = live_view(System([m, pd]), beam; trace_budget = Inf, layout = :app,
+        # the spot diagram is computed before the call returns, also on a slow machine
+        gui = live_view(System([m, pd]), beam; trace_budget = Inf, layout = :app, progress_delay = Inf,
             detectors = [pd => :spot])
         layout = gui.layout
         insp = layout.inspector

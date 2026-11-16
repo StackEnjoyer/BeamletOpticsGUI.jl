@@ -9,9 +9,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Debug mode: ray diagnostics" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
         live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false,
-            catalog = CatalogEntry[]), kwargs)...)
+            catalog = CatalogEntry[], progress_delay = Inf), kwargs)...)
 
     # The layer of the rays of the `gui`, with the mode switched on
     function _rays!(gui)

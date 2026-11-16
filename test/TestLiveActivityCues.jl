@@ -18,9 +18,10 @@ const GUI = BeamletOpticsGUI
         return (; m1, m2, lens)
     end
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _live_view(fx; theme = :light)
         local gui = live_view(System([fx.m1, fx.m2, fx.lens]), Beam([0.0, -0.05, 0], [0.0, 1, 0]);
-            theme, detectors = [], trace_budget = Inf, throttle = false)
+            theme, detectors = [], trace_budget = Inf, throttle = false, progress_delay = Inf)
         local screen = GLMakie.Screen(visible = false, start_renderloop = false)
         display(screen, gui.fig)
         Makie.colorbuffer(screen)

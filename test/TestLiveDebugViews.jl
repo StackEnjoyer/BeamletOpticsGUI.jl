@@ -14,12 +14,13 @@ const GUI = BeamletOpticsGUI
     VIEWS = ["top" => ([0.0, 0.1, 0.5], [0.0, 0.1, 0.0], [0.0, 1, 0]),
         "side" => ([0.4, 0.1, 0.05], [0.0, 0.1, 0.0], Z)]
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         gui = live_view(System([m]) => beam; trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], detectors = [], views = VIEWS, kwargs...)
+            catalog = CatalogEntry[], detectors = [], views = VIEWS, progress_delay = Inf, kwargs...)
         return gui
     end
     # Ticks of the window: the first one sets the home view

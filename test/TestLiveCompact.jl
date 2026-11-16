@@ -19,8 +19,9 @@ const GUI = BeamletOpticsGUI
         pd = Detector(5e-3)
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(System([m, pd]) => Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            kwargs...)
+            progress_delay = Inf, kwargs...)
         return gui, m, pd
     end
 

@@ -45,7 +45,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         sys2 = System([m2])
         two && push!(pairs, sys2 => Beam([0.05, 0, 0], [0.0, 1, 0], 1e-6))
         labels = isnothing(label) ? Dict() : Dict(sys => label)
-        gui = live_view(pairs...; trace_budget = Inf, throttle = false, labels, kwargs...)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`, also below)
+        gui = live_view(pairs...; trace_budget = Inf, throttle = false, progress_delay = Inf, labels, kwargs...)
         lens && _show_entry!(gui, "Thin lens")
         return gui, sys, m, sys2, m2
     end
@@ -787,15 +788,16 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         static() = StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
-        gui = live_view(static(); layout, trace_budget = Inf)
+        gui = live_view(static(); layout, trace_budget = Inf, progress_delay = Inf)
         @test any(e -> !e.source, GUI._catalog_widget(_window(gui)).entries)
         close(gui)
-        gui = live_view(static(); layout, trace_budget = Inf,
+        gui = live_view(static(); layout, trace_budget = Inf, progress_delay = Inf,
             catalog = [e for e in component_catalog() if !e.source])
         @test !isnothing(_window(gui))
         close(gui)
         # an empty system gets one
-        gui = live_view(System() => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf)
+        gui = live_view(System() => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf,
+            progress_delay = Inf)
         @test !isnothing(_window(gui))
         close(gui)
     end
@@ -946,7 +948,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout,
-            trace_budget = Inf, throttle = false)
+            trace_budget = Inf, throttle = false, progress_delay = Inf)
         _show_entry!(gui, "Thin lens")
         w = _widgets(gui)
         widget = w.widget

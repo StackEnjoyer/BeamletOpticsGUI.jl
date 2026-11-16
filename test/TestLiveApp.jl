@@ -24,9 +24,10 @@ const GUI = BeamletOpticsGUI
 
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
-    # Deterministic solves, see TestLiveView.jl
+    # Deterministic solves, see TestLiveView.jl, which end before the call returns, also on a slow
+    # machine (`progress_delay = Inf`, also below)
     _live_app(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, layout = :app), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, layout = :app, progress_delay = Inf), kwargs)...)
 
     _width(block) = widths(block.layoutobservables.computedbbox[])[1]
     _height(block) = widths(block.layoutobservables.computedbbox[])[2]
@@ -561,7 +562,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # the compact layout is the default and has no slots yet
-        gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf)
+        gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); trace_budget = Inf, progress_delay = Inf)
         @test gui.layout isa GUI.CompactLayout
         @test gui.widgets.menu isa Makie.Menu
         @test_throws ArgumentError GUI._add_toolbar_entry!(gui, :custom)

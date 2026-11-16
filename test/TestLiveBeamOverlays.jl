@@ -10,8 +10,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Generating beams of beamlets" begin
 
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, preview = false, progress_delay = Inf), kwargs)...)
 
     # A detector across +y, facing the beamlets
     function _system()

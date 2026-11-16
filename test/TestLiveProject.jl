@@ -13,8 +13,9 @@ const GUI = BeamletOpticsGUI
 
 @testset "Projects" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
-    const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
+    const_kw = (; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
     _live_view(args...; kwargs...) = live_view(args...; merge(const_kw, kwargs)...)
 
     _entry(name) = only(e for e in component_catalog() if e.name == name)
@@ -148,7 +149,7 @@ const GUI = BeamletOpticsGUI
 
         # open: a project as `load_project` returns it
         p2 = _reload(p)
-        gui2 = GUI._open_from(p2; layout)
+        gui2 = GUI._open_from(p2; layout, progress_delay = Inf)
         @test gui2.project == abspath(dir)
         by = _byid(gui2)
         @test Set(keys(by)) == Set([e.name for e in p.entries]) ∪ Set([:S1, :S2])
@@ -240,7 +241,7 @@ const GUI = BeamletOpticsGUI
         code = :(ThinLens(0.1, -0.06, 0.003, ConstantRefractiveIndex(1.5)))
         p.entries[1] = BMOP.Entry(e.kind, e.name, code, e.object; e.pos, e.rot, e.pose0, e.meta)
         p2 = _reload(p)
-        gui = GUI._open_from(p2)
+        gui = GUI._open_from(p2; progress_delay = Inf)
         lens = p2.entries[1].object
         @test !GUI._editable(gui, lens)
         @test gui.components.origin[lens].code == string(code)

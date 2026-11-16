@@ -11,10 +11,11 @@ const GUI = BeamletOpticsGUI
 
 @testset "Removing and solving a selection of several objects" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
         live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [],
-            catalog = CatalogEntry[]), kwargs)...)
+            catalog = CatalogEntry[], progress_delay = Inf), kwargs)...)
 
     _beam() = Beam([0.0, 0, 0], [0.0, 1, 0])
 
