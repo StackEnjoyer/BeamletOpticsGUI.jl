@@ -8,7 +8,8 @@ using Test
 const GUI = BeamletOpticsGUI
 const BMOP = BeamletOpticsProjects
 const TOML = GUI.TOML  # the TOML of the package, not a dependency of the tests
-const const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
+# Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+const const_kw = (; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
 
 const START = """
     @component L1 = SphericalLens(0.05, -0.05, 0.005, 0.0254, ConstantRefractiveIndex(1.5)) pos = (0.0, 0.1, 0.0)
@@ -292,7 +293,7 @@ mine(dir, me) = sort!([String(c.id) for c in values(BMOP.claims(dir)) if c.by ==
             @test gui.status.text[] == "Bob is editing S1"
             # "+" and "Remove system" of the card of the system
             GUI._inspect!(gui, S1)
-            card = gui isa GUI.AppView ? gui.layout.inspector.card : gui.cards.selection
+            card = gui.layout isa GUI.AppLayout ? gui.layout.inspector.card : gui.cards.selection
             push(name) = (GUI._card_widget(card, name).clicks[] += 1; nothing)
             gui.status.text[] = ""
             push(:member_add)

@@ -25,7 +25,8 @@ The slot of [`add_panel!`](@ref) in the layout of the `gui`: creates the place o
 `title`, builds its content via `f(layout)` (see `_user_panel`) and returns the panel. `select`
 shows it at once in layouts that show one panel at a time.
 """
-_add_user_panel!(_, gui::LiveView, ::String, ::Bool) = _slot_error(gui, "place for panels")
+_add_user_panel!(f, gui::LiveView, title::String, select::Bool) = _add_user_panel!(f, gui, gui.layout, title, select)
+_add_user_panel!(_, gui::LiveView, ::AbstractLiveLayout, ::String, ::Bool) = _slot_error(gui, "place for panels")
 
 """
 Returns the `_UserPanel` named `title` with the content `layout`, built by `f(layout)`: its result
@@ -46,7 +47,8 @@ _update_function(::Observables.ObserverFunction) = nothing
 Whether the panel `p` of the `gui` is shown, i.e. updated after a solve: always, unless the layout
 hides panels, see `_mark_panel_stale!`.
 """
-_panel_shown(::LiveView, _) = true
+_panel_shown(gui::LiveView, @nospecialize(p)) = _panel_shown(gui, gui.layout, p)
+_panel_shown(::LiveView, ::AbstractLiveLayout, _) = true
 
 """
     _mark_panel_stale!(gui, p)
@@ -54,13 +56,15 @@ _panel_shown(::LiveView, _) = true
 Marks the hidden panel `p` of the `gui` as stale, i.e. to be updated once it is shown; nothing in
 layouts that show all panels, see `_panel_shown`.
 """
-_mark_panel_stale!(::LiveView, _) = nothing
+_mark_panel_stale!(gui::LiveView, @nospecialize(p)) = _mark_panel_stale!(gui, gui.layout, p)
+_mark_panel_stale!(::LiveView, ::AbstractLiveLayout, _) = nothing
 
 """
 Whether the detectors and beams of the `gui` hold the result of a full solve, which the `update`
 of a panel may read: not while a solve runs in the background or after a preview solve.
 """
-_results_valid(gui::LiveView) = !_running(gui) && !gui.trace.preview
+_results_valid(gui::LiveView) = _results_valid(gui, gui.layout)
+_results_valid(gui::LiveView, ::AbstractLiveLayout) = !_running(gui) && !gui.trace.preview
 
 """
     _update_user_panels!(gui)
@@ -89,7 +93,8 @@ function _refresh_user_panel!(gui::LiveView, p::_UserPanel)
 end
 
 """Calls the `update` of the panel `p`, errors are logged once per distinct message."""
-_update_user_panel!(gui::LiveView, p::_UserPanel) = _run_update!(gui, p, p.update)
+_update_user_panel!(gui::LiveView, p::_UserPanel) = _update_user_panel!(gui, gui.layout, p)
+_update_user_panel!(gui::LiveView, ::AbstractLiveLayout, p::_UserPanel) = _run_update!(gui, p, p.update)
 
 """
     _run_update!(gui, p, update)
@@ -135,8 +140,10 @@ end
 The slot of [`add_controls!`](@ref) in the layout of the `gui`: the layout of a new, titled group
 of widgets. `_on_controls_added!(gui)` is called once the widgets are built.
 """
-_controls_slot!(gui::LiveView, ::String) = _slot_error(gui, "place for controls")
-_on_controls_added!(::LiveView) = nothing
+_controls_slot!(gui::LiveView, title::String) = _controls_slot!(gui, gui.layout, title)
+_controls_slot!(gui::LiveView, ::AbstractLiveLayout, ::String) = _slot_error(gui, "place for controls")
+_on_controls_added!(gui::LiveView) = _on_controls_added!(gui, gui.layout)
+_on_controls_added!(::LiveView, ::AbstractLiveLayout) = nothing
 
 #=
 Widgets that take the keyboard

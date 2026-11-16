@@ -47,8 +47,9 @@ BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
         translate3d!(m, [0, 0.1, 0])
         b = Beam([0.0, 0, 0], [0.0, 1, 0])
         # the beam is off: a click near it would inspect it instead
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
         gui = live_view(System([m]), b; layout, detectors = [], beams_off = [b], trace_budget = Inf,
-            throttle = false, pick = _ -> (picked[], 0), kwargs...)
+            throttle = false, progress_delay = Inf, pick = _ -> (picked[], 0), kwargs...)
         return gui, m
     end
 
@@ -135,7 +136,9 @@ BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
         close(gui)
     end
 
-    @testset "function and nothing ($layout)" for layout in (:compact, :app)
+    # which object `background_card` gives is shared logic; the layouts differ in the pin only (above)
+    @testset "function and nothing" begin
+        layout = :compact
         sky = Sky(3.0)
         shown = Ref(false)
         calls = Ref(0)

@@ -27,7 +27,9 @@ const GUI = BeamletOpticsGUI
         translate3d!(housing, p)
         return housing
     end
-    _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf, throttle = false), kwargs)...)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+    _live_view(args...; kwargs...) =
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, progress_delay = Inf), kwargs)...)
     _tick!(gui) = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1.0))
     _handle(gui, obj) = only(oh for oh in AbstractTrees.children(gui.controls.h) if rendered(oh) === obj)
     _alphas(gui, obj) = [p.alpha[] for p in render_plots(_handle(gui, obj))]

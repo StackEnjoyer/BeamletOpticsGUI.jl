@@ -20,7 +20,6 @@ end
 
 _points(x::_BackgroundItem) = [x.point]
 _label(gui::LiveView, x::_BackgroundItem) = _label(gui, x.obj)
-_label(gui::AppView, x::_BackgroundItem) = _label(gui, x.obj)
 _tree_kind(x::_BackgroundItem) = _tree_kind(x.obj)
 _keep_plots!(::LiveView, ::_BackgroundItem) = nothing
 _forget!(::LiveView, ::_BackgroundItem) = nothing

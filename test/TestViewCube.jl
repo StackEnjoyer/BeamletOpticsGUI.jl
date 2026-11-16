@@ -288,9 +288,10 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         beam = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
-        # Picking requires a screen and is replaced
+        # Picking requires a screen and is replaced; every solve ends before the call returns, also on
+        # a slow machine (`progress_delay = Inf`), here and in the window below
         pick_plot = Ref{Any}(nothing)
-        gui = live_view(System([m, pd]), beam; throttle = false, trace_budget = Inf,
+        gui = live_view(System([m, pd]), beam; throttle = false, trace_budget = Inf, progress_delay = Inf,
             pick = ax -> (pick_plot[], 0))
         cube = gui.widgets.view_cube
         @test cube isa GUI.ViewCube
@@ -338,7 +339,7 @@ const GUI = BeamletOpticsGUI
         @test !(cube.scene in scene.children)
 
         gui = live_view(System([m, pd]), GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3);
-            view_cube = false)
+            view_cube = false, progress_delay = Inf)
         @test isnothing(gui.widgets.view_cube)
         # the only child scene is the one of the progress window
         @test gui.ax.scene.children == [gui.trace.progress.hud]

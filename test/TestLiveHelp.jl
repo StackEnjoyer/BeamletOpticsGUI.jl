@@ -9,7 +9,8 @@ const GUI = BeamletOpticsGUI
 
 @testset "Live view help" begin
 
-    # Rays along +y, the mirror at 45° reflects them along +x onto the detector
+    # Rays along +y, the mirror at 45° reflects them along +x onto the detector; every solve ends
+    # before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -18,7 +19,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         gui = live_view(System([m, pd]) => Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false,
-            trace_budget = Inf, detectors = [], kwargs...)
+            trace_budget = Inf, detectors = [], progress_delay = Inf, kwargs...)
         return gui, m
     end
 
@@ -99,8 +100,12 @@ const GUI = BeamletOpticsGUI
         @test GUI._help_columns(GUI._HelpSection[]) == [GUI._HelpSection[]]
     end
 
+    # A view for the checks of "the keys of the live view are listed" and "the help card lies over
+    # everything", which only read it before the latter
+    help_gui, help_m = _fixture()
+
     @testset "the keys of the live view are listed" begin
-        gui, _ = _fixture()
+        gui = help_gui
         sections = GUI._help_sections(gui.controls)
         @test first.(sections) == ["Select", "Move the selection", "Edit", "View", "Clip planes", "Trace",
             "Components", "Snap onto beams"]
@@ -114,10 +119,10 @@ const GUI = BeamletOpticsGUI
         @test allunique(keys)
         @test any(e -> occursin("Cancel in the progress window", e.text), sections[end - 2].second)
         @test sections[1].second[1].text == GUI._BROWSE_CLICK_HELP
-        close(gui)
     end
 
-    @testset "help card, $layout $theme" for layout in (:compact, :app), theme in (:light, :dark)
+    # a theme is data that the same code applies: each theme once, each layout once
+    @testset "help card, $layout $theme" for (layout, theme) in ((:compact, :dark), (:app, :light))
         gui, m = _fixture(; layout, theme)
         ctrl = gui.controls
         help = GUI._help_ui(gui)
@@ -224,8 +229,9 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "the help card lies over everything ($layout)" for layout in (:compact, :app)
-        gui, m = _fixture(; layout)
+    # the scene of the help and its listeners are shared logic (`_connect_help!`): the compact layout
+    @testset "the help card lies over everything" begin
+        gui, m = help_gui, help_m
         help = GUI._help_ui(gui)
         z(scene) = Makie.translation(scene)[][3]
         # a scene of its own, over the cards with their tooltips, the selection card, the window
@@ -258,20 +264,18 @@ const GUI = BeamletOpticsGUI
         _click!(gui, _center(card))
         ev(gui).scroll[] = (0.0, 1.0)
         @test seen[] == 3
-        close(gui)
-    end
 
-    @testset "floating cards keep off the help card" begin
-        gui, m = _fixture()
-        help = GUI._help_ui(gui)
-        _key!(gui, Keyboard.h)
-        gui.controls.selected[] = m
-        _tick!(gui)
-        c = gui.cards.selection
-        @test c.scene.visible[]
-        card = Rect2f(c.background.layoutobservables.suggestedbbox[])
-        @test !_overlaps(card, GUI._overlay_rect(help.card))
-        @test !_overlaps(card, GUI._overlay_rect(help.chips))
+        # the same view, the help card open again
+        @testset "floating cards keep off the help card" begin
+            _key!(gui, Keyboard.h)
+            gui.controls.selected[] = m
+            _tick!(gui)
+            c = gui.cards.selection
+            @test c.scene.visible[]
+            r = Rect2f(c.background.layoutobservables.suggestedbbox[])
+            @test !_overlaps(r, GUI._overlay_rect(help.card))
+            @test !_overlaps(r, GUI._overlay_rect(help.chips))
+        end
         close(gui)
     end
 

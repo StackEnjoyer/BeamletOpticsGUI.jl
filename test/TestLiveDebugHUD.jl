@@ -9,7 +9,8 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "Debug card" begin
-    # Rays along +y, the mirror at 45° reflects them along +x onto the detector
+    # Rays along +y, the mirror at 45° reflects them along +x onto the detector; every solve ends
+    # before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -19,7 +20,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.1, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System([m, pd]) => cs; trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], detectors = [], kwargs...)
+            catalog = CatalogEntry[], detectors = [], progress_delay = Inf, kwargs...)
         return gui, m, pd
     end
     # A tick of the window at the time `t` [s], straight to the layers of the debug mode, such that
@@ -73,6 +74,22 @@ const GUI = BeamletOpticsGUI
         r1 = _rect(hud.background)
         @test hud.scene.visible[]
         @test minimum(r1)[1] ≈ minimum(r)[1] && maximum(r1)[2] ≈ maximum(r)[2]
+
+        # only reads: in the same window
+        @testset "an overlay: its own scene, not picked, fitted or clipped" begin
+            @test hud.scene.parent === gui.fig.scene
+            plots = Makie.collect_atomic_plots(hud.scene)
+            @test !isempty(plots)
+            # nothing of the card in the scene of the 3D view, whose plots are picked, fitted and clipped
+            in3d = Makie.collect_atomic_plots(gui.ax.scene)
+            @test !any(p -> any(q -> q === p, in3d), plots)
+            pickable = [p for h in AbstractTrees.children(gui.pool) for p in GUI._pickable_plots(h)]
+            @test !isempty(pickable)
+            @test !any(p -> any(q -> q === p, plots), pickable)
+            # in front of the 3D view and below the component cards and the help card
+            z = hud.scene.transformation.translation[][3]
+            @test 0 < z < GUI._CARD_Z0 && z < GUI._HELP_Z
+        end
         close(gui)
     end
 
@@ -90,25 +107,17 @@ const GUI = BeamletOpticsGUI
         spectator!(gui, false)
         GUI._debug_show!(gui)
         @test hud.scene.visible[]
-        close(gui)
-    end
 
-    @testset "an overlay: its own scene, not picked, fitted or clipped" begin
-        gui, _, _ = _fixture()
-        GUI._set_debug!(gui, true)
-        hud = _hud(gui)
-        @test hud.scene.parent === gui.fig.scene
-        plots = Makie.collect_atomic_plots(hud.scene)
-        @test !isempty(plots)
-        # nothing of the card in the scene of the 3D view, whose plots are picked, fitted and clipped
-        in3d = Makie.collect_atomic_plots(gui.ax.scene)
-        @test !any(p -> any(q -> q === p, in3d), plots)
-        pickable = [p for h in AbstractTrees.children(gui.pool) for p in GUI._pickable_plots(h)]
-        @test !isempty(pickable)
-        @test !any(p -> any(q -> q === p, plots), pickable)
-        # in front of the 3D view and below the component cards and the help card
-        z = hud.scene.transformation.translation[][3]
-        @test 0 < z < GUI._CARD_Z0 && z < GUI._HELP_Z
+        # the last change of this window
+        @testset "follows the resize of the 3D view" begin
+            vp0 = _view(gui)
+            resize!(gui.fig, 1000, 700)
+            vp = _view(gui)
+            @test vp != vp0
+            r = _rect(hud.background)
+            @test minimum(r)[1] ≈ minimum(vp)[1] + GUI._HUD_LEFT
+            @test maximum(r)[2] ≈ maximum(vp)[2] - GUI._HUD_TOP
+        end
         close(gui)
     end
 
@@ -338,22 +347,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "follows the resize of the 3D view" begin
-        gui, _, _ = _fixture()
-        GUI._set_debug!(gui, true)
-        hud = _hud(gui)
-        vp0 = _view(gui)
-        resize!(gui.fig, 1000, 700)
-        vp = _view(gui)
-        @test vp != vp0
-        r = _rect(hud.background)
-        @test minimum(r)[1] ≈ minimum(vp)[1] + GUI._HUD_LEFT
-        @test maximum(r)[2] ≈ maximum(vp)[2] - GUI._HUD_TOP
-        close(gui)
-    end
-
     @testset "the colors of the cards in both themes and layouts" begin
-        for (layout, theme) in ((:compact, :light), (:compact, :dark), (:app, :light), (:app, :dark))
+        # the colors are data of the theme, the place depends on the layout: each theme and each
+        # layout once
+        for (layout, theme) in ((:compact, :dark), (:app, :light))
             gui, _, _ = _fixture(; layout, theme)
             t = gui.layout.theme
             GUI._set_debug!(gui, true)

@@ -42,7 +42,8 @@ const GUI = BeamletOpticsGUI
         sys = System([m])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         b = Beam([-0.05, 0.3, 0], [0.0, -1, 0], 1e-6)
-        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, snap, kwargs...)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false, snap, progress_delay = Inf, kwargs...)
         set_view(gui.ax, [0.35, -0.25, 0.45], [0.0, 0.1, 0.0], [0.0, 0, 1])
         return gui, sys, m
     end
@@ -70,7 +71,8 @@ const GUI = BeamletOpticsGUI
     _in_scene(gui, plot) = any(q -> q === plot, gui.ax.scene.plots)
     _pose(obj) = (collect(Float64, position(obj)), Matrix{Float64}(BMO.orientation(obj)))
 
-    @testset "pose under the mouse ($layout)" for layout in (:compact, :app)
+    # In the compact layout: `LiveView` has no layout parameter, and placing is the same code in both
+    @testset "pose under the mouse ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         ctrl = gui.controls
         scene = gui.ax.scene
@@ -211,7 +213,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a fixed plane ($layout)" for layout in (:compact, :app)
+    @testset "a fixed plane ($layout)" for layout in (:compact,)
         # with a `plane_normal`, the component stays on that plane through the source
         gui, sys, m = _fixture(; layout, plane_normal = [0, 0, 1])
         scene = gui.ax.scene
@@ -248,7 +250,7 @@ const GUI = BeamletOpticsGUI
         source = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 20e-3, 1e-6; num_rings = 2)
         gauss = GaussianBeamlet([0.03, 0, 0], [0.0, 1, 0], 1e-6, 1e-3)
         sys = System()
-        gui = live_view(sys => source, sys => gauss; trace_budget = Inf, throttle = false, snap = :pose)
+        gui = live_view(sys => source, sys => gauss; trace_budget = Inf, throttle = false, snap = :pose, progress_delay = Inf)
         # from above, such that the beams of the source lie apart on the screen
         set_view(gui.ax, [0.0, 0.05, 0.1], [0.0, 0.05, 0.0], [0.0, 1, 0])
         central = GUI._central_beam(source)
@@ -292,7 +294,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "start, cancel and drop ($layout)" for layout in (:compact, :app)
+    @testset "start, cancel and drop ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         ctrl = gui.controls
         scene = gui.ax.scene
@@ -356,7 +358,7 @@ const GUI = BeamletOpticsGUI
     @testset "views without a System" begin
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
-        gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf)
+        gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, progress_delay = Inf)
         # a component is placed without a system
         lens = _lens()
         GUI._start_placement!(gui, lens)
@@ -374,7 +376,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a source ($layout)" for layout in (:compact, :app)
+    @testset "a source ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout, show_sources = false)
         ctrl = gui.controls
         scene = gui.ax.scene
@@ -469,15 +471,15 @@ const GUI = BeamletOpticsGUI
 
         # a system without a source: the plane through the origin
         sys = System([RoundPlanoMirror(25e-3, 5e-3)])
-        gui = live_view(sys; trace_budget = Inf, throttle = false)
+        gui = live_view(sys; trace_budget = Inf, throttle = false, progress_delay = Inf)
         @test !GUI._view_empty(gui)
         GUI._start_placement!(gui, _lens())
         @test gui.components.placement.plane_point == zeros(3) && !gui.components.placement.fixed
         close(gui)
     end
 
-    @testset "the first part of an empty view ($layout)" for layout in (:compact, :app)
-        gui = live_view(System(); trace_budget = Inf, throttle = false, layout, snap = true)
+    @testset "the first part of an empty view ($layout)" for layout in (:compact,)
+        gui = live_view(System(); trace_budget = Inf, throttle = false, layout, snap = true, progress_delay = Inf)
         scene = gui.ax.scene
         cam = cameracontrols(scene)
         # the camera looks at the origin, also after Makie centered it for the window
@@ -521,7 +523,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
 
         # a component is the first part as well
-        gui = live_view(System(); trace_budget = Inf, throttle = false, layout)
+        gui = live_view(System(); trace_budget = Inf, throttle = false, layout, progress_delay = Inf)
         lens = _lens()
         GUI._start_placement!(gui, lens)
         @test gui.components.placement.fixed

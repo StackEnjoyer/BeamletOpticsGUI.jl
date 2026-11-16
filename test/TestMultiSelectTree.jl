@@ -9,10 +9,11 @@ const GUI = BeamletOpticsGUI
 
 @testset "Selections of several objects in the object tree" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_app(args...; kwargs...) = live_view(args...;
         merge((; trace_budget = Inf, throttle = false, detectors = [], layout = :app,
-            catalog = CatalogEntry[]), kwargs)...)
+            catalog = CatalogEntry[], progress_delay = Inf), kwargs)...)
 
     # Two systems that share the mirror `m`: "TX" with the lens `l`, "RX" with the detector `pd`
     function _fixture(; kwargs...)
