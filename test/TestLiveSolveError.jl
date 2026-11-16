@@ -30,10 +30,11 @@ const GUI = BeamletOpticsGUI
     end
     _texts(c) = [GUI._card_widget(c, Symbol(:error_, i)).text[] for i in eachindex(c.obj.rows)]
 
-    @testset "two kinds of beams on one detector ($layout)" for layout in (:compact, :app)
+    # the message is shared logic; the layouts differ in its pin, see "other errors" below
+    @testset "two kinds of beams on one detector" begin
         sys, pd, b1, b2 = _fixture()
         # the initial solve fails, the window opens with the message at the detector
-        gui = @test_logs (:error, r"solving the systems failed") _live_view(sys => b1, sys => b2; layout,
+        gui = @test_logs (:error, r"solving the systems failed") _live_view(sys => b1, sys => b2;
             labels = Dict(pd => "PD"))
         c = _message(gui)
         @test !isnothing(c)

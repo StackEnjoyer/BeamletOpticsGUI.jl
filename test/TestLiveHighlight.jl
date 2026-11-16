@@ -35,9 +35,10 @@ const WARN = Base.CoreLogging.Warn
     _boxes(gui) = last.(GUI._highlight(gui).boxes)
     _in_scene(gui, p) = any(q -> q === p, gui.ax.scene.plots)
 
-    @testset "browse, hover, end ($layout)" for layout in (:compact, :app)
+    # the highlight changes plots of the 3D view only, no layout hook: compact only
+    @testset "browse, hover, end" begin
         fx = _fixture()
-        gui = _live_view(fx, layout)
+        gui = _live_view(fx, :compact)
         all_plots = [p for obj in (fx.bench, fx.lens) for p in _plots(gui, obj)]
         before = IdDict(p => _state(p) for p in all_plots)
         # a user opacity set before browsing
@@ -108,6 +109,7 @@ const WARN = Base.CoreLogging.Warn
         # the user opacity still applies after browsing
         GUI._set_opacity!(gui, fx.m3, 1.0)
         @test all(p -> _state(p) == before[p], _plots(gui, fx.m3))
+        close(gui)
     end
 
     @testset "part under the cursor" begin
@@ -141,6 +143,7 @@ const WARN = Base.CoreLogging.Warn
         @test isnothing(GUI._part_under_cursor(gui, parts))
         GUI._toggle_hidden!(gui, fx.m3)
         @test GUI._part_under_cursor(gui, parts) === fx.m3
+        close(gui)
     end
 
     # GLMakie rejects a scalar alpha on some plots when it updates their render object, which it
@@ -185,6 +188,7 @@ const WARN = Base.CoreLogging.Warn
         @test marker_plot.marker[] == img && marker_plot.transparency[] == transparency
         @test marker_plot.alpha[] == alpha
         close(screen)
+        close(gui)
     end
 end
 

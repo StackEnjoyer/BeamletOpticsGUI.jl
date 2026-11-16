@@ -118,7 +118,8 @@ BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
         close(gui)
     end
 
-    @testset "only a row that fills ($layout)" for layout in (:compact, :app)
+    # the docked width of the app layout is that of "fill" above: compact only
+    @testset "only a row that fills" for layout in (:compact,)
         obj = RowTestObject(() -> (CardRow(CardWidget(Slider; name = :level, range = 0:10, fill = true)),))
         gui = _live_view(System([obj]), _beam(); layout)
         _select!(gui, obj)
@@ -144,7 +145,8 @@ BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
         close(gui)
     end
 
-    @testset "aligned ($layout)" for layout in (:compact, :app)
+    # the columns of the rows are laid out by the card, whichever layout holds it: compact only
+    @testset "aligned" for layout in (:compact,)
         rows = () -> (CardRow("x", CardWidget(Slider; name = :a, range = 0:10, width = 90); aligned = true),
             CardRow("a longer label", CardWidget(Slider; name = :b, range = 0:10, width = 90); aligned = true),
             CardRow("mid", CardWidget(Slider; name = :c, range = 0:10, width = 90)),
@@ -166,7 +168,8 @@ BeamletOpticsGUI.card_rows(w::MyFilterWheel) = (pose_card_rows(w)...,
         close(gui)
     end
 
-    @testset "the example of WIDGETS.md ($layout)" for layout in (:compact, :app)
+    # the docked width of the app layout is that of "fill" above: compact only
+    @testset "the example of WIDGETS.md" for layout in (:compact,)
         w = MyFilterWheel()
         gui = _live_view(System([w]), _beam(); layout)
         _select!(gui, w)

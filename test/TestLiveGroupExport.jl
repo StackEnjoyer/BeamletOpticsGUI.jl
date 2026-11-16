@@ -91,7 +91,7 @@ const GUI = BeamletOpticsGUI
         return g
     end
 
-    @testset "export_script, $layout" for layout in (:compact, :app)
+    @testset "export_script, $layout" for layout in (:compact,)
         a, oa = _built(LENS; axis = [0.0, 0, 1], angle = 0.2, at = [0.0, 0.1, 0.0])
         b, ob = _built(MIRROR; axis = [1.0, 2, 3], angle = 0.4, at = [0.05, 0.2, 0.01])
         g = _grouped([a, b])
@@ -191,7 +191,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "dissolving a nested group, $layout" for layout in (:compact, :app)
+    @testset "dissolving a nested group, $layout" for layout in (:compact,)
         m1, o1 = _built(MIRROR; angle = 0.2, at = [0.0, 0.1, 0.0])
         m2, o2 = _built(MIRROR; axis = [1.0, 2, 3], angle = 0.4, at = [0.05, 0.2, 0.01])
         m3, o3 = _built(MIRROR; axis = [0.0, 1, 0], angle = 0.3, at = [-0.04, 0.15, 0.02])
@@ -270,7 +270,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "export_changes, $layout" for layout in (:compact, :app)
+    @testset "export_changes, $layout" for layout in (:compact,)
         # the script: `a` in `system`; `b` was added in the window, then both were grouped
         a, _ = _built(LENS)
         pa0 = GUI._pose(a)
@@ -329,7 +329,7 @@ const GUI = BeamletOpticsGUI
     _pose_of(g) = (Vector{Float64}(position(g)), _orientation(g))
     _same_place(g, (P, R)) = norm(Vector{Float64}(position(g)) - P) < 1e-12 && norm(_orientation(g) - R) < 1e-12
 
-    @testset "a group made in a group of the script, $layout, nested = $nested" for layout in (:compact, :app),
+    @testset "a group made in a group of the script, $layout, nested = $nested" for layout in (:compact,),
             nested in (false, true)
         # the script: `sg` of `a`, `b`, `c` with its own pivot and axes, inside `top` with `d` if `nested`
         script = """
@@ -422,7 +422,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "Ctrl+G in a group of the script inside another one, after turning them, $layout" for layout in (:compact, :app)
+    @testset "Ctrl+G in a group of the script inside another one, after turning them, $layout" for layout in (:compact,)
         script = """
             using BeamletOptics
             a = $MIRROR
@@ -495,7 +495,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "ungrouping a group made in a group of the script, $layout" for layout in (:compact, :app)
+    @testset "ungrouping a group made in a group of the script, $layout" for layout in (:compact,)
         script = """
             using BeamletOptics
             a = $MIRROR

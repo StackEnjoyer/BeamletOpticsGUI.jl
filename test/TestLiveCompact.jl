@@ -118,38 +118,36 @@ const GUI = BeamletOpticsGUI
         vp = Rect2f(Makie.viewport(gui.ax.scene)[])
         _click!(gui, Point2f(maximum(vp)[1] - 200, minimum(vp)[2] + 300))
         @test !GUI._rail_open(o)
-        close(gui)
-    end
-
-    @testset "built-in tools in the rail or the camera popover" begin
-        gui, _, _ = _fixture()
-        o = gui.layout.overlay
-        w = gui.widgets
-        roles = [s.role for s in GUI._tools(gui.layout)]
-        @test roles == [:trace_button, :auto_trace_toggle, :show_all_button, :home_button,
-            :fit_button, :views_button, :save_view_button, :lock_view_toggle, :orthographic_toggle,
-            :clip_beams_toggle, :sources_toggle, :measure_toggle, :export_button]
-        widget(role) = role === :fit_button ? o.fit_button :
-                       role === :views_button ? o.views_button : getfield(w, role)
-        for role in roles
-            @test _grid(widget(role).box) in (o.rail_tools, o.camera_tools)
+        # only reads: in the same window
+        @testset "built-in tools in the rail or the camera popover" begin
+            o = gui.layout.overlay
+            w = gui.widgets
+            roles = [s.role for s in GUI._tools(gui.layout)]
+            @test roles == [:trace_button, :auto_trace_toggle, :show_all_button, :home_button,
+                :fit_button, :views_button, :save_view_button, :lock_view_toggle, :orthographic_toggle,
+                :clip_beams_toggle, :sources_toggle, :measure_toggle, :export_button]
+            widget(role) = role === :fit_button ? o.fit_button :
+                           role === :views_button ? o.views_button : getfield(w, role)
+            for role in roles
+                @test _grid(widget(role).box) in (o.rail_tools, o.camera_tools)
+            end
+            # the rail in the order of the plan, the camera tools in the popover
+            rows = [GLB.gridcontent(widget(r).box).span.rows.start for r in (:trace_button,
+                :auto_trace_toggle, :sources_toggle, :clip_beams_toggle, :measure_toggle,
+                :show_all_button, :export_button)]
+            @test issorted(rows)
+            @test all(r -> _grid(widget(r).box) === o.camera_tools, (:home_button, :fit_button,
+                :views_button, :save_view_button, :orthographic_toggle, :lock_view_toggle))
+            @test _grid(_grid(w.menu)) === o.rail_tools
+            @test _grid(w.views_menu) === o.camera_tools
+            # toggles and buttons like Makie's, initialized from the kwargs
+            @test w.auto_trace_toggle.active[] && !w.measure_toggle.active[]
+            @test w.trace_button.label[] == "Trace (t)" && w.sources_toggle.label[] == "Sources (1)"
+            # the views icon opens the views menu
+            o.views_button.clicks[] += 1
+            @test w.views_menu.is_open[]
+            w.views_menu.is_open[] = false
         end
-        # the rail in the order of the plan, the camera tools in the popover
-        rows = [GLB.gridcontent(widget(r).box).span.rows.start for r in (:trace_button,
-            :auto_trace_toggle, :sources_toggle, :clip_beams_toggle, :measure_toggle,
-            :show_all_button, :export_button)]
-        @test issorted(rows)
-        @test all(r -> _grid(widget(r).box) === o.camera_tools, (:home_button, :fit_button,
-            :views_button, :save_view_button, :orthographic_toggle, :lock_view_toggle))
-        @test _grid(_grid(w.menu)) === o.rail_tools
-        @test _grid(w.views_menu) === o.camera_tools
-        # toggles and buttons like Makie's, initialized from the kwargs
-        @test w.auto_trace_toggle.active[] && !w.measure_toggle.active[]
-        @test w.trace_button.label[] == "Trace (t)" && w.sources_toggle.label[] == "Sources (1)"
-        # the views icon opens the views menu
-        o.views_button.clicks[] += 1
-        @test w.views_menu.is_open[]
-        w.views_menu.is_open[] = false
         close(gui)
     end
 

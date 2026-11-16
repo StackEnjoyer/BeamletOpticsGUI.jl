@@ -70,7 +70,8 @@ const GUI = BeamletOpticsGUI
     _in_scene(gui, plot) = any(q -> q === plot, gui.ax.scene.plots)
     _pose(obj) = (collect(Float64, position(obj)), Matrix{Float64}(BMO.orientation(obj)))
 
-    @testset "pose under the mouse ($layout)" for layout in (:compact, :app)
+    # In the compact layout: `LiveView` has no layout parameter, and placing is the same code in both
+    @testset "pose under the mouse ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         ctrl = gui.controls
         scene = gui.ax.scene
@@ -211,7 +212,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a fixed plane ($layout)" for layout in (:compact, :app)
+    @testset "a fixed plane ($layout)" for layout in (:compact,)
         # with a `plane_normal`, the component stays on that plane through the source
         gui, sys, m = _fixture(; layout, plane_normal = [0, 0, 1])
         scene = gui.ax.scene
@@ -292,7 +293,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "start, cancel and drop ($layout)" for layout in (:compact, :app)
+    @testset "start, cancel and drop ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         ctrl = gui.controls
         scene = gui.ax.scene
@@ -374,7 +375,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a source ($layout)" for layout in (:compact, :app)
+    @testset "a source ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout, show_sources = false)
         ctrl = gui.controls
         scene = gui.ax.scene
@@ -476,7 +477,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "the first part of an empty view ($layout)" for layout in (:compact, :app)
+    @testset "the first part of an empty view ($layout)" for layout in (:compact,)
         gui = live_view(System(); trace_budget = Inf, throttle = false, layout, snap = true)
         scene = gui.ax.scene
         cam = cameracontrols(scene)

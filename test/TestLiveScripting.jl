@@ -105,6 +105,21 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         select!(gui, nothing)
         @test isnothing(gui.controls.selected[])
         @test isempty(gui.controls.box_obs[])
+
+        # the same setup, in the same window
+        @testset "spectator!" begin
+            select!(gui, m)
+            spectator!(gui, true)
+            @test gui.controls.spectator[]
+            @test isnothing(gui.controls.selected[])
+            @test_throws ArgumentError select!(gui, m)
+            # still movable from code
+            translate3d!(gui, m, [0.0, 0.001, 0.0])
+            spectator!(gui, false)
+            @test !gui.controls.spectator[]
+            select!(gui, m)
+            @test gui.controls.selected[] === m
+        end
         close(gui)
     end
 
@@ -125,36 +140,17 @@ BMO.kinematic_trait_of(::FixedMirror) = BMO.Static()
         @test length(gui.controls.undo_stack) == n
         close(gui)
 
+        # an object that may not move and a static one, in one window
         m2 = RoundPlanoMirror(25e-3, 5e-3)
-        gui2 = live_view(System([m2]) => Beam([0.0, -0.1, 0], [0.0, 1, 0], 1e-6);
-            constraints = Dict(m2 => (; move = ())), catalog = CatalogEntry[])
-        @test_throws ArgumentError translate3d!(gui2, m2, [0.01, 0, 0])
-        close(gui2)
-
         fixed = FixedMirror(BMO.RoundPlanoMirror(25e-3, 5e-3).shape)
         gui3 = live_view(System([m2]) => Beam([0.0, -0.1, 0], [0.0, 1, 0], 1e-6);
-            extras = [fixed], catalog = CatalogEntry[])
+            constraints = Dict(m2 => (; move = ())), extras = [fixed], catalog = CatalogEntry[])
+        @test_throws ArgumentError translate3d!(gui3, m2, [0.01, 0, 0])
         @test_throws "static" translate3d!(gui3, fixed, [0.01, 0, 0])
         @test_throws "static" rotate3d!(gui3, fixed, [0.0, 0, 1], 0.1)
         @test_throws ArgumentError select!(gui3, FixedMirror(fixed.shape))  # not in the view
         @test isempty(gui3.controls.undo_stack)
         close(gui3)
-    end
-
-    @testset "spectator!" begin
-        gui, m, _ = _fixture()
-        select!(gui, m)
-        spectator!(gui, true)
-        @test gui.controls.spectator[]
-        @test isnothing(gui.controls.selected[])
-        @test_throws ArgumentError select!(gui, m)
-        # still movable from code
-        translate3d!(gui, m, [0.0, 0.001, 0.0])
-        spectator!(gui, false)
-        @test !gui.controls.spectator[]
-        select!(gui, m)
-        @test gui.controls.selected[] === m
-        close(gui)
     end
 
     @testset "wait_solve" begin

@@ -170,7 +170,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "move ($layout)" for layout in (:compact, :app)
+    @testset "move ($layout)" for layout in (:compact,)
         gui, sys, m, lens, a = _fixture(; layout)
         ctrl = gui.controls
         P0, R0 = _pose(lens)
@@ -347,7 +347,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "switching ($layout)" for layout in (:compact, :app)
+    @testset "switching ($layout)" for layout in (:compact,)
         gui, sys, m, lens, a = _fixture(; layout)
         ctrl = gui.controls
         @test ctrl.snap[] == :off

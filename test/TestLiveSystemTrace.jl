@@ -43,8 +43,9 @@ const GUI = BeamletOpticsGUI
         return (; gui, m, a, tx, rx, b1, b2)
     end
 
-    @testset "a system without auto tracing, $layout" for layout in (:compact, :app)
-        (; gui, m, a, tx, rx, b1, b2) = _lidar(; layout)
+    # tracing per system is shared logic: compact only
+    @testset "a system without auto tracing" begin
+        (; gui, m, a, tx, rx, b1, b2) = _lidar()
         @test GUI._system_auto(gui, tx) && GUI._system_auto(gui, rx)
         GUI._set_system_auto!(gui, rx, false)
         @test GUI._system_auto(gui, tx) && !GUI._system_auto(gui, rx) && gui.trace.auto[]

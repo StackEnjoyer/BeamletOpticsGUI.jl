@@ -62,7 +62,8 @@ const GUI = BeamletOpticsGUI
 
     _nrays(beam) = length(BMO.rays(beam))
 
-    @testset "a view from the catalog, $layout" for layout in (:compact, :app)
+    # In the compact layout: the script does not depend on the layout
+    @testset "a view from the catalog, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys; layout)
         # an empty view: a system, no source

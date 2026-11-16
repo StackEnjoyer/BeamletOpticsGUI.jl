@@ -129,10 +129,8 @@ const GUI = BeamletOpticsGUI
         @test GUI._label(gui, m1) == "Mirror 1"
         @test GUI._label(gui, m2) == "Own name"
         @test first.(gui.widgets.menu.options[]) == ["System 1", "  Mirror 1", "  Own name", "  Detector 1", "Beam 1"]
-        app = _live_view(System([m1, m2, pd]), beam; throttle = false, layout = :app,
-            labels = Dict(m2 => "Own name"), detectors = [])
-        @test [GUI._label(app, o) for o in (m1, m2, pd, beam)] == ["Mirror 1", "Own name", "Detector 1", "Beam 1"]
-        close(app)
+        # the names are shared logic (`_label`), the same in the app layout
+        @test [GUI._label(gui, o) for o in (m1, m2, pd, beam)] == ["Mirror 1", "Own name", "Detector 1", "Beam 1"]
 
         # clip planes are numbered
         p1 = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])

@@ -19,9 +19,9 @@ const GUI = BeamletOpticsGUI
     end
 
     function _live_view(fx; theme = :light)
-        gui = live_view(System([fx.m1, fx.m2, fx.lens]), Beam([0.0, -0.05, 0], [0.0, 1, 0]);
+        local gui = live_view(System([fx.m1, fx.m2, fx.lens]), Beam([0.0, -0.05, 0], [0.0, 1, 0]);
             theme, detectors = [], trace_budget = Inf, throttle = false)
-        screen = GLMakie.Screen(visible = false, start_renderloop = false)
+        local screen = GLMakie.Screen(visible = false, start_renderloop = false)
         display(screen, gui.fig)
         Makie.colorbuffer(screen)
         return gui, screen
@@ -54,9 +54,12 @@ const GUI = BeamletOpticsGUI
     _component_plots(gui, fx) = [p for obj in values(fx) for p in GUI._object_plots(gui.controls.h, obj)]
     _state(p) = (p.color[], p.visible[], p.alpha[], p.transparency[])
 
+    # One window for the tests of the light theme: each draws cues, which are overlays, and clears
+    # them; the components stay as they are (see "kinds of change")
+    fx = _fixture()
+    gui, screen = _live_view(fx)
+
     @testset "kinds of change" begin
-        fx = _fixture()
-        gui, screen = _live_view(fx)
         comps = _component_plots(gui, fx)
         @test !isempty(comps)
         before = IdDict(p => _state(p) for p in comps)
@@ -128,12 +131,9 @@ const GUI = BeamletOpticsGUI
         @test length(gui.ax.scene.plots) == nplots
         @test _component_plots(gui, fx) == comps
         @test all(p -> _state(p) == before[p], comps)
-        close(screen)
     end
 
     @testset "alpha over the life" begin
-        fx = _fixture()
-        gui, screen = _live_view(fx)
         ep = _episode([_item(gui, fx.lens, :moved)])
         start = 100.0
         life = GUI._CUE_IN + GUI._CUE_HOLD + GUI._CUE_OUT
@@ -152,12 +152,9 @@ const GUI = BeamletOpticsGUI
         @test length(_drawn(gui)) == 1
         GUI._draw_cues!(gui, [(ep, life + 0.01)], start + life + 0.01)
         @test isempty(_drawn(gui))
-        close(screen)
     end
 
     @testset "summary, message, several cues" begin
-        fx = _fixture()
-        gui, screen = _live_view(fx)
         items = [_item(gui, fx.lens, :moved; key = "a"), _item(gui, fx.m2, :rotated; key = "b"),
             _item(gui, fx.m1, :added; key = "c")]
         summary = _episode(items; n = 0, text = "14 changes (3 objects)", count = 14)
@@ -214,12 +211,9 @@ const GUI = BeamletOpticsGUI
         GUI._draw_cues!(gui, [(e1, 1.6), (e2, 0.7), (e1, 0.0)], 10.1)
         @test length(_drawn(gui)) == 3
         GUI._clear_cues!(gui)
-        close(screen)
     end
 
     @testset "spectator mode" begin
-        fx = _fixture()
-        gui, screen = _live_view(fx)
         ep = _episode([_item(gui, fx.lens, :moved)])
         spectator!(gui, true)
         GUI._draw_cues!(gui, [(ep, 1.0)], 10.0)
@@ -233,7 +227,7 @@ const GUI = BeamletOpticsGUI
         spectator!(gui, false)
         GUI._draw_cues!(gui, [(ep, 1.1)], 10.1)
         @test all(s -> d.plots[s].visible[], (:background, :dot, :name, :text))
-        close(screen)
+        GUI._clear_cues!(gui)
     end
 
     # The contrast of two colours (WCAG)
@@ -244,12 +238,13 @@ const GUI = BeamletOpticsGUI
     _over(c, under) = (a = Makie.to_color(c).alpha; RGBf((a .* _rgb(c) .+ (1 - a) .* _rgb(under))...))
 
     @testset "readable text ($theme)" for theme in (:light, :dark)
-        fx = _fixture()
-        gui, screen = _live_view(fx; theme)
-        msg = _episode([_item(gui, fx.m1, :changed)]; n = 2, text = "", message = "checking the focus")
-        ep = _episode([_item(gui, fx.lens, :moved)])
-        GUI._draw_cues!(gui, [(ep, 1.0), (msg, 1.0)], 10.0)
-        for d in _drawn(gui)
+        # the window of the light theme, a window of its own for the dark one
+        fxt = theme === :light ? fx : _fixture()
+        g, scr = theme === :light ? (gui, screen) : _live_view(fxt; theme)
+        msg = _episode([_item(g, fxt.m1, :changed)]; n = 2, text = "", message = "checking the focus")
+        ep = _episode([_item(g, fxt.lens, :moved)])
+        GUI._draw_cues!(g, [(ep, 1.0), (msg, 1.0)], 10.0)
+        for d in _drawn(g)
             # the background over whatever lies behind it, black or white
             for under in (RGBf(0, 0, 0), RGBf(1, 1, 1))
                 bg = _over(d.plots[:background].color[], under)
@@ -258,14 +253,13 @@ const GUI = BeamletOpticsGUI
                 end
             end
         end
-        img = Makie.colorbuffer(screen)
+        img = Makie.colorbuffer(scr)
         @test img isa AbstractMatrix
-        close(screen)
+        GUI._clear_cues!(g)
+        theme === :light || close(scr)
     end
 
     @testset "scrub" begin
-        fx = _fixture()
-        gui, screen = _live_view(fx)
         gui.sync.ids[fx.lens] = (:L1, "u1")
         gui.sync.ids[fx.m2] = (:M2, "u2")
         gui.sync.ids[fx.m1] = (:M1, "u3")
@@ -307,7 +301,6 @@ const GUI = BeamletOpticsGUI
         @test isnothing(c.scrub) && isempty(c.scrub_keys)
         @test !_in(gui.ax.scene, p)
         @test all(p -> _state(p) == before[p], comps)
-        close(screen)
     end
 
     @testset "wrap and presence colour" begin
@@ -317,9 +310,9 @@ const GUI = BeamletOpticsGUI
         w = GUI._wrap_text(repeat("word ", 40), 10, 3)
         @test length(w) == 3 && endswith(w[end], "…") && all(l -> length(l) <= 10, w)
         @test GUI._wrap_text("") == String[]
-        gui = live_view(System([RoundPlanoMirror(0.02, 0.004)]))
         @test GUI._presence_color(gui, "bob@PC3") == GUI._activity_color(gui, "bob@PC3")
     end
+    close(screen)
 end
 
 end

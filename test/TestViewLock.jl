@@ -68,7 +68,27 @@ const GUI = BeamletOpticsGUI
     end
     free(gui) = viewport_px(gui, 0.85, 0.25)
 
-    for layout in (:compact, :app)
+    # The lock is shared logic of the camera (`_connect_view_lock!`), tested in the compact layout;
+    # the app layout has its own toggle in its toolbar, which drives the same lock
+    @testset "app" begin
+        gui, m, screen = fixture(:app; lock_view = true)
+        setup!(gui)
+        @test toggle(gui).active[] isa Bool && toggle(gui).active[]
+        @test all(==(false), rotations(gui))
+        d0 = dir(gui)
+        drag!(gui, free(gui), free(gui) .+ (60.0, 40.0))
+        @test norm(dir(gui) - d0) < 1e-9
+        toggle(gui).active[] = false
+        tick!(gui)
+        @test gui.status.text[] == "view unlocked" && rotations(gui)[1] == Mouse.left
+        drag!(gui, free(gui), free(gui) .+ (60.0, 40.0))
+        @test norm(dir(gui) - d0) > 1e-3
+        toggle(gui).active[] = true
+        @test all(==(false), rotations(gui))
+        close(screen)
+    end
+
+    for layout in (:compact,)
         @testset "$layout" begin
             # starts locked
             gui, m, screen = fixture(layout; lock_view = true)

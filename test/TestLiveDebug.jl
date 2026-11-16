@@ -84,37 +84,56 @@ GUI._layer_tick!(::GUI.LiveView, l::_CountingLayer, tick) = _count!(l, :tick, ti
         @test isempty(d.layers) && !d.timing
         @test d.stats.update == 0.0
         @test GUI._debug_kwarg(d) == false && GUI._debug_kwarg(nothing) == false
-        close(gui)
+
+        # the mode is still off: the same window
+        @testset "toggle and kwarg switch the mode" begin
+            d.toggle.active[] = true
+            @test GUI._debug_on(gui) && d.created && d.timing
+            @test all(name -> name in _layer_names(gui), GUI._DEBUG_LAYERS)
+            @test gui.status.text[] == "debug mode on"
+            @test "debug mode on" in _texts(gui)
+            n = length(d.layers)
+            d.toggle.active[] = false
+            @test !GUI._debug_on(gui) && !d.timing
+            @test gui.status.text[] == "debug mode off"
+            # the layers are created once
+            d.toggle.active[] = true
+            @test length(d.layers) == n
+            @test GUI._debug_kwarg(d)
+            close(gui)
+            # closing the window ends the compile timing
+            @test !d.timing
+        end
     end
 
-    @testset "toggle and kwarg switch the mode" begin
-        gui, = _fixture()
-        d = GUI._debug(gui)
-        status = gui.status.text[]
-        d.toggle.active[] = true
-        @test GUI._debug_on(gui) && d.created && d.timing
-        @test all(name -> name in _layer_names(gui), GUI._DEBUG_LAYERS)
-        @test gui.status.text[] == "debug mode on"
-        @test "debug mode on" in _texts(gui)
-        n = length(d.layers)
-        d.toggle.active[] = false
-        @test !GUI._debug_on(gui) && !d.timing
-        @test gui.status.text[] == "debug mode off"
-        # the layers are created once
-        d.toggle.active[] = true
-        @test length(d.layers) == n
-        @test GUI._debug_kwarg(d)
-        close(gui)
-        # closing the window ends the compile timing
-        @test !d.timing
-
-        # the kwarg starts the mode without a message in the status line
-        gui, = _fixture(; debug = true)
+    # The windows with the mode on from the start: the kwarg, errors of callbacks, open_system
+    @testset "the kwarg starts the mode" begin
+        # without a message in the status line
+        gui, sys = _fixture(; debug = true)
         d = GUI._debug(gui)
         @test GUI._debug_on(gui) && d.toggle.active[] && d.timing
         @test gui.status.text[] != "debug mode on"
         # the initial solve is recorded
         @test _kinds(gui) == [:full]
+
+        @testset "errors of callbacks are events" begin
+            @test_logs (:error, r"tool \"Broken\"") begin
+                w = add_tool!(gui -> error("broken tool"), gui, "Broken")
+                w.clicks[] += 1
+            end
+            @test any(t -> occursin("error in tool \"Broken\": broken tool", t), _texts(gui))
+        end
+
+        @testset "open_system takes the mode over" begin
+            new = open_system(gui, sys; display = false)
+            @test GUI._debug_on(new)
+            @test any(t -> startswith(t, "linked view opened"), _texts(gui))
+            close(new)
+            GUI._set_debug!(gui, false)
+            new = open_system(gui, sys; display = false)
+            @test !GUI._debug_on(new)
+            close(new)
+        end
         close(gui)
     end
 
@@ -300,29 +319,6 @@ GUI._layer_tick!(::GUI.LiveView, l::_CountingLayer, tick) = _count!(l, :tick, ti
         @test solves[end] === last_record && length(d.stats.events) == k
         GUI._debug_event!(gui, "ignored")
         @test length(d.stats.events) == k
-        close(gui)
-    end
-
-    @testset "errors of callbacks are events" begin
-        gui, = _fixture(; debug = true)
-        @test_logs (:error, r"tool \"Broken\"") begin
-            w = add_tool!(gui -> error("broken tool"), gui, "Broken")
-            w.clicks[] += 1
-        end
-        @test any(t -> occursin("error in tool \"Broken\": broken tool", t), _texts(gui))
-        close(gui)
-    end
-
-    @testset "open_system takes the mode over" begin
-        gui, sys = _fixture(; debug = true)
-        new = open_system(gui, sys; display = false)
-        @test GUI._debug_on(new)
-        @test any(t -> startswith(t, "linked view opened"), _texts(gui))
-        close(new)
-        GUI._set_debug!(gui, false)
-        new = open_system(gui, sys; display = false)
-        @test !GUI._debug_on(new)
-        close(new)
         close(gui)
     end
 end

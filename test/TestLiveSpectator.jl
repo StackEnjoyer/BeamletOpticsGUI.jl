@@ -26,8 +26,9 @@ const GUI = BeamletOpticsGUI
     _press!(gui, key) = events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press)
     _release!(gui, key) = events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.release)
 
+    # the three testsets of the compact layout leave the window as they found it: one window
+    gui, m, _ = _fixture(:compact)
     @testset "compact: without help, chrome hidden and restored" begin
-        gui, m, _ = _fixture(:compact)
         select!(gui, m)
         GUI._update_cards!(gui)
         bg0 = gui.ax.scene.backgroundcolor[]
@@ -53,11 +54,9 @@ const GUI = BeamletOpticsGUI
         # off again: nothing to do
         spectator!(gui, false)
         @test !gui.controls.spectator[] && gui.controls.selected[] === m
-        close(gui)
     end
 
     @testset "compact: the options change while the mode is on" begin
-        gui, m, _ = _fixture(:compact)
         select!(gui, m)
         bg0 = gui.ax.scene.backgroundcolor[]
         o = gui.layout.overlay
@@ -78,11 +77,9 @@ const GUI = BeamletOpticsGUI
         # the selection from before the mode is kept over the changes
         spectator!(gui, false)
         @test gui.controls.selected[] === m && gui.ax.scene.backgroundcolor[] == bg0
-        close(gui)
     end
 
     @testset "compact: the keys v and Shift+V" begin
-        gui, m, _ = _fixture(:compact)
         select!(gui, m)
         o = gui.layout.overlay
         # v: with the help, and back with the selection

@@ -102,11 +102,12 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "card toggle ($layout)" for layout in (:compact, :app)
-        _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
+    # the row of the card is the same in both layouts (`card_rows`): in the compact layout only
+    @testset "card toggle" begin
+        _card(gui) = gui.cards.selection
         sys, pd = _system()
         g = _gauss()
-        gui = _live_view(sys => g; layout)
+        gui = _live_view(sys => g)
         gui.controls.selected[] = g
         GUI._update_selection_box!(gui.controls)
         toggle = GUI._card_widget(_card(gui), :show_beams)

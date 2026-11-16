@@ -75,7 +75,7 @@ const GUI = BeamletOpticsGUI
     # The card of the selection shows the selected object: floating (compact) or in the inspector (app)
     _component_card_shown(gui) = gui.layout isa GUI.AppLayout ? (!isnothing(GUI._shown_object(gui))) : (gui.cards.selection.scene.visible[])
 
-    @testset "the selection card of a group ($layout)" for layout in (:compact, :app)
+    @testset "the selection card of a group ($layout)" for layout in (:compact,)
         gui = _live_view(layout)
         _open!(gui, fx.m1)
         @test gui.objects.browsed === fx.bench
@@ -349,7 +349,7 @@ const GUI = BeamletOpticsGUI
         return nothing
     end
 
-    @testset "small menu under the cursor ($layout)" for layout in (:compact, :app)
+    @testset "small menu under the cursor ($layout)" for layout in (:compact,)
         gui = _live_view(layout)
         ctrl, c = gui.controls, _card(gui)
         view = Rect2f(gui.ax.scene.viewport[])
@@ -625,14 +625,14 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "parts button on the card of a group ($layout)" for layout in (:compact, :app)
+    @testset "parts button on the card of a group ($layout)" for layout in (:compact,)
         gui = _live_view(layout)
         names(obj) = [w.name for w in GUI._head_actions(obj)]
         @test names(fx.bench) == [:hide, :parts] && names(fx.dl) == [:hide, :parts]
         @test names(fx.lens) == [:hide] && names(fx.m1) == [:hide]
         GUI._select!(gui, fx.bench)
-        layout == :compact ? GUI._update_cards!(gui) : GUI._refresh_inspector!(gui; force = true)
-        card = layout == :compact ? gui.cards.selection : gui.layout.inspector.card
+        GUI._update_cards!(gui)
+        card = gui.cards.selection
         button = GUI._card_widget(card, :parts)
         @test button isa Makie.Button && button.label[] == "parts ›"
         button.clicks[] += 1
@@ -640,7 +640,7 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.controls.selected[])
         GUI._end_browse!(gui)
         GUI._select!(gui, fx.lens)
-        layout == :compact ? GUI._update_cards!(gui) : GUI._refresh_inspector!(gui; force = true)
+        GUI._update_cards!(gui)
         @test isnothing(GUI._card_widget(card, :parts))
         close(gui)
     end

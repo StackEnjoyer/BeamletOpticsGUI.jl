@@ -45,7 +45,7 @@ const GUI = BeamletOpticsGUI
         return gui, sys, a, b, c
     end
 
-    @testset "Ctrl+G and Ctrl+Shift+G, $layout" for layout in (:compact, :app)
+    @testset "Ctrl+G and Ctrl+Shift+G, $layout" for layout in (:compact,)
         gui, sys, a, b, c = _fixture(layout)
         @test GUI._GROUP_HELP[1] in gui.controls.help_extra
         n_history = length(gui.controls.undo_stack)
@@ -67,13 +67,6 @@ const GUI = BeamletOpticsGUI
         @test g isa BMO.ObjectGroup && GUI._is_window_group(gui, g)
         @test length(sys.objects) == 2 && _in(g, sys.objects) && !_in(a, sys.objects)
         @test length(gui.controls.undo_stack) == n_history + 1
-
-        # its card has "ungroup" and no "group"
-        GUI._update_inspector!(gui; force = true)
-        if layout == :app
-            @test _w(gui, :ungroup) isa Button && _w(gui, :ungroup).blockscene.visible[]
-            @test isnothing(_w(gui, :group))
-        end
 
         # Ctrl+G with a group selected does not group again
         _ctrl!(gui, Keyboard.g)
@@ -115,8 +108,10 @@ const GUI = BeamletOpticsGUI
         notify(_w(gui, :group).clicks)
         g = gui.controls.selected[]
         @test g isa BMO.ObjectGroup && GUI._is_window_group(gui, g)
+        # its card has "ungroup" and no "group"
         GUI._update_inspector!(gui; force = true)
-        @test _w(gui, :ungroup).blockscene.visible[]
+        @test _w(gui, :ungroup) isa Button && _w(gui, :ungroup).blockscene.visible[]
+        @test isnothing(_w(gui, :group))
         notify(_w(gui, :ungroup).clicks)
         @test GUI._is_multi(gui.controls.selected[]) && _in(a, sys.objects) && _in(b, sys.objects)
     end

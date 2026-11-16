@@ -38,7 +38,8 @@ const GUI = BeamletOpticsGUI
     _beam() = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
     _hex(c) = GUI._color_hex(Makie.to_color(c))
 
-    @testset "a component, $layout" for layout in (:compact, :app)
+    # In the compact layout: `LiveView` has no layout parameter, and copying is the same code in both
+    @testset "a component, $layout" for layout in (:compact,)
         GUI._CLIPBOARD[] = nothing
         sys = System()
         gui = _live_view(sys => _beam(); layout)
@@ -288,7 +289,7 @@ const GUI = BeamletOpticsGUI
         return Core.eval(mod, :system).objects
     end
 
-    @testset "a group, $layout" for layout in (:compact, :app)
+    @testset "a group, $layout" for layout in (:compact,)
         GUI._CLIPBOARD[] = nothing
         sys = System()
         gui = _live_view(sys => _beam(); layout)

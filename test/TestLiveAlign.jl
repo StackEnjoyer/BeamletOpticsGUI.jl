@@ -52,7 +52,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "onto the beam ($layout)" for layout in (:compact, :app)
+    @testset "onto the beam ($layout)" for layout in (:compact,)
         gui, sys, m, lens, a, b = _fixture(; layout)
         ctrl = gui.controls
         P0, R0 = _pose(lens)

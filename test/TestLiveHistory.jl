@@ -35,7 +35,7 @@ const GUI = BeamletOpticsGUI
     _redo!(gui) = GUI._redo!(gui.controls)
     _hex(c) = GUI._color_hex(Makie.to_color(c))
 
-    @testset "add a component, $layout" for layout in (:compact, :app)
+    @testset "add a component, $layout" for layout in (:compact,)
         sys = System()
         beam = _beam()
         gui = _live_view(sys => beam; layout)
@@ -72,7 +72,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "remove a component, with moves, $layout" for layout in (:compact, :app)
+    @testset "remove a component, with moves, $layout" for layout in (:compact,)
         m, m2 = _mirror(), _mirror(0.2; x = 0.1)
         sys = System([m, m2])
         beam = _beam()
@@ -120,7 +120,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "sources, $layout" for layout in (:compact, :app)
+    @testset "sources, $layout" for layout in (:compact,)
         m = _mirror()
         sys = System([m])
         first_beam = _beam(0.2)

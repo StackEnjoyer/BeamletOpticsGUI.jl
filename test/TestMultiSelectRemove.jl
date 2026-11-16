@@ -40,10 +40,12 @@ const GUI = BeamletOpticsGUI
     # Selects several objects like Ctrl+click on each, returns the selection
     _select_several!(gui, objs) = (select!(gui, objs); gui.controls.selected[])
 
-    @testset "Delete removes all as one action, $layout" for layout in (:compact, :app)
+    # Removing and moving a selection is shared logic: in the compact layout only
+
+    @testset "Delete removes all as one action" begin
         m1, m2, pd = _mirror(), _mirror(0.3), _detector()
         sys = System([m1, m2, pd])
-        gui = _live_view(sys => _beam(); layout)
+        gui = _live_view(sys => _beam())
         ctrl = gui.controls
         @test length(pd) == 1
         s = _select_several!(gui, [m1, pd])
@@ -72,10 +74,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "an object that can not be removed stays selected, $layout" for layout in (:compact, :app)
+    @testset "an object that can not be removed stays selected" begin
         m1, m2 = _mirror(), _mirror(0.2)
         static, sys = StaticSystem([m1]), System([m2])
-        gui = _live_view(static => _beam(), sys => Beam([0.05, 0, 0], [0.0, 1, 0]); layout)
+        gui = _live_view(static => _beam(), sys => Beam([0.05, 0, 0], [0.0, 1, 0]))
         ctrl = gui.controls
         s = _select_several!(gui, [m1, m2])
         n = length(ctrl.undo_stack)
@@ -90,7 +92,7 @@ const GUI = BeamletOpticsGUI
         # none can be removed: nothing changes
         m3 = _mirror(0.4)
         close(gui)
-        gui = _live_view(StaticSystem([m1, m3]) => _beam(); layout)
+        gui = _live_view(StaticSystem([m1, m3]) => _beam())
         ctrl = gui.controls
         s = _select_several!(gui, [m1, m3])
         n = length(ctrl.undo_stack)
@@ -101,10 +103,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "removing an object drops it from the selection, $layout" for layout in (:compact, :app)
+    @testset "removing an object drops it from the selection" begin
         m1, m2 = _mirror(), _mirror(0.3)
         sys = System([m1, m2])
-        gui = _live_view(sys => _beam(); layout)
+        gui = _live_view(sys => _beam())
         _select_several!(gui, [m1, m2])
         remove_component!(gui, m1)
         @test gui.controls.selected[] === m2
@@ -112,11 +114,11 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "moving solves once and calls on_change per object, $layout" for layout in (:compact, :app)
+    @testset "moving solves once and calls on_change per object" begin
         m1, m2, pd = _mirror(), _mirror(0.3), _detector()
         sys = System([m1, m2, pd])
         calls = Any[]
-        gui = _live_view(sys => _beam(); layout, on_change = (gui, obj) -> push!(calls, obj))
+        gui = _live_view(sys => _beam(); on_change = (gui, obj) -> push!(calls, obj))
         @test length(pd) == 1
         s = _select_several!(gui, [m1, pd])
         # the systems of the first object get new components, see `_target_system`
@@ -147,7 +149,7 @@ const GUI = BeamletOpticsGUI
 
         # extras only: nothing is traced
         h1, h2 = _mirror(0.5), _mirror(0.6)
-        gui = _live_view(System([_mirror()]) => _beam(); layout, extras = [h1, h2])
+        gui = _live_view(System([_mirror()]) => _beam(); extras = [h1, h2])
         s = _select_several!(gui, [h1, h2])
         @test isempty(GUI._systems_of(gui, s))
         translate3d!(s, [0.0, 0, 0.01])
@@ -158,9 +160,9 @@ const GUI = BeamletOpticsGUI
     end
 
     # copied are only objects whose code is known, e.g. from the catalog, see `TestLiveCopy.jl`
-    @testset "Ctrl+C copies nothing without code, $layout" for layout in (:compact, :app)
+    @testset "Ctrl+C copies nothing without code" begin
         m1, m2 = _mirror(), _mirror(0.3)
-        gui = _live_view(System([m1, m2]) => _beam(); layout)
+        gui = _live_view(System([m1, m2]) => _beam())
         kept = GUI._CLIPBOARD[]
         _select_several!(gui, [m1, m2])
         @test isnothing(GUI._copy_selected!(gui))

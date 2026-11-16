@@ -60,7 +60,9 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a component, $layout" for layout in (:compact, :app)
+    # In the compact layout: the page "Edit" is the same code in the floating card and in the
+    # inspector of the app layout; "pinned cards stay" runs in both layouts
+    @testset "a component, $layout" for layout in (:compact,)
         sys = System()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
         gui = _live_view(sys => beam; layout)
@@ -148,7 +150,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a source, $layout" for layout in (:compact, :app)
+    @testset "a source, $layout" for layout in (:compact,)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         sys = System([m])
@@ -196,7 +198,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a detector that lets the beams pass, $layout" for layout in (:compact, :app)
+    @testset "a detector that lets the beams pass, $layout" for layout in (:compact,)
         # the detector of the catalog in front of a second one, which only gets the beam if the
         # first one lets it pass
         back = Detector(10e-3)
@@ -305,7 +307,7 @@ const GUI = BeamletOpticsGUI
     end
     _asphere_names(i) = [Symbol(:edit_, i, :_k); [Symbol(:edit_, i, :_A, n) for n in 4:2:16]]
 
-    @testset "surfaces of a singlet, $layout" for layout in (:compact, :app)
+    @testset "surfaces of a singlet, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
         c = _built("Singlet")
@@ -427,7 +429,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "surfaces of a doublet, $layout" for layout in (:compact, :app)
+    @testset "surfaces of a doublet, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
         c = _built("Doublet")

@@ -56,7 +56,9 @@ const GUI = BeamletOpticsGUI
         @test allunique(options) && allunique(_hex.(last.(GUI._COLOR_PRESETS)))
     end
 
-    @testset "color and opacity, $layout" for layout in (:compact, :app)
+    # In the compact layout: `LiveView` has no layout parameter, and the color of the beams and the
+    # page "Color" are the same code in both
+    @testset "color and opacity, $layout" for layout in (:compact,)
         m = _mirror()
         beam = _beam()
         group = UniformDiscSource([0.01, 0, 0], [0.0, 1, 0], 5e-3, 532e-9; num_rays = 20)
@@ -243,7 +245,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "page of the card, $layout" for layout in (:compact, :app)
+    @testset "page of the card, $layout" for layout in (:compact,)
         m = _mirror()
         beam = _beam(532e-9)
         gui = _live_view(System([m]) => beam; layout)

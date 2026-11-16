@@ -135,7 +135,9 @@ BeamletOpticsGUI.card_rows(::Sky) = (CardRow("hour",
         close(gui)
     end
 
-    @testset "function and nothing ($layout)" for layout in (:compact, :app)
+    # which object `background_card` gives is shared logic; the layouts differ in the pin only (above)
+    @testset "function and nothing" begin
+        layout = :compact
         sky = Sky(3.0)
         shown = Ref(false)
         calls = Ref(0)

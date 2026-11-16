@@ -112,8 +112,10 @@ const GUI = BeamletOpticsGUI
             isapprox(h[2] / 0.05, round(h[2] / 0.05); atol = 1e-3), holes)
     end
 
-    @testset "shown and hidden ($layout)" for layout in (:compact, :app)
-        gui, sys, m, lens, a = _fixture(; layout, snap = true)
+    # the table is an overlay of the 3D view, shared logic: compact only (its toggle in the app
+    # layout: "at the start")
+    @testset "shown and hidden" begin
+        gui, sys, m, lens, a = _fixture(; snap = true)
         t = gui.components.table
         scene = gui.ax.scene
         @test t isa GUI._Table && !t.shown && isempty(t.plots) && !t.toggle.active[]

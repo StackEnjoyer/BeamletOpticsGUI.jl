@@ -47,7 +47,11 @@ const GUI = BeamletOpticsGUI
         e isa ArgumentError ? e.msg : rethrow()
     end
 
-    @testset "a view without a source, $layout" for layout in (:compact, :app)
+    # Shared logic runs in the compact layout: `LiveView` has no layout parameter. "an empty view in a
+    # window" runs in the app layout, whose tree draws the empty view, and "Delete and the card" in
+    # the app layout, whose card is in the inspector (`TestLiveComponents.jl` runs it in the compact one).
+    # "add" and "remove" run in both layouts, whose list of objects and pinned cards differ
+    @testset "a view without a source, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys; layout)
         @test isempty(gui.pairs) && isempty(gui.beam_handles)
@@ -69,7 +73,7 @@ const GUI = BeamletOpticsGUI
 
     # The object tree of the app layout has no row with an eye in an empty view, which the backend
     # must draw as well
-    @testset "an empty view in a window, $layout" for layout in (:compact, :app)
+    @testset "an empty view in a window, $layout" for layout in (:app,)
         gui = _live_view(System(); layout)
         screen = GLMakie.Screen(visible = false)
         src = _beam()
@@ -107,7 +111,7 @@ const GUI = BeamletOpticsGUI
         @test GUI._systems(gui) == [a, b] && length(gui.pairs) == 1
         close(gui)
         # without a system: an empty window, in both layouts, see `TestLiveSystems.jl`
-        for layout in (:compact, :app)
+        for layout in (:compact,)
             gui = _live_view(; layout)
             @test isempty(GUI._systems(gui)) && isempty(gui.pairs)
             close(gui)
@@ -387,7 +391,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "Delete and the card, $layout" for layout in (:compact, :app)
+    @testset "Delete and the card, $layout" for layout in (:app,)
         m = _mirror()
         sys = System([m])
         beam, src = _beam(), _beam(0.01)
@@ -413,7 +417,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "catalog, $layout" for layout in (:compact, :app)
+    @testset "catalog, $layout" for layout in (:compact,)
         m = _mirror()
         sys = System([m])
         gui = _live_view(sys; layout)
@@ -421,7 +425,13 @@ const GUI = BeamletOpticsGUI
         @test [e.name for e in sources] == ["Beam", "Gaussian beamlet", "Collimated source",
             "Uniform disc source", "Uniform line source", "Point source", "Uniform point source",
             "Uniform fan source", "Astigmatic Gaussian beamlet"]
-        # "Place" of each entry with its defaults, then the drop: a source of the system
+        # "Place" of an entry per kind of source with its defaults, then the drop: a source of the
+        # system. The view places every source by the same code; every entry is built and its code
+        # read back in `TestLiveCatalogEntries.jl`. A beam, the beamlets, a beam group and a source
+        # that the GUI builds
+        placed = ["Beam", "Gaussian beamlet", "Collimated source", "Uniform line source",
+            "Astigmatic Gaussian beamlet"]
+        sources = filter(e -> e.name in placed, sources)
         for (k, entry) in enumerate(sources)
             src = GUI._place_catalog!(gui, entry, String[GUI._catalog_string(p) for p in entry.params])
             @test src isa Union{BMO.AbstractBeam, BMO.AbstractBeamGroup}
@@ -444,7 +454,7 @@ const GUI = BeamletOpticsGUI
         @test all(e -> occursin(" = $(e.code_name)([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], ", code), sources)
         @test count("solve_system!(system, ", code) == length(sources)
         # an invalid input places nothing
-        entry = sources[4]
+        entry = only(e for e in gui.components.catalog if e.name == "Uniform disc source")
         @test isnothing(GUI._place_catalog!(gui, entry, ["10", "632.8", "2.5"]))
         @test !GUI._placing(gui) && occursin("whole number", gui.status.text[])
         close(gui)

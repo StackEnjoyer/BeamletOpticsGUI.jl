@@ -335,9 +335,10 @@ const GUI = BeamletOpticsGUI
             close(gui)
             return nothing
         end
+        # each window closes with the card it shows; three suffice for `alive[] <= 1`
         for (layout, pick) in ((:app, :component), (:app, :system), (:compact, :system))
             alive[] = 0
-            for _ in 1:4
+            for _ in 1:3
                 once(layout, pick)
                 GC.gc()
                 GC.gc()

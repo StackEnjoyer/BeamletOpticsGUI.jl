@@ -94,7 +94,10 @@ const GUI = BeamletOpticsGUI
     _byid(gui) = Dict(first(v) => x for (x, v) in gui.sync.ids)
     _prefix(x) = BMOP.id_prefix(x)
 
-    @testset "collect and open, $layout" for layout in (:compact, :app)
+    # Collecting and opening know no layout (`_open_from` passes it on): once in the compact layout;
+    # the app layout in "end-to-end" and "view per person"
+    @testset "collect and open" begin
+        layout = :compact
         GUI._CLIPBOARD[] = nothing
         dir = mktempdir()
         t = _setup(layout)

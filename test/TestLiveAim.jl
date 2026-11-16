@@ -88,8 +88,9 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "with the mouse ($layout)" for layout in (:compact, :app)
-        gui, sys, m, a, b = _fixture(; layout)
+    # aiming goes through the controls and the 3D view, which no layout hook changes: compact only
+    @testset "with the mouse" begin
+        gui, sys, m, a, b = _fixture()
         ctrl = gui.controls
         scene = gui.ax.scene
         ignore_mouse = ctrl.ignore_mouse

@@ -185,6 +185,20 @@ describe it as available in docs or the skill.
   `julia --project=test test/runtests.jl TestLiveCard TestLiveSnap`; `--help` lists the options.
 - New test files are `module TestXyz ... end` in `test/`, which `test/runtests.jl` finds by itself.
   A file does not depend on another one, and sets no global state that others rely on.
+- A test checks a behavior once and lets the design imply the repeated cases (#100):
+  - **Layouts:** shared logic runs in the compact layout only. The app layout gets a test where
+    its own code runs: a hook with an `::AppLayout` method, the tree, the inspector and its docked
+    cards, the dock, the sidebars, or a viewport that does not start at the origin of the figure.
+    A helper of a test that reads different widgets per layout (e.g. the tree instead of the
+    objects menu) means that the app run checks something of its own.
+  - **Catalog entries:** one entry per kind in a window. Every entry is built and its code read
+    back without a window, and the precompile session places, drags and removes each one.
+  - **Windows:** testsets whose checks only read, or that undo what they changed, share one
+    window. A test that changes the setup opens its own window.
+  - **Themes:** a loop over the themes only where the code branches on the theme.
+- `benchmark/test_coverage.jl` shows which lines of `src/` and `ext/` only one test file covers.
+  Before removing a run, check that its lines stay covered (`check`), and that it does not check
+  a behavior of its own that the same lines have in another layout or with another widget.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
 
