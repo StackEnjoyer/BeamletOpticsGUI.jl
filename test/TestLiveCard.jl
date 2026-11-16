@@ -722,8 +722,8 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         gui = _results_view(System([m, pd, pd2]), _gauss(); labels = Dict(pd => "PD"))
         c, ctrl = gui.cards.selection, gui.controls
         ev = events(gui.ax.scene)
-        # the rows of a detector: its pose, the beam and the signal
-        @test length(card_rows(pd)) == length(pose_card_rows(pd)) + 2
+        # the rows of a detector: its pose, the beam, the switch "stop beams" and the signal
+        @test length(card_rows(pd)) == length(pose_card_rows(pd)) + 3
         # nothing is shown or computed without a selected detector
         @test isnothing(GUI._card_view(c)) && isempty(GUI._shown_views(gui))
         _select!(gui, m)
