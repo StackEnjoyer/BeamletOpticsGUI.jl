@@ -210,12 +210,16 @@ end
             gui, dir, _ = opened()
             screen = GLMakie.Screen(visible = false)
             display(screen, gui.fig)
+            file = GUI._presence_file(dir, GUI._person().id)
+            written = isfile(file) ? mtime(file) : 0.0
             GUI._start_watching!(gui; notes, poll)
             n = gui.sync.monitor
             @test n isa GUI._FileNotes && isempty(n.monitors) == !notes
-            # Its own presence file is written first, by a look
-            @test timedwait(() -> !gui.sync.presence_due && !isnothing(gui.sync.look) &&
-                                  istaskdone(gui.sync.look.task), 60.0; pollint = 0.01) === :ok
+            # Its own presence file is written first, by a look. The file on disk, not the look:
+            # the next look starts every `_WATCH_INTERVAL`, a check of the running one could miss
+            # the short time in which it is done on a slow machine
+            @test timedwait(() -> !gui.sync.presence_due && isfile(file) && mtime(file) > written, 60.0;
+                pollint = 0.01) === :ok
             sleep(0.5)
             marks = gui.sync.marks
             t = time()
