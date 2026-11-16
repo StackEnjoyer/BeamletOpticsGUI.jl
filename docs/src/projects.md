@@ -50,8 +50,8 @@ from the catalog are saved with their constructors and can be edited on their pa
   together, a group moved as a whole as one), new objects appear, changed ones are built again and
   removed ones go. The window is never replaced.
 - **Versions.** `Ctrl+S` writes what is still pending and saves a version of the project (a git
-  commit, without a git install). A card asks for its message, filled with what changed since the
-  last version.
+  commit, without a git install). A card in the middle of the view asks for its message, filled
+  with what changed since the last version.
 - **Taking the files.** `Ctrl+R` makes the window as in the files: everything that differs is
   taken from them, changes in the window that were not saved are lost.
 - **Groups** made in the window are `@group` lines of the project.

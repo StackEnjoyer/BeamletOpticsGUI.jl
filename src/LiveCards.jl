@@ -512,9 +512,13 @@ function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obs
     _fit_properties!(c)
     _fit_view!(c, view)
     size = _card_size(c)
-    p = isnothing(c.spot) ? _avoid(_card_position(sel, size, view), size, view, obstacles) :
+    # A card of the window rather than of a place in the scene stands in the middle of the view,
+    # without a line, unless the mouse moved it, see `_centered`
+    centered = isnothing(c.spot) && _centered(obj)
+    p = centered ? _center_position(size, view) :
+        isnothing(c.spot) ? _avoid(_card_position(sel, size, view), size, view, obstacles) :
         _spot_position(c.spot, size, view)
-    if isnothing(c.spot) && c.pinned && !c.collapsed && _covers(p, size, obstacles)
+    if !centered && isnothing(c.spot) && c.pinned && !c.collapsed && _covers(p, size, obstacles)
         c.auto_collapsed = true
         size = _card_size(c)
         p = _avoid(_card_position(sel, size, view), size, view, obstacles)
@@ -522,7 +526,8 @@ function _update_card!(gui::LiveView, c::_ComponentCard, @nospecialize(obj), obs
     _arrange_card!(c, p)
     rect = _card_rect(p, size)
     push!(obstacles, rect)
-    _update!(c.link, [_link_anchor(scene, corners, obj), Point2f(minimum(rect) .+ size ./ 2)])
+    _update!(c.link, _centered(obj) ? Point2f[] :
+                     [_link_anchor(scene, corners, obj), Point2f(minimum(rect) .+ size ./ 2)])
     _update!(c.scene.visible, true)
     _show_view!(gui, c, obj)
     return nothing
