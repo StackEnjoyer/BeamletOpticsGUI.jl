@@ -324,8 +324,8 @@ function _add_dock_panel!(layout::AppLayout, title::AbstractString; icon::Symbol
     _update_dock!(layout)
     return part.grid
 end
-_add_dock_panel!(gui::AppView, title::AbstractString; kwargs...) =
-    _add_dock_panel!(gui.layout, title; kwargs...)
+_add_dock_panel!(::LiveView, layout::AppLayout, title::AbstractString; kwargs...) =
+    _add_dock_panel!(layout, title; kwargs...)
 
 """
     _select_tab!(layout::AppLayout, i)
@@ -353,35 +353,35 @@ Lazy panels, see `_DockTabs`
 =#
 
 """Whether the panel `p` is shown, i.e. its tab is active and the dock is not collapsed."""
-_panel_shown(gui::AppView, p) = gui.layout.dock.shown && _active_panel(gui.layout.tabs) === p
+_panel_shown(::LiveView, layout::AppLayout, p) = layout.dock.shown && _active_panel(layout.tabs) === p
 
 """
-    _activate_tab!(gui::AppView, i)
+    _activate_tab!(gui::LiveView, i)
 
 Switches the dock to the tab `i` after a click on it: shows its content and updates its panel if it
 is stale, see `_refresh_dock!`. A panel that is left while the live view shows a preview (coarse
 grid or preview solve) becomes stale.
 """
-function _activate_tab!(gui::AppView, i::Int)
-    tabs = gui.layout.tabs
+function _activate_tab!(gui::LiveView, i::Int)
+    tabs = _app(gui).tabs
     (1 <= i <= length(tabs.parts) && i != tabs.active) || return nothing
     old = _active_panel(tabs)
     (gui.trace.coarse || gui.trace.preview) && !isnothing(old) && push!(tabs.stale, old)
-    _select_tab!(gui.layout, i)
+    _select_tab!(_app(gui), i)
     _refresh_dock!(gui)
     return nothing
 end
 
 """
-    _refresh_dock!(gui::AppView)
+    _refresh_dock!(gui::LiveView)
 
 Updates the panel of the active tab if it is stale and shown, see `_refresh_tab!`. Nothing is
 updated while a solve runs or after a cancelled solve, the next solve updates the panel.
 """
-function _refresh_dock!(gui::AppView)
-    tabs = gui.layout.tabs
+function _refresh_dock!(gui::LiveView)
+    tabs = _app(gui).tabs
     p = _active_panel(tabs)
-    (gui.layout.dock.shown && !isnothing(p) && p in tabs.stale) || return nothing
+    (_app(gui).dock.shown && !isnothing(p) && p in tabs.stale) || return nothing
     _refresh_tab!(gui, p)
     return nothing
 end
@@ -390,8 +390,8 @@ end
 # `_UserPanel` of `add_panel!` is called, see LiveApp.jl
 
 """Connects the tab bar and the collapse toggle of the dock of the `gui`, see `_DockTabs`."""
-function _connect_dock!(gui::AppView)
-    layout = gui.layout
+function _connect_dock!(gui::LiveView)
+    layout = _app(gui)
     listeners = gui.controls.listeners
     push!(listeners, on(i -> _activate_tab!(gui, i), layout.tabs.bar.clicked))
     # After `_update_dock!`, which shows or collapses the dock

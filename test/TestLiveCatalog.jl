@@ -45,7 +45,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         sys2 = System([m2])
         two && push!(pairs, sys2 => Beam([0.05, 0, 0], [0.0, 1, 0], 1e-6))
         labels = isnothing(label) ? Dict() : Dict(sys => label)
-        gui = live_view(pairs...; trace_budget = Inf, throttle = false, labels, kwargs...)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`, also below)
+        gui = live_view(pairs...; trace_budget = Inf, throttle = false, progress_delay = Inf, labels, kwargs...)
         lens && _show_entry!(gui, "Thin lens")
         return gui, sys, m, sys2, m2
     end
@@ -218,7 +219,11 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test_throws ArgumentError GUI._catalog_component(entry, ["4", "x"])
     end
 
-    @testset "widget ($layout, $theme)" for (layout, theme) in ((:compact, :light), (:app, :dark))
+    # Shared logic runs in the compact layout: `LiveView` has no layout parameter, and the catalog
+    # widget is the same code in the window and in the dock. "presets" and "surfaces" run in both
+    # layouts, whose arrangement differs; "dock of the app layout" tests the dock and its window,
+    # the inputs and the target menus of both widgets
+    @testset "widget ($layout, $theme)" for (layout, theme) in ((:compact, :light),)
         gui, sys, m = _fixture(; layout, theme, lens = false)
         entries = gui.components.catalog
         # the window of both layouts, hidden at first, with the toggle of the layout; the catalog
@@ -334,7 +339,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "glass ($layout)" for layout in (:compact, :app)
+    @testset "glass ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         w = _widgets(gui)
         widget = w.widget
@@ -408,7 +413,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         end
     end
 
-    @testset "switch ($layout)" for layout in (:compact, :app)
+    @testset "switch ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         w = _choose!(gui, "Detector")
         widget = w.widget
@@ -772,7 +777,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "no widget ($layout)" for layout in (:compact, :app)
+    @testset "no widget ($layout)" for layout in (:compact,)
         # an empty catalog
         gui, _ = _fixture(; layout, catalog = CatalogEntry[])
         @test isempty(gui.components.catalog)
@@ -783,20 +788,21 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         static() = StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
-        gui = live_view(static(); layout, trace_budget = Inf)
+        gui = live_view(static(); layout, trace_budget = Inf, progress_delay = Inf)
         @test any(e -> !e.source, GUI._catalog_widget(_window(gui)).entries)
         close(gui)
-        gui = live_view(static(); layout, trace_budget = Inf,
+        gui = live_view(static(); layout, trace_budget = Inf, progress_delay = Inf,
             catalog = [e for e in component_catalog() if !e.source])
         @test !isnothing(_window(gui))
         close(gui)
         # an empty system gets one
-        gui = live_view(System() => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf)
+        gui = live_view(System() => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout, trace_budget = Inf,
+            progress_delay = Inf)
         @test !isnothing(_window(gui))
         close(gui)
     end
 
-    @testset "own entries ($layout)" for layout in (:compact, :app)
+    @testset "own entries ($layout)" for layout in (:compact,)
         entry = block_entry()
         none = CatalogEntry("Plain block", checked_block; group = "Blocks")
         gui, _ = _fixture(; layout, catalog = [entry, none])
@@ -820,7 +826,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "target system ($layout)" for layout in (:compact, :app)
+    @testset "target system ($layout)" for layout in (:compact,)
         gui, sys, m, sys2, m2 = _fixture(; layout, two = true, label = "Main")
         w = _widgets(gui)
         widget = w.widget
@@ -872,7 +878,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "no system ($layout)" for layout in (:compact, :app)
+    @testset "no system ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout, label = "Main")
         w = _widgets(gui)
         widget = w.widget
@@ -901,7 +907,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "new system ($layout)" for layout in (:compact, :app)
+    @testset "new system ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout, label = "Main")
         w = _widgets(gui)
         widget = w.widget
@@ -922,7 +928,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "systems at runtime ($layout)" for layout in (:compact, :app)
+    @testset "systems at runtime ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout, label = "Main")
         w = _widgets(gui)
         menu = w.widget.target_menu
@@ -938,11 +944,11 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "a view without a System ($layout)" for layout in (:compact, :app)
+    @testset "a view without a System ($layout)" for layout in (:compact,)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.1, 0])
         gui = live_view(StaticSystem([m]) => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); layout,
-            trace_budget = Inf, throttle = false)
+            trace_budget = Inf, throttle = false, progress_delay = Inf)
         _show_entry!(gui, "Thin lens")
         w = _widgets(gui)
         widget = w.widget
@@ -959,7 +965,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "window ($layout, $theme)" for (layout, theme) in ((:compact, :light), (:app, :dark))
+    @testset "window ($layout, $theme)" for (layout, theme) in ((:compact, :light),)
         gui, sys, m = _fixture(; layout, theme)
         ctrl = gui.controls
         ev = events(gui.ax.scene)
@@ -1124,7 +1130,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "pin and minimize ($layout)" for layout in (:compact, :app)
+    @testset "pin and minimize ($layout)" for layout in (:compact,)
         gui, sys, m = _fixture(; layout)
         ev = events(gui.ax.scene)
         win = _window(gui)
@@ -1233,6 +1239,30 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test GUI._catalog_widgets(win) == (win.widget, d.widget)
         @test isempty(GUI._catalog_rects(gui)) && !GUI._over_catalog(gui)
         @test all(visible(d.widget)) && inside()
+        # the inputs of both widgets take the keyboard: the boxes and the menus of the hidden window
+        # stay registered beside those of the dock, as do the target menus of both
+        both_boxes() = Textbox[b for x in GUI._catalog_widgets(win) for b in x.boxes]
+        both_menus() = Menu[mn for x in GUI._catalog_widgets(win) for mn in [x.menus; x.target_menu]]
+        @test !isempty(win.widget.boxes) && Set(gui.custom.boxes) == Set(both_boxes())
+        @test Set(gui.custom.menus) == Set(both_menus())
+        # another entry in the dock: its old inputs are released, the hidden window keeps its own
+        # entry and its inputs; back, the listeners of the old tiles and inputs are released
+        n = length(gui.controls.listeners)
+        old, kept = copy(d.widget.boxes), copy(win.widget.boxes)
+        _choose!(gui, "Doublet")
+        @test _active(d.widget) == ["Doublet"] && _active(win.widget) == ["Thin lens"]
+        @test win.widget.boxes == kept && Set(gui.custom.boxes) == Set(both_boxes())
+        @test !any(b -> any(o -> o === b, gui.custom.boxes), old)
+        @test Set(gui.custom.menus) == Set(both_menus())
+        _choose!(gui, "Thin lens")
+        @test length(gui.controls.listeners) <= n
+        # the target menu of the dock chooses for the window as well, and the other way round
+        name = GUI._label(gui, sys)
+        @test d.widget.target_menu.options[] == [name, "no system", "New system…"]
+        d.widget.target_menu.i_selected[] = 2
+        @test win.widget.target_menu.selection[] == "no system"
+        d.widget.target_menu.i_selected[] = 1
+        @test win.widget.target_menu.selection[] == name
         # the buttons of the dock are in the title row of the section
         title = bbox(d.float_button.box)
         @test maximum(title)[1] < minimum(bbox(d.collapse_button.box))[1] + 1
@@ -1276,6 +1306,8 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         first(d.widget.boxes).displayed_string[] = "61"
         strings = GUI._catalog_strings(d.widget)
         @test strings[1] == "61" && strings[9] == "1.5" && strings[10] == "N-SF5"
+        # ... and the inputs of the hidden window stay registered
+        @test Set(gui.custom.boxes) == Set(both_boxes()) && length(gui.custom.boxes) == 12
 
         # the float button: the window, pinned, shows the same; the dock keeps its title
         d.float_button.clicks[] += 1
@@ -1283,6 +1315,10 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         @test !d.part.shown && !any(visible(d.widget)) && win.tool.active[]
         @test GUI._catalog_widget(win) === win.widget
         @test GUI._catalog_strings(win.widget) == strings
+        win.widget.target_menu.i_selected[] = 2
+        @test d.widget.target_menu.selection[] == "no system"
+        win.widget.target_menu.i_selected[] = 1
+        @test d.widget.target_menu.selection[] == name
         @test win.widget.group == d.widget.group && _active(win.widget) == ["Triplet"]
         @test GUI._catalog_rects(gui) == [GUI._catalog_rect(win)]
         @test length(win.widget.boxes) == 9
@@ -1331,6 +1367,30 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         d.float_button.clicks[] += 1
         @test win.docked && !win.shown && d.part.shown
 
+        # the dock button of a popup docks it, open, and releases its inputs; without the mouse in
+        # the 3D view, the key leaves it docked
+        mouse!(p)
+        key!(Keyboard.insert)
+        @test win.shown && !win.docked && !win.pinned
+        # its head has the dock button instead of the close button; the buttons are no handles
+        buttons = filter(!isnothing, (win.dock_button, win.pin_button, win.collapse_button, win.close_button))
+        @test length(buttons) == 3 && isnothing(win.close_button)
+        for b in buttons
+            r = Rect2f(b.box.layoutobservables.computedbbox[])
+            @test r in GUI._catalog_rect(win)
+            @test !GUI._over_catalog_handle(win, Point2f(minimum(r) .+ Makie.widths(r) ./ 2))
+        end
+        _choose!(gui, "Thin lens")
+        first(win.widget.boxes).focused[] = true
+        only(win.widget.menus).is_open[] = true
+        win.dock_button.clicks[] += 1
+        @test win.docked && !win.shown && win.tool.active[] && d.part.shown
+        @test !only(win.widget.menus).is_open[]
+        @test isempty(GUI._catalog_rects(gui)) && !GUI._over_catalog(gui) && !GUI._typing(gui)
+        mouse!(Point2f(-10, -10))
+        key!(Keyboard.insert)
+        @test win.docked && !win.shown && win.tool.active[]
+
         # with the sidebar collapsed, the catalog is docked without showing it
         layout.collapse.left.active[] = false
         @test !layout.left.shown
@@ -1359,7 +1419,7 @@ ray_of(λ::Real) = Beam([0.0, 0, 0], [0.0, 1, 0], λ)
         close(gui)
     end
 
-    @testset "invalid input ($layout)" for layout in (:compact, :app)
+    @testset "invalid input ($layout)" for layout in (:compact,)
         entry = block_entry()
         checked = CatalogEntry("Checked block", checked_block; group = "Blocks",
             params = [CatalogParam("width", 10e-3; unit = "mm", scale = 1e-3)])

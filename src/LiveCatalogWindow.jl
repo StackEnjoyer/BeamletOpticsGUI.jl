@@ -26,7 +26,8 @@ layout with such a place, e.g. a section of a sidebar, returns
 
 Part of the layout interface, see `AbstractLiveLayout`.
 """
-_catalog_dock_slot!(::LiveView, _) = nothing
+_catalog_dock_slot!(gui::LiveView, w) = _catalog_dock_slot!(gui, gui.layout, w)
+_catalog_dock_slot!(::LiveView, ::AbstractLiveLayout, _) = nothing
 
 """
     _CatalogDock

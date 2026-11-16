@@ -24,21 +24,31 @@ _default_size(::AbstractLiveLayout) = (1400, 800)
 _figure(::AbstractLiveLayout, size) = Figure(; size)
 
 # Optional parts of the layout interface, see `AbstractLiveLayout`
-_connect_layout!(::LiveView) = nothing
-_close_layout!(::LiveView) = nothing
-_on_selected!(::LiveView) = nothing
-_on_clipping!(::LiveView) = nothing
-_on_clip_planes_changed!(::LiveView) = nothing
-_on_hidden!(::LiveView) = nothing
-_on_components_changed!(::LiveView) = nothing
+_connect_layout!(gui::LiveView) = _connect_layout!(gui, gui.layout)
+_connect_layout!(::LiveView, ::AbstractLiveLayout) = nothing
+_close_layout!(gui::LiveView) = _close_layout!(gui, gui.layout)
+_close_layout!(::LiveView, ::AbstractLiveLayout) = nothing
+_on_selected!(gui::LiveView) = _on_selected!(gui, gui.layout)
+_on_selected!(::LiveView, ::AbstractLiveLayout) = nothing
+_on_clipping!(gui::LiveView) = _on_clipping!(gui, gui.layout)
+_on_clipping!(::LiveView, ::AbstractLiveLayout) = nothing
+_on_clip_planes_changed!(gui::LiveView) = _on_clip_planes_changed!(gui, gui.layout)
+_on_clip_planes_changed!(::LiveView, ::AbstractLiveLayout) = nothing
+_on_hidden!(gui::LiveView) = _on_hidden!(gui, gui.layout)
+_on_hidden!(::LiveView, ::AbstractLiveLayout) = nothing
+_on_components_changed!(gui::LiveView) = _on_components_changed!(gui, gui.layout)
+_on_components_changed!(::LiveView, ::AbstractLiveLayout) = nothing
 
 _slot_error(gui::LiveView, what) = _slot_error(gui.layout, what)
 function _slot_error(layout::AbstractLiveLayout, what)
     throw(ArgumentError("the $(nameof(typeof(layout))) of this live view has no $what"))
 end
-_add_toolbar_entry!(gui::LiveView, _) = _slot_error(gui, "toolbar")
-_add_sidebar_section!(gui::LiveView, _, _) = _slot_error(gui, "sidebars")
-_add_dock_panel!(gui::LiveView, _) = _slot_error(gui, "dock")
+_add_toolbar_entry!(gui::LiveView, group) = _add_toolbar_entry!(gui, gui.layout, group)
+_add_toolbar_entry!(gui::LiveView, ::AbstractLiveLayout, _) = _slot_error(gui, "toolbar")
+_add_sidebar_section!(gui::LiveView, side, title; kw...) = _add_sidebar_section!(gui, gui.layout, side, title; kw...)
+_add_sidebar_section!(gui::LiveView, ::AbstractLiveLayout, _, _) = _slot_error(gui, "sidebars")
+_add_dock_panel!(gui::LiveView, title; kw...) = _add_dock_panel!(gui, gui.layout, title; kw...)
+_add_dock_panel!(gui::LiveView, ::AbstractLiveLayout, _) = _slot_error(gui, "dock")
 
 """
     _step_box(layout, w, card) -> Textbox
@@ -147,7 +157,8 @@ for the spectator mode, see `_on_spectator!`: the tools, the status, the sidebar
 Each part comes back as it was, e.g. a sidebar that was collapsed stays collapsed. Nothing by
 default, see `AbstractLiveLayout`.
 """
-_set_spectator_ui!(::LiveView, ::Bool) = nothing
+_set_spectator_ui!(gui::LiveView, on::Bool) = _set_spectator_ui!(gui, gui.layout, on)
+_set_spectator_ui!(::LiveView, ::AbstractLiveLayout, ::Bool) = nothing
 
 """
     _on_spectator!(gui, on::Bool)
@@ -209,7 +220,8 @@ the new blocks; nothing is drawn in between. Used by [`add_panel!`](@ref), [`add
 and [`add_tool!`](@ref), e.g. for a view that starts with `spectator = true`. A layout extends it
 for parts that its users collapse, e.g. the left sidebar of the app layout.
 """
-function _with_ui(f, gui::LiveView)
+_with_ui(f, gui::LiveView) = _with_ui(f, gui, gui.layout)
+function _with_ui(f, gui::LiveView, ::AbstractLiveLayout)
     hidden = gui.controls.spectator[]
     hidden && _set_spectator_ui!(gui, false)
     try

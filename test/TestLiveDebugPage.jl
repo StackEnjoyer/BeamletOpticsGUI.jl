@@ -30,7 +30,9 @@ GUI._debug_kind(::GUI.LiveView, ::DebugPageBroken) = Any[() -> error("broken row
         return m, pd, lens
     end
     _gauss() = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
-    _live_view(args...; kwargs...) = live_view(args...; merge((; trace_budget = Inf, detectors = []), kwargs)...)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+    _live_view(args...; kwargs...) =
+        live_view(args...; merge((; trace_budget = Inf, detectors = [], progress_delay = Inf), kwargs)...)
     clock = Ref(0.0)
     _tick!(gui) = (clock[] += 1.0; events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, clock[], 1.0))
     function _select!(gui, obj)

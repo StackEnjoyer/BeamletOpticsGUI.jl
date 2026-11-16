@@ -8,7 +8,8 @@ using Test
 
 const GUI = BeamletOpticsGUI
 const BMOP = BeamletOpticsProjects
-const const_kw = (; trace_budget = Inf, throttle = false, detectors = [])
+# Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+const const_kw = (; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf)
 
 # An own type with two parameters of its shape that tells its constructor, and one that does not
 const BENCH = """
