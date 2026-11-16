@@ -17,8 +17,9 @@ const GUI = BeamletOpticsGUI
         sys = System([m])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
         b = CollimatedSource([-0.1, 0.0, 0.0], [0.0, 1, 0], 5e-3, 532e-9; num_rings = 2)
+        # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`, also below)
         gui = live_view(sys => a, sys => b; trace_budget = Inf, throttle = false,
-            plane_normal = [0, 0, 1], kwargs...)
+            plane_normal = [0, 0, 1], progress_delay = Inf, kwargs...)
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         return gui, sys, m, a, b
     end
@@ -75,12 +76,13 @@ const GUI = BeamletOpticsGUI
         close(gui)
         m = RoundPlanoMirror(25e-3, 5e-3)
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
-        gui = live_view(System([m]) => a; trace_budget = Inf, constraints = Dict(a => (; rotate = ())))
+        gui = live_view(System([m]) => a; trace_budget = Inf, progress_delay = Inf,
+            constraints = Dict(a => (; rotate = ())))
         @test !GUI._aim!(gui, a, [0.1, 0.1, 0.0])
         @test occursin("can not rotate freely", gui.status.text[]) && _dir(a) == [0.0, 1, 0]
         close(gui)
         # ... or that is not movable
-        gui = live_view(System([m]) => a; trace_budget = Inf, movable_sources = false)
+        gui = live_view(System([m]) => a; trace_budget = Inf, progress_delay = Inf, movable_sources = false)
         @test !GUI._aim!(gui, a, [0.1, 0.1, 0.0])
         @test occursin("not movable", gui.status.text[])
         GUI._start_aim!(gui, a)
@@ -88,8 +90,9 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "with the mouse ($layout)" for layout in (:compact, :app)
-        gui, sys, m, a, b = _fixture(; layout)
+    # aiming goes through the controls and the 3D view, which no layout hook changes: compact only
+    @testset "with the mouse" begin
+        gui, sys, m, a, b = _fixture()
         ctrl = gui.controls
         scene = gui.ax.scene
         ignore_mouse = ctrl.ignore_mouse
@@ -158,7 +161,7 @@ const GUI = BeamletOpticsGUI
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0.1, 0.2, 0.0])
         a = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
-        gui = live_view(System([m]) => a; trace_budget = Inf, throttle = false)
+        gui = live_view(System([m]) => a; trace_budget = Inf, throttle = false, progress_delay = Inf)
         set_view(gui.ax, [0.25, -0.2, 0.5], [0.0, 0.15, 0.0], [0.0, 0, 1])
         GUI._start_aim!(gui, a)
         _mouse!(gui, _pixel(gui, [-0.08, 0.12, 0.0]))

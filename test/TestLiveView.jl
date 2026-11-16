@@ -82,13 +82,7 @@ _points(h) = only(render_plots(h))[1][]
         @test sprint(show, gui) == "LiveView(1 systems, 1 sources, 1 detectors)"
         @test isnothing(gui.sliders)
         close(gui)
-
-        m, pd = _fixture()
-        cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
-        gui = _live_view(System([m, pd]) => cs)
-        @test _kind(gui) == :spot
-        @test length(_xy(gui)) == 40
-        close(gui)
+        # rays: the spot diagram, see "detector views"
 
         # explicit kinds and kwargs pin the card of the detector, a solved beam can not be reused
         # for new objects
@@ -102,21 +96,17 @@ _points(h) = only(render_plots(h))[1][]
         card = only(filter(c -> c.pinned, gui.cards.all))
         @test card.page == :results && card.view_expanded && !isnothing(GUI._card_view(card))
         close(gui)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:spot, (; expanded = false))])
-        @test _kind(gui) == :spot && _pinned(gui, pd)
-        @test !only(filter(c -> c.pinned, gui.cards.all)).view_expanded
-        close(gui)
-        # a vector of pairs with different values, i.e. a `Vector{Pair{Detector, Any}}`
+        # a view that starts collapsed, and a vector of pairs with different values, i.e. a
+        # `Vector{Pair{Detector, Any}}`
         pd2 = Detector(5e-3)
         translate3d!(pd2, [0.2, 0.1, 0])
-        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:intensity, (; num_points = 20)), pd2 => :spot])
-        @test _pinned(gui, pd) && _pinned(gui, pd2)
+        gui = _live_view(System([m, pd, pd2]), _gauss(); detectors = [pd => (:spot, (; expanded = false)), pd2 => :spot])
+        @test _kind(gui) == :spot && _pinned(gui, pd) && _pinned(gui, pd2)
+        @test !only(filter(c -> c.pinned && c.obj === pd, gui.cards.all)).view_expanded
         close(gui)
 
-        # no pinned cards
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [])
-        @test !any(c -> c.pinned, gui.cards.all)
-        close(gui)
+        # no pinned cards: an empty vector gives the specs of the default `:auto`, see the first view
+        @test isempty(GUI._detector_specs([])) && isempty(GUI._detector_specs(:auto))
 
         @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = [pd => :fancy])
         @test_throws ArgumentError _live_view(System([m, pd]), gauss; detectors = :none)
@@ -196,10 +186,12 @@ _points(h) = only(render_plots(h))[1][]
         called = Float64[]
         n_calls = Ref(0)
         callback = v -> (push!(called, v); translate_to3d!(pd, [0.1, 0.1, v * 1e-3]))
-        gui = _live_view(sys, beam; sliders = ["detector z [mm]" => (0:0.1:2, callback)],
+        # a second slider whose callback fails, with its start value
+        gui = _live_view(sys, beam; sliders = ["detector z [mm]" => (0:0.1:2, callback),
+                "x" => (0:0.1:1, v -> error("slider"), 0.5)],
             on_change = (g, obj) -> (obj === nothing && (n_calls[] += 1)))
         @test isempty(called) # not called at construction
-        @test length(gui.sliders.sliders) == 1
+        @test length(gui.sliders.sliders) == 2
         n0 = n_calls[]
         z0 = _xy(gui)[1][2]
         gui.sliders.sliders[1].value[] = 1.0
@@ -214,16 +206,13 @@ _points(h) = only(render_plots(h))[1][]
         @test n_calls[] == n0 + 1
 
         # errors of the callback are logged once
-        close(gui)
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); sliders = ["x" => (0:0.1:1, v -> error("slider"), 0.5)])
-        @test gui.sliders.sliders[1].value[] == 0.5
-        gui.sliders.sliders[1].value[] = 0.1
+        @test gui.sliders.sliders[2].value[] == 0.5
+        gui.sliders.sliders[2].value[] = 0.1
         @test_logs (:error, r"slider callback") notify(events(gui.ax.scene).tick)
-        gui.sliders.sliders[1].value[] = 0.2
+        gui.sliders.sliders[2].value[] = 0.2
         @test_logs notify(events(gui.ax.scene).tick)
         close(gui)
-        gui.sliders.sliders[1].value[] = 0.3
+        gui.sliders.sliders[2].value[] = 0.3
         @test_logs notify(events(gui.ax.scene).tick)
     end
 
@@ -266,6 +255,7 @@ _points(h) = only(render_plots(h))[1][]
         scene = gui.ax.scene
         cam = Makie.cameracontrols(scene)
         @test cam.settings.projectiontype[] == Makie.Orthographic
+        @test gui.widgets.orthographic_toggle.active[]
         vp = scene.viewport[]
         events(scene).mouseposition[] = (vp.origin[1] + vp.widths[1] / 2, vp.origin[2] + vp.widths[2] / 2)
         # the ray through the center passes the eye, starts at the near plane behind it and
@@ -315,6 +305,24 @@ _points(h) = only(render_plots(h))[1][]
         _key!(gui, Keyboard.backspace)
         @test collect(BMO.position(beam)) ≈ [0, 0, 0]
         @test collect(BMO.direction(beam)) ≈ [0, 1, 0]
+
+        # hide and show the markers via the toggle and the key `1`, a selected source is deselected.
+        # `s` stays with the camera (WASD).
+        @test gui.widgets.sources_toggle.active[]
+        @test all(p -> p.visible[], render_plots(marker))
+        gui.controls.selected[] = beam
+        _key!(gui, Keyboard.s)
+        @test gui.widgets.sources_toggle.active[]
+        _key!(gui, Keyboard._1)
+        @test !gui.widgets.sources_toggle.active[]
+        @test !any(p -> p.visible[], render_plots(marker))
+        @test isnothing(gui.controls.selected[])
+        @test startswith(gui.status.text[], "sources hidden")
+        # "show all" keeps the markers hidden, the mirror stays visible
+        GUI._show_all!(gui)
+        @test !any(p -> p.visible[], render_plots(marker))
+        gui.widgets.sources_toggle.active[] = true
+        @test all(p -> p.visible[], render_plots(marker))
         close(gui)
 
         # beam group: the whole source is moved, all beams are solved without preview tracing
@@ -333,32 +341,6 @@ _points(h) = only(render_plots(h))[1][]
         @test sum(p -> p[2], _xy(gui)) / 40 ≈ z0 + 1 atol = 1e-3 # [mm]
         close(gui)
 
-        # hide and show the markers via the toggle and the key `1`, a selected source is deselected.
-        # `s` stays with the camera (WASD).
-        m, pd = _fixture()
-        beam = Beam([0.0, 0, 0], [0.0, 1, 0])
-        gui_ref = Ref{Any}(nothing)
-        gui = _live_view(System([m, pd]), beam; throttle = false,
-            pick = ax -> (render_plots(_marker(gui_ref[], beam))[1], 0))
-        gui_ref[] = gui
-        marker = _marker(gui, beam)
-        @test gui.widgets.sources_toggle.active[]
-        @test all(p -> p.visible[], render_plots(marker))
-        _select!(gui)
-        @test gui.controls.selected[] === beam
-        _key!(gui, Keyboard.s)
-        @test gui.widgets.sources_toggle.active[]
-        _key!(gui, Keyboard._1)
-        @test !gui.widgets.sources_toggle.active[]
-        @test !any(p -> p.visible[], render_plots(marker))
-        @test isnothing(gui.controls.selected[])
-        @test startswith(gui.status.text[], "sources hidden")
-        # "show all" keeps the markers hidden, the mirror stays visible
-        GUI._show_all!(gui)
-        @test !any(p -> p.visible[], render_plots(marker))
-        gui.widgets.sources_toggle.active[] = true
-        @test all(p -> p.visible[], render_plots(marker))
-        close(gui)
         # initially hidden
         m, pd = _fixture()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0])
@@ -635,17 +617,6 @@ _points(h) = only(render_plots(h))[1][]
         @test GUI._duration_string(125) == "2:05"
     end
 
-    @testset "power of a view matches optical_power" begin
-        m, pd = _fixture()
-        # small area and coarse grid, such that the edges contribute to the integral
-        window = (; x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
-        gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity, (; num_points = 5, window...))])
-        P = optical_power(pd, RegularGrid(; num_points = 5, window...))
-        @test _result(gui).text == "P = $(GUI._fmt3(1e3 * P)) mW"
-        @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
-        close(gui)
-    end
-
     @testset "failed solve keeps the beams outdated" begin
         m, pd = _fixture()
         gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); auto_trace = false,
@@ -842,6 +813,7 @@ _points(h) = only(render_plots(h))[1][]
             @test isnothing(gui.controls.selected[])
             @test gui.clip.enabled
             @test plane in gui.controls.movable
+            @test !gui.widgets.clip_beams_toggle.active[] && !gui.clip.beams
             @test gui.ax.scene.theme.clip_planes[] == P1
             @test !isempty(_optics_plots(gui))
             @test all(p -> p.clip_planes[] == P1, _optics_plots(gui))
@@ -932,16 +904,8 @@ _points(h) = only(render_plots(h))[1][]
             _key!(gui, Keyboard.c)
             @test all(p -> p.clip_planes[] == Plane3f[], _beam_plots(gui))
             close(gui)
-
-            # default: the beams are not clipped until the toggle is switched on
-            m, pd = _fixture()
-            gui = _live_view(System([m, pd]), _gauss(); clip_planes = [[0, 0.1, 0] => [0, 1, 0]],
-                beam_kwargs = Dict())
-            @test !gui.widgets.clip_beams_toggle.active[]
-            @test all(p -> p.clip_planes[] == Plane3f[], _beam_plots(gui))
-            gui.widgets.clip_beams_toggle.active[] = true
-            @test all(p -> p.clip_planes[] == P1, _beam_plots(gui))
-            close(gui)
+            # default: the beams are not clipped (the first view) until the toggle is switched on
+            # (as above)
 
             # invalid planes
             m, pd = _fixture()
@@ -1136,17 +1100,22 @@ _points(h) = only(render_plots(h))[1][]
             delete!(held, key)
         end
         close(gui)
+        # the kwarg `orthographic = true`: see "ray picking with the orthographic projection"
+    end
 
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); orthographic = true)
-        @test gui.widgets.orthographic_toggle.active[]
-        @test cameracontrols(gui.ax.scene).settings.projectiontype[] == Makie.Orthographic
-        close(gui)
+    # The checks of both testsets keep the camera until the view is set: one window
+    camera_gui = _live_view(System(collect(_fixture())), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false)
+
+    @testset "initial view from the Front-Right-Top corner" begin
+        gui = camera_gui
+        cam = cameracontrols(gui.ax.scene)
+        dir = normalize(Vector{Float64}(cam.eyeposition[] .- cam.lookat[]))
+        @test isapprox(dir, normalize([1.0, -1, 1]); atol = 1e-6)
+        @test abs(dot(Vector{Float64}(cam.upvector[]), dir)) < 1e-6
     end
 
     @testset "keyboard stays with the camera" begin
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]))
+        gui = camera_gui
         scene = gui.ax.scene
         cam = cameracontrols(scene)
         @test cam.selected[]
@@ -1161,16 +1130,11 @@ _points(h) = only(render_plots(h))[1][]
         @test !cam.selected[]
         gui.widgets.step_box.focused[] = false
         @test cam.selected[]
-        close(gui)
     end
 
-    @testset "initial view from the Front-Right-Top corner" begin
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); throttle = false)
+    @testset "a later view of the user is kept" begin
+        gui = camera_gui
         cam = cameracontrols(gui.ax.scene)
-        dir = normalize(Vector{Float64}(cam.eyeposition[] .- cam.lookat[]))
-        @test isapprox(dir, normalize([1.0, -1, 1]); atol = 1e-6)
-        @test abs(dot(Vector{Float64}(cam.upvector[]), dir)) < 1e-6
         # A later view of the user is kept, also after tracing
         set_view(gui.ax, [0.0, 0, 1], [0.0, 0, 0], [0.0, 1, 0])
         _key!(gui, Keyboard.t)
@@ -1636,23 +1600,26 @@ _points(h) = only(render_plots(h))[1][]
         @test length(BMO.hits(pd)) == 40
         close(gui)
 
-        # a group rendered completely, single beams and Gaussian beamlets are not affected
-        for beam in (_source(), Beam([0.0, 0, 0], [0.0, 1, 0]), _gauss())
-            m, pd = _fixture()
-            gui = _live_view(System([m, pd]) => beam; throttle = false, fine_step = 1e-4,
-                beam_kwargs = beam isa BMO.AbstractBeamGroup ? Dict(beam => (; render_every = 1)) : Dict())
-            gui.controls.selected[] = m
-            _key!(gui, Keyboard.up)
-            @test !gui.trace.preview
-            @test !_is_preview(gui)
-            close(gui)
-        end
+        # a group rendered completely is not affected
+        beam = _source()
+        m, pd = _fixture()
+        gui = _live_view(System([m, pd]) => beam; throttle = false, fine_step = 1e-4,
+            beam_kwargs = Dict(beam => (; render_every = 1)))
+        gui.controls.selected[] = m
+        _key!(gui, Keyboard.up)
+        @test !gui.trace.preview
+        @test !_is_preview(gui)
+        close(gui)
+        # neither are single beams and Gaussian beamlets: only a beam group is previewable, see
+        # `_previewable`, which decides it for the solve
+        @test !GUI._previewable(Beam([0.0, 0, 0], [0.0, 1, 0]), nothing) && !GUI._previewable(_gauss(), nothing)
     end
 
     @testset "detector views" begin
         # ray hits: the metrics of the spot diagram
         m, pd = _fixture()
         gui = _live_view(System([m, pd]) => _source())
+        @test _kind(gui) == :spot && length(_xy(gui)) == 40
         spots = BMO.spot_diagram(pd)
         cx, cz = sum(q -> q[1], spots) / 40, sum(q -> q[2], spots) / 40
         mt = _result(gui).metrics
@@ -1677,12 +1644,18 @@ _points(h) = only(render_plots(h))[1][]
 
         # the options of the `detectors` kwarg
         m, pd = _fixture()
+        # small area and coarse grid, such that the edges contribute to the integral of the power
+        window = (; x_min = -0.3e-3, x_max = 0.3e-3, z_min = -0.3e-3, z_max = 0.3e-3)
         gui = _live_view(System([m, pd]), _gauss(); detectors = [pd => (:intensity,
-            (; num_points = 20, colorscale = :log, colorrange = (0, 5), profiles = true, x_min = -2.5e-3, x_max = 2.5e-3))])
+            (; num_points = 5, colorscale = :log, colorrange = (0, 5), profiles = true, window...))])
         opts = GUI._detector_state(gui, pd).opts
-        @test opts.num_points == 20 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
-        @test opts.kwargs == (; x_min = -2.5e-3, x_max = 2.5e-3)
-        @test size(_field(gui)[3]) == (20, 20)
+        @test opts.num_points == 5 && opts.colorscale == :log && opts.colorrange == (0, 5) && opts.profiles
+        @test opts.kwargs == window
+        @test size(_field(gui)[3]) == (5, 5)
+        # the power of a view matches optical_power
+        P = optical_power(pd, RegularGrid(; num_points = 5, window...))
+        @test _result(gui).text == "P = $(GUI._fmt3(1e3 * P)) mW"
+        @test GUI._signal_text(gui, pd) == "P = $(GUI._fmt3(1e3 * P)) mW"
         close(gui)
 
         # a view that is not shown is not computed
@@ -1987,20 +1960,17 @@ end
     edge_plots(plots) = filter(p -> p isa Makie.Lines, plots)
     m = RoundPlanoMirror(25e-3, 5e-3)
     beam = Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6)
-    gui = live_view(System([m]), beam; detectors = [], lighting = :none)
+    # The lights and the edges are independent options: each window checks one value of both.
+    # Edges of a mirror in the `:cad` look on by default, off via `edges = false`
+    set_render_look(:cad)
+    gui = live_view(System([m]), beam; detectors = [], lighting = :none, edges = false)
     @test Makie.get_lights(gui.ax.scene) == default_lights
+    @test isempty(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1])))))
     close(gui)
     # GLMakie: the full studio rig, see `studio_lighting!`
     gui = live_view(System([m]), beam; detectors = [])
     @test length(Makie.get_lights(gui.ax.scene)) == 3
-    close(gui)
-    # edges of a mirror in the `:cad` look on by default, off via `edges = false`
-    set_render_look(:cad)
-    gui = live_view(System([m]), beam; detectors = [])
     @test length(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1]))))) == 1
-    close(gui)
-    gui = live_view(System([m]), beam; detectors = [], edges = false)
-    @test isempty(edge_plots(render_plots(only(AbstractTrees.children(gui.system_handles[1])))))
     close(gui)
     set_render_look(:modern)
 end

@@ -9,6 +9,8 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "View lock" begin
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`, which
+    # `open_system` takes over)
     function fixture(layout; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -17,7 +19,7 @@ const GUI = BeamletOpticsGUI
         zrotate3d!(pd, -π / 2)
         translate3d!(pd, [0.1, 0.1, 0])
         gui = live_view(System([m, pd]), Beam([0.0, 0, 0], [0.0, 1, 0]); layout,
-            trace_budget = Inf, throttle = false, catalog = CatalogEntry[], kwargs...)
+            trace_budget = Inf, throttle = false, catalog = CatalogEntry[], progress_delay = Inf, kwargs...)
         screen = GLMakie.Screen(visible = false)
         display(screen, gui.fig)
         return gui, m, screen
@@ -68,7 +70,27 @@ const GUI = BeamletOpticsGUI
     end
     free(gui) = viewport_px(gui, 0.85, 0.25)
 
-    for layout in (:compact, :app)
+    # The lock is shared logic of the camera (`_connect_view_lock!`), tested in the compact layout;
+    # the app layout has its own toggle in its toolbar, which drives the same lock
+    @testset "app" begin
+        gui, m, screen = fixture(:app; lock_view = true)
+        setup!(gui)
+        @test toggle(gui).active[] isa Bool && toggle(gui).active[]
+        @test all(==(false), rotations(gui))
+        d0 = dir(gui)
+        drag!(gui, free(gui), free(gui) .+ (60.0, 40.0))
+        @test norm(dir(gui) - d0) < 1e-9
+        toggle(gui).active[] = false
+        tick!(gui)
+        @test gui.status.text[] == "view unlocked" && rotations(gui)[1] == Mouse.left
+        drag!(gui, free(gui), free(gui) .+ (60.0, 40.0))
+        @test norm(dir(gui) - d0) > 1e-3
+        toggle(gui).active[] = true
+        @test all(==(false), rotations(gui))
+        close(screen)
+    end
+
+    for layout in (:compact,)
         @testset "$layout" begin
             # starts locked
             gui, m, screen = fixture(layout; lock_view = true)

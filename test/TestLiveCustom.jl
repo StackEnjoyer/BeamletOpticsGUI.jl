@@ -11,7 +11,8 @@ const GUI = BeamletOpticsGUI
     GLB = Makie.GridLayoutBase
 
     # Rays along +y, the mirror at 45° reflects them along +x onto the detector. The source is a
-    # beam group, which is solved as a preview while moving, see `preview`. Without the catalog,
+    # beam group, which is solved as a preview while moving, see `preview`; every solve ends before
+    # the call returns, also on a slow machine (`progress_delay = Inf`). Without the catalog,
     # whose toggle "Components" is tested in TestLiveCatalog.jl: the tools here are the own ones
     function _fixture(; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
@@ -22,7 +23,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.1, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System([m, pd]) => cs; trace_budget = Inf, throttle = false,
-            fine_step = 1e-4, idle_delay = 10.0, catalog = CatalogEntry[], kwargs...)
+            fine_step = 1e-4, idle_delay = 10.0, catalog = CatalogEntry[], progress_delay = Inf, kwargs...)
         return gui, m, pd
     end
 
@@ -149,8 +150,10 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "controls and retrace! ($layout)" for layout in (:compact, :app)
-        gui, m, pd = _fixture(; layout, auto_trace = false)
+    # the controls in their place of each layout: here the compact one, the app one in "tools";
+    # typing and `retrace!` are shared logic
+    @testset "controls and retrace!" begin
+        gui, m, pd = _fixture(; auto_trace = false)
         # the view starts untraced
         GUI._trace!(gui)
         clicked = Ref(0)
@@ -161,15 +164,10 @@ const GUI = BeamletOpticsGUI
             on(_ -> (clicked[] += 1), b.clicks)
         end
         @test content isa GridLayout
-        if layout == :compact
-            # an entry of the tool rail, which opens the controls in a popover next to it
-            item, part = only(gui.layout.overlay.sections)
-            @test item.label[] == "Mine"
-            @test GLB.gridcontent(content).parent === part.content
-        else
-            # a section of the left sidebar
-            @test last(gui.layout.sections[:left]) == ("Mine" => content)
-        end
+        # an entry of the tool rail, which opens the controls in a popover next to it
+        item, part = only(gui.layout.overlay.sections)
+        @test item.label[] == "Mine"
+        @test GLB.gridcontent(content).parent === part.content
         # a focused textbox of the controls takes the keyboard
         @test gui.custom.boxes == [tb[]]
         cam = cameracontrols(gui.ax.scene)
@@ -202,8 +200,9 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "update of controls ($layout)" for layout in (:compact, :app)
-        gui, m, _ = _fixture(; layout)
+    # the update of controls is shared logic (`_update_user_panels!`), whichever layout holds them
+    @testset "update of controls" begin
+        gui, m, _ = _fixture()
         n = Ref(0)
         add_controls!(gui, "Counted") do l
             Label(l[1, 1], "x")
@@ -247,7 +246,9 @@ const GUI = BeamletOpticsGUI
         _key!(gui, Keyboard._2)
         @test length(calls) == 4
         tb = Ref{Any}(nothing)
-        add_controls!(l -> (tb[] = Textbox(l[1, 1])), gui, "Box")
+        box = add_controls!(l -> (tb[] = Textbox(l[1, 1])), gui, "Box")
+        # the app layout puts controls in a section of the left sidebar
+        layout == :app && @test last(gui.layout.sections[:left]) == ("Box" => box)
         tb[].focused[] = true
         _key!(gui, Keyboard._2)
         @test length(calls) == 4

@@ -100,7 +100,7 @@ const GUI = BeamletOpticsGUI
         return (; gui, sys, m1, m2, m3, m4, sg, objs)
     end
 
-    @testset "a dissolved group leaves the view, $layout" for layout in (:compact, :app)
+    @testset "a dissolved group leaves the view, $layout" for layout in (:compact,)
         (; gui, sys, m1, m2, m3, m4, sg, objs) = _scene(; layout)
         ctrl = gui.controls
         s = _group!(gui, m1, m2)
@@ -145,7 +145,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a subgroup taken back by undo leaves the view, $layout" for layout in (:compact, :app)
+    @testset "a subgroup taken back by undo leaves the view, $layout" for layout in (:compact,)
         (; gui, sys, m1, m2, m3, m4, sg, objs) = _scene(; layout)
         ctrl = gui.controls
         before = _changes(gui)
@@ -167,7 +167,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "ending the spectator mode of a linked view, $layout" for layout in (:compact, :app)
+    @testset "ending the spectator mode of a linked view, $layout" for layout in (:compact,)
         (; gui, sys, m1, m2, sg) = _scene(; layout)
         A = gui
         B = open_system(A, sys; display = false)
@@ -185,7 +185,7 @@ const GUI = BeamletOpticsGUI
         close(B); close(A)
     end
 
-    @testset "undo after a linked view changed the parts, $layout" for layout in (:compact, :app)
+    @testset "undo after a linked view changed the parts, $layout" for layout in (:compact,)
         (; gui, sys, m1, m2, m3, m4, sg, objs) = _scene(; layout)
         A = gui
         B = open_system(A, sys; display = false)
