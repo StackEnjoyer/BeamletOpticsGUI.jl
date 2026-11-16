@@ -50,8 +50,8 @@ from the catalog are saved with their constructors and can be edited on their pa
   together, a group moved as a whole as one), new objects appear, changed ones are built again and
   removed ones go. The window is never replaced.
 - **Versions.** `Ctrl+S` writes what is still pending and saves a version of the project (a git
-  commit, without a git install). A card asks for its message, filled with what changed since the
-  last version.
+  commit, without a git install). A card in the middle of the view asks for its message, filled
+  with what changed since the last version.
 - **Taking the files.** `Ctrl+R` makes the window as in the files: everything that differs is
   taken from them, changes in the window that were not saved are lost.
 - **Groups** made in the window are `@group` lines of the project.
@@ -73,8 +73,10 @@ Several windows and agents can work on one project at once, also from a shared d
 - **What the others changed.** A change of another participant is shown where it happened: a thin
   frame in the participant's colour at the new place, a dashed ghost at the old one and a soft arc
   between them, a small chip with the name and the change ("claude · moved M2 by 12 mm"); new
-  objects fade in and settle into a frame, removed ones fade out and leave a ghost. What an agent says it does next
-  (`announce(...; doing)`) appears as a bubble at its object. The cues fade after about 3 s. When an
+  objects fade in and settle into a frame, removed ones fade out and leave a ghost. What an agent
+  says it does next (`announce(...; doing, selected_id)`) appears as a bubble at its object; one that
+  names no object of the window stands in the upper-left corner of the view and says "(no object)"
+  after the name. The cues fade after about 3 s. When an
   agent changes things faster than one can follow, the setup changes at once, but the cues play one
   after the other at a readable pace; more than 3 s behind, the waiting ones become one cue
   ("claude · 14 changes").
@@ -82,7 +84,8 @@ Several windows and agents can work on one project at once, also from a shared d
   changed what and when, in one line, or, after a click, in a lane per participant. The mouse over
   a mark shows the change again, a click replays it, a double click frames its objects, dragging
   along the lanes shows ghosts of how the setup was at that time, and the eye of a lane makes the
-  camera follow that participant.
+  camera follow that participant. Framing shows the objects with their surroundings; "‹ back" in
+  the head of the timeline returns to the view before the first framing.
 - **Claims.** The first gesture on an object claims it for the person, until it is deselected or
   30 s pass without a gesture. A gesture on an object that another participant claims is refused,
   the status line names the holder ("Bob is editing M1"), and the object shows a lock. A change

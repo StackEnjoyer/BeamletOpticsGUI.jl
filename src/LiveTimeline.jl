@@ -15,6 +15,11 @@ const _TL_EXPANDED = 110.0f0
 # Expanded: the head (chevron, title, span), the height of a lane, the foot (the labels of the time
 # axis), the column of the lanes' names, the lanes shown at most
 const _TL_HEAD = 24.0f0
+# the framing of an activity: its objects take about a third of the view, at least 0.1 m across,
+# see `_frame_points!`; the text of the button back to the view before
+const _TL_FRAME_FACTOR = 3.0
+const _TL_FRAME_MIN = 0.1
+const _TL_BACK = "‹ back"
 const _TL_LANE = 22.0f0
 const _TL_FOOT = 18.0f0
 const _TL_LABELS = 150.0f0
@@ -84,6 +89,8 @@ mutable struct _Timeline
     hover_own::Bool
     sig::Any
     const widths::Dict{Tuple{String, Bool, Float32}, Float32}
+    # the view before the first framing of an activity, to which "back" returns (see `_frame_points!`)
+    back::Any
 end
 
 """
@@ -139,7 +146,7 @@ function _timeline!(gui::LiveView)
         tip_box, tip_text)
     tl = _Timeline(scene, t, _tree_font(scene, :regular), _tree_font(scene, :bold), plots,
         Rect2f(0, 0, 0, 0), false, _TL_SPAN, time(), Tuple{Rect2f, Symbol, Any}[], (0.0f0, 0.0f0),
-        nothing, (0, -Inf), false, nothing, Dict{Tuple{String, Bool, Float32}, Float32}())
+        nothing, (0, -Inf), false, nothing, Dict{Tuple{String, Bool, Float32}, Float32}(), nothing)
     a.strip = tl
     _connect_timeline!(gui, tl)
     _update_timeline!(gui, time())
@@ -178,7 +185,7 @@ function _update_timeline!(gui::LiveView, now::Real)
     tick = a.expanded ? floor(Int, now / (tl.span / max(_tl_axis_width(rect), 1))) : floor(Int, now / 1)
     last = a.episodes[end]
     sig = (rect, a.expanded, length(a.episodes), last.n, tl.span, tick, a.hover, a.cursor, a.follow,
-        length(a.colors))
+        length(a.colors), isnothing(tl.back))
     sig == tl.sig && return nothing
     tl.sig = sig
     _draw_timeline!(gui, tl, a)
@@ -494,10 +501,14 @@ function _draw_expanded!(gui::LiveView, tl::_Timeline, a::_Activity)
     end
     hy = Float32(top - _TL_HEAD / 2)
     label!(Point2f(left + 18, hy), "Activity", muted, :left)
-    if isnothing(a.cursor)
-        label!(Point2f(ax1, hy), "last " * _tl_span_label(span), muted, :right)
-    else
-        label!(Point2f(ax1, hy), _tl_clock(a.cursor), _rgba(t.accent), :right)
+    clock = isnothing(a.cursor) ? "last " * _tl_span_label(span) : _tl_clock(a.cursor)
+    label!(Point2f(ax1, hy), clock, isnothing(a.cursor) ? muted : _rgba(t.accent), :right)
+    # back to the view before the framing of an activity, see `_frame_points!`
+    if !isnothing(tl.back)
+        xb = ax1 - _tl_width(tl, clock, false, _TL_SMALL) - 16
+        wb = _tl_width(tl, _TL_BACK, false, _TL_SMALL)
+        label!(Point2f(xb, hy), _TL_BACK, _rgba(t.accent), :right)
+        push!(tl.hits, (Rect2f(xb - wb - 4, top - _TL_HEAD, wb + 8, _TL_HEAD), :back, nothing))
     end
     push!(tl.hits, (Rect2f(x0, top - _TL_HEAD, W, _TL_HEAD), :toggle, nothing))
     # the grid: the baselines of the lanes and a faint line per tick
@@ -741,21 +752,43 @@ end
 """
     _frame_points!(gui, pts)
 
-Moves the camera of the `gui`, animated, such that the bounding sphere of the points `pts` fills the
-view, along the current view direction, like `_zoom_to_selection!`; nothing without points.
+Moves the camera of the `gui`, animated, along the current view direction such that the points
+`pts` take about a third of the view with their surroundings: the bounding sphere of
+`_TL_FRAME_FACTOR` times their box, at least `_TL_FRAME_MIN` across, fills the view. The view before
+the first framing is kept for "back" in the head of the timeline, see `_frame_back!`. Nothing
+without points.
 """
 function _frame_points!(gui::LiveView, pts::AbstractVector{<:Point3})
     pts = [p for p in pts if all(isfinite, p)]
     isempty(pts) && return nothing
     bb = GeometryBasics.Rect3d(pts)
     center = Vector{Float64}(minimum(bb) .+ GeometryBasics.widths(bb) ./ 2)
-    # a single point or a flat box: at least 2 cm
-    d = max(norm(Vector{Float64}(GeometryBasics.widths(bb))), 0.02)
+    # the objects with their surroundings, also a single point or a flat box
+    d = max(_TL_FRAME_FACTOR * norm(Vector{Float64}(GeometryBasics.widths(bb))), _TL_FRAME_MIN)
     cam = cameracontrols(gui.ax.scene)
     dist = cam.settings.projectiontype[] == Makie.Perspective ? (d / 2) / sind(cam.fov[] / 2) : d / 2
     eye, lookat, up = _current_view(gui)
+    tl = _timeline(gui)
+    (isnothing(tl) || !isnothing(tl.back)) || (tl.back = (eye, lookat, up))
     o = norm(eye .- lookat) > 0 ? normalize(eye .- lookat) : [0.0, 0.0, 1.0]
     _animate_camera!(gui, center .+ dist .* o, center, up)
+    return nothing
+end
+
+"""
+    _frame_back!(gui)
+
+"back" in the head of the timeline of the `gui`: ends following a participant and moves the camera,
+animated, to the view before the first framing of an activity (see `_frame_points!`), which is
+forgotten then. Nothing if there was no framing.
+"""
+function _frame_back!(gui::LiveView)
+    tl = _timeline(gui)
+    (isnothing(tl) || isnothing(tl.back)) && return nothing
+    eye, lookat, up = tl.back
+    tl.back = nothing
+    _set_follow!(gui, nothing)
+    _animate_camera!(gui, eye, lookat, up)
     return nothing
 end
 
@@ -803,7 +836,7 @@ function _connect_timeline!(gui::LiveView, tl::_Timeline)
             h = if event.button != Mouse.left
                 nothing
             elseif a.expanded
-                _tl_hit(tl, p, :toggle, :eye, :mark, :lanes)
+                _tl_hit(tl, p, :back, :toggle, :eye, :mark, :lanes)
             else
                 # the collapsed line takes the click as a whole
                 _tl_hit(tl, p, :toggle)
@@ -823,7 +856,10 @@ function _connect_timeline!(gui::LiveView, tl::_Timeline)
             # the release must be over what was pressed
             h = tl.shown ? _tl_hit(tl, p, kind) : nothing
             (isnothing(h) || h[3] != data) && return Consume(true)
-            if kind === :toggle
+            if kind === :back
+                _frame_back!(gui)
+                _update_timeline!(gui, tl.now)
+            elseif kind === :toggle
                 _set_expanded!(gui, !a.expanded)
             elseif kind === :eye
                 _set_follow!(gui, a.follow == data ? nothing : data)

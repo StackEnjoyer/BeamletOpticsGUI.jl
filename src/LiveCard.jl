@@ -1014,6 +1014,19 @@ function _spot_position(spot::Tuple{Bool, Bool, Vec2f}, size::Vec2f, view::Rect2
     return Point2f(clamp(x, lo[1], max(lo[1], hi[1] - size[1])), clamp(y, min(hi[2], lo[2] + size[2]), hi[2]))
 end
 
+"""Top left corner [figure px] of a card of the `size` in the middle of the 3D view `view`."""
+_center_position(size::Vec2f, view::Rect2f) =
+    Point2f(minimum(view)[1] + (Makie.widths(view)[1] - size[1]) / 2, minimum(view)[2] + (Makie.widths(view)[2] + size[2]) / 2)
+
+"""
+    _centered(obj) -> Bool
+
+Whether the card of `obj` belongs to the window rather than to a place in the scene: it stands in
+the middle of the 3D view without a line, like a dialog (unless the mouse moved it), e.g. the card
+of a new version of a project, see `_VersionCard`. `false` for everything else.
+"""
+_centered(@nospecialize(obj)) = false
+
 # Rectangle [figure px] of a part of a card, which hangs down from the point of its suggested bounding box
 function _part_rect(x::GridLayout)
     p, s = minimum(x.layoutobservables.suggestedbbox[]), _card_size(x)

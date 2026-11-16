@@ -134,7 +134,8 @@ card_rows(@nospecialize(p::Union{BMO.LinearPolarizer, BMO.PolarizationFilter})) 
     (pose_card_rows(p)..., _beam_row(), _text_row("axis", :axis, _axis_text))
 # Detectors: the hits of the last solve, the power, or the number of rays, of the view of the
 # detector; the view itself is on the page "Results" of the card, see `_has_view`
-card_rows(@nospecialize(pd::BMO.Detector)) = (pose_card_rows(pd)..., _beam_row(), _text_row("signal", :signal, _signal_text))
+card_rows(@nospecialize(pd::BMO.Detector)) = (pose_card_rows(pd)..., _beam_row(), _stop_row(),
+    _text_row("signal", :signal, _signal_text))
 # Beams and beam groups: switched on and off, their polarization, see `beam_card_rows`
 card_rows(@nospecialize(b::Union{BMO.AbstractBeam, BMO.AbstractBeamGroup})) = (pose_card_rows(b)..., beam_card_rows(b)...)
 # Sources whose rays can be regenerated: wavelength, size and a slider for the number of rays

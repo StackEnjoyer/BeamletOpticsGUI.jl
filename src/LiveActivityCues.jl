@@ -52,6 +52,8 @@ const _CHIP_CHARS = 56
 # A bubble: the bar of the colour at its left edge, its padding, the wrap of the message
 const _BUBBLE_BAR = 3.0f0
 const _BUBBLE_PAD = Vec2f(8, 5)
+# after the name in the bubble of a message without an object of the window, see `_new_bubble!`
+const _NO_OBJECT = " (no object)"
 const _BUBBLE_WRAP = 40
 const _BUBBLE_LINES = 3
 # z translation of the chips and bubbles: after the 3D scene and in front of it, below the cards
@@ -419,11 +421,13 @@ function _new_chip!(gui::LiveView, c::_CuePlots, d::_CueDrawn)
 end
 
 # Adds the plots of the bubble of the message of the cue `d`: a rounded box with the colour of the
-# participant as a bar at its left edge, the name in bold and the message below, wrapped
+# participant as a bar at its left edge, the name in bold and the message below, wrapped. A message
+# that names no object of the window stands in the corner of the view (see `_chip_anchor`) and says
+# so after the name
 function _new_bubble!(gui::LiveView, c::_CuePlots, d::_CueDrawn)
     ep = d.episode
     t = gui.layout.theme
-    name = _clip_text(ep.name, 24)
+    name = _clip_text(ep.name, 24) * (isempty(ep.items) ? _NO_OBJECT : "")
     lines = _wrap_text(ep.message)
     lh = _CHIP_FONTSIZE * _CHIP_LINEHEIGHT
     w = max(_chip_width(c, name; bold = true), maximum((_chip_width(c, l) for l in lines); init = 0.0f0))

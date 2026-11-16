@@ -1207,6 +1207,8 @@ struct _VersionCard <: _InfoItem
 end
 
 _points(x::_VersionCard) = [x.point]
+# A dialog of the window, not of a place in the scene, see `_centered`
+_centered(::_VersionCard) = true
 _title(::_VersionCard) = "Save a version"
 _tree_kind(::_VersionCard) = :save
 _keep_plots!(::LiveView, ::_VersionCard) = nothing

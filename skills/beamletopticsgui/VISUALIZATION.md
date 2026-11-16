@@ -38,7 +38,8 @@ wavelength in that mode; a color or length change while a long solve runs starts
 opens on "Results" for a detector, else on "Pose"; a pinned card keeps its page. Rows of the
 type: rays hitting it and their angle of incidence (last solve), `n` of lenses, R/T of
 beamsplitters, the polarizer axis, detector `signal` (power or number of rays of its view while a
-view is shown, else number of hits), the ray count slider of sources
+view is shown, else number of hits) and its switch "stop beams" (in place: the same detector,
+`BeamletOptics.stop!`, with undo), the ray count slider of sources
 (`num_rays!`), and on every beam, beam group, source and beamlet the toggle "on" (off: not
 solved, not drawn, rays removed from detectors; only the source marker stays), for Gaussian
 beamlets the toggle "beams" (generating beams as `render!(...; show_beams = true)`), for polarized

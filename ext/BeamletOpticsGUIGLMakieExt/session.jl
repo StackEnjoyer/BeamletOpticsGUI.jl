@@ -724,6 +724,22 @@ function _session(step, layout::Symbol, fixture::_Fixture = _fixture())
         deselect!()
     end
 
+    # The switch "stop beams" on the page "Pose" of the card of the detector: off and on again, such
+    # that the later steps still see its hits
+    step("card: stop beams of the detector (off, on)") do
+        _click!(gui, _px(gui, _pos(fx.detector)))
+        frame!()
+        _selected(gui, fx.detector)
+        GUI._set_page!(gui, card_of(fx.detector, :hide), :pose)
+        frame!()
+        for stop in (false, true)
+            _click!(gui, _rect_center(GUI._card_widget(card_of(fx.detector, :stop), :stop)))
+            settle!()
+            _check(BMO.stop(fx.detector) == stop, "the switch did not set stop = $stop")
+        end
+        deselect!()
+    end
+
     # The pencil in the head of the card of a component: a typed name and Enter
     step("card: rename a component in the title") do
         _click!(gui, _px(gui, _pos(fx.mirror)))
@@ -1264,9 +1280,10 @@ function _catalog_session(step, entries = component_catalog())
                 settle!()
             end
         end
-        # a switch on the page "Edit", e.g. the detector that lets the beams pass, then "Apply"
+        # a switch on the page "Edit", then "Apply"; not of a detector, which its card switches in
+        # place (see the step "card: stop beams of the detector")
         s = findfirst(p -> p isa GUI.CatalogToggle, entry.params)
-        if !isnothing(s)
+        if !isnothing(s) && !isempty(GUI._edit_param_rows(gui, obj, entry.params[s], s))
             step("catalog, $(entry.name): edit switch + apply") do
                 gui.controls.selected[] === obj || select!(gui, obj)
                 frame!()
@@ -1429,6 +1446,16 @@ function _project_session(step; dir = mktempdir())
         _click!(gui)
         GUI._activity_tick!(gui)
         frame!()
+        # the framing of the double click (without its timing), then "‹ back" in the head
+        GUI._frame_points!(gui, GUI._tl_points(a, last(m[3])))
+        GUI._update_timeline!(gui, time())
+        frame!()
+        back = hit(:back)
+        _check(!isnothing(back), "the framing shows no button back")
+        _click!(gui, center(back[1]))
+        GUI._activity_tick!(gui)
+        frame!()
+        _check(isnothing(tl.back), "the button back did not return to the view before")
         lanes = hit(:lanes)[1]
         y = minimum(lanes)[2] + widths(lanes)[2] / 2
         _drag!(gui, (minimum(lanes)[1] + 10, y), (maximum(lanes)[1] - 10, y))

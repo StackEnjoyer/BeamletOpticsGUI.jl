@@ -188,17 +188,19 @@ const GUI = BeamletOpticsGUI
         @test d.bubble
         @test haskey(d.plots, :bar) && !haskey(d.plots, :dot)
         @test _rgb(d.plots[:bar].color[]) == _rgb(GUI._activity_color(gui, "bob@PC3"))
+        @test GUI._label_text(d.plots[:name]) == "Bob"
         lines = split(GUI._label_text(d.plots[:text]), '\n')
         @test length(lines) == GUI._BUBBLE_LINES
         @test all(l -> length(l) <= GUI._BUBBLE_WRAP, lines)
         @test endswith(lines[end], "…")
-        # a message without an object: at the corner of the view
+        # a message without an object: at the corner of the view, which its name says
         GUI._clear_cues!(gui)
         alone = _episode(GUI._ActivityItem[]; n = 3, who = "bob@PC3", name = "Bob", text = "", message = "back in 5")
         GUI._draw_cues!(gui, [(alone, 1.0)], 10.0)
         d = only(_drawn(gui))
         @test !isempty(d.plots)
         @test all(isfinite, d.pos[])
+        @test GUI._label_text(d.plots[:name]) == "Bob (no object)"
 
         # several cues at once at one object stack their chips
         GUI._clear_cues!(gui)
