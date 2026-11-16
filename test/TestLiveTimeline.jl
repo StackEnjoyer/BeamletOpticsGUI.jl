@@ -2,6 +2,7 @@ module TestLiveTimeline
 
 using GLMakie, BeamletOptics, BeamletOpticsGUI
 using Makie
+using LinearAlgebra: norm
 using Test
 
 const GUI = BeamletOpticsGUI
@@ -142,11 +143,25 @@ const GUI = BeamletOpticsGUI
         click!(gui, center(marks[k][1]))
         @test any(c -> c[1].n == 2, a.cues)
         @test gui.controls.selected[] === lens
-        # a double click frames its objects
+        # a double click frames its objects with their surroundings: three times their box, at
+        # least 0.1 m across, fills the view
         @test isnothing(gui.camera.animation)
+        before = eye_of(gui)
         click!(gui, center(marks[k][1]))
         @test !isnothing(gui.camera.animation)
         @test gui.camera.animation.lookat1 ≈ [0.0, 0.11, 0.0] atol = 1.0e-6
+        diag = norm(Makie.widths(Rect3d(GUI._tl_points(a, 2))))
+        d = max(GUI._TL_FRAME_FACTOR * diag, GUI._TL_FRAME_MIN)
+        @test norm(gui.camera.animation.eye1 - gui.camera.animation.lookat1) ≈
+              (d / 2) / sind(cameracontrols(gui.ax.scene).fov[] / 2) rtol = 1.0e-6
+        gui.camera.animation = nothing
+        # "‹ back" in the head returns to the view before the framing
+        GUI._update_timeline!(gui, now)
+        click!(gui, center(only(hits(tl, :back))[1]))
+        @test gui.camera.animation.eye1 ≈ before
+        @test isnothing(tl.back) && isnothing(a.follow)
+        GUI._update_timeline!(gui, now)
+        @test isempty(hits(tl, :back))
         gui.camera.animation = nothing
         eye0 = eye_of(gui)
 

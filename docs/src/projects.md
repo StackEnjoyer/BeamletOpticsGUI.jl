@@ -84,7 +84,8 @@ Several windows and agents can work on one project at once, also from a shared d
   changed what and when, in one line, or, after a click, in a lane per participant. The mouse over
   a mark shows the change again, a click replays it, a double click frames its objects, dragging
   along the lanes shows ghosts of how the setup was at that time, and the eye of a lane makes the
-  camera follow that participant.
+  camera follow that participant. Framing shows the objects with their surroundings; "‹ back" in
+  the head of the timeline returns to the view before the first framing.
 - **Claims.** The first gesture on an object claims it for the person, until it is deselected or
   30 s pass without a gesture. A gesture on an object that another participant claims is refused,
   the status line names the holder ("Bob is editing M1"), and the object shows a lock. A change

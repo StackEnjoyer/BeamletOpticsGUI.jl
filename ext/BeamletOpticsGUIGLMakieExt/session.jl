@@ -1425,6 +1425,16 @@ function _project_session(step; dir = mktempdir())
         _click!(gui)
         GUI._activity_tick!(gui)
         frame!()
+        # the framing of the double click (without its timing), then "‹ back" in the head
+        GUI._frame_points!(gui, GUI._tl_points(a, last(m[3])))
+        GUI._update_timeline!(gui, time())
+        frame!()
+        back = hit(:back)
+        _check(!isnothing(back), "the framing shows no button back")
+        _click!(gui, center(back[1]))
+        GUI._activity_tick!(gui)
+        frame!()
+        _check(isnothing(tl.back), "the button back did not return to the view before")
         lanes = hit(:lanes)[1]
         y = minimum(lanes)[2] + widths(lanes)[2] / 2
         _drag!(gui, (minimum(lanes)[1] + 10, y), (maximum(lanes)[1] - 10, y))
