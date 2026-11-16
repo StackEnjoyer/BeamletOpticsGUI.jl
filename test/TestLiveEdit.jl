@@ -214,15 +214,19 @@ const GUI = BeamletOpticsGUI
         @test BMO.stop(c.obj) && _in(c.obj, targets()) && !_in(back, targets())
         @test c.origin.code == "Detector(0.01, true)"
 
-        # the page: the box of the edge length and the toggle of "stop beams"
+        # the page: the box of the edge length, no switch: the card switches the detector in place
         card = _show!(gui, c.obj, :edit)
-        toggle = GUI._card_widget(card, GUI._edit_toggle(2))
-        @test toggle isa Toggle && toggle.active[]
-        # switched off, with a length typed without Enter, which the switch keeps
-        _type!(card, 1, "20")
-        toggle.active[] = false
+        @test isnothing(GUI._card_widget(card, GUI._edit_toggle(2)))
+        # a new length that is not applied yet, then the detector switched off on its page "Pose":
+        # the same object, whose code and inputs (also the pending one) take the switch
+        GUI._set_edit_string!(gui, c.obj, 1, "20")
+        GUI._set_stop!(gui, c.obj, false)
+        @test !BMO.stop(c.obj) && _in(c.obj, sys.objects)
         @test GUI._edit_strings(gui, c.obj) == ["20", "false"]
-        @test _in(c.obj, sys.objects)
+        @test gui.components.origin[c.obj].code == "Detector(0.01, false)"
+        @test _in(c.obj, targets()) && _in(back, targets())
+        # "Apply" builds the new length with the switch as it is
+        _show!(gui, c.obj, :edit)
         notify(GUI._card_widget(_card(gui), :edit_apply).clicks)
         new = only(o for o in sys.objects if o !== back)
         @test new !== c.obj && !BMO.stop(new) && GUI._label(gui, new) == "PD"
@@ -232,11 +236,12 @@ const GUI = BeamletOpticsGUI
         @test isnothing(gui.trace.error) && !gui.trace.stale
         @test _in(new, targets()) && _in(back, targets())
         @test !isnothing(BMO.hits(new)) && !isnothing(BMO.hits(back))
-        @test !GUI._card_widget(_card(gui), GUI._edit_toggle(2)).active[]
 
-        # undo brings the detector back that stops the beam
+        # undo brings the old detector back, then switches it on again
         @test GUI._undo!(gui.controls)
-        @test _in(c.obj, sys.objects) && !_in(back, targets())
+        @test _in(c.obj, sys.objects) && !BMO.stop(c.obj)
+        @test GUI._undo!(gui.controls)
+        @test BMO.stop(c.obj) && !_in(back, targets())
         close(gui)
     end
 
@@ -259,16 +264,14 @@ const GUI = BeamletOpticsGUI
         # the selection is elsewhere: "Apply" on the pinned card
         gui.controls.selected[] = nothing
         GUI._update_cards!(gui)
-        GUI._card_widget(card, GUI._edit_toggle(2)).active[] = false
+        _type!(card, 1, "15")
         notify(GUI._card_widget(card, :edit_apply).clicks)
         new = only(o for o in sys.objects if o !== back)
-        @test new !== c.obj && !BMO.stop(new)
-        # the card is pinned to the new detector, still on the page "Edit", with its switch off
+        @test new !== c.obj && gui.components.origin[new].code == "Detector(0.015, true)"
+        # the card is pinned to the new detector, still on the page "Edit"
         @test isempty(pinned(c.obj))
         card = only(pinned(new))
         @test GUI._is_pinned(gui, new) && card.page === :edit
-        GUI._update_cards!(gui)
-        @test !GUI._card_widget(card, GUI._edit_toggle(2)).active[]
         layout === :app && @test length(gui.layout.inspector.pinned) == (where === :docked)
         # a pinned card keeps another page, e.g. "Results"
         GUI._set_page!(gui, card, :results)

@@ -523,6 +523,9 @@ Base.@kwdef mutable struct _ComponentState
     recording::Bool = true
     # the inputs of the page "Edit" of an object that are not applied yet, see `_edit_strings`
     const edits::IdDict{Any, Vector{String}} = IdDict{Any, Vector{String}}()
+    # whether a detector stopped the beams before its first switch on its card, for
+    # `export_changes`, see `_set_stop!`
+    const stops0::IdDict{Any, Bool} = IdDict{Any, Bool}()
     placement::Any = nothing
     # the source that is being aimed with the mouse, see `_start_aim!`
     aim::Any = nothing

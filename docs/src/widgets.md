@@ -116,7 +116,8 @@ BeamletOpticsGUI.card_actions(a::MyAttenuator) = (
 ```
 
 The types of BeamletOptics have such methods as well, e.g. the ray count slider of a source or the
-signal of a `Detector`.
+signal of a `Detector` and its switch "stop beams", which switches the detector itself
+(`BeamletOptics.stop!`): it stays the same object, and undo switches it back.
 
 ## Recipe: a card for your system type
 
