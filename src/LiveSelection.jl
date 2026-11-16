@@ -308,7 +308,8 @@ end
 Shows the inspected object of the `gui` besides the cards, e.g. its row in the object tree of the app
 layout; nothing by default.
 """
-_show_inspected!(::LiveView, _) = nothing
+_show_inspected!(gui::LiveView, @nospecialize(x)) = _show_inspected!(gui, gui.layout, x)
+_show_inspected!(::LiveView, ::AbstractLiveLayout, _) = nothing
 
 _show_menu_selection!(::Nothing, _) = nothing
 function _show_menu_selection!(menu::Menu, i)
@@ -462,7 +463,8 @@ end
 _all_hidden(gui::LiveView, @nospecialize(obj)) = all(leaf -> leaf in gui.objects.hidden, _leaves(obj))
 
 """Returns how a hidden object of the `gui` is shown again, for the status line."""
-_show_hint(::LiveView) = "select it in the menu to show it again"
+_show_hint(gui::LiveView) = _show_hint(gui, gui.layout)
+_show_hint(::LiveView, ::AbstractLiveLayout) = "select it in the menu to show it again"
 
 """Shows all hidden objects of the `gui`."""
 function _show_all!(gui::LiveView)

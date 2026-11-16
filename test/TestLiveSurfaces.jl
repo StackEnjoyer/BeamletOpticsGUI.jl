@@ -197,7 +197,9 @@ const GUI = BeamletOpticsGUI
 
     @testset "placing" begin
         sys = System()
-        gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false)
+        # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+        gui = live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 1e-6); trace_budget = Inf, throttle = false,
+            progress_delay = Inf)
         # an aspheric singlet is placed with the text of its surfaces
         singlet = _entry(GUI._surface_lens)
         strings = ["50; -1; 1e-6", "-50", "5", "25.4", "N-BK7"]

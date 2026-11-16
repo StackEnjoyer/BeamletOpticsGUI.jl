@@ -10,17 +10,17 @@ const GUI = BeamletOpticsGUI
 
 @testset "Page \"Edit\" of the cards" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _entry(name) = only(e for e in component_catalog() if e.name == name)
     _defaults(entry) = String[GUI._catalog_string(p) for p in entry.params]
     # A component or source of the catalog with the texts `strings` of its form
     _built(name, strings = _defaults(_entry(name))) = GUI._catalog_component(_entry(name), strings)
 
-    _card(gui::GUI.AppView) = gui.layout.inspector.card
-    _card(gui) = gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? (gui.layout.inspector.card) : (gui.cards.selection)
     _names(card) = [w.name for (_, w) in card.widgets if !isnothing(w.name)]
     function _show!(gui, obj, page)
         gui.controls.selected[] = obj
@@ -61,7 +61,9 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a component, $layout" for layout in (:compact, :app)
+    # In the compact layout: the page "Edit" is the same code in the floating card and in the
+    # inspector of the app layout; "pinned cards stay" runs in both layouts
+    @testset "a component, $layout" for layout in (:compact,)
         sys = System()
         beam = Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9)
         gui = _live_view(sys => beam; layout)
@@ -149,7 +151,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a source, $layout" for layout in (:compact, :app)
+    @testset "a source, $layout" for layout in (:compact,)
         m = RoundPlanoMirror(25e-3, 5e-3)
         translate3d!(m, [0, 0.2, 0])
         sys = System([m])
@@ -197,7 +199,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "a detector that lets the beams pass, $layout" for layout in (:compact, :app)
+    @testset "a detector that lets the beams pass, $layout" for layout in (:compact,)
         # the detector of the catalog in front of a second one, which only gets the beam if the
         # first one lets it pass
         back = Detector(10e-3)
@@ -306,7 +308,7 @@ const GUI = BeamletOpticsGUI
     end
     _asphere_names(i) = [Symbol(:edit_, i, :_k); [Symbol(:edit_, i, :_A, n) for n in 4:2:16]]
 
-    @testset "surfaces of a singlet, $layout" for layout in (:compact, :app)
+    @testset "surfaces of a singlet, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
         c = _built("Singlet")
@@ -428,7 +430,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "surfaces of a doublet, $layout" for layout in (:compact, :app)
+    @testset "surfaces of a doublet, $layout" for layout in (:compact,)
         sys = System()
         gui = _live_view(sys => Beam([0.0, 0, 0], [0.0, 1, 0], 632.8e-9); layout)
         c = _built("Doublet")

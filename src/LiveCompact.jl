@@ -37,8 +37,8 @@ mutable struct CompactLayout <: AbstractLiveLayout
     CompactLayout(theme::NamedTuple) = new(theme, nothing, nothing, nothing, nothing)
 end
 
-"""`LiveView` with the compact layout, i.e. `live_view(...; layout = :compact)`."""
-const CompactView = LiveView{CompactLayout}
+# The compact layout of the `gui`, for the helpers that only this layout has
+_compact(gui::LiveView) = gui.layout::CompactLayout
 
 _layout_name(::CompactLayout) = :compact
 
@@ -121,8 +121,8 @@ _has_tool(::CompactLayout, ::Union{Val{:fit_button}, Val{:views_button}}) = true
 Connects the parts of the compact layout that are not fields of `LiveView`: the fit button, the
 help (see `_connect_help!`) and the overlay, see `_connect_overlay!`.
 """
-function _connect_layout!(gui::CompactView)
-    o = gui.layout.overlay
+function _connect_layout!(gui::LiveView, layout::CompactLayout)
+    o = layout.overlay
     ctrl = gui.controls
     push!(ctrl.listeners, on(_ -> _zoom_to_selection!(gui), o.fit_button.clicks))
     _connect_help!(gui)
@@ -132,7 +132,7 @@ function _connect_layout!(gui::CompactView)
     return nothing
 end
 
-_show_hint(::CompactView) = "choose it in the component menu of ⋯ to show it again"
+_show_hint(::LiveView, ::CompactLayout) = "choose it in the component menu of ⋯ to show it again"
 
 #=
 Tools: the built-in tools in the tool rail or the camera popover, the tools of `add_tool!` in the
@@ -186,11 +186,11 @@ Panels below the detector panels in `fig[1, 2]`, controls as sections of the too
 Returns the grid of the panels in `fig[1, 2]` of the compact layout, created without detector
 panels.
 """
-_panel_grid!(gui::CompactView) = _panel_grid!(gui, gui.layout.panels)
-_panel_grid!(::CompactView, grid::GridLayout) = grid
-_panel_grid!(gui::CompactView, ::Nothing) = _panel_part!(gui.layout, gui.fig.layout)
+_panel_grid!(gui::LiveView) = _panel_grid!(gui, _compact(gui).panels)
+_panel_grid!(::LiveView, grid::GridLayout) = grid
+_panel_grid!(gui::LiveView, ::Nothing) = _panel_part!(_compact(gui), gui.fig.layout)
 
-function _add_user_panel!(f, gui::CompactView, title::String, ::Bool)
+function _add_user_panel!(f, gui::LiveView, ::CompactLayout, title::String, ::Bool)
     grid = _panel_grid!(gui)
     nrows, ncols = size(grid)
     # Below all panels, over all columns of their grid
@@ -203,5 +203,5 @@ function _add_user_panel!(f, gui::CompactView, title::String, ::Bool)
 end
 
 # An entry of the tool rail per section of controls, which opens them in a popover next to the rail
-_controls_slot!(gui::CompactView, title::String) = _add_section!(gui.layout.overlay, title)
-_on_controls_added!(gui::CompactView) = _on_overlay_changed!(gui.layout.overlay)
+_controls_slot!(::LiveView, layout::CompactLayout, title::String) = _add_section!(layout.overlay, title)
+_on_controls_added!(::LiveView, layout::CompactLayout) = _on_overlay_changed!(layout.overlay)

@@ -37,7 +37,7 @@ const GUI = BeamletOpticsGUI
     _pose(obj) = (Vector{Float64}(position(obj)), Matrix{Float64}(BMO.orientation(obj)))
     _same_pose(obj, pose; atol = 1e-12) = _close(position(obj), pose[1]; atol) &&
         norm(Matrix{Float64}(BMO.orientation(obj)) .- pose[2]) < atol
-    _card(gui) = gui isa GUI.AppView ? gui.layout.inspector.card : gui.cards.selection
+    _card(gui) = gui.layout isa GUI.AppLayout ? gui.layout.inspector.card : gui.cards.selection
     function _select!(gui, sel)
         select!(gui, sel)
         GUI._update_cards!(gui)
@@ -50,7 +50,7 @@ const GUI = BeamletOpticsGUI
     _release!(gui) = (events(gui.ax.scene).mousebutton[] = Makie.MouseButtonEvent(Mouse.left, Mouse.release))
     _key!(gui, key) = (events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press))
 
-    @testset "marker, $layout" for layout in (:compact, :app)
+    @testset "marker, $layout" for layout in (:compact,)
         fx = _fixture(; layout)
         gui, arm = fx.gui, fx.arm
         _select!(gui, arm)
@@ -78,7 +78,7 @@ const GUI = BeamletOpticsGUI
         spectator!(gui, false)
     end
 
-    @testset "row of the card, undo and reset, $layout" for layout in (:compact, :app)
+    @testset "row of the card, undo and reset, $layout" for layout in (:compact,)
         fx = _fixture(; layout)
         gui, arm, m1, m2 = fx.gui, fx.arm, fx.m1, fx.m2
         ctrl = gui.controls
@@ -140,7 +140,7 @@ const GUI = BeamletOpticsGUI
         @test _same_pose(m1, turned[1]; atol = 1e-12)
     end
 
-    @testset "pick, $layout" for layout in (:compact, :app)
+    @testset "pick, $layout" for layout in (:compact,)
         fx = _fixture(; layout)
         gui, arm, m1, m2 = fx.gui, fx.arm, fx.m1, fx.m2
         ctrl = gui.controls

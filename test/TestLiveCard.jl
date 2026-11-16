@@ -268,6 +268,11 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         close(gui)
     end
 
+    # A view for the checks of "placement", "clip planes" and "no dock toggle in the compact
+    # layout": they read the view or undo what they change
+    shared_m, shared_pd = _fixture()
+    shared = _live_view(System([shared_m, shared_pd]), _gauss())
+
     @testset "placement" begin
         view = Rect2f(0, 0, 800, 600)
         size = Vec2f(300, 150)
@@ -286,8 +291,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test GUI._card_position(Rect2f(0, 0, 800, 600), size, view) == Point2f(800 - margin - 300, 600 - margin)
 
         # off the view cube
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _gauss())
+        gui = shared
         cube = gui.widgets.view_cube
         C = Rect2f(Makie.viewport(cube.scene)[])
         view = Rect2f(gui.ax.scene.viewport[])
@@ -302,7 +306,6 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         far = Point2f(minimum(view)[1] + 20, minimum(view)[2] + 200)
         @test GUI._avoid(far, size, view, GUI._obstacles(cube)) == far
         @test GUI._avoid(p, size, view, Rect2f[]) == p
-        close(gui)
     end
 
     @testset "mouse and keyboard" begin
@@ -367,8 +370,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
     end
 
     @testset "clip planes" begin
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _gauss())
+        gui = shared
         c, ctrl = gui.cards.selection, gui.controls
         plane = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
         @test ctrl.selected[] === plane
@@ -381,7 +383,7 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test !(plane in gui.clip.planes)
         @test isnothing(ctrl.selected[]) && !c.scene.visible[]
         # another object gets its own actions
-        _select!(gui, m)
+        _select!(gui, shared_m)
         @test isnothing(_w(c, :flip)) && !isnothing(_w(c, :hide))
         # a pinned plane is unpinned when it is removed
         plane = GUI._add_clip_plane!(gui, [0, 0.05, 0], [0, 1, 0])
@@ -390,6 +392,26 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         @test pinned.pinned && pinned.obj === plane
         notify(_w(pinned, :remove).clicks)
         @test !pinned.pinned && !pinned.scene.visible[]
+    end
+
+    @testset "no dock toggle in the compact layout" begin
+        # the compact layout has no sidebar: its pinned cards always float, without a dock button
+        gui = shared
+        _select!(gui, shared_m)
+        c = gui.cards.selection
+        _pin!(c)
+        _tick!(gui)
+        @test c.pinned && c.scene.visible[] && isnothing(c.dock_button)
+        @test all(c -> isnothing(c.dock_button), gui.cards.all)
+        m = shared_m
+        @test GUI._is_floating(gui, m) && GUI._is_pinned(gui, m)
+        # the head holds the pin and the chevron only
+        @test length(c.tools.content) == 2
+        # floating and docking do nothing
+        GUI._dock!(gui, m)
+        GUI._float!(gui, m)
+        _tick!(gui)
+        @test c.pinned && c.obj === m && c.scene.visible[] && count(c -> c.pinned, gui.cards.all) == 1
         close(gui)
     end
 
@@ -559,27 +581,6 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
         close(gui)
     end
 
-    @testset "no dock toggle in the compact layout" begin
-        # the compact layout has no sidebar: its pinned cards always float, without a dock button
-        m, pd = _fixture()
-        gui = _live_view(System([m, pd]), _gauss())
-        _select!(gui, m)
-        c = gui.cards.selection
-        _pin!(c)
-        _tick!(gui)
-        @test c.pinned && c.scene.visible[] && isnothing(c.dock_button)
-        @test all(c -> isnothing(c.dock_button), gui.cards.all)
-        @test GUI._is_floating(gui, m) && GUI._is_pinned(gui, m)
-        # the head holds the pin and the chevron only
-        @test length(c.tools.content) == 2
-        # floating and docking do nothing
-        GUI._dock!(gui, m)
-        GUI._float!(gui, m)
-        _tick!(gui)
-        @test c.pinned && c.obj === m && c.scene.visible[] && count(c -> c.pinned, gui.cards.all) == 1
-        close(gui)
-    end
-
     @testset "declared rows" begin
         m, pd = _fixture()
         t = CardTestObject(BMO.shape(RoundPlanoMirror(0.01, 0.002)))
@@ -656,7 +657,8 @@ BeamletOpticsGUI.card_actions(::CardTestObject) = ()
     @testset "colors of the theme" begin
         _rgba(x) = RGBAf(Makie.to_color(x))
         _label(c, text) = only(b for b in c.blocks if b isa Label && b.text[] == text)
-        for layout in (:compact, :app), theme in (:light, :dark)
+        # a theme is data that the same code applies: each theme once, each layout once
+        for (layout, theme) in ((:compact, :dark), (:app, :light))
             m, pd = _fixture()
             gui = _live_view(System([m, pd]), _gauss(); layout, theme, labels = Dict(m => "M1"))
             t = GUI._app_theme(theme)

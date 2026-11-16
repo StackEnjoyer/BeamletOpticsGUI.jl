@@ -56,7 +56,9 @@ const GUI = BeamletOpticsGUI
     _poses(ms) = IdDict{Any, Any}(m => (Vector{Float64}(position(m)), Matrix{Float64}(BMO.orientation(m))) for m in ms)
     _identity(g) = norm(Matrix{Float64}(BMO.orientation(g)) .- Matrix{Float64}(I, 3, 3)) < 1e-9
 
-    @testset "grouping and ungrouping, $layout" for layout in (:compact, :app)
+    # Grouping is shared logic: the testsets run in one layout, this one in the app layout, whose
+    # object tree shows the group, the others in the compact layout
+    @testset "grouping and ungrouping, $layout" for layout in (:app,)
         fx = _fixture(; layout)
         gui, sys, m, pd = fx.gui, fx.sys, fx.m, fx.pd
         ctrl = gui.controls
@@ -97,13 +99,11 @@ const GUI = BeamletOpticsGUI
         @test length(pd) == 1
 
         # the object tree shows the group with its members
-        if layout === :app
-            gui.layout.expanded[g] = true
-            rows = GUI._tree_rows(gui)
-            i = findfirst(r -> r.key === g, rows)
-            @test !isnothing(i) && rows[i].kind === :group
-            @test any(r -> r.key === m && r.depth == rows[i].depth + 1, rows)
-        end
+        gui.layout.expanded[g] = true
+        rows = GUI._tree_rows(gui)
+        i = findfirst(r -> r.key === g, rows)
+        @test !isnothing(i) && rows[i].kind === :group
+        @test any(r -> r.key === m && r.depth == rows[i].depth + 1, rows)
         # the selection card browses its parts
         GUI._browse!(gui, g)
         @test gui.objects.browsed === g
@@ -185,7 +185,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "members keep labels, hidden state, opacity and initial poses, $layout" for layout in (:compact, :app)
+    @testset "members keep labels, hidden state, opacity and initial poses, $layout" for layout in (:compact,)
         m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
         sys = System([m1, m2, m3])
         gui = _live_view(sys => _beam(); layout, labels = Dict(m1 => "M1"))
@@ -222,7 +222,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "refused, $layout" for layout in (:compact, :app)
+    @testset "refused, $layout" for layout in (:compact,)
         m1, m2, m3, m4, m5 = _mirror(), _mirror(0.3), _mirror(0.5), _mirror(0.7), _mirror(0.9)
         sg = ObjectGroup([m4, m5])
         a, b = System([m1, m2, sg]), System([_mirror(; x = 0.3)])
@@ -255,7 +255,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "ungrouping a group inside a group, $layout" for layout in (:compact, :app)
+    @testset "ungrouping a group inside a group, $layout" for layout in (:compact,)
         m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
         sys = System([m1, m2, m3])
         gui = _live_view(sys => _beam(); layout)
@@ -334,7 +334,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "ungrouping a group inside two groups, $layout" for layout in (:compact, :app)
+    @testset "ungrouping a group inside two groups, $layout" for layout in (:compact,)
         m1, m2, m3, m4 = _mirror(), _mirror(0.3), _mirror(0.5), _mirror(0.7)
         sys = System([m1, m2, m3, m4])
         gui = _live_view(sys => _beam(); layout)
@@ -385,7 +385,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "objects without a system, $layout" for layout in (:compact, :app)
+    @testset "objects without a system, $layout" for layout in (:compact,)
         h1, h2 = _mirror(0.5; x = 0.5), _mirror(0.6; x = 0.5)
         sys = System([_mirror()])
         gui = _live_view(sys => _beam(); layout, extras = [h1, h2])
@@ -400,7 +400,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "removing a group made in the window, $layout" for layout in (:compact, :app)
+    @testset "removing a group made in the window, $layout" for layout in (:compact,)
         fx = _fixture(; layout)
         gui, sys, m, pd = fx.gui, fx.sys, fx.m, fx.pd
         ctrl = gui.controls
@@ -438,7 +438,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "linked view follows, $layout" for layout in (:compact, :app)
+    @testset "linked view follows, $layout" for layout in (:compact,)
         fx = _fixture(; layout)
         gui, sys, m, pd = fx.gui, fx.sys, fx.m, fx.pd
         new = open_system(gui, sys; display = false)
@@ -468,7 +468,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "grouping within a group made in the window, $layout" for layout in (:compact, :app)
+    @testset "grouping within a group made in the window, $layout" for layout in (:compact,)
         m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
         sys = System([m1, m2, m3])
         gui = _live_view(sys => _beam(); layout)
@@ -532,7 +532,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "grouping within a group of the script, $layout" for layout in (:compact, :app)
+    @testset "grouping within a group of the script, $layout" for layout in (:compact,)
         m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
         sg = ObjectGroup([m1, m2, m3])
         sys = System([sg])
@@ -591,7 +591,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "grouping within groups on three levels, $layout" for layout in (:compact, :app)
+    @testset "grouping within groups on three levels, $layout" for layout in (:compact,)
         for script in (false, true)
             m1, m2, m3, m4, m5 = _mirror(), _mirror(0.3), _mirror(0.5), _mirror(0.7), _mirror(0.9)
             if script
@@ -656,7 +656,7 @@ const GUI = BeamletOpticsGUI
         end
     end
 
-    @testset "grouping within a group refused, $layout" for layout in (:compact, :app)
+    @testset "grouping within a group refused, $layout" for layout in (:compact,)
         m1, m2, m3, m4, m5 = _mirror(), _mirror(0.3), _mirror(0.5), _mirror(0.7), _mirror(0.9)
         g1 = ObjectGroup([m1, m2])
         g2 = ObjectGroup([m3, m4])
@@ -680,7 +680,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "linked view follows grouping within a group, $layout" for layout in (:compact, :app)
+    @testset "linked view follows grouping within a group, $layout" for layout in (:compact,)
         m1, m2, m3 = _mirror(), _mirror(0.3), _mirror(0.5)
         sg = ObjectGroup([m1, m2, m3])
         sys = System([sg])

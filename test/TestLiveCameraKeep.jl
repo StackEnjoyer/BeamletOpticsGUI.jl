@@ -15,7 +15,9 @@ const GUI = BeamletOpticsGUI
     translate3d!(m, [0.05, 0.3, 0])
     g = GaussianBeamlet([0.0, 0, 0], [0.0, 1, 0], 1e-6, 0.5e-3)
     pol = Beam([20e-3, 0, 0], [0.0, 1, 0], 633e-9, [1.0, 0, 0])
-    gui = live_view(System([pd, m]) => g, System([m]) => pol; trace_budget = Inf, throttle = false)
+    # Every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
+    gui = live_view(System([pd, m]) => g, System([m]) => pol; trace_budget = Inf, throttle = false,
+        progress_delay = Inf)
     screen = GLMakie.Screen(visible = false)
     display(screen, gui.fig)
     tick!() = (events(gui.ax.scene).tick[] = Makie.Tick(Makie.RegularRenderTick, 0, 0.0, 1 / 60))

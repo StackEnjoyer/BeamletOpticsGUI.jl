@@ -60,6 +60,11 @@ describe it as available in docs or the skill.
   `card_rows` method, not a branch in the card code.
 - **Layout-independent code does not know the layouts.** Shared logic calls the hooks of
   `AbstractLiveLayout`; a new widget must not depend on `CompactLayout` or `AppLayout` (P3).
+- **A layout hook dispatches on `gui.layout`, never on the view type.** `LiveView` has no type
+  parameter. A hook is called as `_pin!(gui, obj)`; its barrier passes `gui.layout` on to
+  `_pin!(gui::LiveView, layout::AppLayout, obj)` or to the fallback on `::AbstractLiveLayout` (see
+  the docstring of `AbstractLiveLayout`). Code of one layout that is no hook takes `gui::LiveView`
+  and reads `_app(gui)` or `_compact(gui)`.
 
 ## Code map
 
@@ -70,7 +75,7 @@ describe it as available in docs or the skill.
   `gui.pool`: the one handle that renders every object of the view once, also an object of several
   systems; the `LiveSystemHandle` of a system holds the object handles of its members, which are the
   pool's, see `_render_members!`), and small pose helpers.
-- `src/LiveView.jl`: `LiveView{L}` and its state structs (`_TraceState`, `_ClipState`,
+- `src/LiveView.jl`: `LiveView` and its state structs (`_TraceState`, `_ClipState`,
   `_MeasureState`, `_CameraState`, `_CardState`, `_ObjectState`, `_DetectorStates`, `_LayoutWidgets`), `live_view`,
   and the docstring of `AbstractLiveLayout` (the layout interface).
 - `src/LiveScroll.jl`: scroll areas (`_ScrollArea`), e.g. the sidebars of the app layout: Makie has
@@ -180,6 +185,20 @@ describe it as available in docs or the skill.
   `julia --project=test test/runtests.jl TestLiveCard TestLiveSnap`; `--help` lists the options.
 - New test files are `module TestXyz ... end` in `test/`, which `test/runtests.jl` finds by itself.
   A file does not depend on another one, and sets no global state that others rely on.
+- A test checks a behavior once and lets the design imply the repeated cases (#100):
+  - **Layouts:** shared logic runs in the compact layout only. The app layout gets a test where
+    its own code runs: a hook with an `::AppLayout` method, the tree, the inspector and its docked
+    cards, the dock, the sidebars, or a viewport that does not start at the origin of the figure.
+    A helper of a test that reads different widgets per layout (e.g. the tree instead of the
+    objects menu) means that the app run checks something of its own.
+  - **Catalog entries:** one entry per kind in a window. Every entry is built and its code read
+    back without a window, and the precompile session places, drags and removes each one.
+  - **Windows:** testsets whose checks only read, or that undo what they changed, share one
+    window. A test that changes the setup opens its own window.
+  - **Themes:** a loop over the themes only where the code branches on the theme.
+- `benchmark/test_coverage.jl` shows which lines of `src/` and `ext/` only one test file covers.
+  Before removing a run, check that its lines stay covered (`check`), and that it does not check
+  a behavior of its own that the same lines have in another layout or with another widget.
 - `test/TestPrecompileSession.jl` runs the sessions of the precompile workload, see "Precompilation".
 - Docs: `julia --project=docs docs/make.jl`.
 
@@ -222,6 +241,8 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   A script of a user holds types that no workload has seen, e.g. a lens with its own glass. The
   behavior per type stays dispatch (`card_rows` etc.). `live_view` and `kinematic_controls!` are
   not specialized on their arguments either.
+- **The GUI is not compiled per layout either**: `LiveView` has no layout parameter, and what
+  differs per layout dispatches on `gui.layout` (see "Design principles").
 - **Measure** with `benchmark/jit_probe.jl` (see its header): it replays a session step by step and
   prints the compile time of each step; `benchmark/jit_trace_summary.jl` lists the methods of a
   trace. The scene `other` holds types that no workload has seen. A step of a new action that
@@ -235,7 +256,9 @@ loading GLMakie invalidates a part of what it compiled. The one of the GLMakie e
   with the workloads, and `test/TestPrecompileSession.jl` runs the sessions.
 - **A test does not depend on the speed of the machine.** The job without coverage compiles each
   first call during the tests, and workers share 4 CPUs: an `idle_delay` or a `trace_budget` that a
-  test relies on is long against that, or the test sets the time itself (`trace.last_change`).
+  test relies on is long against that, or the test sets the time itself (`trace.last_change`). A
+  window of a test is opened with `progress_delay = Inf`, so that each solve ends before the call
+  returns; only a test of the background path (progress, cancelling) keeps a finite one.
 - The workload of the extension is built with GLMakie loaded after the package. Code that Julia
   cached is checked against the methods of the session when it is loaded, and in a session that
   loads GLMakie first, a part of it is rejected and compiled again at the first use, about twice as

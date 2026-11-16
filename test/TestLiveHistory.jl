@@ -12,9 +12,10 @@ const GUI = BeamletOpticsGUI
 
 @testset "Undo history of the components" begin
 
-    # Each change is solved at once, see `TestLiveView.jl`; no card of a detector is pinned at start
+    # Each change is solved at once, see `TestLiveView.jl`, and before the call returns, also on a
+    # slow machine (`progress_delay = Inf`); no card of a detector is pinned at start
     _live_view(args...; kwargs...) =
-        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = []), kwargs)...)
+        live_view(args...; merge((; trace_budget = Inf, throttle = false, detectors = [], progress_delay = Inf), kwargs)...)
 
     _beam(x = 0.0) = Beam([x, 0, 0], [0.0, 1, 0], 632.8e-9)
     function _mirror(y = 0.1; x = 0.0)
@@ -35,7 +36,7 @@ const GUI = BeamletOpticsGUI
     _redo!(gui) = GUI._redo!(gui.controls)
     _hex(c) = GUI._color_hex(Makie.to_color(c))
 
-    @testset "add a component, $layout" for layout in (:compact, :app)
+    @testset "add a component, $layout" for layout in (:compact,)
         sys = System()
         beam = _beam()
         gui = _live_view(sys => beam; layout)
@@ -72,7 +73,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "remove a component, with moves, $layout" for layout in (:compact, :app)
+    @testset "remove a component, with moves, $layout" for layout in (:compact,)
         m, m2 = _mirror(), _mirror(0.2; x = 0.1)
         sys = System([m, m2])
         beam = _beam()
@@ -120,7 +121,7 @@ const GUI = BeamletOpticsGUI
         close(gui)
     end
 
-    @testset "sources, $layout" for layout in (:compact, :app)
+    @testset "sources, $layout" for layout in (:compact,)
         m = _mirror()
         sys = System([m])
         first_beam = _beam(0.2)

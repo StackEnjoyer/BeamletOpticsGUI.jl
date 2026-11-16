@@ -603,9 +603,10 @@ Places the toast of the compact layout of the `gui` above the height `top` [px a
 the 3D view], e.g. the timeline of the activity of the others (`0`: at its place). Nothing in the
 app layout, whose status line is not over the view.
 """
-_lift_toast!(::LiveView, ::Real) = nothing
-function _lift_toast!(gui::CompactView, top::Real)
-    o = gui.layout.overlay
+_lift_toast!(gui::LiveView, top::Real) = _lift_toast!(gui, gui.layout, top)
+_lift_toast!(::LiveView, ::AbstractLiveLayout, ::Real) = nothing
+function _lift_toast!(::LiveView, layout::CompactLayout, top::Real)
+    o = layout.overlay
     lift = Float32(max(top, 0))
     get(_TOAST_LIFT, o, 0.0f0) == lift && return nothing
     _TOAST_LIFT[o] = lift
@@ -656,25 +657,24 @@ Hooks of the compact layout, see `AbstractLiveLayout`
 =#
 
 # A closed view leaves no timer behind, e.g. the one that hides the toast
-_close_layout!(gui::CompactView) =
-    (foreach(_stop!, (gui.layout.overlay.toast_deadline, gui.layout.overlay.camera_deadline)); nothing)
+_close_layout!(::LiveView, layout::CompactLayout) =
+    (foreach(_stop!, (layout.overlay.toast_deadline, layout.overlay.camera_deadline)); nothing)
 
-_layout_obstacles(gui::CompactView) =
-    [_overlay_rects(gui.layout.overlay); _help_rects(gui.layout.help)]
-function _over_layout(gui::CompactView)
+_layout_obstacles(::LiveView, layout::CompactLayout) =
+    [_overlay_rects(layout.overlay); _help_rects(layout.help)]
+function _over_layout(gui::LiveView, layout::CompactLayout)
     p = Point2f(events(gui.ax.scene).mouseposition[])
-    return _over_overlay(gui.layout.overlay, p) || _over_help(gui.layout.help, p)
+    return _over_overlay(layout.overlay, p) || _over_help(layout.help, p)
 end
 # While a menu is open, a click into the 3D view only closes it
-_outside_view(gui::CompactView) = _menu_open(gui) || _over_layout(gui)
+_outside_view(gui::LiveView, ::CompactLayout) = _menu_open(gui) || _over_layout(gui)
 
 """
 The spectator mode of the compact layout: the overlay keeps only its help pill (see
 `_CompactOverlay`), the panels right of the 3D view are collapsed, such that the 3D view fills the
 window, see `_panel_part!`.
 """
-function _set_spectator_ui!(gui::CompactView, on::Bool)
-    layout = gui.layout
+function _set_spectator_ui!(gui::LiveView, layout::CompactLayout, on::Bool)
     layout.overlay.hidden = on
     layout.overlay.pill_hidden = on && !gui.controls.spectator_help
     isnothing(layout.panel_part) || _set_shown!(layout.panel_part, !on)
@@ -691,8 +691,8 @@ is open or the press is on the help card, which takes it) and the key `Esc` clos
 popovers; the camera popover follows the mouse, the
 parts follow the size of the window and their content.
 """
-function _connect_overlay!(gui::CompactView)
-    o = gui.layout.overlay
+function _connect_overlay!(gui::LiveView)
+    o = _compact(gui).overlay
     ctrl = gui.controls
     ev = events(gui.ax.scene)
     listeners = ctrl.listeners

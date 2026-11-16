@@ -8,7 +8,8 @@ const BMO = BeamletOptics
 const GUI = BeamletOpticsGUI
 
 @testset "Spectator mode and its options" begin
-    # Rays along +y, the mirror at 45° reflects them along +x onto the detector, whose card is pinned
+    # Rays along +y, the mirror at 45° reflects them along +x onto the detector, whose card is pinned;
+    # every solve ends before the call returns, also on a slow machine (`progress_delay = Inf`)
     function _fixture(layout; kwargs...)
         m = RoundPlanoMirror(25e-3, 5e-3)
         zrotate3d!(m, deg2rad(45))
@@ -18,7 +19,7 @@ const GUI = BeamletOpticsGUI
         translate3d!(pd, [0.1, 0.1, 0])
         cs = CollimatedSource([0.0, 0, 0], [0.0, 1, 0], 2e-3, 1e-6; num_rings = 2, num_rays = 40)
         gui = live_view(System([m, pd]) => cs; layout, trace_budget = Inf, throttle = false,
-            catalog = CatalogEntry[], detectors = [pd], kwargs...)
+            catalog = CatalogEntry[], detectors = [pd], progress_delay = Inf, kwargs...)
         return gui, m, pd
     end
     cube_shown(gui) = gui.widgets.view_cube.scene.visible[]
@@ -26,8 +27,9 @@ const GUI = BeamletOpticsGUI
     _press!(gui, key) = events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.press)
     _release!(gui, key) = events(gui.ax.scene).keyboardbutton[] = Makie.KeyEvent(key, Keyboard.release)
 
+    # the three testsets of the compact layout leave the window as they found it: one window
+    gui, m, _ = _fixture(:compact)
     @testset "compact: without help, chrome hidden and restored" begin
-        gui, m, _ = _fixture(:compact)
         select!(gui, m)
         GUI._update_cards!(gui)
         bg0 = gui.ax.scene.backgroundcolor[]
@@ -53,11 +55,9 @@ const GUI = BeamletOpticsGUI
         # off again: nothing to do
         spectator!(gui, false)
         @test !gui.controls.spectator[] && gui.controls.selected[] === m
-        close(gui)
     end
 
     @testset "compact: the options change while the mode is on" begin
-        gui, m, _ = _fixture(:compact)
         select!(gui, m)
         bg0 = gui.ax.scene.backgroundcolor[]
         o = gui.layout.overlay
@@ -78,11 +78,9 @@ const GUI = BeamletOpticsGUI
         # the selection from before the mode is kept over the changes
         spectator!(gui, false)
         @test gui.controls.selected[] === m && gui.ax.scene.backgroundcolor[] == bg0
-        close(gui)
     end
 
     @testset "compact: the keys v and Shift+V" begin
-        gui, m, _ = _fixture(:compact)
         select!(gui, m)
         o = gui.layout.overlay
         # v: with the help, and back with the selection
