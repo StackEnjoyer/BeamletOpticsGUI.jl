@@ -91,7 +91,10 @@ Several windows and agents can work on one project at once, also from a shared d
   the status line names the holder ("Bob is editing M1"), and the object shows a lock. A change
   that lost the race to a claim is held like a conflict and written once the claim is gone.
 - **Session file.** The window notes the selection and the recent changes of its person in
-  `.bmo/session-<person>.md`, for the agents that work on the same project.
+  `.bmo/session-<person>.md`, for the agents that work on the same project. The last 20 changes
+  there read old → new ("moved M1 from (…) to (…)"); every change of the session with its old and
+  new pose is kept in `.bmo/changes-<person>.toml` (it stays after the window closes) and read with
+  `BeamletOpticsProjects.changes(".")`.
 - **Versions of the packages.** The window says when another participant works with other versions
   of BeamletOptics, BeamletOpticsProjects or the GUI.
 

@@ -119,14 +119,14 @@ session(dir) = read(GUI._session_file(dir), String)
         empty!(gui.sync.journal)
         GUI._journal!(gui, changes)
         lines = [l for (_, l) in gui.sync.journal]
-        @test "moved L1 to (0.0, 0.1051, 0.0)" in lines
-        @test "rotated D1" in lines
+        @test "moved L1 from (0.0, 0.1, 0.0) to (0.0, 0.1051, 0.0)" in lines
+        @test "rotated D1 from (0.0, 0.0, 0.0)° to (0.0, 0.0, 30.0)°" in lines
         @test "rebuilt M1" in lines
         @test any(l -> startswith(l, "added M4 = RoundPlanoMirror("), lines)
         text = session(dir)
         @test occursin("Recent changes by the person (newest first):", text)
         # with the day: a file of a window that was not closed may be read days later
-        @test occursin(r"- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d moved L1 to \(0\.0, 0\.1051, 0\.0\)", text)
+        @test occursin(r"- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d moved L1 from \(0\.0, 0\.1, 0\.0\) to \(0\.0, 0\.1051, 0\.0\)", text)
         # newest first
         @test findfirst("added M4", text).start < findfirst("moved L1", text).start
 
@@ -137,7 +137,7 @@ session(dir) = read(GUI._session_file(dir), String)
             pose0 = ([0.0, 0.0, 0.0], [1.0 0 0; 0 1 0; 0 0 1]), uid = "u1")
         EC = BeamletOpticsProjects.EntryChange
         SC = BeamletOpticsProjects.SystemChange
-        @test GUI._entry_line(EC("u1", :moved, both, moved)) == "moved and rotated Q1 to (1.0, 0.0, 0.0)"
+        @test GUI._entry_line(EC("u1", :moved, both, moved)) == "moved and rotated Q1 from (0.0, 0.0, 0.0) to (1.0, 0.0, 0.0), from (0.0, 0.0, 0.0)° to (0.0, 0.0, 10.0)°"
         @test GUI._entry_line(EC("u1", :removed, both, nothing)) == "removed Q1"
         @test GUI._entry_line(EC("u1", :renamed, both, moved)) == "renamed Q1 → Q1"
         lab = BeamletOpticsProjects.Entry(:component, :Q1, "Detector(0.02)", nothing;
@@ -166,11 +166,54 @@ session(dir) = read(GUI._session_file(dir), String)
         @test count(l -> occursin("removed Q1", l), split(session(dir), "\n")) == 20
     end
 
+    @testset "log of changes" begin
+        log = GUI._changes_file(dir)
+        @test basename(log) == "changes-$(GUI._person().id).toml"
+        @test occursin("BeamletOpticsProjects.changes(\".\")", session(dir))
+        t = GUI.TOML.parsefile(log)
+        @test t["person"] == GUI._person().id
+        @test t["name"] == GUI._person().name
+        @test haskey(t, "started")
+        ch = t["change"]
+        # all of the session: the 25 removals of the last testset are more than the 20 of the session file
+        @test length(ch) == length(gui.sync.log) > 20
+        @test count(c -> c["kind"] == "removed", ch) >= 25
+        mv_ = only(c for c in ch if c["kind"] == "moved" && c["id"] == "L1")
+        @test mv_["old_pos"] == [0.0, 0.1, 0.0]
+        @test mv_["new_pos"] == [0.0, 0.10512, 0.0]
+        @test !haskey(mv_, "old_rot")
+        @test mv_["text"] == "moved L1 from (0.0, 0.1, 0.0) to (0.0, 0.1051, 0.0)"
+        rot = only(c for c in ch if c["kind"] == "moved" && c["id"] == "D1")
+        @test rot["old_rot"] == [0.0, 0.0, 0.0]
+        @test rot["new_rot"] == [0.0, 0.0, 30.0]
+        @test !haskey(rot, "new_pos")
+        @test GUI._utc_text(0) == "1970-01-01T00:00:00.000Z"
+        @test GUI._utc_text(1_763_200_862.12) == "2025-11-15T10:01:02.120Z"
+        # read by an agent with BeamletOpticsProjects.changes: old and new poses, then the version
+        # that contains them
+        cs = changes(dir)
+        @test length(cs) == length(ch) && issorted(cs; by = c -> c.time, rev = true)
+        @test all(c -> c.by == GUI._person().id, cs)
+        m = only(c for c in cs if c.kind === :moved && c.id === :L1)
+        @test m.old_pos == (0.0, 0.1, 0.0) && m.new_pos == (0.0, 0.10512, 0.0)
+        @test m.text == "moved L1 from (0.0, 0.1, 0.0) to (0.0, 0.1051, 0.0)"
+        @test only(c for c in cs if c.kind === :moved && c.id === :D1).new_rot == (0.0, 0.0, 30.0)
+        v = save_version(dir; message = "the session so far")
+        @test all(c -> c.version == v, changes(dir))
+    end
+
     @testset "closed" begin
         @test isfile(file)
         GUI._session_closed!(gui)
         @test isempty(gui.sync.session)
         @test !isfile(file)
+        # the log stays after the window closed, until the person opens the project again
+        @test isfile(GUI._changes_file(dir))
+        @test length(GUI.TOML.parsefile(GUI._changes_file(dir))["change"]) == length(gui.sync.log)
+        GUI._connect_session!(gui)
+        @test isempty(gui.sync.log)
+        @test !haskey(GUI.TOML.parsefile(GUI._changes_file(dir)), "change")
+        GUI._session_closed!(gui)
         @test GUI._session_closed!(gui) === nothing   # a missing file is fine
         gui.controls.selected[] = obj(gui, :M1)
         @test !isfile(file)
